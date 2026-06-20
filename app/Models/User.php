@@ -22,6 +22,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
+        'github_username',
     ];
 
     /**
@@ -45,5 +47,39 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Get the lab sessions started by the user.
+     */
+    public function labSessions()
+    {
+        return $this->hasMany(LabSession::class);
+    }
+
+    /**
+     * Get the competencies achieved by the student.
+     */
+    public function studentCompetencies()
+    {
+        return $this->hasMany(StudentCompetency::class);
+    }
+
+    /**
+     * Get the certificates issued to the user.
+     */
+    public function certificates()
+    {
+        return $this->hasMany(Certificate::class);
+    }
+
+    /**
+     * Get the groups the user is a member of.
+     */
+    public function groups()
+    {
+        return $this->belongsToMany(Group::class, 'group_members')
+                    ->withPivot('contribution_score')
+                    ->withTimestamps();
     }
 }

@@ -56,6 +56,14 @@
                         <input id="email" name="email" type="email" value="{{ old('email') }}" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Email address">
                     </div>
                     <div>
+                        <label for="role" class="sr-only">Choose Role</label>
+                        <select id="role" name="role" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 text-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm">
+                            <option value="" disabled selected>Choose role...</option>
+                            <option value="student">Student</option>
+                            <option value="instructor">Instructor / Teacher</option>
+                        </select>
+                    </div>
+                    <div>
                         <label for="password" class="sr-only">Password</label>
                         <input id="password" name="password" type="password" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Password">
                     </div>
