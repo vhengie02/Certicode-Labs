@@ -36,11 +36,11 @@
                     Dashboard
                 </a>
             @else
-                <a href="{{ route('login.show') }}" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors">
+                <a href="{{ route('login') }}" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors">
                     Log in
                 </a>
                 @if (Route::has('register.show'))
-                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20">
+                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-xs font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-colors shadow-lg shadow-green-500/20">
                         Get Started
                     </a>
                 @endif
@@ -64,10 +64,10 @@
                     Certicode Labs blends GitHub repository integration and NetAcad-inspired learning paths. Write, compile, and run code while maintaining high compliance standards.
                 </p>
                 <div class="flex items-center space-x-4">
-                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-6 py-3 border border-transparent text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-500 transition-all duration-150 shadow-lg shadow-blue-500/30">
+                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-6 py-3 border border-transparent text-sm font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-all duration-150 shadow-lg shadow-green-500/30">
                         Create Free Account
                     </a>
-                    <a href="{{ route('login.show') }}" class="inline-flex items-center px-6 py-3 border border-slate-800 text-sm font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-800 transition-colors">
+                    <a href="{{ route('login') }}" class="inline-flex items-center px-6 py-3 border border-slate-800 text-sm font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-800 transition-colors">
                         Sign In
                     </a>
                 </div>

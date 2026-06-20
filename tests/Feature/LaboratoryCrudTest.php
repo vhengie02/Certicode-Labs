@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Laboratory;
 use App\Models\User;
+use App\Models\SchoolClass;
+use App\Models\Module;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -34,15 +36,15 @@ class LaboratoryCrudTest extends TestCase
     }
 
     /**
-     * Test students can view laboratories list.
+     * Test students can view classes list.
      */
-    public function test_student_can_view_laboratories_index(): void
+    public function test_student_can_view_classes_index(): void
     {
         $response = $this->actingAs($this->student)
-            ->get('/laboratories');
+            ->get('/classes');
 
         $response->assertStatus(200);
-        $response->assertSee('Available Laboratories');
+        $response->assertSee('Your Classes');
     }
 
     /**
@@ -50,8 +52,15 @@ class LaboratoryCrudTest extends TestCase
      */
     public function test_student_cannot_access_create_laboratory_page(): void
     {
+        $class = SchoolClass::create([
+            'name' => 'Web Development 101',
+            'code' => 'CLASS-WEB101',
+            'instructor_id' => $this->instructor->id,
+            'description' => 'Intro to HTML/CSS/JS',
+        ]);
+
         $response = $this->actingAs($this->student)
-            ->get('/laboratories/create');
+            ->get("/classes/{$class->id}/laboratories/create");
 
         $response->assertStatus(403);
     }
@@ -61,8 +70,15 @@ class LaboratoryCrudTest extends TestCase
      */
     public function test_instructor_can_access_create_laboratory_page(): void
     {
+        $class = SchoolClass::create([
+            'name' => 'Web Development 101',
+            'code' => 'CLASS-WEB101',
+            'instructor_id' => $this->instructor->id,
+            'description' => 'Intro to HTML/CSS/JS',
+        ]);
+
         $response = $this->actingAs($this->instructor)
-            ->get('/laboratories/create');
+            ->get("/classes/{$class->id}/laboratories/create");
 
         $response->assertStatus(200);
         $response->assertSee('New Laboratory Specifications');

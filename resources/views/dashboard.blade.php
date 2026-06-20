@@ -16,12 +16,12 @@
             
             <div class="flex space-x-3">
                 @if(auth()->user()->role === 'student')
-                    <a href="{{ route('laboratories.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/30">
-                        Start a Laboratory
+                    <a href="{{ route('classes.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-colors shadow-lg shadow-green-500/20">
+                        View Classes
                     </a>
                 @else
-                    <a href="{{ route('laboratories.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/30">
-                        Create New Lab
+                    <a href="{{ route('classes.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-colors shadow-lg shadow-green-500/20">
+                        Manage Classes
                     </a>
                 @endif
                 <a href="{{ route('profiles.edit', auth()->id()) }}" class="inline-flex items-center px-4 py-2 border border-slate-800 text-sm font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-800 transition-colors">

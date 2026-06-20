@@ -24,6 +24,14 @@ class Laboratory extends Model
     ];
 
     /**
+     * Get the module this laboratory belongs to.
+     */
+    public function module()
+    {
+        return $this->belongsTo(Module::class, 'module_id');
+    }
+
+    /**
      * Get the lab sessions associated with this laboratory.
      */
     public function labSessions()

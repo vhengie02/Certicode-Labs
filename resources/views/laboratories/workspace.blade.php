@@ -39,11 +39,9 @@
         </div>
 
         <div class="mt-6 pt-4 border-t border-slate-800/50">
-            <form action="{{ route('laboratories.index') }}" method="GET" class="w-full">
-                <button type="submit" class="w-full py-2.5 border border-slate-700 text-sm font-semibold rounded-xl text-rose-400 bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
-                    Abandon & Exit Lab
-                </button>
-            </form>
+            <a href="{{ route('classes.index') }}" class="block text-center w-full py-2.5 border border-slate-700 text-sm font-semibold rounded-xl text-rose-400 bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
+                Abandon & Exit Lab
+            </a>
         </div>
     </div>
 

@@ -15,6 +15,26 @@
             theme: {
                 extend: {
                     colors: {
+                        blue: {
+                            50: '#f0f6fc',
+                            100: '#c9d1d9',
+                            200: '#b1bac4',
+                            300: '#8b949e',
+                            400: '#58A6FF', // GitHub Light Accent Blue
+                            500: '#388BFD', // GitHub Active/Hover Accent Blue
+                            600: '#1F6FEB', // GitHub Primary Accent Blue
+                            700: '#1158c7',
+                        },
+                        green: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            300: '#86efac',
+                            400: '#4ade80',
+                            500: '#2EA043', // GitHub Hover Green
+                            600: '#238636', // GitHub Primary Green
+                            700: '#1a6528',
+                        },
                         indigo: {
                             50: '#eff6ff',
                             100: '#dbeafe',
@@ -22,7 +42,7 @@
                             300: '#93c5fd',
                             400: '#60a5fa',
                             500: '#3b82f6',
-                            600: '#2563EB', // Primary Accent (electric blue)
+                            600: '#2563EB',
                             700: '#1d4ed8',
                             800: '#1e40af',
                             900: '#1e3a8a',
@@ -37,9 +57,9 @@
                             500: '#64748b',
                             600: '#475569',
                             700: '#334155',
-                            800: '#30363D', // Border/Divider
-                            900: '#161B22', // Secondary Background / Card
-                            950: '#0D1117', // Primary Background
+                            800: '#30363D', // Border/Divider (GitHub Border)
+                            900: '#161B22', // Secondary Background / Card (GitHub Surface)
+                            950: '#0D1117', // Primary Background (GitHub Canvas)
                         }
                     },
                     fontFamily: {
@@ -68,13 +88,13 @@
         .glass-card:hover {
             border-color: #388BFD;
         }
-        /* Custom sidebar active state style */
+        /* Custom sidebar active state style matching GitHub */
         .sidebar-active-item {
-            background-color: rgba(37, 99, 235, 0.15) !important;
-            border-left: 3px solid #2563EB !important;
+            background-color: #21262D !important;
+            border-left: 4px solid #f78166 !important; /* GitHub's active tab coral border */
             border-top-left-radius: 0px !important;
             border-bottom-left-radius: 0px !important;
-            color: #E6EDF3 !important;
+            color: #ffffff !important;
         }
         /* Custom scrollbar matching GitHub Dark */
         ::-webkit-scrollbar {
@@ -97,7 +117,7 @@
 
     <!-- Left Sidebar Panel (NetAcad Inspired Layout) -->
     <div class="hidden md:flex md:flex-shrink-0">
-        <div class="flex flex-col w-64 bg-[#1C2333] border-r border-slate-800">
+        <div class="flex flex-col w-64 bg-[#161B22] border-r border-slate-800">
             <div class="flex flex-col flex-grow pt-5 pb-4 overflow-y-auto">
                 <!-- Branding Header -->
                 <div class="flex items-center flex-shrink-0 px-6 space-x-2">
@@ -120,11 +140,11 @@
                             Dashboard
                         </a>
 
-                        <a href="{{ route('laboratories.index') }}" class="group flex items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-150 {{ request()->routeIs('laboratories.*') ? 'sidebar-active-item' : 'text-slate-400 hover:bg-slate-800/40 hover:text-white' }}">
-                            <svg class="mr-3 h-5 w-5 {{ request()->routeIs('laboratories.*') ? 'text-white' : 'text-slate-400 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                        <a href="{{ route('classes.index') }}" class="group flex items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-150 {{ request()->routeIs('classes.*') ? 'sidebar-active-item' : 'text-slate-400 hover:bg-slate-800/40 hover:text-white' }}">
+                            <svg class="mr-3 h-5 w-5 {{ request()->routeIs('classes.*') ? 'text-white' : 'text-slate-400 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                             </svg>
-                            Laboratories
+                            Classes
                         </a>
 
                         @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')

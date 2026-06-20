@@ -12,18 +12,22 @@ class LaboratoryController extends Controller
      */
     public function index()
     {
-        $laboratories = Laboratory::latest()->get();
-        return view('laboratories.index', compact('laboratories'));
+        return redirect()->route('classes.index');
     }
 
     /**
      * Show the form for creating a new laboratory.
      */
-    public function create()
+    public function create($class_id = null)
     {
         $this->authorizeAdminOrInstructor();
 
-        return view('laboratories.create');
+        if (!$class_id) {
+            return redirect()->route('classes.index')->with('error', 'Select a class to add a laboratory.');
+        }
+
+        $class = \App\Models\SchoolClass::with('modules')->findOrFail($class_id);
+        return view('laboratories.create', compact('class'));
     }
 
     /**
@@ -39,6 +43,7 @@ class LaboratoryController extends Controller
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
             'is_group_lab' => 'boolean',
+            'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
@@ -56,16 +61,19 @@ class LaboratoryController extends Controller
             }
         }
 
+        $module = \App\Models\Module::findOrFail($validated['module_id']);
+
         Laboratory::create([
             'title' => $validated['title'],
             'description' => $validated['description'],
             'github_repo_template' => $validated['github_repo_template'],
             'time_limit' => $validated['time_limit'],
             'is_group_lab' => $request->has('is_group_lab'),
+            'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
         ]);
 
-        return redirect()->route('laboratories.index')->with('success', 'Laboratory created successfully.');
+        return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory created successfully.');
     }
 
     /**
@@ -89,7 +97,10 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
 
-        return view('laboratories.edit', compact('laboratory'));
+        $module = \App\Models\Module::findOrFail($laboratory->module_id);
+        $class = \App\Models\SchoolClass::with('modules')->findOrFail($module->class_id);
+
+        return view('laboratories.edit', compact('laboratory', 'class'));
     }
 
     /**
@@ -105,6 +116,7 @@ class LaboratoryController extends Controller
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
             'is_group_lab' => 'boolean',
+            'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
@@ -121,16 +133,19 @@ class LaboratoryController extends Controller
             }
         }
 
+        $module = \App\Models\Module::findOrFail($validated['module_id']);
+
         $laboratory->update([
             'title' => $validated['title'],
             'description' => $validated['description'],
             'github_repo_template' => $validated['github_repo_template'],
             'time_limit' => $validated['time_limit'],
             'is_group_lab' => $request->has('is_group_lab'),
+            'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
         ]);
 
-        return redirect()->route('laboratories.index')->with('success', 'Laboratory updated successfully.');
+        return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.');
     }
 
     /**
@@ -140,9 +155,21 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
 
+        $classId = null;
+        if ($laboratory->module_id) {
+            $module = \App\Models\Module::find($laboratory->module_id);
+            if ($module) {
+                $classId = $module->class_id;
+            }
+        }
+
         $laboratory->delete();
 
-        return redirect()->route('laboratories.index')->with('success', 'Laboratory deleted successfully.');
+        if ($classId) {
+            return redirect()->route('classes.show', $classId)->with('success', 'Laboratory deleted successfully.');
+        }
+
+        return redirect()->route('classes.index')->with('success', 'Laboratory deleted successfully.');
     }
 
     /**

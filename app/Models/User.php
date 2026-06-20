@@ -50,6 +50,36 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the classes the user is enrolled in (status = enrolled).
+     */
+    public function classes()
+    {
+        return $this->belongsToMany(SchoolClass::class, 'class_student', 'student_id', 'class_id')
+                    ->wherePivot('status', 'enrolled')
+                    ->withPivot('status')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get the classes the user is invited to (status = invited).
+     */
+    public function invitedClasses()
+    {
+        return $this->belongsToMany(SchoolClass::class, 'class_student', 'student_id', 'class_id')
+                    ->wherePivot('status', 'invited')
+                    ->withPivot('status')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get the classes instructed by this user.
+     */
+    public function instructedClasses()
+    {
+        return $this->hasMany(SchoolClass::class, 'instructor_id');
+    }
+
+    /**
      * Get the lab sessions started by the user.
      */
     public function labSessions()
