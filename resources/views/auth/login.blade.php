@@ -184,7 +184,7 @@
                 <div class="flex items-center justify-between pt-1">
                     <label class="flex items-center text-xs font-medium text-slate-300 cursor-pointer select-none">
                         <input id="remember" name="remember" type="checkbox" class="h-4 w-4 text-blue-600 bg-slate-950 border-slate-800 rounded focus:ring-blue-500 focus:ring-offset-slate-950">
-                        <span class="ml-2">Remember credentials</span>
+                        <span class="ml-2">Remember Me</span>
                     </label>
                 </div>
 
