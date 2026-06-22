@@ -27,8 +27,12 @@
             <span class="text-xs font-bold uppercase tracking-wider text-slate-500 block">Competency Tasks</span>
             <div class="space-y-2.5">
                 @foreach($session->laboratory->tasks_definition as $task)
-                    <div class="flex items-start p-3 rounded-xl bg-slate-900/50 border border-slate-800/60">
+                    @php
+                        $isCompleted = in_array($task['id'], $session->completed_tasks ?? []);
+                    @endphp
+                    <div class="flex items-start p-3 rounded-xl transition-all duration-300 {{ $isCompleted ? 'border-emerald-500/30 bg-emerald-950/20' : 'bg-slate-900/50 border border-slate-800/60' }}" id="task-container-{{ $task['id'] }}">
                         <input type="checkbox" id="task-chk-{{ $task['id'] }}" disabled
+                               {{ $isCompleted ? 'checked' : '' }}
                                class="mt-1 h-4 w-4 text-indigo-600 bg-slate-900 border-slate-700 rounded focus:ring-indigo-500">
                         <label for="task-chk-{{ $task['id'] }}" class="ml-2.5 text-xs font-medium text-slate-300">
                             {{ $task['task'] }}
@@ -38,7 +42,15 @@
             </div>
         </div>
 
-        <div class="mt-6 pt-4 border-t border-slate-800/50">
+        <div class="mt-6 pt-4 border-t border-slate-800/50 space-y-2.5">
+            <form action="{{ route('sessions.complete', $session->id) }}" method="POST" id="form-complete-session">
+                @csrf
+                <button type="submit" id="btn-complete-session" 
+                        class="w-full py-2.5 px-4 text-center text-sm font-bold rounded-xl text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 shadow-md shadow-emerald-600/20"
+                        {{ count($session->completed_tasks ?? []) === count($session->laboratory->tasks_definition ?? []) ? '' : 'disabled' }}>
+                    Submit & Complete Lab
+                </button>
+            </form>
             <a href="{{ route('classes.index') }}" class="block text-center w-full py-2.5 border border-slate-700 text-sm font-semibold rounded-xl text-rose-400 bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
                 Abandon & Exit Lab
             </a>

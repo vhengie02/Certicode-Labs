@@ -63,15 +63,27 @@ class LaboratoryController extends Controller
 
         $module = \App\Models\Module::findOrFail($validated['module_id']);
 
-        Laboratory::create([
+        $lab = Laboratory::create([
             'title' => $validated['title'],
             'description' => $validated['description'],
-            'github_repo_template' => $validated['github_repo_template'],
+            'github_repo_template' => $validated['github_repo_template'] ?? null,
             'time_limit' => $validated['time_limit'],
             'is_group_lab' => $request->has('is_group_lab'),
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
         ]);
+
+        // Send notifications to enrolled students
+        $class = \App\Models\SchoolClass::findOrFail($module->class_id);
+        $students = $class->students()->wherePivot('status', 'enrolled')->get();
+        foreach ($students as $student) {
+            $student->notify(new \App\Notifications\ClassActivityNotification(
+                "New Lab Challenge: {$lab->title}",
+                "A new laboratory exercise '{$lab->title}' has been added to module '{$module->title}' in {$class->name}.",
+                route('modules.show', [$class->id, $module->id]),
+                'lab'
+            ));
+        }
 
         return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory created successfully.');
     }
@@ -81,6 +93,21 @@ class LaboratoryController extends Controller
      */
     public function show(Laboratory $laboratory)
     {
+        $user = auth()->user();
+        if ($user && $user->role === 'student') {
+            // Record unique view and increment if first time
+            $alreadyViewed = \App\Models\LaboratoryView::where('laboratory_id', $laboratory->id)
+                ->where('user_id', $user->id)
+                ->exists();
+            if (!$alreadyViewed) {
+                \App\Models\LaboratoryView::create([
+                    'laboratory_id' => $laboratory->id,
+                    'user_id' => $user->id,
+                ]);
+                $laboratory->increment('views_count');
+            }
+        }
+
         // Check if student already has a session
         $activeSession = $laboratory->labSessions()
             ->where('user_id', auth()->id())
@@ -206,6 +233,47 @@ class LaboratoryController extends Controller
         }
 
         return view('laboratories.workspace', compact('session'));
+    }
+
+    /**
+     * Complete and grade the laboratory workspace session.
+     */
+    public function completeSession($id)
+    {
+        $session = \App\Models\LabSession::findOrFail($id);
+
+        // Check ownership
+        if (auth()->id() !== $session->user_id && auth()->user()->role === 'student') {
+            abort(403, 'Unauthorized.');
+        }
+
+        $session->update([
+            'status' => 'completed',
+            'ended_at' => now(),
+        ]);
+
+        // Log completion in telemetry
+        \App\Models\TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'session_completed',
+            'payload' => [
+                'final_score' => $session->performance_score,
+                'completed_tasks_count' => count($session->completed_tasks ?? []),
+            ],
+        ]);
+
+        // Find associated class to redirect back
+        $lab = $session->laboratory;
+        $classId = null;
+        if ($lab->module_id) {
+            $module = \App\Models\Module::find($lab->module_id);
+            if ($module) {
+                $classId = $module->class_id;
+            }
+        }
+
+        $redirect = $classId ? redirect()->route('classes.show', $classId) : redirect()->route('classes.index');
+        return $redirect->with('success', "Laboratory session completed successfully! Final Performance Score: {$session->performance_score}%.");
     }
 
     /**

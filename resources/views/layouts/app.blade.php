@@ -113,84 +113,29 @@
         }
     </style>
 </head>
-<body class="h-full text-slate-100 flex overflow-hidden">
-
-    <!-- Left Sidebar Panel (NetAcad Inspired Layout) -->
-    <div class="hidden md:flex md:flex-shrink-0">
-        <div class="flex flex-col w-64 bg-[#161B22] border-r border-slate-800">
-            <div class="flex flex-col flex-grow pt-5 pb-4 overflow-y-auto">
-                <!-- Branding Header -->
-                <div class="flex items-center flex-shrink-0 px-6 space-x-2">
-                    <div class="h-9 w-9 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/30">
-                        <!-- Shield SVG logo -->
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                        </svg>
-                    </div>
-                    <span class="text-lg font-bold text-white tracking-tight">Certicode Labs</span>
-                </div>
-                
-                <!-- Sidebar Menu Items -->
-                <div class="mt-8 flex-grow flex flex-col">
-                    <nav class="flex-1 px-3 space-y-1">
-                        <a href="{{ route('dashboard') }}" class="group flex items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-150 {{ request()->routeIs('dashboard') ? 'sidebar-active-item' : 'text-slate-400 hover:bg-slate-800/40 hover:text-white' }}">
-                            <svg class="mr-3 h-5 w-5 {{ request()->routeIs('dashboard') ? 'text-white' : 'text-slate-400 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z"></path>
-                            </svg>
-                            Dashboard
-                        </a>
-
-                        <a href="{{ route('classes.index') }}" class="group flex items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-150 {{ request()->routeIs('classes.*') ? 'sidebar-active-item' : 'text-slate-400 hover:bg-slate-800/40 hover:text-white' }}">
-                            <svg class="mr-3 h-5 w-5 {{ request()->routeIs('classes.*') ? 'text-white' : 'text-slate-400 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                            </svg>
-                            Classes
-                        </a>
-
-                        @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                        <a href="{{ route('students.index') }}" class="group flex items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-150 {{ request()->routeIs('students.*') ? 'sidebar-active-item' : 'text-slate-400 hover:bg-slate-800/40 hover:text-white' }}">
-                            <svg class="mr-3 h-5 w-5 {{ request()->routeIs('students.*') ? 'text-white' : 'text-slate-400 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                            </svg>
-                            Student Directory
-                        </a>
-                        @endif
-
-                        <a href="{{ route('profiles.edit', auth()->id()) }}" class="group flex items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-150 {{ request()->is('profiles/' . auth()->id() . '/edit') ? 'sidebar-active-item' : 'text-slate-400 hover:bg-slate-800/40 hover:text-white' }}">
-                            <svg class="mr-3 h-5 w-5 {{ request()->is('profiles/' . auth()->id() . '/edit') ? 'text-white' : 'text-slate-400 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                            </svg>
-                            My Profile
-                        </a>
-                    </nav>
-                </div>
-
-                <!-- Footer User Badge -->
-                <div class="flex-shrink-0 flex border-t border-slate-800/80 p-4">
-                    <div class="flex-shrink-0 w-full group block">
-                        <div class="flex items-center">
-                            <div class="inline-block h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold">
-                                {{ strtoupper(substr(auth()->user()->name, 0, 2)) }}
-                            </div>
-                            <div class="ml-3 overflow-hidden">
-                                <p class="text-sm font-medium text-white truncate">{{ auth()->user()->name }}</p>
-                                <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">{{ auth()->user()->role }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+<body class="h-full text-slate-100 bg-slate-950 flex flex-col overflow-hidden">
 
     <!-- Main Content Shell -->
-    <div class="flex flex-col w-0 flex-1 overflow-hidden">
+    <div class="flex flex-col flex-1 overflow-hidden">
         <!-- Top bar (56px tall) -->
         <header class="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 z-10 flex-shrink-0">
             <div class="flex-1 flex items-center justify-between">
-                <!-- Left Header Title / Breadcrumbs -->
-                <div class="flex items-center space-x-2">
-                    <h2 class="text-lg font-bold tracking-tight text-white">@yield('page_header', 'Workspace')</h2>
+                <!-- Left Header: Logo & Branding + Breadcrumbs -->
+                <div class="flex items-center space-x-4">
+                    <!-- Logo / Link to Dashboard -->
+                    <a href="{{ route('dashboard') }}" class="flex items-center space-x-2.5 hover:opacity-90 transition-opacity">
+                        <div class="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-600/20">
+                            <!-- Shield SVG logo -->
+                            <svg class="w-4.5 h-4.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                            </svg>
+                        </div>
+                        <span class="text-sm font-bold text-white tracking-tight">Certicode Labs</span>
+                    </a>
+                    
+                    <span class="text-slate-700">/</span>
+                    
+                    <h2 class="text-xs font-semibold text-slate-400">@yield('page_header', 'Workspace')</h2>
                 </div>
 
                 <!-- Center Search Input (GitHub Style) -->
@@ -204,23 +149,87 @@
                     </div>
                 </div>
 
-                <!-- Right Actions & Logout -->
+                <!-- Right Actions & Profile Dropdown -->
                 <div class="flex items-center space-x-4">
-                    <!-- Status Badge -->
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <span class="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full animate-ping"></span>
-                        AI Monitor Connected
-                    </span>
-
-                    <form method="POST" action="{{ route('logout') }}">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-slate-800 text-xs font-semibold rounded-lg text-rose-400 bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
-                            Logout
+                    <!-- Notification Bell and Dropdown -->
+                    <div class="relative" id="notification-bell-container">
+                        @php
+                            $unreadCount = auth()->user()->unreadNotifications->count();
+                            $notifications = auth()->user()->notifications()->take(5)->get();
+                        @endphp
+                        <button onclick="toggleNotifications()" class="relative p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                            @if($unreadCount > 0)
+                                <span class="absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950"></span>
+                            @endif
                         </button>
-                    </form>
+
+                        <!-- Dropdown Panel -->
+                        <div id="notifications-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl z-50 text-left">
+                            <div class="px-4 py-2.5 border-b border-slate-800 bg-slate-950 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                <span class="text-white">Notifications</span>
+                                @if($unreadCount > 0)
+                                    <button onclick="markAllAsRead()" class="text-indigo-400 hover:underline normal-case">Mark all read</button>
+                                @endif
+                            </div>
+                            <div class="max-h-64 overflow-y-auto divide-y divide-slate-800/60" id="notifications-list">
+                                @forelse($notifications as $notif)
+                                    <a href="{{ $notif->data['url'] ?? '#' }}" class="block px-4 py-3 hover:bg-slate-850/40 transition {{ $notif->unread() ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '' }}">
+                                        <div class="flex items-start space-x-2.5">
+                                            <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full {{ $notif->data['type'] === 'class' ? 'bg-indigo-400' : ($notif->data['type'] === 'module' ? 'bg-blue-400' : 'bg-emerald-400') }}"></span>
+                                            <div class="overflow-hidden">
+                                                <p class="text-xs font-semibold text-white truncate">{{ $notif->data['title'] }}</p>
+                                                <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">{{ $notif->data['message'] }}</p>
+                                                <span class="text-[9px] text-slate-500 font-mono block mt-1">{{ $notif->created_at->diffForHumans() }}</span>
+                                            </div>
+                                        </div>
+                                    </a>
+                                @empty
+                                    <div class="px-4 py-6 text-center text-xs text-slate-500">
+                                        No new notifications.
+                                    </div>
+                                @endforelse
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Profile Dropdown (Replaces Left Sidebar) -->
+                    <div class="relative" id="profile-dropdown-container">
+                        <button onclick="toggleProfileDropdown()" class="flex items-center space-x-2 p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-850 transition focus:outline-none">
+                            <div class="h-7 w-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold text-xs">
+                                {{ strtoupper(substr(auth()->user()->name, 0, 2)) }}
+                            </div>
+                            <span class="text-xs font-semibold text-slate-300 hidden sm:block">{{ auth()->user()->name }}</span>
+                            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+
+                        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl z-50 text-left">
+                            <div class="px-4 py-2.5 border-b border-slate-800 bg-slate-950/40">
+                                <p class="text-xs font-semibold text-white truncate">{{ auth()->user()->name }}</p>
+                                <p class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mt-0.5">{{ auth()->user()->role }}</p>
+                            </div>
+                            <div class="py-1">
+                                <a href="{{ route('dashboard') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Dashboard</a>
+                                <a href="{{ route('classes.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Classes</a>
+                                @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
+                                    <a href="{{ route('students.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Student Directory</a>
+                                @endif
+                                <a href="{{ route('profiles.edit', auth()->id()) }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">My Profile</a>
+                            </div>
+                            <div class="border-t border-slate-800 py-1">
+                                <form method="POST" action="{{ route('logout') }}">
+                                    @csrf
+                                    <button type="submit" class="w-full text-left px-4 py-2 text-xs text-rose-400 hover:bg-slate-850 transition">
+                                        Logout
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </header>
+
 
         <!-- Main Viewport -->
         <main class="flex-1 relative overflow-y-auto focus:outline-none py-8 px-6">
@@ -247,5 +256,58 @@
     </div>
     
     @yield('scripts')
+
+    <script>
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notifications-dropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        function toggleProfileDropdown() {
+            const dropdown = document.getElementById('profile-dropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        document.addEventListener('click', function(e) {
+            // Notification close
+            const container = document.getElementById('notification-bell-container');
+            const dropdown = document.getElementById('notifications-dropdown');
+            if (container && !container.contains(e.target) && dropdown) {
+                dropdown.classList.add('hidden');
+            }
+
+            // Profile close
+            const profileContainer = document.getElementById('profile-dropdown-container');
+            const profileDropdown = document.getElementById('profile-dropdown');
+            if (profileContainer && !profileContainer.contains(e.target) && profileDropdown) {
+                profileDropdown.classList.add('hidden');
+            }
+        });
+
+        function markAllAsRead() {
+            fetch("{{ route('notifications.mark-as-read') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const dot = document.querySelector('#notification-bell-container span.bg-rose-500');
+                    if (dot) dot.remove();
+
+                    const items = document.querySelectorAll('#notifications-list a.bg-slate-900\\/40');
+                    items.forEach(item => {
+                        item.classList.remove('bg-slate-900/40', 'border-l-2', 'border-indigo-500');
+                    });
+
+                    const btn = document.querySelector('#notifications-dropdown button');
+                    if (btn) btn.remove();
+                }
+            });
+        }
+    </script>
 </body>
 </html>

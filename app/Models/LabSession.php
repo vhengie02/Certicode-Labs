@@ -18,12 +18,14 @@ class LabSession extends Model
         'ended_at',
         'status',
         'performance_score',
+        'completed_tasks',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
         'performance_score' => 'float',
+        'completed_tasks' => 'array',
     ];
 
     /**

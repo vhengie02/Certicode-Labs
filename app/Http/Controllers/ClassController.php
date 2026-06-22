@@ -74,7 +74,7 @@ class ClassController extends Controller
      */
     public function show($id)
     {
-        $class = SchoolClass::with(['modules.laboratories', 'students', 'instructor'])->findOrFail($id);
+        $class = SchoolClass::with(['modules.laboratories.labSessions', 'students', 'instructor'])->findOrFail($id);
         $user = auth()->user();
 
         // Authorize student access
@@ -183,6 +183,14 @@ class ClassController extends Controller
             $student->id => ['status' => 'invited']
         ]);
 
+        // Send invite notification
+        $student->notify(new \App\Notifications\ClassActivityNotification(
+            "Invited to Class: {$class->name}",
+            "You have been invited to join the class '{$class->name}' by {$class->instructor->name}.",
+            route('classes.index'),
+            'class'
+        ));
+
         return redirect()->back()->with('success', 'Invitation successfully sent. The class will automatically appear in ' . $student->name . '\'s Classes tab.');
     }
 
@@ -201,6 +209,17 @@ class ClassController extends Controller
     }
 
     /**
+     * Show form to create a module.
+     */
+    public function createModule($class_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+
+        return view('classes.module-create', compact('class'));
+    }
+
+    /**
      * Store a Module inside a Class.
      */
     public function storeModule(Request $request, $class_id)
@@ -213,15 +232,42 @@ class ClassController extends Controller
             'description' => 'nullable|string',
             'content' => 'required|string',
             'order_index' => 'integer',
+            'parent_id' => 'nullable|exists:modules,id,class_id,' . $class->id,
+            'attachments' => 'nullable|array',
+            'attachments.*' => 'file|max:20480', // Max 20MB
         ]);
 
-        Module::create([
+        $module = Module::create([
             'class_id' => $class->id,
+            'parent_id' => $validated['parent_id'] ?? null,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'content' => $validated['content'],
             'order_index' => $validated['order_index'] ?? 0,
         ]);
+
+        // Handle file attachments
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $file) {
+                $path = $file->store('module_attachments', 'public');
+                $module->attachments()->create([
+                    'file_name' => $file->getClientOriginalName(),
+                    'file_path' => $path,
+                    'file_size' => $file->getSize(),
+                ]);
+            }
+        }
+
+        // Notify enrolled students
+        $students = $class->students()->wherePivot('status', 'enrolled')->get();
+        foreach ($students as $student) {
+            $student->notify(new \App\Notifications\ClassActivityNotification(
+                "New Module: {$module->title}",
+                "A new module '{$module->title}' has been uploaded in {$class->name}.",
+                route('modules.show', [$class->id, $module->id]),
+                'module'
+            ));
+        }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Module created successfully.');
     }
@@ -232,7 +278,7 @@ class ClassController extends Controller
     public function showModule($class_id, $module_id)
     {
         $class = SchoolClass::with('modules')->findOrFail($class_id);
-        $module = Module::with('laboratories')->findOrFail($module_id);
+        $module = Module::with(['laboratories', 'attachments'])->findOrFail($module_id);
         $user = auth()->user();
 
         // Check if student is enrolled in the class
@@ -241,9 +287,131 @@ class ClassController extends Controller
             if (!$isEnrolled) {
                 abort(403, 'Unauthorized.');
             }
+
+            // Record unique view and increment if first time
+            $alreadyViewed = \App\Models\ModuleView::where('module_id', $module->id)
+                ->where('user_id', $user->id)
+                ->exists();
+            if (!$alreadyViewed) {
+                \App\Models\ModuleView::create([
+                    'module_id' => $module->id,
+                    'user_id' => $user->id,
+                ]);
+                $module->increment('views_count');
+            }
         }
 
         return view('classes.module-show', compact('class', 'module'));
+    }
+
+    /**
+     * Edit a specific module.
+     */
+    public function editModule($class_id, $module_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+        $module = Module::with('attachments')->findOrFail($module_id);
+
+        return view('classes.module-edit', compact('class', 'module'));
+    }
+
+    /**
+     * Update a specific module.
+     */
+    public function updateModule(Request $request, $class_id, $module_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+        $module = Module::findOrFail($module_id);
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'content' => 'required|string',
+            'order_index' => 'integer',
+            'parent_id' => 'nullable|exists:modules,id,class_id,' . $class->id . '|not_in:' . $module->id,
+            'attachments' => 'nullable|array',
+            'attachments.*' => 'file|max:20480',
+            'remove_attachments' => 'nullable|array',
+            'remove_attachments.*' => 'exists:module_attachments,id',
+        ]);
+
+        $module->update([
+            'parent_id' => $validated['parent_id'] ?? null,
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'content' => $validated['content'],
+            'order_index' => $validated['order_index'] ?? 0,
+        ]);
+
+        // Remove marked attachments
+        if (!empty($validated['remove_attachments'])) {
+            foreach ($validated['remove_attachments'] as $attId) {
+                $attachment = $module->attachments()->find($attId);
+                if ($attachment) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+                    $attachment->delete();
+                }
+            }
+        }
+
+        // Add new attachments
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $file) {
+                $path = $file->store('module_attachments', 'public');
+                $module->attachments()->create([
+                    'file_name' => $file->getClientOriginalName(),
+                    'file_path' => $path,
+                    'file_size' => $file->getSize(),
+                ]);
+            }
+        }
+
+        return redirect()->route('modules.show', [$class->id, $module->id])->with('success', 'Module updated successfully.');
+    }
+
+    /**
+     * Delete a specific module.
+     */
+    public function destroyModule($class_id, $module_id)
+    {
+        $this->authorizeInstructor();
+        $module = Module::findOrFail($module_id);
+
+        // Delete associated files
+        foreach ($module->attachments as $attachment) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+        }
+
+        $module->delete();
+
+        return redirect()->route('classes.show', $class_id)->with('success', 'Module deleted successfully.');
+    }
+
+    /**
+     * Download attachment.
+     */
+    public function downloadAttachment($id)
+    {
+        $attachment = \App\Models\ModuleAttachment::findOrFail($id);
+        $module = $attachment->module;
+        $class = $module->schoolClass;
+        $user = auth()->user();
+
+        // Authorize access to attachment (must be enrolled in the class or instructor)
+        if ($user->role === 'student') {
+            $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
+            if (!$isEnrolled) {
+                abort(403, 'Unauthorized.');
+            }
+        }
+
+        if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+            abort(404, 'File not found.');
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk('public')->download($attachment->file_path, $attachment->file_name);
     }
 
     /**

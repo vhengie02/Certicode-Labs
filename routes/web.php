@@ -34,18 +34,30 @@ Route::middleware('auth')->group(function () {
     Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
     
     // Modules routing
+    Route::get('/classes/{class_id}/modules/create', [ClassController::class, 'createModule'])->name('modules.create');
     Route::post('/classes/{class_id}/modules', [ClassController::class, 'storeModule'])->name('modules.store');
     Route::get('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'showModule'])->name('modules.show');
+    Route::get('/classes/{class_id}/modules/{module_id}/edit', [ClassController::class, 'editModule'])->name('modules.edit');
+    Route::put('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'updateModule'])->name('modules.update');
+    Route::delete('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'destroyModule'])->name('modules.destroy');
+    Route::get('/attachments/{id}/download', [ClassController::class, 'downloadAttachment'])->name('attachments.download');
 
     // Laboratory (Coding Challenge) CRUD & Workspace sessions
     Route::resource('laboratories', LaboratoryController::class)->except(['index']);
     Route::get('/classes/{class_id}/laboratories/create', [LaboratoryController::class, 'create'])->name('laboratories.create');
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
     Route::get('/sessions/{id}', [LaboratoryController::class, 'showWorkspace'])->name('sessions.show');
+    Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
 
     // Student Profiles & Directory CRUD
     Route::get('/students', [StudentProfileController::class, 'index'])->name('students.index');
     Route::get('/profiles/{id}/edit', [StudentProfileController::class, 'edit'])->name('profiles.edit');
     Route::put('/profiles/{id}', [StudentProfileController::class, 'update'])->name('profiles.update');
     Route::delete('/profiles/{id}', [StudentProfileController::class, 'destroy'])->name('profiles.destroy');
+
+    // Notifications
+    Route::post('/notifications/mark-as-read', function () {
+        auth()->user()->unreadNotifications->markAsRead();
+        return response()->json(['status' => 'success']);
+    })->name('notifications.mark-as-read');
 });

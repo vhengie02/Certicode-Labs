@@ -16,6 +16,8 @@ class Laboratory extends Model
         'tasks_definition',
         'time_limit',
         'is_group_lab',
+        'module_id',
+        'views_count',
     ];
 
     protected $casts = [
@@ -29,6 +31,14 @@ class Laboratory extends Model
     public function module()
     {
         return $this->belongsTo(Module::class, 'module_id');
+    }
+
+    /**
+     * Get unique views for this laboratory.
+     */
+    public function views()
+    {
+        return $this->hasMany(LaboratoryView::class);
     }
 
     /**
