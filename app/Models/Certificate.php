@@ -11,6 +11,7 @@ class Certificate extends Model
 
     protected $fillable = [
         'user_id',
+        'class_id',
         'verification_code',
         'qr_code_path',
         'issued_at',
@@ -26,5 +27,13 @@ class Certificate extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the class associated with this certificate.
+     */
+    public function schoolClass()
+    {
+        return $this->belongsTo(SchoolClass::class, 'class_id');
     }
 }

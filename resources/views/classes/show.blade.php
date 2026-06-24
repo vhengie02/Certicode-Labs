@@ -161,6 +161,53 @@
             <p class="text-xs text-slate-400 leading-relaxed">{{ $class->description ?? 'No course syllabus description provided.' }}</p>
         </div>
 
+        <!-- Student Progress & Certificate Claims -->
+        @if(auth()->user()->role === 'student')
+            @php
+                $overallProgress = $class->getStudentProgress(auth()->user());
+                $existingCertificate = auth()->user()->certificates()->where('class_id', $class->id)->first();
+            @endphp
+            <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Your Academic Progress</span>
+                        <h3 class="text-sm font-bold text-white mt-0.5">Competency Accomplishments</h3>
+                    </div>
+                    <span class="text-sm font-mono font-bold text-white">{{ $overallProgress['percent'] }}%</span>
+                </div>
+                
+                <div class="w-full bg-slate-900 rounded-full h-2.5 border border-slate-800 overflow-hidden">
+                    <div class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: {{ $overallProgress['percent'] }}%"></div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-2 gap-4">
+                    <span class="text-xs text-slate-400">
+                        Completed {{ $overallProgress['completed'] }} of {{ $overallProgress['total'] }} laboratory tasks.
+                    </span>
+                    @if($overallProgress['percent'] == 100 && $overallProgress['total'] > 0)
+                        @if($existingCertificate)
+                            <a href="{{ route('certificates.show', $existingCertificate->id) }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20">
+                                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                View Earned Certificate
+                            </a>
+                        @else
+                            <form action="{{ route('classes.claim-certificate', $class->id) }}" method="POST" class="m-0">
+                                @csrf
+                                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-500/20">
+                                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                                    Claim Competency Certificate
+                                </button>
+                            </form>
+                        @endif
+                    @elseif($overallProgress['percent'] < 100)
+                        <button disabled class="inline-flex items-center px-4 py-2 border border-slate-800 text-xs font-semibold rounded-lg text-slate-500 bg-slate-900 cursor-not-allowed">
+                            Certificate Locked (Complete 100% Labs)
+                        </button>
+                    @endif
+                </div>
+            </div>
+        @endif
+
         <!-- Course Content & Analytics Overview Card -->
         <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
             <div>

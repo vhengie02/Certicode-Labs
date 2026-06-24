@@ -118,7 +118,7 @@
     <!-- Main Content Shell -->
     <div class="flex flex-col flex-1 overflow-hidden">
         <!-- Top bar (56px tall) -->
-        <header class="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 z-10 flex-shrink-0">
+        <header class="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 z-50 flex-shrink-0">
             <div class="flex-1 flex items-center justify-between">
                 <!-- Left Header: Logo & Branding + Breadcrumbs -->
                 <div class="flex items-center space-x-4">
@@ -176,7 +176,7 @@
                                 @forelse($notifications as $notif)
                                     <a href="{{ $notif->data['url'] ?? '#' }}" class="block px-4 py-3 hover:bg-slate-850/40 transition {{ $notif->unread() ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '' }}">
                                         <div class="flex items-start space-x-2.5">
-                                            <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full {{ $notif->data['type'] === 'class' ? 'bg-indigo-400' : ($notif->data['type'] === 'module' ? 'bg-blue-400' : 'bg-emerald-400') }}"></span>
+                                            <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full {{ ($notif->data['type'] ?? 'info') === 'class' ? 'bg-indigo-400' : (($notif->data['type'] ?? 'info') === 'module' ? 'bg-blue-400' : (($notif->data['type'] ?? 'info') === 'certificate' ? 'bg-amber-400' : 'bg-emerald-400')) }}"></span>
                                             <div class="overflow-hidden">
                                                 <p class="text-xs font-semibold text-white truncate">{{ $notif->data['title'] }}</p>
                                                 <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">{{ $notif->data['message'] }}</p>
@@ -215,6 +215,7 @@
                                     <a href="{{ route('students.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Student Directory</a>
                                 @endif
                                 <a href="{{ route('profiles.edit', auth()->id()) }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">My Profile</a>
+                                <a href="{{ route('settings.show') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Account Settings</a>
                             </div>
                             <div class="border-t border-slate-800 py-1">
                                 <form method="POST" action="{{ route('logout') }}">
@@ -247,6 +248,15 @@
                     <div class="flex items-center space-x-2">
                         <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span class="text-sm font-semibold">{{ session('error') }}</span>
+                    </div>
+                </div>
+            @endif
+
+            @if(session('warning'))
+                <div class="mb-6 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-400 flex items-center justify-between shadow-lg">
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <span class="text-sm font-semibold">{{ session('warning') }}</span>
                     </div>
                 </div>
             @endif

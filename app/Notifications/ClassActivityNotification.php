@@ -30,7 +30,46 @@ class ClassActivityNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        // Send via email only if they have a verified gmail, email notifications enabled, and type enabled
+        $wantsEmail = $notifiable->notify_email_channel ?? true;
+        if ($wantsEmail && !empty($notifiable->gmail) && !empty($notifiable->gmail_verified_at)) {
+            $type = $this->type ?? 'info';
+            $shouldSend = false;
+
+            if ($type === 'class' && ($notifiable->notify_class ?? true)) {
+                $shouldSend = true;
+            } elseif ($type === 'module' && ($notifiable->notify_module ?? true)) {
+                $shouldSend = true;
+            } elseif (($type === 'lab' || $type === 'laboratory') && ($notifiable->notify_lab ?? true)) {
+                $shouldSend = true;
+            } elseif ($type === 'certificate' && ($notifiable->notify_certificate ?? true)) {
+                $shouldSend = true;
+            } elseif ($type === 'info' || $type === 'info') {
+                $shouldSend = true;
+            }
+
+            if ($shouldSend) {
+                $channels[] = 'mail';
+            }
+        }
+
+        return $channels;
+    }
+
+    /**
+     * Get the mail representation of the notification.
+     */
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
+    {
+        return (new \Illuminate\Notifications\Messages\MailMessage)
+            ->subject("Certicode Alert: " . $this->title)
+            ->greeting("Hello " . $notifiable->name . ",")
+            ->line($this->message)
+            ->action('View Details on Certicode', $this->url)
+            ->line('Thank you for participating in Certicode Labs!')
+            ->salutation('Best regards, Certicode Labs Team');
     }
 
     /**

@@ -43,4 +43,37 @@ class SchoolClass extends Model
     {
         return $this->hasMany(Module::class, 'class_id')->orderBy('order_index');
     }
+
+    /**
+     * Calculate aggregate student progress for the class.
+     */
+    public function getStudentProgress(User $student)
+    {
+        $labIds = [];
+        // Gather all laboratory IDs associated with the modules of this class
+        foreach ($this->modules as $module) {
+            $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
+        }
+        $labIds = array_unique($labIds);
+        $totalLabs = count($labIds);
+        
+        if ($totalLabs === 0) {
+            return [
+                'completed' => 0,
+                'total' => 0,
+                'percent' => 0,
+            ];
+        }
+
+        $completedCount = \App\Models\LabSession::whereIn('lab_id', $labIds)
+            ->where('user_id', $student->id)
+            ->where('status', 'completed')
+            ->count();
+
+        return [
+            'completed' => $completedCount,
+            'total' => $totalLabs,
+            'percent' => round(($completedCount / $totalLabs) * 100),
+        ];
+    }
 }

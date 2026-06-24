@@ -118,6 +118,37 @@
         </div>
     </div>
 
+    <!-- Earned Competency Certificates Panel -->
+    @if(auth()->user()->role === 'student')
+        <div class="glass-panel p-6 rounded-lg border border-slate-800">
+            <h3 class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-4">Earned Competency Credentials</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                @forelse(auth()->user()->certificates()->with('schoolClass')->get() as $cert)
+                    <div class="glass-card p-4 rounded-xl border border-slate-800 flex items-center justify-between hover:border-amber-500/40 transition-colors">
+                        <div class="flex items-center space-x-3.5">
+                            <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-amber-500/20 to-yellow-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 shrink-0 shadow-lg shadow-amber-500/5">
+                                <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path>
+                                </svg>
+                            </div>
+                            <div class="overflow-hidden">
+                                <h4 class="text-sm font-bold text-white truncate">{{ $cert->schoolClass->name }}</h4>
+                                <p class="text-[10px] text-slate-500 font-mono mt-0.5">Code: {{ $cert->verification_code }}</p>
+                            </div>
+                        </div>
+                        <a href="{{ route('certificates.show', $cert->id) }}" class="inline-flex items-center px-3 py-1.5 border border-slate-800 text-[10px] font-bold uppercase tracking-wider rounded-lg text-slate-300 bg-slate-950 hover:bg-slate-900 transition">
+                            View Badge
+                        </a>
+                    </div>
+                @empty
+                    <div class="md:col-span-2 p-6 rounded-xl bg-slate-950/20 border border-slate-850/60 text-center text-xs text-slate-500">
+                        No certificates claimed yet. Complete 100% of a class curriculum to earn your first certified competency badge.
+                    </div>
+                @endforelse
+            </div>
+        </div>
+    @endif
+
     <!-- Telemetry Log Tracker Table -->
     <div class="glass-panel p-6 rounded-lg border border-slate-800">
         <h3 class="text-sm font-bold text-white mb-4 uppercase tracking-wider text-slate-400">Integrity & Anomaly Telemetry Monitor</h3>

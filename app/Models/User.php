@@ -24,6 +24,14 @@ class User extends Authenticatable
         'password',
         'role',
         'github_username',
+        'gmail',
+        'gmail_verified_at',
+        'gmail_verification_code',
+        'notify_class',
+        'notify_module',
+        'notify_lab',
+        'notify_certificate',
+        'notify_email_channel',
     ];
 
     /**
@@ -46,6 +54,12 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'gmail_verified_at' => 'datetime',
+            'notify_class' => 'boolean',
+            'notify_module' => 'boolean',
+            'notify_lab' => 'boolean',
+            'notify_certificate' => 'boolean',
+            'notify_email_channel' => 'boolean',
         ];
     }
 
@@ -111,5 +125,20 @@ class User extends Authenticatable
         return $this->belongsToMany(Group::class, 'group_members')
                     ->withPivot('contribution_score')
                     ->withTimestamps();
+    }
+
+    /**
+     * Route notifications for the mail channel.
+     *
+     * @param  \Illuminate\Notifications\Notification  $notification
+     * @return array<string, string>|string
+     */
+    public function routeNotificationForMail($notification)
+    {
+        if (!empty($this->gmail) && !empty($this->gmail_verified_at)) {
+            return $this->gmail;
+        }
+
+        return $this->email;
     }
 }

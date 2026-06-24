@@ -19,6 +19,19 @@ return new class extends Migration
             $table->string('password');
             $table->string('role')->default('student'); // student, instructor, admin
             $table->string('github_username')->nullable();
+            
+            // Gmail connection fields
+            $table->string('gmail')->nullable()->unique();
+            $table->timestamp('gmail_verified_at')->nullable();
+            $table->string('gmail_verification_code')->nullable();
+
+            // Notification preferences
+            $table->boolean('notify_class')->default(true);
+            $table->boolean('notify_module')->default(true);
+            $table->boolean('notify_lab')->default(true);
+            $table->boolean('notify_certificate')->default(true);
+            $table->boolean('notify_email_channel')->default(true);
+
             $table->rememberToken();
             $table->timestamps();
         });
