@@ -154,7 +154,15 @@
                 <span class="px-2.5 py-0.5 rounded text-xs font-mono bg-slate-950 border border-slate-800 text-slate-400">
                     Class Join Code: {{ $class->code }}
                 </span>
-                <span class="text-xs text-slate-500">Created: {{ $class->created_at->format('M d, Y') }}</span>
+                <div class="flex items-center space-x-3">
+                    @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
+                        <a href="{{ route('classes.telemetry', $class->id) }}" class="inline-flex items-center px-3 py-1 border border-slate-800 text-xs font-bold rounded-lg text-rose-450 bg-rose-500/5 hover:bg-rose-500/10 transition-colors shadow shadow-rose-500/5">
+                            <span class="w-1.5 h-1.5 bg-rose-500 rounded-full mr-2 animate-pulse"></span>
+                            Telemetry Monitoring
+                        </a>
+                    @endif
+                    <span class="text-xs text-slate-500">Created: {{ $class->created_at->format('M d, Y') }}</span>
+                </div>
             </div>
             
             <h1 class="text-xl font-bold text-white">{{ $class->name }}</h1>

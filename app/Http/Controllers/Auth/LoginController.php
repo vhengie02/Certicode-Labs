@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Laravel\Socialite\Facades\Socialite;
 
 class LoginController extends Controller
 {
@@ -113,7 +114,7 @@ class LoginController extends Controller
     public function handleGoogleCallback(Request $request)
     {
         $request->validate([
-            'code' => 'required|string|size:6',
+            'code' => 'required|string|min:6|max:20',
             'role' => 'nullable|string|in:student,instructor',
         ]);
 
@@ -156,12 +157,13 @@ class LoginController extends Controller
             $name = ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $gmail)[0]));
             
             $newUser = User::create([
-                'name' => $name,
+                'name' => session('google_auth_name') ?: $name,
                 'email' => $gmail,
                 'gmail' => $gmail,
                 'gmail_verified_at' => now(),
                 'password' => Hash::make(Str::random(16)),
                 'role' => $request->role,
+                'github_username' => session('github_auth_username'),
             ]);
 
             Auth::login($newUser);
@@ -176,6 +178,208 @@ class LoginController extends Controller
     }
 
     /**
+     * Redirect the user to the OAuth provider authentication page.
+     */
+    public function redirectToProvider($provider)
+    {
+        $provider = strtolower($provider);
+        if (!in_array($provider, ['google', 'github'])) {
+            abort(404, 'Provider not found.');
+        }
+
+        // Graceful fallback to Mock Authentication if credentials are not configured in .env
+        if (empty(config("services.{$provider}.client_id")) || empty(config("services.{$provider}.client_secret"))) {
+            if ($provider === 'google') {
+                return redirect()->route('auth.google')->with('warning', 'Google OAuth not configured locally. Falling back to Mock authentication.');
+            }
+            if ($provider === 'github') {
+                return redirect()->route('auth.github')->with('warning', 'GitHub OAuth not configured locally. Falling back to Mock authentication.');
+            }
+            return redirect()->route('login')->withErrors(["email" => "{$provider} OAuth credentials not configured in system services."]);
+        }
+
+        return Socialite::driver($provider)->redirect();
+    }
+
+    /**
+     * Redirect to the mock GitHub OAuth page.
+     */
+    public function redirectToGithub()
+    {
+        return view('auth.github');
+    }
+
+    /**
+     * Handle mock GitHub OAuth callback.
+     */
+    public function handleGithubCallback(Request $request)
+    {
+        $user = auth()->user();
+
+        // 1. Linking case: User is already logged in
+        if (Auth::check()) {
+            $request->validate([
+                'github_username' => 'required|string|max:255',
+            ]);
+
+            $username = $request->github_username;
+
+            $existing = User::where('github_username', $username)->where('id', '!=', $user->id)->exists();
+            if ($existing) {
+                return redirect()->route('settings.show')->withErrors(['email' => 'This GitHub account is already linked to another user.']);
+            }
+
+            $user->update(['github_username' => $username]);
+            return redirect()->route('settings.show')->with('success', 'GitHub account connected successfully!');
+        }
+
+        // 2. Guest Sign-In/Up case
+        $request->validate([
+            'github_username' => 'required|string|max:255',
+            'github_email' => 'required|string|email|max:255',
+            'github_name' => 'nullable|string|max:255',
+        ]);
+
+        $nickname = $request->github_username;
+        $email = $request->github_email;
+        $name = $request->github_name ?: explode('@', $email)[0];
+
+        $dbUser = User::where('github_username', $nickname)->first();
+        if (!$dbUser) {
+            $dbUser = User::where('email', $email)->first();
+            if ($dbUser) {
+                $dbUser->update(['github_username' => $nickname]);
+            }
+        }
+
+        if ($dbUser) {
+            Auth::login($dbUser);
+            $request->session()->regenerate();
+            return redirect()->intended('/dashboard')->with('success', 'Logged in via GitHub successfully!');
+        }
+
+        session()->put('google_auth_gmail', $email);
+        session()->put('google_auth_code', 'OAUTH_VERIFIED');
+        session()->put('google_auth_name', $name);
+        session()->put('github_auth_username', $nickname);
+
+        return redirect()->route('auth.google.verify', ['needs_role' => 1]);
+    }
+
+    /**
+     * Handle the OAuth provider callback.
+     */
+    public function handleProviderCallback(Request $request, $provider)
+    {
+        $provider = strtolower($provider);
+        if (!in_array($provider, ['google', 'github'])) {
+            abort(404, 'Provider not found.');
+        }
+
+        // Fallback check if credentials are missing
+        if (empty(config("services.{$provider}.client_id")) || empty(config("services.{$provider}.client_secret"))) {
+            return redirect()->route('login')->withErrors(["email" => "{$provider} OAuth credentials not configured in system services."]);
+        }
+
+        try {
+            $socialUser = Socialite::driver($provider)->user();
+        } catch (\Exception $e) {
+            Log::error("OAuth callback failed for provider {$provider}: " . $e->getMessage());
+            return redirect()->route('login')->withErrors(['email' => 'OAuth authentication failed. Please try again.']);
+        }
+
+        $email = $socialUser->getEmail();
+        $name = $socialUser->getName() ?: $socialUser->getNickname() ?: explode('@', $email)[0];
+        $nickname = $socialUser->getNickname();
+
+        // 1. Linking case: User is already logged in
+        if (Auth::check()) {
+            $currentUser = Auth::user();
+            if ($provider === 'github') {
+                if (empty($nickname)) {
+                    return redirect()->route('settings.show')->withErrors(['email' => 'Failed to resolve nickname from GitHub profile.']);
+                }
+
+                $existing = User::where('github_username', $nickname)->where('id', '!=', $currentUser->id)->exists();
+                if ($existing) {
+                    return redirect()->route('settings.show')->withErrors(['email' => 'This GitHub account is already linked to another user.']);
+                }
+
+                $currentUser->update(['github_username' => $nickname]);
+                return redirect()->route('settings.show')->with('success', 'GitHub account linked successfully!');
+            } elseif ($provider === 'google') {
+                $existing = User::where('gmail', $email)->where('id', '!=', $currentUser->id)->exists();
+                if ($existing) {
+                    return redirect()->route('settings.show')->withErrors(['email' => 'This Google account is already linked to another user.']);
+                }
+
+                $currentUser->update([
+                    'gmail' => $email,
+                    'gmail_verified_at' => now(),
+                ]);
+                return redirect()->route('settings.show')->with('success', 'Google account linked successfully!');
+            }
+        }
+
+        // 2. Authentication/Login case
+        if ($provider === 'google') {
+            $user = User::where('gmail', $email)
+                ->whereNotNull('gmail_verified_at')
+                ->first();
+
+            if (!$user) {
+                $user = User::where('email', $email)->first();
+                if ($user) {
+                    $user->update([
+                        'gmail' => $email,
+                        'gmail_verified_at' => now(),
+                    ]);
+                }
+            }
+
+            if ($user) {
+                Auth::login($user);
+                $request->session()->regenerate();
+                return redirect()->intended('/dashboard')->with('success', 'Logged in via Google successfully!');
+            }
+
+            session()->put('google_auth_gmail', $email);
+            session()->put('google_auth_code', 'OAUTH_VERIFIED');
+            session()->put('google_auth_name', $name);
+
+            return redirect()->route('auth.google.verify', ['needs_role' => 1]);
+        }
+
+        if ($provider === 'github') {
+            $user = User::where('github_username', $nickname)->first();
+
+            if (!$user && !empty($email)) {
+                $user = User::where('email', $email)->first();
+                if ($user) {
+                    $user->update(['github_username' => $nickname]);
+                }
+            }
+
+            if ($user) {
+                Auth::login($user);
+                $request->session()->regenerate();
+                return redirect()->intended('/dashboard')->with('success', 'Logged in via GitHub successfully!');
+            }
+
+            if (empty($email)) {
+                return redirect()->route('login')->withErrors(['email' => 'Unable to retrieve your email from GitHub. Please register an account first.']);
+            }
+
+            session()->put('google_auth_gmail', $email);
+            session()->put('google_auth_code', 'OAUTH_VERIFIED');
+            session()->put('google_auth_name', $name);
+            session()->put('github_auth_username', $nickname);
+
+            return redirect()->route('auth.google.verify', ['needs_role' => 1]);
+        }
+    }
+
+    /**
      * Clear temporary login/signup session variables.
      */
     protected function clearAuthSessions()
@@ -184,6 +388,8 @@ class LoginController extends Controller
             'google_auth_gmail',
             'google_auth_code',
             'gmail_code_debug',
+            'google_auth_name',
+            'github_auth_username',
         ]);
     }
 }

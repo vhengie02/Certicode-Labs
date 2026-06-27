@@ -29,6 +29,47 @@
         </div>
     @endif
 
+    <!-- Profile Information Box -->
+    <form action="{{ route('settings.profile.update') }}" method="POST" class="glass-panel rounded-2xl p-8 border border-slate-800 space-y-6">
+        @csrf
+        @method('PUT')
+
+        <div class="flex items-center space-x-3.5 pb-4 border-b border-slate-800/80">
+            <div class="h-10 w-10 rounded-xl bg-blue-600/10 border border-blue-500/25 flex items-center justify-center text-blue-400 shrink-0">
+                <!-- User Icon -->
+                <svg class="w-5 h-5 text-blue-450" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-white">Profile Information</h2>
+                <p class="text-xs text-slate-450 mt-0.5">Update your account name and email address.</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Name -->
+            <div>
+                <label for="name" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Full Name</label>
+                <input type="text" name="name" id="name" required value="{{ old('name', $user->name) }}"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <!-- Email -->
+            <div>
+                <label for="email" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Email Address</label>
+                <input type="email" name="email" id="email" required value="{{ old('email', $user->email) }}"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+        </div>
+
+        <div class="flex justify-end pt-4 border-t border-slate-800/80">
+            <button type="submit" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-semibold text-xs rounded-xl text-white transition shadow-lg shadow-indigo-600/25">
+                Save Profile Information
+            </button>
+        </div>
+    </form>
+
     <!-- Gmail Connection Box -->
     <div class="glass-panel rounded-2xl p-8 border border-slate-800 space-y-6">
         <div class="flex items-center space-x-3.5 pb-4 border-b border-slate-800/80">
@@ -68,7 +109,7 @@
             <!-- Case 2: Code verification is pending -->
             <div class="bg-amber-500/5 border border-amber-500/20 p-4 rounded-xl space-y-4">
                 <div class="flex items-start space-x-3 text-xs text-amber-400 leading-normal">
-                    <svg class="w-4.5 h-4.5 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <svg class="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                     <div>
                         <span class="font-bold text-white block">Connection Pending Verification</span>
                         We have logged a 6-digit confirmation code for connecting <span class="font-mono font-semibold">{{ $user->gmail }}</span>. Please submit it below.
@@ -106,6 +147,51 @@
                     </div>
                 </div>
                 <form action="{{ route('settings.gmail.disconnect') }}" method="POST" class="m-0">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 border border-slate-800 hover:bg-slate-850 hover:text-rose-400 text-xs font-semibold rounded-lg text-slate-450 transition">
+                        Disconnect
+                    </button>
+                </form>
+            </div>
+        @endif
+    </div>
+
+    <!-- GitHub Connection Box -->
+    <div class="glass-panel rounded-2xl p-8 border border-slate-800 space-y-6">
+        <div class="flex items-center space-x-3.5 pb-4 border-b border-slate-800/80">
+            <div class="h-10 w-10 rounded-xl bg-purple-650/10 border border-purple-500/25 flex items-center justify-center text-purple-400 shrink-0">
+                <!-- SVG GitHub Icon -->
+                <svg class="w-5 h-5 text-purple-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-white">GitHub Connection</h2>
+                <p class="text-xs text-slate-450 mt-0.5">Link your GitHub profile to synchronize repository activity and code contributions.</p>
+            </div>
+        </div>
+
+        @if(empty($user->github_username))
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-950/20 border border-slate-850 p-4 rounded-xl gap-4">
+                <div class="text-xs text-slate-450 leading-relaxed">
+                    Connecting your GitHub account automatically imports commit frequency and updates your contribution grid dashboard graphics.
+                </div>
+                <a href="{{ route('auth.provider.redirect', 'github') }}" class="inline-flex items-center px-5 py-2.5 bg-purple-600 hover:bg-purple-500 font-semibold text-xs rounded-xl text-white transition shadow-lg shadow-purple-600/25 shrink-0 text-center justify-center">
+                    Connect GitHub Account
+                </a>
+            </div>
+        @else
+            <div class="flex items-center justify-between bg-slate-950/30 border border-slate-850 p-4 rounded-xl">
+                <div class="flex items-center space-x-3">
+                    <div class="h-5 w-5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center shrink-0">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-semibold">Linked GitHub Account</p>
+                        <p class="text-sm font-semibold text-white font-mono mt-0.5">{{ '@' . $user->github_username }}</p>
+                    </div>
+                </div>
+                <form action="{{ route('settings.github.disconnect') }}" method="POST" class="m-0">
                     @csrf
                     <button type="submit" class="px-4 py-2 border border-slate-800 hover:bg-slate-850 hover:text-rose-400 text-xs font-semibold rounded-lg text-slate-450 transition">
                         Disconnect

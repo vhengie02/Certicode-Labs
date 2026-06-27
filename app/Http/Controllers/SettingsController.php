@@ -129,4 +129,35 @@ class SettingsController extends Controller
 
         return redirect()->route('settings.show')->with('success', 'Gmail account disconnected successfully.');
     }
+
+    /**
+     * Disconnect GitHub account.
+     */
+    public function disconnectGithub()
+    {
+        $user = auth()->user();
+
+        $user->update([
+            'github_username' => null,
+        ]);
+
+        return redirect()->route('settings.show')->with('success', 'GitHub account disconnected successfully.');
+    }
+
+    /**
+     * Update user profile information.
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = auth()->user();
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+        ]);
+
+        $user->update($validated);
+
+        return redirect()->route('settings.show')->with('success', 'Profile information updated successfully!');
+    }
 }

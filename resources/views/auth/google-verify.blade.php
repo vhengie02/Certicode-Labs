@@ -77,11 +77,15 @@
             @endif
 
             <!-- 2. Code select for all -->
-            <div>
-                <label for="code" class="block text-xs font-medium text-[#5f6368] uppercase tracking-wider mb-2">Verification Code (6 digits)</label>
-                <input type="text" name="code" id="code" required maxlength="6" autofocus placeholder="######"
-                       class="w-full text-center tracking-[0.25em] font-mono px-4 py-3 border border-[#dadce0] rounded text-sm text-[#202124] focus:outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] transition-all">
-            </div>
+            @if(session('google_auth_code') === 'OAUTH_VERIFIED')
+                <input type="hidden" name="code" value="OAUTH_VERIFIED">
+            @else
+                <div>
+                    <label for="code" class="block text-xs font-medium text-[#5f6368] uppercase tracking-wider mb-2">Verification Code (6 digits)</label>
+                    <input type="text" name="code" id="code" required maxlength="6" autofocus placeholder="######"
+                           class="w-full text-center tracking-[0.25em] font-mono px-4 py-3 border border-[#dadce0] rounded text-sm text-[#202124] focus:outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] transition-all">
+                </div>
+            @endif
 
             <!-- Footer Buttons -->
             <div class="flex items-center justify-between pt-4">

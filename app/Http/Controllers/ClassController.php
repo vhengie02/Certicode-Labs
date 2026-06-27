@@ -415,6 +415,62 @@ class ClassController extends Controller
     }
 
     /**
+     * Display real-time telemetry and anomalies monitor dashboard.
+     */
+    public function telemetry($class_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+
+        $labIds = \App\Models\Laboratory::whereIn('module_id', function ($query) use ($class) {
+            $query->select('id')->from('modules')->where('class_id', $class->id);
+        })->pluck('id');
+
+        $sessions = \App\Models\LabSession::with(['user', 'laboratory'])
+            ->whereIn('lab_id', $labIds)
+            ->latest()
+            ->get();
+
+        $anomalies = \App\Models\Anomaly::with(['labSession.user', 'labSession.laboratory'])
+            ->whereIn('lab_session_id', $sessions->pluck('id'))
+            ->latest()
+            ->get();
+
+        return view('classes.telemetry', compact('class', 'sessions', 'anomalies'));
+    }
+
+    /**
+     * View detailed timeline for a specific student workspace session.
+     */
+    public function telemetryTimeline($id)
+    {
+        $this->authorizeInstructor();
+        $session = \App\Models\LabSession::with(['user', 'laboratory'])->findOrFail($id);
+
+        $logs = \App\Models\TelemetryLog::where('lab_session_id', $session->id)
+            ->latest()
+            ->get();
+
+        $anomalies = \App\Models\Anomaly::where('lab_session_id', $session->id)
+            ->latest()
+            ->get();
+
+        return view('classes.telemetry-timeline', compact('session', 'logs', 'anomalies'));
+    }
+
+    /**
+     * Mark an anomaly as resolved.
+     */
+    public function resolveAnomaly($id)
+    {
+        $this->authorizeInstructor();
+        $anomaly = \App\Models\Anomaly::findOrFail($id);
+        $anomaly->update(['resolved' => true]);
+
+        return back()->with('success', 'Anomaly marked as resolved.');
+    }
+
+    /**
      * Restrict helper.
      */
     protected function authorizeInstructor()

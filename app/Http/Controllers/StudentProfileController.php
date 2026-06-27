@@ -13,7 +13,7 @@ class StudentProfileController extends Controller
     public function index()
     {
         $role = auth()->user()->role ?? 'student';
-        if ($role !== 'admin' && $role !== 'instructor') {
+        if ($role !== 'admin') {
             abort(403, 'Unauthorized.');
         }
 
@@ -63,7 +63,11 @@ class StudentProfileController extends Controller
         $user->update($validated);
 
         // Redirect appropriately
-        if (auth()->user()->role === 'admin' || auth()->user()->role === 'instructor') {
+        if ($user->id === auth()->id()) {
+            return redirect()->route('settings.show')->with('success', 'Profile updated successfully.');
+        }
+
+        if (auth()->user()->role === 'admin') {
             return redirect()->route('students.index')->with('success', 'Profile updated successfully.');
         }
 

@@ -21,6 +21,14 @@ Route::post('/auth/google/email', [\App\Http\Controllers\Auth\LoginController::c
 Route::get('/auth/google/verify', [\App\Http\Controllers\Auth\LoginController::class, 'showGoogleVerify'])->name('auth.google.verify');
 Route::post('/auth/google/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback');
 
+// Public GitHub Authentication Mock (Local Fallback)
+Route::get('/auth/github', [\App\Http\Controllers\Auth\LoginController::class, 'redirectToGithub'])->name('auth.github');
+Route::post('/auth/github/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleGithubCallback'])->name('auth.github.callback');
+
+// Production OAuth Routes (Laravel Socialite)
+Route::get('/auth/{provider}/redirect', [\App\Http\Controllers\Auth\LoginController::class, 'redirectToProvider'])->name('auth.provider.redirect');
+Route::get('/auth/{provider}/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleProviderCallback'])->name('auth.provider.callback');
+
 // Authentication Routes
 Route::get('/register', [RegisterController::class, 'show'])->name('register.show');
 Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
@@ -38,10 +46,12 @@ Route::middleware('auth')->group(function () {
 
     // Settings & Account preferences
     Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'show'])->name('settings.show');
+    Route::put('/settings/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('settings.profile.update');
     Route::post('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
     Route::post('/settings/gmail/connect', [\App\Http\Controllers\SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect');
     Route::post('/settings/gmail/verify', [\App\Http\Controllers\SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify');
     Route::post('/settings/gmail/disconnect', [\App\Http\Controllers\SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
+    Route::post('/settings/github/disconnect', [\App\Http\Controllers\SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
 
     // Certificates
     Route::post('/classes/{class_id}/claim-certificate', [\App\Http\Controllers\CertificateController::class, 'claim'])->name('classes.claim-certificate');
@@ -49,6 +59,9 @@ Route::middleware('auth')->group(function () {
 
     // Classes & Module management (NetAcad inspired)
     Route::resource('classes', ClassController::class);
+    Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
+    Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
+    Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
     Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
     Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
@@ -63,7 +76,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/attachments/{id}/download', [ClassController::class, 'downloadAttachment'])->name('attachments.download');
 
     // Laboratory (Coding Challenge) CRUD & Workspace sessions
-    Route::resource('laboratories', LaboratoryController::class)->except(['index']);
+    Route::resource('laboratories', LaboratoryController::class)->except(['index', 'create']);
     Route::get('/classes/{class_id}/laboratories/create', [LaboratoryController::class, 'create'])->name('laboratories.create');
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
     Route::get('/sessions/{id}', [LaboratoryController::class, 'showWorkspace'])->name('sessions.show');
