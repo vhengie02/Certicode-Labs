@@ -93,20 +93,7 @@ class LaboratoryController extends Controller
      */
     public function show(Laboratory $laboratory)
     {
-        $user = auth()->user();
-        if ($user && $user->role === 'student') {
-            // Record unique view and increment if first time
-            $alreadyViewed = \App\Models\LaboratoryView::where('laboratory_id', $laboratory->id)
-                ->where('user_id', $user->id)
-                ->exists();
-            if (!$alreadyViewed) {
-                \App\Models\LaboratoryView::create([
-                    'laboratory_id' => $laboratory->id,
-                    'user_id' => $user->id,
-                ]);
-                $laboratory->increment('views_count');
-            }
-        }
+        $this->recordUniqueView($laboratory);
 
         // Check if student already has a session
         $activeSession = $laboratory->labSessions()
@@ -207,6 +194,8 @@ class LaboratoryController extends Controller
         $laboratory = Laboratory::findOrFail($id);
         $user = auth()->user();
 
+        $this->recordUniqueView($laboratory);
+
         // Create or find session
         $session = \App\Models\LabSession::firstOrCreate([
             'lab_id' => $laboratory->id,
@@ -230,6 +219,10 @@ class LaboratoryController extends Controller
         // A student can only view their own sessions, unless they are admin/instructor
         if (auth()->id() !== $session->user_id && auth()->user()->role === 'student') {
             abort(403, 'Unauthorized.');
+        }
+
+        if ($session->laboratory) {
+            $this->recordUniqueView($session->laboratory);
         }
 
         return view('laboratories.workspace', compact('session'));
@@ -284,6 +277,26 @@ class LaboratoryController extends Controller
         $role = auth()->user()->role ?? 'student';
         if ($role !== 'admin' && $role !== 'instructor') {
             abort(403, 'Unauthorized action.');
+        }
+    }
+
+    /**
+     * Record a unique view of the laboratory for students.
+     */
+    private function recordUniqueView(Laboratory $laboratory)
+    {
+        $user = auth()->user();
+        if ($user && $user->role === 'student') {
+            $alreadyViewed = \App\Models\LaboratoryView::where('laboratory_id', $laboratory->id)
+                ->where('user_id', $user->id)
+                ->exists();
+            if (!$alreadyViewed) {
+                \App\Models\LaboratoryView::create([
+                    'laboratory_id' => $laboratory->id,
+                    'user_id' => $user->id,
+                ]);
+                $laboratory->increment('views_count');
+            }
         }
     }
 }

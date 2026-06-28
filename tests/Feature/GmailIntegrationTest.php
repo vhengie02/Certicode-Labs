@@ -242,6 +242,63 @@ class GmailIntegrationTest extends TestCase
     }
 
     /**
+     * Test a user is prompted for password when Gmail already exists.
+     */
+    public function test_google_email_submission_redirects_to_password_if_exists(): void
+    {
+        $this->user->update([
+            'gmail' => 'john@example.com',
+            'gmail_verified_at' => now(),
+        ]);
+
+        $response = $this->post('/auth/google/email', [
+            'gmail' => 'john@example.com',
+        ]);
+
+        $response->assertRedirect('/auth/google/password');
+    }
+
+    /**
+     * Test successful login via mock Google password screen.
+     */
+    public function test_google_password_login_for_existing_user(): void
+    {
+        $this->user->update([
+            'gmail' => 'john@example.com',
+            'gmail_verified_at' => now(),
+        ]);
+
+        $response = $this->withSession([
+            'google_auth_gmail' => 'john@example.com',
+        ])->post('/auth/google/password', [
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect('/dashboard');
+        $this->assertAuthenticatedAs($this->user);
+    }
+
+    /**
+     * Test failed login via mock Google password screen.
+     */
+    public function test_google_password_login_fails_for_incorrect_password(): void
+    {
+        $this->user->update([
+            'gmail' => 'john@example.com',
+            'gmail_verified_at' => now(),
+        ]);
+
+        $response = $this->withSession([
+            'google_auth_gmail' => 'john@example.com',
+        ])->post('/auth/google/password', [
+            'password' => 'wrong-password',
+        ]);
+
+        $response->assertSessionHasErrors(['password']);
+        $this->assertGuest();
+    }
+
+    /**
      * Test successful registration with role selection.
      */
     public function test_google_callback_registers_new_user_with_role(): void

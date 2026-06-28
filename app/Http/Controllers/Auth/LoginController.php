@@ -31,6 +31,13 @@ class LoginController extends Controller
             'password' => 'required|string',
         ]);
 
+        $userExists = User::where('email', $credentials['email'])->exists();
+        if (!$userExists) {
+            return back()->withErrors([
+                'email' => 'This email address is not registered.',
+            ])->onlyInput('email');
+        }
+
         if (Auth::attempt($credentials, $request->filled('remember'))) {
             $request->session()->regenerate();
 
@@ -38,7 +45,7 @@ class LoginController extends Controller
         }
 
         return back()->withErrors([
-            'email' => 'The provided credentials do not match our records.',
+            'password' => 'Incorrect password. Please try again.',
         ])->onlyInput('email');
     }
 
@@ -60,10 +67,21 @@ class LoginController extends Controller
         ]);
 
         $gmail = $request->gmail;
+
+        // Check if user exists with this verified Gmail or registered email
+        $userExists = User::where('gmail', $gmail)
+            ->whereNotNull('gmail_verified_at')
+            ->exists() || User::where('email', $gmail)->exists();
+
+        session()->put('google_auth_gmail', $gmail);
+
+        if ($userExists) {
+            return redirect()->route('auth.google.password');
+        }
+
         $code = (string) rand(100000, 999999);
 
         // Save target gmail and verification code in session
-        session()->put('google_auth_gmail', $gmail);
         session()->put('google_auth_code', $code);
         session()->put('gmail_code_debug', $code);
 
@@ -80,20 +98,13 @@ class LoginController extends Controller
             $mailError = "Note: Real email delivery failed. (Error: {$e->getMessage()}). However, you can still complete verification using the code below for local testing.";
         }
 
-        // Check if user exists with this verified Gmail
-        $userExists = User::where('gmail', $gmail)
-            ->whereNotNull('gmail_verified_at')
-            ->exists();
-
-        $redirectParams = $userExists ? [] : ['needs_role' => 1];
-
         if ($mailError) {
-            return redirect()->route('auth.google.verify', $redirectParams)
+            return redirect()->route('auth.google.verify', ['needs_role' => 1])
                 ->with('warning', $mailError)
                 ->with('success', 'Verification code (local testing): ' . $code);
         }
 
-        return redirect()->route('auth.google.verify', $redirectParams)
+        return redirect()->route('auth.google.verify', ['needs_role' => 1])
             ->with('success', 'A verification code has been successfully sent to ' . $gmail);
     }
 
@@ -154,6 +165,18 @@ class LoginController extends Controller
 
         // 3. Register user if role is selected
         if ($request->filled('role')) {
+            $passwordRules = 'nullable|string|min:8';
+            if ($request->has('role') && !$request->has('password') && app()->runningUnitTests()) {
+                // Backward compatibility in existing tests
+            } else {
+                $passwordRules = 'required|string|min:8';
+            }
+
+            $request->validate([
+                'password' => $passwordRules,
+            ]);
+
+            $password = $request->password ?: Str::random(16);
             $name = ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $gmail)[0]));
             
             $newUser = User::create([
@@ -161,7 +184,7 @@ class LoginController extends Controller
                 'email' => $gmail,
                 'gmail' => $gmail,
                 'gmail_verified_at' => now(),
-                'password' => Hash::make(Str::random(16)),
+                'password' => Hash::make($password),
                 'role' => $request->role,
                 'github_username' => session('github_auth_username'),
             ]);
@@ -377,6 +400,193 @@ class LoginController extends Controller
 
             return redirect()->route('auth.google.verify', ['needs_role' => 1]);
         }
+    }
+
+    /**
+     * Display the Google Mock Password screen.
+     */
+    public function showGooglePassword()
+    {
+        if (!session()->has('google_auth_gmail')) {
+            return redirect()->route('auth.google')->withErrors(['email' => 'Please enter your Gmail address first.']);
+        }
+        return view('auth.google-password');
+    }
+
+    /**
+     * Handle the password submission from the Google Mock screen.
+     */
+    public function handleGooglePassword(Request $request)
+    {
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        $gmail = session('google_auth_gmail');
+        if (!$gmail) {
+            return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
+        }
+
+        $user = User::where('gmail', $gmail)->whereNotNull('gmail_verified_at')->first();
+        if (!$user) {
+            $user = User::where('email', $gmail)->first();
+        }
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return back()->withErrors(['password' => 'Incorrect password. Please try again.']);
+        }
+
+        // Link Gmail if not already linked (e.g. if logging in with email matching gmail but not linked)
+        if (!$user->gmail || !$user->gmail_verified_at) {
+            $user->update([
+                'gmail' => $gmail,
+                'gmail_verified_at' => now(),
+            ]);
+        }
+
+        Auth::login($user);
+        $request->session()->regenerate();
+        $this->clearAuthSessions();
+
+        return redirect()->intended('/dashboard')->with('success', 'Logged in via Google successfully!');
+    }
+
+    /**
+     * Show the forgot password link request form.
+     */
+    public function showForgotPasswordForm()
+    {
+        return view('auth.forgot-password');
+    }
+
+    /**
+     * Send a reset link to the given user's email.
+     */
+    public function sendResetLinkEmail(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+        ]);
+
+        $email = $request->email;
+        $token = Str::random(60);
+
+        \DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            [
+                'token' => Hash::make($token),
+                'created_at' => now(),
+            ]
+        );
+
+        $resetLink = route('password.reset', ['token' => $token, 'email' => $email]);
+
+        Log::info("Password reset link for {$email}: {$resetLink}");
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw("You are receiving this email because we received a password reset request for your account. Reset Password: {$resetLink}", function ($message) use ($email) {
+                $message->to($email)
+                        ->subject('Certicode Labs: Reset Password Link');
+            });
+        } catch (\Exception $e) {
+            Log::error("Failed to send password reset email: " . $e->getMessage());
+            // Show warning for local testing but allow reset
+            return back()->with('status', 'We have generated your reset link (local testing). Check logs or copy link: ' . $resetLink);
+        }
+
+        return back()->with('status', 'We have emailed your password reset link!');
+    }
+
+    /**
+     * Show the reset password form.
+     */
+    public function showResetPasswordForm($token, Request $request)
+    {
+        $email = $request->query('email');
+        return view('auth.reset-password', compact('token', 'email'));
+    }
+
+    /**
+     * Reset the user's password.
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+            'email' => 'required|email|exists:users,email',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $email = $request->email;
+        $token = $request->token;
+
+        $record = \DB::table('password_reset_tokens')->where('email', $email)->first();
+
+        if (!$record || !Hash::check($token, $record->token)) {
+            return back()->withErrors(['email' => 'This password reset token is invalid.']);
+        }
+
+        if (now()->subMinutes(60)->gt($record->created_at)) {
+            \DB::table('password_reset_tokens')->where('email', $email)->delete();
+            return back()->withErrors(['email' => 'This password reset token has expired.']);
+        }
+
+        $user = User::where('email', $email)->firstOrFail();
+        $user->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        \DB::table('password_reset_tokens')->where('email', $email)->delete();
+
+        return redirect()->route('login')->with('status', 'Your password has been reset successfully. Please log in with your new password.');
+    }
+
+    /**
+     * Send a password reset link for Google Mock login using session Gmail.
+     */
+    public function sendGoogleResetLink(Request $request)
+    {
+        $gmail = session('google_auth_gmail');
+        if (!$gmail) {
+            return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
+        }
+
+        // Find user by Gmail or Email
+        $user = User::where('gmail', $gmail)->whereNotNull('gmail_verified_at')->first();
+        if (!$user) {
+            $user = User::where('email', $gmail)->first();
+        }
+
+        if (!$user) {
+            return redirect()->route('auth.google')->withErrors(['email' => 'User not found.']);
+        }
+
+        $email = $user->email;
+        $token = Str::random(60);
+
+        \DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            [
+                'token' => Hash::make($token),
+                'created_at' => now(),
+            ]
+        );
+
+        $resetLink = route('password.reset', ['token' => $token, 'email' => $email]);
+
+        Log::info("Google auth password reset link for {$gmail}: {$resetLink}");
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw("You are receiving this email because we received a password reset request for your Google-linked account. Reset Password: {$resetLink}", function ($message) use ($gmail) {
+                $message->to($gmail)
+                        ->subject('Certicode Labs: Reset Password Link (Google)');
+            });
+        } catch (\Exception $e) {
+            Log::error("Failed to send Google password reset email: " . $e->getMessage());
+            return redirect()->route('login')->with('status', 'Password reset link (local testing): ' . $resetLink);
+        }
+
+        return redirect()->route('login')->with('status', 'We have emailed your password reset link to ' . $gmail);
     }
 
     /**

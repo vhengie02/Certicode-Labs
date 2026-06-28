@@ -20,6 +20,16 @@ Route::get('/auth/google', [\App\Http\Controllers\Auth\LoginController::class, '
 Route::post('/auth/google/email', [\App\Http\Controllers\Auth\LoginController::class, 'submitGoogleEmail'])->name('auth.google.email');
 Route::get('/auth/google/verify', [\App\Http\Controllers\Auth\LoginController::class, 'showGoogleVerify'])->name('auth.google.verify');
 Route::post('/auth/google/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+Route::get('/auth/google/password', [\App\Http\Controllers\Auth\LoginController::class, 'showGooglePassword'])->name('auth.google.password');
+Route::post('/auth/google/password', [\App\Http\Controllers\Auth\LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit');
+Route::post('/auth/google/forgot-password', [\App\Http\Controllers\Auth\LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot');
+
+// Password Reset Routes
+Route::get('/forgot-password', [\App\Http\Controllers\Auth\LoginController::class, 'showForgotPasswordForm'])->name('password.request');
+Route::post('/forgot-password', [\App\Http\Controllers\Auth\LoginController::class, 'sendResetLinkEmail'])->name('password.email');
+Route::get('/reset-password/{token}', [\App\Http\Controllers\Auth\LoginController::class, 'showResetPasswordForm'])->name('password.reset');
+Route::post('/reset-password', [\App\Http\Controllers\Auth\LoginController::class, 'resetPassword'])->name('password.update');
+
 
 // Public GitHub Authentication Mock (Local Fallback)
 Route::get('/auth/github', [\App\Http\Controllers\Auth\LoginController::class, 'redirectToGithub'])->name('auth.github');
