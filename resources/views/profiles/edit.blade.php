@@ -20,12 +20,45 @@
             @csrf
             @method('PUT')
 
-            <!-- Full Name -->
-            <div>
-                <label for="name" class="block text-sm font-semibold text-slate-300">Full Name</label>
-                <input type="text" name="name" id="name" required value="{{ old('name', $user->name) }}"
-                    class="mt-2 block w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                @error('name') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- First Name -->
+                <div>
+                    <label for="first_name" class="block text-sm font-semibold text-slate-300">First Name</label>
+                    <input type="text" name="first_name" id="first_name" required value="{{ old('first_name', $user->first_name) }}"
+                        class="mt-2 block w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                    @error('first_name') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
+                </div>
+
+                <!-- Last Name -->
+                <div>
+                    <label for="last_name" class="block text-sm font-semibold text-slate-300">Last Name</label>
+                    <input type="text" name="last_name" id="last_name" required value="{{ old('last_name', $user->last_name) }}"
+                        class="mt-2 block w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                    @error('last_name') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Username -->
+                <div>
+                    <label for="username" class="block text-sm font-semibold text-slate-300">Username</label>
+                    <input type="text" name="username" id="username" required value="{{ old('username', $user->username) }}"
+                        class="mt-2 block w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                    @error('username') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
+                </div>
+
+                <!-- Gender -->
+                <div>
+                    <label for="gender" class="block text-sm font-semibold text-slate-300">Gender</label>
+                    <select name="gender" id="gender"
+                        class="mt-2 block w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                        <option value="" disabled {{ is_null($user->gender) ? 'selected' : '' }}>Select Gender...</option>
+                        <option value="male" {{ $user->gender === 'male' ? 'selected' : '' }}>Male</option>
+                        <option value="female" {{ $user->gender === 'female' ? 'selected' : '' }}>Female</option>
+                        <option value="other" {{ $user->gender === 'other' ? 'selected' : '' }}>Other / Prefer not to say</option>
+                    </select>
+                    @error('gender') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
+                </div>
             </div>
 
             <!-- Email Address -->

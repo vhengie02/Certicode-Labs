@@ -140,7 +140,7 @@
 
                 <!-- Center Search Input (GitHub Style) -->
                 <div class="hidden lg:block w-80 relative mx-4">
-                    <input type="text" placeholder="Search..." disabled class="w-full h-8 pl-8 pr-12 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 placeholder-slate-500 cursor-not-allowed">
+                    <input type="text" placeholder="Search..." onclick="openSearchModal()" readonly class="w-full h-8 pl-8 pr-12 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 placeholder-slate-500 cursor-pointer hover:border-slate-700 transition-colors">
                     <div class="absolute left-2.5 top-2 text-slate-500">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
@@ -317,6 +317,228 @@
                 }
             });
         }
+
+        // --- Global Search Command Palette Logic ---
+        let searchTimeout = null;
+
+        function openSearchModal() {
+            const modal = document.getElementById('search-modal');
+            const input = document.getElementById('search-modal-input');
+            if (modal && input) {
+                modal.classList.remove('hidden');
+                input.value = '';
+                document.getElementById('search-quick-links').classList.remove('hidden');
+                document.getElementById('search-results').classList.add('hidden');
+                
+                // Clear highlighted states
+                const items = Array.from(modal.querySelectorAll('a'));
+                items.forEach(item => {
+                    item.classList.remove('bg-slate-800/80', 'text-white');
+                    item.classList.add('text-slate-300');
+                });
+                
+                setTimeout(() => input.focus(), 50);
+            }
+        }
+
+        function closeSearchModal() {
+            const modal = document.getElementById('search-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function performSearch(query) {
+            clearTimeout(searchTimeout);
+            
+            const quickLinks = document.getElementById('search-quick-links');
+            const results = document.getElementById('search-results');
+            
+            if (!query || query.trim().length < 2) {
+                quickLinks.classList.remove('hidden');
+                results.classList.add('hidden');
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                fetch(`/search?q=${encodeURIComponent(query)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        quickLinks.classList.add('hidden');
+                        results.classList.remove('hidden');
+
+                        const sections = {
+                            classes: document.getElementById('search-section-classes'),
+                            modules: document.getElementById('search-section-modules'),
+                            laboratories: document.getElementById('search-section-laboratories')
+                        };
+
+                        let hasAnyResults = false;
+
+                        for (const [key, section] of Object.entries(sections)) {
+                            const items = data[key] || [];
+                            const container = section.querySelector('.search-items-container');
+                            container.innerHTML = '';
+
+                            if (items.length > 0) {
+                                hasAnyResults = true;
+                                section.classList.remove('hidden');
+                                items.forEach(item => {
+                                    const a = document.createElement('a');
+                                    a.href = item.url;
+                                    a.className = 'flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition';
+                                    a.innerHTML = `
+                                        <svg class="h-3.5 w-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            ${getIconSvg(item.type)}
+                                        </svg>
+                                        <span class="truncate">${item.label}</span>
+                                    `;
+                                    container.appendChild(a);
+                                });
+                            } else {
+                                section.classList.add('hidden');
+                            }
+                        }
+
+                        const noResults = document.getElementById('search-no-results');
+                        if (hasAnyResults) {
+                            noResults.classList.add('hidden');
+                        } else {
+                            noResults.classList.remove('hidden');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Search failed:', err);
+                    });
+            }, 200);
+        }
+
+        function getIconSvg(type) {
+            if (type === 'Class') {
+                return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />';
+            } else if (type === 'Module') {
+                return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />';
+            } else { // Laboratory
+                return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />';
+            }
+        }
+
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+K or Cmd+K to toggle search modal
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                const modal = document.getElementById('search-modal');
+                if (modal && modal.classList.contains('hidden')) {
+                    openSearchModal();
+                } else {
+                    closeSearchModal();
+                }
+            }
+
+            // Close with Escape
+            if (e.key === 'Escape') {
+                closeSearchModal();
+            }
+
+            // Keyboard navigation inside search modal
+            const modal = document.getElementById('search-modal');
+            if (modal && !modal.classList.contains('hidden')) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+                    const activeContainer = document.getElementById('search-results').classList.contains('hidden') 
+                        ? document.getElementById('search-quick-links') 
+                        : document.getElementById('search-results');
+                    
+                    const items = Array.from(activeContainer.querySelectorAll('a:not(.hidden)'));
+                    if (items.length === 0) return;
+
+                    e.preventDefault();
+
+                    let activeIndex = items.findIndex(item => item.classList.contains('bg-slate-800/80'));
+
+                    if (e.key === 'Enter') {
+                        if (activeIndex >= 0) {
+                            items[activeIndex].click();
+                        }
+                        return;
+                    }
+
+                    if (activeIndex >= 0) {
+                        items[activeIndex].classList.remove('bg-slate-800/80', 'text-white');
+                        items[activeIndex].classList.add('text-slate-300');
+                    }
+
+                    if (e.key === 'ArrowDown') {
+                        activeIndex = (activeIndex + 1) % items.length;
+                    } else if (e.key === 'ArrowUp') {
+                        activeIndex = (activeIndex - 1 + items.length) % items.length;
+                    }
+
+                    items[activeIndex].classList.remove('text-slate-300');
+                    items[activeIndex].classList.add('bg-slate-800/80', 'text-white');
+                    items[activeIndex].scrollIntoView({ block: 'nearest' });
+                }
+            }
+        });
     </script>
+
+    <!-- Search Command Palette Modal -->
+    <div id="search-modal" class="fixed inset-0 z-50 hidden overflow-y-auto p-4 sm:p-6 md:p-20" role="dialog" aria-modal="true">
+        <!-- Backdrop -->
+        <div class="fixed inset-0 bg-slate-955/80 backdrop-blur-sm transition-opacity" onclick="closeSearchModal()"></div>
+
+        <!-- Modal Box -->
+        <div class="mx-auto max-w-xl transform divide-y divide-slate-800 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl transition-all ring-1 ring-black ring-opacity-5 relative z-10">
+            <div class="relative">
+                <!-- Search Icon -->
+                <div class="pointer-events-none absolute left-4 top-3.5 text-slate-400">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <input type="text" id="search-modal-input" oninput="performSearch(this.value)" placeholder="Search classes, modules, challenges..."
+                       class="h-12 w-full border-0 bg-transparent pl-11 pr-4 text-sm text-slate-200 placeholder-slate-500 focus:ring-0 focus:outline-none" role="combobox" aria-expanded="false" aria-controls="options">
+            </div>
+
+            <!-- Default Quick Links (when input is empty) -->
+            <div id="search-quick-links" class="p-2 space-y-1">
+                <span class="block px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quick Links</span>
+                <a href="{{ route('dashboard') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+                    <span>Dashboard</span>
+                </a>
+                <a href="{{ route('classes.index') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+                    <span>All Classes</span>
+                </a>
+                @if(auth()->user()->role === 'instructor' || auth()->user()->role === 'admin')
+                    <a href="{{ route('classes.create') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+                        <span>Create a Class</span>
+                    </a>
+                @endif
+                <a href="{{ route('settings.show') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+                    <span>Account Settings</span>
+                </a>
+            </div>
+
+            <!-- Search Results -->
+            <div id="search-results" class="hidden max-h-96 overflow-y-auto p-2 space-y-4">
+                <!-- Classes section -->
+                <div id="search-section-classes" class="hidden space-y-1">
+                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classes</span>
+                    <div class="search-items-container space-y-0.5"></div>
+                </div>
+                <!-- Modules section -->
+                <div id="search-section-modules" class="hidden space-y-1">
+                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Modules</span>
+                    <div class="search-items-container space-y-0.5"></div>
+                </div>
+                <!-- Laboratories section -->
+                <div id="search-section-laboratories" class="hidden space-y-1">
+                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lab Challenges</span>
+                    <div class="search-items-container space-y-0.5"></div>
+                </div>
+                <!-- No results -->
+                <div id="search-no-results" class="hidden text-center py-6 text-xs text-slate-500">
+                    No results found. Try a different query.
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

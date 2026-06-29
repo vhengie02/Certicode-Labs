@@ -43,20 +43,46 @@
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">Profile Information</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Update your account name and email address.</p>
+                <p class="text-xs text-slate-450 mt-0.5">Update your name, username, gender, and email address.</p>
             </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Name -->
+            <!-- First Name -->
             <div>
-                <label for="name" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Full Name</label>
-                <input type="text" name="name" id="name" required value="{{ old('name', $user->name) }}"
+                <label for="first_name" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">First Name</label>
+                <input type="text" name="first_name" id="first_name" required value="{{ old('first_name', $user->first_name) }}"
                        class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
             </div>
 
-            <!-- Email -->
+            <!-- Last Name -->
             <div>
+                <label for="last_name" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Last Name</label>
+                <input type="text" name="last_name" id="last_name" required value="{{ old('last_name', $user->last_name) }}"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <!-- Username -->
+            <div>
+                <label for="username" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Username</label>
+                <input type="text" name="username" id="username" required value="{{ old('username', $user->username) }}"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <!-- Gender -->
+            <div>
+                <label for="gender" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Gender</label>
+                <select name="gender" id="gender"
+                        class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    <option value="" disabled {{ is_null($user->gender) ? 'selected' : '' }}>Select Gender...</option>
+                    <option value="male" {{ $user->gender === 'male' ? 'selected' : '' }}>Male</option>
+                    <option value="female" {{ $user->gender === 'female' ? 'selected' : '' }}>Female</option>
+                    <option value="other" {{ $user->gender === 'other' ? 'selected' : '' }}>Other / Prefer not to say</option>
+                </select>
+            </div>
+
+            <!-- Email -->
+            <div class="md:col-span-2">
                 <label for="email" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Email Address</label>
                 <input type="email" name="email" id="email" required value="{{ old('email', $user->email) }}"
                        class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
@@ -66,6 +92,54 @@
         <div class="flex justify-end pt-4 border-t border-slate-800/80">
             <button type="submit" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-semibold text-xs rounded-xl text-white transition shadow-lg shadow-indigo-600/25">
                 Save Profile Information
+            </button>
+        </div>
+    </form>
+
+    <!-- Change Password Box -->
+    <form action="{{ route('settings.password.update') }}" method="POST" class="glass-panel rounded-2xl p-8 border border-slate-800 space-y-6">
+        @csrf
+        @method('PUT')
+
+        <div class="flex items-center space-x-3.5 pb-4 border-b border-slate-800/80">
+            <div class="h-10 w-10 rounded-xl bg-rose-600/10 border border-rose-500/25 flex items-center justify-center text-rose-450 shrink-0">
+                <!-- Key Icon -->
+                <svg class="w-5 h-5 text-rose-450" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m-2 4a5 5 0 11-7.07-7.07m7.07 7.07L17 17m0 0a2 2 0 102 2 2 2 0 00-2-2zm0 0l-3-3m0 0h.01"></path>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-white">Change Password</h2>
+                <p class="text-xs text-slate-450 mt-0.5">Ensure your account is using a secure password.</p>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <!-- Current Password -->
+            <div>
+                <label for="current_password" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Current Password</label>
+                <input type="password" name="current_password" id="current_password" required placeholder="••••••••"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <!-- New Password -->
+            <div>
+                <label for="new_password" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">New Password</label>
+                <input type="password" name="password" id="new_password" required placeholder="••••••••"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <!-- Confirm New Password -->
+            <div>
+                <label for="new_password_confirmation" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Confirm New Password</label>
+                <input type="password" name="password_confirmation" id="new_password_confirmation" required placeholder="••••••••"
+                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+            </div>
+        </div>
+
+        <div class="flex justify-end pt-4 border-t border-slate-800/80">
+            <button type="submit" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 font-semibold text-xs rounded-xl text-white transition shadow-lg shadow-rose-600/25">
+                Update Password
             </button>
         </div>
     </form>
@@ -126,10 +200,20 @@
                 </form>
 
                 <div class="flex items-center justify-between text-[10px] pt-2 border-t border-slate-800/40">
-                    <span class="text-slate-500">Wrong address? Disconnect and reset.</span>
-                    <form action="{{ route('settings.gmail.disconnect') }}" method="POST" class="m-0">
+                    <div class="flex items-center space-x-1">
+                        <span class="text-slate-500">Wrong address?</span>
+                        <form action="{{ route('settings.gmail.disconnect') }}" method="POST" class="m-0 inline">
+                            @csrf
+                            <button type="submit" class="text-rose-450 hover:underline">Cancel & Reset</button>
+                        </form>
+                    </div>
+                    
+                    <form action="{{ route('settings.gmail.connect') }}" method="POST" class="m-0 inline">
                         @csrf
-                        <button type="submit" class="text-rose-450 hover:underline">Cancel & Reset</button>
+                        <input type="hidden" name="gmail" value="{{ $user->gmail }}">
+                        <button type="submit" id="resend-gmail-btn" class="text-indigo-400 hover:underline font-semibold bg-transparent border-0 p-0 cursor-pointer">
+                            Didn't receive code? Resend Code
+                        </button>
                     </form>
                 </div>
             </div>
@@ -214,66 +298,60 @@
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">Notification Preferences</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Toggle exactly which updates you wish to receive and configure the email delivery options.</p>
+                <p class="text-xs text-slate-450 mt-0.5">Toggle exactly which updates you wish to receive.</p>
             </div>
         </div>
 
-        <div class="space-y-4">
-            
-            <!-- Global Email toggle -->
-            <label class="flex items-start justify-between p-4 bg-slate-900/20 border border-slate-850 rounded-xl cursor-pointer hover:border-slate-800 transition">
-                <div class="space-y-0.5 pr-4">
-                    <span class="text-sm font-semibold text-white block">Email Notifications Dispatcher</span>
-                    <span class="text-xs text-slate-450 block">When active, all enabled alerts below will trigger an email dispatch to your verified Gmail connection.</span>
+        <div class="space-y-5">
+            <h3 class="text-xs font-bold text-slate-450 uppercase tracking-wider">Subscribed Alert Triggers</h3>
+
+            <!-- 1. Class -->
+            <label class="flex items-start justify-between cursor-pointer select-none group py-1">
+                <div class="pr-4">
+                    <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Class Invites & Admissions</span>
+                    <span class="text-[11px] text-slate-450">Notify me when an instructor invites me to a class or joins my roster.</span>
                 </div>
-                <input type="checkbox" name="notify_email_channel" value="1" {{ $user->notify_email_channel ? 'checked' : '' }}
-                       class="h-4 w-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500 focus:ring-offset-slate-950 shrink-0 mt-1">
+                <div class="relative shrink-0 mt-0.5">
+                    <input type="checkbox" name="notify_class" id="notify_class" value="1" {{ $user->notify_class ? 'checked' : '' }} class="sr-only peer">
+                    <div class="w-10 h-6 bg-slate-850 border border-slate-800 rounded-full peer peer-checked:bg-indigo-600 peer-checked:border-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-4 peer-checked:after:bg-white"></div>
+                </div>
             </label>
 
-            <!-- Class Alert toggles -->
-            <div class="space-y-3.5 pt-2">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Subscribed Alert Triggers</h3>
+            <!-- 2. Modules -->
+            <label class="flex items-start justify-between cursor-pointer select-none group py-1">
+                <div class="pr-4">
+                    <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Module Upload Updates</span>
+                    <span class="text-[11px] text-slate-450">Notify me when instructors upload study lesson guides or sub-modules.</span>
+                </div>
+                <div class="relative shrink-0 mt-0.5">
+                    <input type="checkbox" name="notify_module" id="notify_module" value="1" {{ $user->notify_module ? 'checked' : '' }} class="sr-only peer">
+                    <div class="w-10 h-6 bg-slate-850 border border-slate-800 rounded-full peer peer-checked:bg-indigo-600 peer-checked:border-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-4 peer-checked:after:bg-white"></div>
+                </div>
+            </label>
 
-                <!-- 1. Class -->
-                <label class="flex items-start space-x-3 text-xs text-slate-350 cursor-pointer select-none">
-                    <input type="checkbox" name="notify_class" value="1" {{ $user->notify_class ? 'checked' : '' }}
-                           class="h-4 w-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500 focus:ring-offset-slate-950 shrink-0 mt-0.5">
-                    <div>
-                        <span class="font-semibold text-white block text-xs">Class Invites & Admissions</span>
-                        Notify me when an instructor invites me to a class or joins my roster.
-                    </div>
-                </label>
+            <!-- 3. Labs -->
+            <label class="flex items-start justify-between cursor-pointer select-none group py-1">
+                <div class="pr-4">
+                    <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Laboratory Exercise Actions</span>
+                    <span class="text-[11px] text-slate-450">Notify me when new coding challenge tasks or lab exercises are assigned.</span>
+                </div>
+                <div class="relative shrink-0 mt-0.5">
+                    <input type="checkbox" name="notify_lab" id="notify_lab" value="1" {{ $user->notify_lab ? 'checked' : '' }} class="sr-only peer">
+                    <div class="w-10 h-6 bg-slate-850 border border-slate-800 rounded-full peer peer-checked:bg-indigo-600 peer-checked:border-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-4 peer-checked:after:bg-white"></div>
+                </div>
+            </label>
 
-                <!-- 2. Modules -->
-                <label class="flex items-start space-x-3 text-xs text-slate-350 cursor-pointer select-none">
-                    <input type="checkbox" name="notify_module" value="1" {{ $user->notify_module ? 'checked' : '' }}
-                           class="h-4 w-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500 focus:ring-offset-slate-950 shrink-0 mt-0.5">
-                    <div>
-                        <span class="font-semibold text-white block text-xs">Module Upload Updates</span>
-                        Notify me when instructors upload study lesson guides or sub-modules.
-                    </div>
-                </label>
-
-                <!-- 3. Labs -->
-                <label class="flex items-start space-x-3 text-xs text-slate-350 cursor-pointer select-none">
-                    <input type="checkbox" name="notify_lab" value="1" {{ $user->notify_lab ? 'checked' : '' }}
-                           class="h-4 w-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500 focus:ring-offset-slate-950 shrink-0 mt-0.5">
-                    <div>
-                        <span class="font-semibold text-white block text-xs">Laboratory Exercise Actions</span>
-                        Notify me when new coding challenge tasks or lab exercises are assigned.
-                    </div>
-                </label>
-
-                <!-- 4. Certificates -->
-                <label class="flex items-start space-x-3 text-xs text-slate-350 cursor-pointer select-none">
-                    <input type="checkbox" name="notify_certificate" value="1" {{ $user->notify_certificate ? 'checked' : '' }}
-                           class="h-4 w-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500 focus:ring-offset-slate-950 shrink-0 mt-0.5">
-                    <div>
-                        <span class="font-semibold text-white block text-xs">Certificate Accomplishments</span>
-                        Notify me when I successfully achieve 100% progress and earn verified certificates.
-                    </div>
-                </label>
-            </div>
+            <!-- 4. Certificates -->
+            <label class="flex items-start justify-between cursor-pointer select-none group py-1">
+                <div class="pr-4">
+                    <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Certificate Accomplishments</span>
+                    <span class="text-[11px] text-slate-450">Notify me when I successfully achieve 100% progress and earn verified certificates.</span>
+                </div>
+                <div class="relative shrink-0 mt-0.5">
+                    <input type="checkbox" name="notify_certificate" id="notify_certificate" value="1" {{ $user->notify_certificate ? 'checked' : '' }} class="sr-only peer">
+                    <div class="w-10 h-6 bg-slate-850 border border-slate-800 rounded-full peer peer-checked:bg-indigo-600 peer-checked:border-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-4 peer-checked:after:bg-white"></div>
+                </div>
+            </label>
         </div>
 
         <div class="flex justify-end pt-4 border-t border-slate-800/80">
@@ -283,4 +361,51 @@
         </div>
     </form>
 </div>
+
+@section('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const resendBtn = document.getElementById('resend-gmail-btn');
+        if (resendBtn) {
+            let cooldownEnd = sessionStorage.getItem('gmail_resend_cooldown_end');
+            let secondsLeft = 0;
+            
+            if (cooldownEnd) {
+                secondsLeft = Math.ceil((parseInt(cooldownEnd) - Date.now()) / 1000);
+            } else if ("{{ session('success') }}" && "{{ session('success') }}".includes("sent to")) {
+                secondsLeft = 60;
+                sessionStorage.setItem('gmail_resend_cooldown_end', Date.now() + 60000);
+            }
+
+            if (secondsLeft > 0) {
+                disableResend(secondsLeft);
+            }
+            
+            function disableResend(duration) {
+                resendBtn.disabled = true;
+                resendBtn.style.pointerEvents = 'none';
+                resendBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                resendBtn.classList.remove('hover:underline');
+                resendBtn.textContent = `Resend Code in ${duration}s`;
+                
+                let timeLeft = duration;
+                const interval = setInterval(() => {
+                    timeLeft--;
+                    if (timeLeft <= 0) {
+                        clearInterval(interval);
+                        sessionStorage.removeItem('gmail_resend_cooldown_end');
+                        resendBtn.disabled = false;
+                        resendBtn.style.pointerEvents = 'auto';
+                        resendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        resendBtn.classList.add('hover:underline');
+                        resendBtn.textContent = "Didn't receive code? Resend Code";
+                    } else {
+                        resendBtn.textContent = `Resend Code in ${timeLeft}s`;
+                    }
+                }, 1000);
+            }
+        }
+    });
+</script>
+@endsection
 @endsection

@@ -68,6 +68,14 @@ class LoginController extends Controller
 
         $gmail = $request->gmail;
 
+        if (!app()->runningUnitTests()) {
+            $lastSent = session('google_auth_code_sent_at');
+            if ($lastSent && now()->diffInSeconds($lastSent) < 60) {
+                $secondsLeft = 60 - now()->diffInSeconds($lastSent);
+                return back()->withErrors(['code' => "Please wait {$secondsLeft} seconds before requesting a new code."]);
+            }
+        }
+
         // Check if user exists with this verified Gmail or registered email
         $userExists = User::where('gmail', $gmail)
             ->whereNotNull('gmail_verified_at')
@@ -84,6 +92,7 @@ class LoginController extends Controller
         // Save target gmail and verification code in session
         session()->put('google_auth_code', $code);
         session()->put('gmail_code_debug', $code);
+        session()->put('google_auth_code_sent_at', now());
 
         Log::info("Google Sign-In/Up verification code for {$gmail}: {$code}");
 

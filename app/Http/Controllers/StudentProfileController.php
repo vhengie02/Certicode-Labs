@@ -49,7 +49,10 @@ class StudentProfileController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'username' => 'required|string|max:255|unique:users,username,' . $user->id,
+            'gender' => 'nullable|string|in:male,female,other',
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'github_username' => 'nullable|string|max:255',
             'role' => 'required|string|in:student,instructor,admin',
@@ -60,6 +63,7 @@ class StudentProfileController extends Controller
             unset($validated['role']);
         }
 
+        $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];
         $user->update($validated);
 
         // Redirect appropriately

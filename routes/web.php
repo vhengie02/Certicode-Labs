@@ -57,6 +57,7 @@ Route::middleware('auth')->group(function () {
     // Settings & Account preferences
     Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'show'])->name('settings.show');
     Route::put('/settings/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('settings.profile.update');
+    Route::put('/settings/password', [\App\Http\Controllers\SettingsController::class, 'updatePassword'])->name('settings.password.update');
     Route::post('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
     Route::post('/settings/gmail/connect', [\App\Http\Controllers\SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect');
     Route::post('/settings/gmail/verify', [\App\Http\Controllers\SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify');
@@ -97,6 +98,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/profiles/{id}/edit', [StudentProfileController::class, 'edit'])->name('profiles.edit');
     Route::put('/profiles/{id}', [StudentProfileController::class, 'update'])->name('profiles.update');
     Route::delete('/profiles/{id}', [StudentProfileController::class, 'destroy'])->name('profiles.destroy');
+
+    // Global Search
+    Route::get('/search', [\App\Http\Controllers\SearchController::class, 'search'])->name('search');
 
     // Notifications
     Route::post('/notifications/mark-as-read', function () {

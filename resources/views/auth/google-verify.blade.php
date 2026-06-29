@@ -99,6 +99,11 @@
                     <label for="code" class="block text-xs font-medium text-[#5f6368] uppercase tracking-wider mb-2">Verification Code (6 digits)</label>
                     <input type="text" name="code" id="code" required maxlength="6" autofocus placeholder="######"
                            class="w-full text-center tracking-[0.25em] font-mono px-4 py-3 border border-[#dadce0] rounded text-sm text-[#202124] focus:outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] transition-all">
+                    <div class="mt-2 text-right">
+                        <button type="button" id="resend-google-btn" onclick="document.getElementById('resend-code-form').submit()" class="text-xs font-medium text-[#1a73e8] hover:underline hover:text-[#174ea6] transition-colors bg-transparent border-0 p-0 cursor-pointer">
+                            Didn't receive code? Resend Code
+                        </button>
+                    </div>
                 </div>
             @endif
 
@@ -113,6 +118,11 @@
             </div>
         </form>
     </div>
+
+    <form id="resend-code-form" action="{{ route('auth.google.email') }}" method="POST" class="hidden">
+        @csrf
+        <input type="hidden" name="gmail" value="{{ session('google_auth_gmail') }}">
+    </form>
     <script>
         function togglePasswordVisibility(inputId, iconId) {
             const input = document.getElementById(inputId);
@@ -126,6 +136,49 @@
                 icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />';
             }
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const resendBtn = document.getElementById('resend-google-btn');
+            if (resendBtn) {
+                let cooldownEnd = sessionStorage.getItem('google_resend_cooldown_end');
+                let secondsLeft = 0;
+                
+                if (cooldownEnd) {
+                    secondsLeft = Math.ceil((parseInt(cooldownEnd) - Date.now()) / 1000);
+                } else if ("{{ session('success') }}" && !"{{ $errors->any() }}") {
+                    secondsLeft = 60;
+                    sessionStorage.setItem('google_resend_cooldown_end', Date.now() + 60000);
+                }
+
+                if (secondsLeft > 0) {
+                    disableResend(secondsLeft);
+                }
+                
+                function disableResend(duration) {
+                    resendBtn.disabled = true;
+                    resendBtn.style.pointerEvents = 'none';
+                    resendBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    resendBtn.classList.remove('hover:underline');
+                    resendBtn.textContent = `Resend Code in ${duration}s`;
+                    
+                    let timeLeft = duration;
+                    const interval = setInterval(() => {
+                        timeLeft--;
+                        if (timeLeft <= 0) {
+                            clearInterval(interval);
+                            sessionStorage.removeItem('google_resend_cooldown_end');
+                            resendBtn.disabled = false;
+                            resendBtn.style.pointerEvents = 'auto';
+                            resendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            resendBtn.classList.add('hover:underline');
+                            resendBtn.textContent = "Didn't receive code? Resend Code";
+                        } else {
+                            resendBtn.textContent = `Resend Code in ${timeLeft}s`;
+                        }
+                    }, 1000);
+                }
+            }
+        });
     </script>
 </body>
 </html>

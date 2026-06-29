@@ -257,14 +257,21 @@ class InstructorTelemetryAndOAuthTest extends TestCase
     {
         $response = $this->actingAs($this->student)
             ->put('/settings/profile', [
-                'name' => 'Updated Jane',
+                'first_name' => 'Updated',
+                'last_name' => 'Jane',
+                'username' => 'updatedjane',
+                'gender' => 'female',
                 'email' => 'updated-jane@example.com',
             ]);
 
         $response->assertRedirect('/settings');
         $this->assertDatabaseHas('users', [
             'id' => $this->student->id,
+            'first_name' => 'Updated',
+            'last_name' => 'Jane',
             'name' => 'Updated Jane',
+            'username' => 'updatedjane',
+            'gender' => 'female',
             'email' => 'updated-jane@example.com',
         ]);
     }
@@ -276,7 +283,10 @@ class InstructorTelemetryAndOAuthTest extends TestCase
     {
         $response = $this->actingAs($this->student)
             ->put("/profiles/{$this->student->id}", [
-                'name' => 'Jane Redirect',
+                'first_name' => 'Jane',
+                'last_name' => 'Redirect',
+                'username' => 'janeredirect',
+                'gender' => 'female',
                 'email' => 'jane-redirect@example.com',
                 'github_username' => 'janeredirect',
                 'role' => 'student',
@@ -326,5 +336,39 @@ class InstructorTelemetryAndOAuthTest extends TestCase
         $response->assertRedirect('/auth/google/verify?needs_role=1');
         $this->assertEquals('newgithubber@example.com', session('google_auth_gmail'));
         $this->assertEquals('newgithubber', session('github_auth_username'));
+    }
+
+    /**
+     * Test updating user password.
+     */
+    public function test_user_can_update_password_with_correct_current_password(): void
+    {
+        $response = $this->actingAs($this->student)
+            ->put('/settings/password', [
+                'current_password' => 'password',
+                'password' => 'NewSecurePassword123!',
+                'password_confirmation' => 'NewSecurePassword123!',
+            ]);
+
+        $response->assertRedirect('/settings');
+        $response->assertSessionHasNoErrors();
+        
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
+    }
+
+    /**
+     * Test updating user password with incorrect current password.
+     */
+    public function test_user_cannot_update_password_with_incorrect_current_password(): void
+    {
+        $response = $this->actingAs($this->student)
+            ->put('/settings/password', [
+                'current_password' => 'wrongpassword',
+                'password' => 'NewSecurePassword123!',
+                'password_confirmation' => 'NewSecurePassword123!',
+            ]);
+
+        $response->assertSessionHasErrors(['current_password']);
+        $this->assertFalse(\Illuminate\Support\Facades\Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
     }
 }

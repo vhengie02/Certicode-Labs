@@ -139,6 +139,23 @@
             <form class="space-y-4 pt-2" method="POST" action="{{ route('register.store') }}">
                 @csrf
 
+                <!-- Client-side error container -->
+                <div id="client-error-container" class="hidden rounded-lg bg-red-500/10 border border-red-500/20 p-4">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-rose-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-xs font-bold text-rose-400 uppercase tracking-wider">
+                                Weak Password Alert
+                            </h3>
+                            <p id="client-error-message" class="mt-1 text-xs text-rose-300"></p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Errors Handler Alert -->
                 @if ($errors->any())
                     <div class="rounded-lg bg-red-500/10 border border-red-500/20 p-4">
@@ -202,6 +219,29 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                             </svg>
                         </button>
+                    </div>
+                    
+                    <!-- Password Strength Checklist -->
+                    <div class="mt-2 p-3 bg-slate-900 border border-slate-800/80 rounded-lg text-xs space-y-2">
+                        <span class="block font-semibold text-slate-400">Password suggestions for security:</span>
+                        <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                            <li id="req-length" class="flex items-center space-x-1.5 transition-colors duration-150">
+                                <span class="bullet w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                                <span>8+ characters</span>
+                            </li>
+                            <li id="req-upper" class="flex items-center space-x-1.5 transition-colors duration-150">
+                                <span class="bullet w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                                <span>Uppercase (A-Z)</span>
+                            </li>
+                            <li id="req-lower" class="flex items-center space-x-1.5 transition-colors duration-150">
+                                <span class="bullet w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                                <span>Lowercase (a-z)</span>
+                            </li>
+                            <li id="req-number-symbol" class="flex items-center space-x-1.5 transition-colors duration-150">
+                                <span class="bullet w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                                <span>Number or Symbol</span>
+                            </li>
+                        </ul>
                     </div>
                 </div>
 
@@ -275,6 +315,55 @@
                 icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />';
             }
         }
+
+        // --- Client-side Password Strength Check ---
+        const passwordInput = document.getElementById('password');
+        const reqLength = document.getElementById('req-length');
+        const reqUpper = document.getElementById('req-upper');
+        const reqLower = document.getElementById('req-lower');
+        const reqNumSym = document.getElementById('req-number-symbol');
+
+        function updateRequirement(el, isValid) {
+            const bullet = el.querySelector('.bullet');
+            if (isValid) {
+                el.classList.remove('text-slate-500');
+                el.classList.add('text-green-400');
+                bullet.classList.remove('bg-slate-700');
+                bullet.classList.add('bg-green-500');
+            } else {
+                el.classList.remove('text-green-400');
+                el.classList.add('text-slate-500');
+                bullet.classList.remove('bg-green-500');
+                bullet.classList.add('bg-slate-700');
+            }
+        }
+
+        passwordInput.addEventListener('input', function() {
+            const val = this.value;
+            updateRequirement(reqLength, val.length >= 8);
+            updateRequirement(reqUpper, /[A-Z]/.test(val));
+            updateRequirement(reqLower, /[a-z]/.test(val));
+            updateRequirement(reqNumSym, /[0-9\W]/.test(val));
+        });
+
+        // Form Submit interception
+        const registerForm = document.querySelector('form');
+        registerForm.addEventListener('submit', function(e) {
+            const val = passwordInput.value;
+            const hasLength = val.length >= 8;
+            const hasUpper = /[A-Z]/.test(val);
+            const hasLower = /[a-z]/.test(val);
+            const hasNumSym = /[0-9\W]/.test(val);
+
+            if (!hasLength || !hasUpper || !hasLower || !hasNumSym) {
+                e.preventDefault();
+                const errContainer = document.getElementById('client-error-container');
+                const errMsg = document.getElementById('client-error-message');
+                errMsg.textContent = 'Please make a strong password. It must contain at least 8 characters, an uppercase letter, a lowercase letter, and a number or symbol.';
+                errContainer.classList.remove('hidden');
+                errContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
     </script>
 </body>
 </html>
