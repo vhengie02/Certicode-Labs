@@ -19,7 +19,7 @@
                     <h3 class="text-xs font-bold text-rose-450 uppercase tracking-wider">
                         Settings Error
                     </h3>
-                    <ul class="mt-1 list-disc list-inside text-xs text-rose-350 space-y-0.5">
+                    <ul class="mt-1 list-disc list-inside text-xs text-rose-400 space-y-0.5">
                         @foreach ($errors->all() as $error)
                             <li>{{ $error }}</li>
                         @endforeach
@@ -37,13 +37,13 @@
         <div class="flex items-center space-x-3.5 pb-4 border-b border-slate-800/80">
             <div class="h-10 w-10 rounded-xl bg-blue-600/10 border border-blue-500/25 flex items-center justify-center text-blue-400 shrink-0">
                 <!-- User Icon -->
-                <svg class="w-5 h-5 text-blue-450" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                 </svg>
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">Profile Information</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Update your name, username, gender, and email address.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Update your name, username, gender, and email address.</p>
             </div>
         </div>
 
@@ -80,13 +80,6 @@
                     <option value="other" {{ $user->gender === 'other' ? 'selected' : '' }}>Other / Prefer not to say</option>
                 </select>
             </div>
-
-            <!-- Email -->
-            <div class="md:col-span-2">
-                <label for="email" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Email Address</label>
-                <input type="email" name="email" id="email" required value="{{ old('email', $user->email) }}"
-                       class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
-            </div>
         </div>
 
         <div class="flex justify-end pt-4 border-t border-slate-800/80">
@@ -102,15 +95,15 @@
         @method('PUT')
 
         <div class="flex items-center space-x-3.5 pb-4 border-b border-slate-800/80">
-            <div class="h-10 w-10 rounded-xl bg-rose-600/10 border border-rose-500/25 flex items-center justify-center text-rose-450 shrink-0">
+            <div class="h-10 w-10 rounded-xl bg-blue-600/10 border border-blue-500/25 flex items-center justify-center text-blue-450 shrink-0">
                 <!-- Key Icon -->
-                <svg class="w-5 h-5 text-rose-450" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m-2 4a5 5 0 11-7.07-7.07m7.07 7.07L17 17m0 0a2 2 0 102 2 2 2 0 00-2-2zm0 0l-3-3m0 0h.01"></path>
                 </svg>
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">Change Password</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Ensure your account is using a secure password.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Ensure your account is using a secure password.</p>
             </div>
         </div>
 
@@ -158,7 +151,23 @@
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">Gmail Integration</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Link your Google account to authorize instant access logins and routing alerts.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Link your Google account to authorize instant access logins and routing alerts.</p>
+            </div>
+        </div>
+
+        <!-- Primary Account Email -->
+        <div class="bg-slate-950/30 border border-slate-800/80 p-4 rounded-xl flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="h-5 w-5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center shrink-0">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold">Primary Account Email</p>
+                    <p class="text-sm font-semibold text-white font-mono mt-0.5">{{ $user->email }}</p>
+                </div>
+            </div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider font-bold font-sans">
+                Account Login
             </div>
         </div>
 
@@ -204,7 +213,7 @@
                         <span class="text-slate-500">Wrong address?</span>
                         <form action="{{ route('settings.gmail.disconnect') }}" method="POST" class="m-0 inline">
                             @csrf
-                            <button type="submit" class="text-rose-450 hover:underline">Cancel & Reset</button>
+                            <button type="submit" class="text-rose-400 hover:underline">Cancel & Reset</button>
                         </form>
                     </div>
                     
@@ -232,7 +241,7 @@
                 </div>
                 <form action="{{ route('settings.gmail.disconnect') }}" method="POST" class="m-0">
                     @csrf
-                    <button type="submit" class="px-4 py-2 border border-slate-800 hover:bg-slate-850 hover:text-rose-400 text-xs font-semibold rounded-lg text-slate-450 transition">
+                    <button type="submit" class="px-4 py-2 border border-slate-800 hover:bg-slate-850 hover:text-rose-400 text-xs font-semibold rounded-lg text-slate-400 transition">
                         Disconnect
                     </button>
                 </form>
@@ -251,13 +260,13 @@
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">GitHub Connection</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Link your GitHub profile to synchronize repository activity and code contributions.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Link your GitHub profile to synchronize repository activity and code contributions.</p>
             </div>
         </div>
 
         @if(empty($user->github_username))
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-950/20 border border-slate-850 p-4 rounded-xl gap-4">
-                <div class="text-xs text-slate-450 leading-relaxed">
+                <div class="text-xs text-slate-400 leading-relaxed">
                     Connecting your GitHub account automatically imports commit frequency and updates your contribution grid dashboard graphics.
                 </div>
                 <a href="{{ route('auth.provider.redirect', 'github') }}" class="inline-flex items-center px-5 py-2.5 bg-purple-600 hover:bg-purple-500 font-semibold text-xs rounded-xl text-white transition shadow-lg shadow-purple-600/25 shrink-0 text-center justify-center">
@@ -277,7 +286,7 @@
                 </div>
                 <form action="{{ route('settings.github.disconnect') }}" method="POST" class="m-0">
                     @csrf
-                    <button type="submit" class="px-4 py-2 border border-slate-800 hover:bg-slate-850 hover:text-rose-400 text-xs font-semibold rounded-lg text-slate-450 transition">
+                    <button type="submit" class="px-4 py-2 border border-slate-800 hover:bg-slate-850 hover:text-rose-400 text-xs font-semibold rounded-lg text-slate-400 transition">
                         Disconnect
                     </button>
                 </form>
@@ -298,18 +307,18 @@
             </div>
             <div>
                 <h2 class="text-lg font-bold text-white">Notification Preferences</h2>
-                <p class="text-xs text-slate-450 mt-0.5">Toggle exactly which updates you wish to receive.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Toggle exactly which updates you wish to receive.</p>
             </div>
         </div>
 
         <div class="space-y-5">
-            <h3 class="text-xs font-bold text-slate-450 uppercase tracking-wider">Subscribed Alert Triggers</h3>
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Subscribed Alert Triggers</h3>
 
             <!-- 1. Class -->
             <label class="flex items-start justify-between cursor-pointer select-none group py-1">
                 <div class="pr-4">
                     <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Class Invites & Admissions</span>
-                    <span class="text-[11px] text-slate-450">Notify me when an instructor invites me to a class or joins my roster.</span>
+                    <span class="text-[11px] text-slate-400">Notify me when an instructor invites me to a class or joins my roster.</span>
                 </div>
                 <div class="relative shrink-0 mt-0.5">
                     <input type="checkbox" name="notify_class" id="notify_class" value="1" {{ $user->notify_class ? 'checked' : '' }} class="sr-only peer">
@@ -321,7 +330,7 @@
             <label class="flex items-start justify-between cursor-pointer select-none group py-1">
                 <div class="pr-4">
                     <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Module Upload Updates</span>
-                    <span class="text-[11px] text-slate-450">Notify me when instructors upload study lesson guides or sub-modules.</span>
+                    <span class="text-[11px] text-slate-400">Notify me when instructors upload study lesson guides or sub-modules.</span>
                 </div>
                 <div class="relative shrink-0 mt-0.5">
                     <input type="checkbox" name="notify_module" id="notify_module" value="1" {{ $user->notify_module ? 'checked' : '' }} class="sr-only peer">
@@ -333,7 +342,7 @@
             <label class="flex items-start justify-between cursor-pointer select-none group py-1">
                 <div class="pr-4">
                     <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Laboratory Exercise Actions</span>
-                    <span class="text-[11px] text-slate-450">Notify me when new coding challenge tasks or lab exercises are assigned.</span>
+                    <span class="text-[11px] text-slate-400">Notify me when new coding challenge tasks or lab exercises are assigned.</span>
                 </div>
                 <div class="relative shrink-0 mt-0.5">
                     <input type="checkbox" name="notify_lab" id="notify_lab" value="1" {{ $user->notify_lab ? 'checked' : '' }} class="sr-only peer">
@@ -345,7 +354,7 @@
             <label class="flex items-start justify-between cursor-pointer select-none group py-1">
                 <div class="pr-4">
                     <span class="font-semibold text-white block text-xs group-hover:text-indigo-400 transition-colors">Certificate Accomplishments</span>
-                    <span class="text-[11px] text-slate-450">Notify me when I successfully achieve 100% progress and earn verified certificates.</span>
+                    <span class="text-[11px] text-slate-400">Notify me when I successfully achieve 100% progress and earn verified certificates.</span>
                 </div>
                 <div class="relative shrink-0 mt-0.5">
                     <input type="checkbox" name="notify_certificate" id="notify_certificate" value="1" {{ $user->notify_certificate ? 'checked' : '' }} class="sr-only peer">

@@ -53,7 +53,7 @@ class StudentProfileController extends Controller
             'last_name' => 'required|string|max:255',
             'username' => 'required|string|max:255|unique:users,username,' . $user->id,
             'gender' => 'nullable|string|in:male,female,other',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+            'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $user->id,
             'github_username' => 'nullable|string|max:255',
             'role' => 'required|string|in:student,instructor,admin',
         ]);

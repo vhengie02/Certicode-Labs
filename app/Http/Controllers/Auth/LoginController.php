@@ -98,7 +98,15 @@ class LoginController extends Controller
 
         $mailError = null;
         try {
-            \Illuminate\Support\Facades\Mail::raw("Your Certicode Labs Google verification code is: {$code}", function ($message) use ($gmail) {
+            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+                'title' => 'Google Authentication Code',
+                'greeting' => 'Hello developer,',
+                'messageLines' => [
+                    'We received a request to access your Certicode Labs account using this Google-linked email address.',
+                    'Use the verification code below to complete your authentication process.'
+                ],
+                'code' => $code,
+            ], function ($message) use ($gmail) {
                 $message->to($gmail)
                         ->subject('Certicode Labs: Google Authentication Code');
             });
@@ -493,7 +501,16 @@ class LoginController extends Controller
         Log::info("Password reset link for {$email}: {$resetLink}");
 
         try {
-            \Illuminate\Support\Facades\Mail::raw("You are receiving this email because we received a password reset request for your account. Reset Password: {$resetLink}", function ($message) use ($email) {
+            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+                'title' => 'Reset Password Link',
+                'greeting' => 'Hello developer,',
+                'messageLines' => [
+                    'You are receiving this email because we received a password reset request for your account.',
+                    'Please click the button below to reset your password. If you did not request this, no action is required.'
+                ],
+                'actionUrl' => $resetLink,
+                'actionText' => 'Reset Password',
+            ], function ($message) use ($email) {
                 $message->to($email)
                         ->subject('Certicode Labs: Reset Password Link');
             });
@@ -586,7 +603,16 @@ class LoginController extends Controller
         Log::info("Google auth password reset link for {$gmail}: {$resetLink}");
 
         try {
-            \Illuminate\Support\Facades\Mail::raw("You are receiving this email because we received a password reset request for your Google-linked account. Reset Password: {$resetLink}", function ($message) use ($gmail) {
+            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+                'title' => 'Reset Password Link (Google)',
+                'greeting' => 'Hello developer,',
+                'messageLines' => [
+                    'You are receiving this email because we received a password reset request for your Google-linked account.',
+                    'Please click the button below to reset your password. If you did not request this, no action is required.'
+                ],
+                'actionUrl' => $resetLink,
+                'actionText' => 'Reset Password',
+            ], function ($message) use ($gmail) {
                 $message->to($gmail)
                         ->subject('Certicode Labs: Reset Password Link (Google)');
             });

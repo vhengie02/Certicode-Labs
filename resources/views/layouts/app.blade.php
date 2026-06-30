@@ -141,10 +141,10 @@
                 <!-- Center Search Input (GitHub Style) -->
                 <div class="hidden lg:block w-80 relative mx-4">
                     <input type="text" placeholder="Search..." onclick="openSearchModal()" readonly class="w-full h-8 pl-8 pr-12 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 placeholder-slate-500 cursor-pointer hover:border-slate-700 transition-colors">
-                    <div class="absolute left-2.5 top-2 text-slate-500">
+                    <div class="absolute left-2.5 top-2 text-slate-500 pointer-events-none">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
-                    <div class="absolute right-2 top-1.5 bg-slate-950 border border-slate-800 px-1 py-0.5 rounded text-[9px] text-slate-500 font-mono">
+                    <div class="absolute right-2 top-1.5 bg-slate-950 border border-slate-800 px-1 py-0.5 rounded text-[9px] text-slate-500 font-mono pointer-events-none">
                         Ctrl+K
                     </div>
                 </div>
@@ -360,6 +360,25 @@
                 return;
             }
 
+            const isInstructorOrAdmin = @json(auth()->user()->role === 'instructor' || auth()->user()->role === 'admin');
+            
+            const navLinks = [
+                { label: 'Dashboard', url: "{{ route('dashboard') }}", type: 'Navigation', keywords: ['dashboard', 'home', 'dash'] },
+                { label: 'All Classes', url: "{{ route('classes.index') }}", type: 'Navigation', keywords: ['classes', 'all classes', 'course', 'courses'] },
+                { label: 'Account Settings', url: "{{ route('settings.show') }}", type: 'Navigation', keywords: ['settings', 'account', 'profile', 'password', 'gmail', 'github'] }
+            ];
+
+            if (isInstructorOrAdmin) {
+                navLinks.push({ label: 'Create a Class', url: "{{ route('classes.create') }}", type: 'Navigation', keywords: ['create a class', 'create class', 'new class', 'add class'] });
+                navLinks.push({ label: 'Student Directory', url: "{{ route('students.index') }}", type: 'Navigation', keywords: ['students', 'directory', 'users', 'profiles', 'student directory'] });
+            }
+
+            const queryLower = query.toLowerCase().trim();
+            const matchingNavs = navLinks.filter(link => {
+                return link.label.toLowerCase().includes(queryLower) || 
+                       link.keywords.some(kw => kw.includes(queryLower));
+            });
+
             searchTimeout = setTimeout(() => {
                 fetch(`/search?q=${encodeURIComponent(query)}`)
                     .then(res => res.json())
@@ -367,7 +386,10 @@
                         quickLinks.classList.add('hidden');
                         results.classList.remove('hidden');
 
+                        data.navigation = matchingNavs;
+
                         const sections = {
+                            navigation: document.getElementById('search-section-navigation'),
                             classes: document.getElementById('search-section-classes'),
                             modules: document.getElementById('search-section-modules'),
                             laboratories: document.getElementById('search-section-laboratories')
@@ -376,6 +398,7 @@
                         let hasAnyResults = false;
 
                         for (const [key, section] of Object.entries(sections)) {
+                            if (!section) continue;
                             const items = data[key] || [];
                             const container = section.querySelector('.search-items-container');
                             container.innerHTML = '';
@@ -414,7 +437,9 @@
         }
 
         function getIconSvg(type) {
-            if (type === 'Class') {
+            if (type === 'Navigation') {
+                return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />';
+            } else if (type === 'Class') {
                 return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />';
             } else if (type === 'Module') {
                 return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />';
@@ -484,7 +509,7 @@
     <!-- Search Command Palette Modal -->
     <div id="search-modal" class="fixed inset-0 z-50 hidden overflow-y-auto p-4 sm:p-6 md:p-20" role="dialog" aria-modal="true">
         <!-- Backdrop -->
-        <div class="fixed inset-0 bg-slate-955/80 backdrop-blur-sm transition-opacity" onclick="closeSearchModal()"></div>
+        <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onclick="closeSearchModal()"></div>
 
         <!-- Modal Box -->
         <div class="mx-auto max-w-xl transform divide-y divide-slate-800 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl transition-all ring-1 ring-black ring-opacity-5 relative z-10">
@@ -518,6 +543,11 @@
 
             <!-- Search Results -->
             <div id="search-results" class="hidden max-h-96 overflow-y-auto p-2 space-y-4">
+                <!-- Navigation section -->
+                <div id="search-section-navigation" class="hidden space-y-1">
+                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Navigation</span>
+                    <div class="search-items-container space-y-0.5"></div>
+                </div>
                 <!-- Classes section -->
                 <div id="search-section-classes" class="hidden space-y-1">
                     <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classes</span>

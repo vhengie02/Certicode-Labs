@@ -199,10 +199,10 @@ class GmailIntegrationTest extends TestCase
     {
         Notification::fake();
 
-        // 1. Unconnected gmail -> database only
+        // 1. Unconnected gmail -> database and mail (falls back to primary email)
         $this->user->notify(new ClassActivityNotification('Title', 'Message', '/url', 'class'));
         Notification::assertSentTo($this->user, ClassActivityNotification::class, function ($notification, $channels) {
-            return count($channels) === 1 && $channels[0] === 'database';
+            return in_array('database', $channels) && in_array('mail', $channels);
         });
 
         // 2. Verified connected gmail + all alerts enabled -> database and mail

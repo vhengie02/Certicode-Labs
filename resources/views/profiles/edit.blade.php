@@ -13,6 +13,7 @@
             <div>
                 <h2 class="text-xl font-extrabold text-white">Account Specifications</h2>
                 <p class="text-xs text-indigo-400 mt-1 uppercase tracking-wider font-semibold">{{ $user->role }} Profile Level</p>
+                <p class="text-xs text-slate-400 font-mono mt-0.5">{{ $user->email }}</p>
             </div>
         </div>
 
@@ -59,14 +60,6 @@
                     </select>
                     @error('gender') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
                 </div>
-            </div>
-
-            <!-- Email Address -->
-            <div>
-                <label for="email" class="block text-sm font-semibold text-slate-300">Email Address</label>
-                <input type="email" name="email" id="email" required value="{{ old('email', $user->email) }}"
-                    class="mt-2 block w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                @error('email') <p class="text-rose-400 text-xs mt-1">{{ $message }}</p> @enderror
             </div>
 
             <!-- GitHub Account username link -->

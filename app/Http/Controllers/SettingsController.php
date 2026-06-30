@@ -81,7 +81,15 @@ class SettingsController extends Controller
 
         $mailError = null;
         try {
-            \Illuminate\Support\Facades\Mail::raw("Your Certicode Labs verification code to connect your Gmail is: {$code}", function ($message) use ($request) {
+            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+                'title' => 'Gmail Connection Code',
+                'greeting' => 'Hello ' . ($user->name ?? 'developer') . ',',
+                'messageLines' => [
+                    'You requested to connect your Gmail account (' . $request->gmail . ') to your Certicode Labs profile.',
+                    'Please use the verification code below to verify your email ownership.'
+                ],
+                'code' => $code,
+            ], function ($message) use ($request) {
                 $message->to($request->gmail)
                         ->subject('Certicode Labs: Gmail Connection Code');
             });
@@ -166,7 +174,7 @@ class SettingsController extends Controller
             'last_name' => 'required|string|max:255',
             'username' => 'required|string|max:255|unique:users,username,' . $user->id,
             'gender' => 'nullable|string|in:male,female,other',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+            'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $user->id,
         ]);
 
         $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];

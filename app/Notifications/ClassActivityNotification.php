@@ -32,9 +32,11 @@ class ClassActivityNotification extends Notification
     {
         $channels = ['database'];
 
-        // Send via email only if they have a verified gmail, email notifications enabled, and type enabled
+        // Send via email if email notifications are enabled, and the user has either a verified Gmail or a primary email address
         $wantsEmail = $notifiable->notify_email_channel ?? true;
-        if ($wantsEmail && !empty($notifiable->gmail) && !empty($notifiable->gmail_verified_at)) {
+        $hasEmail = !empty($notifiable->gmail) ? !empty($notifiable->gmail_verified_at) : !empty($notifiable->email);
+
+        if ($wantsEmail && $hasEmail) {
             $type = $this->type ?? 'info';
             $shouldSend = false;
 
