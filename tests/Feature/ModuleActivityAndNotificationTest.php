@@ -150,5 +150,34 @@ class ModuleActivityAndNotificationTest extends TestCase
         $response = $this->actingAs($this->student)
             ->get("/classes/{$this->class->id}/modules/create");
         $response->assertStatus(403);
+     }
+
+    /**
+     * Test accepting invitation notifies instructor.
+     */
+    public function test_accepting_invite_notifies_instructor(): void
+    {
+        // First invite the student
+        $this->class->students()->attach($this->student->id, ['status' => 'invited']);
+
+        // Clear existing notifications
+        \DB::table('notifications')->truncate();
+
+        // Student accepts invite
+        $response = $this->actingAs($this->student)
+            ->post("/classes/{$this->class->id}/invite-accept");
+
+        $response->assertRedirect();
+
+        // Assert notification database record exists for the instructor
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $this->instructor->id,
+            'type' => 'App\Notifications\ClassActivityNotification',
+        ]);
+
+        $notification = $this->instructor->notifications()->first();
+        $this->assertNotNull($notification);
+        $this->assertEquals("Student Joined Class: {$this->class->name}", $notification->data['title']);
+        $this->assertStringContainsString("has accepted your invitation and joined the class", $notification->data['message']);
     }
 }

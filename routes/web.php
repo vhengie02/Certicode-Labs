@@ -7,37 +7,39 @@ use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\ClassController;
 use App\Http\Controllers\LaboratoryController;
 use App\Http\Controllers\StudentProfileController;
+use App\Http\Controllers\CertificateController;
+use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\SearchController;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
 // Public Certificate Verification
-Route::get('/verify-certificate/{code}', [\App\Http\Controllers\CertificateController::class, 'verify'])->name('certificates.verify');
+Route::get('/verify-certificate/{code}', [CertificateController::class, 'verify'])->name('certificates.verify');
 
 // Public Google Authentication Mock
-Route::get('/auth/google', [\App\Http\Controllers\Auth\LoginController::class, 'redirectToGoogle'])->name('auth.google');
-Route::post('/auth/google/email', [\App\Http\Controllers\Auth\LoginController::class, 'submitGoogleEmail'])->name('auth.google.email');
-Route::get('/auth/google/verify', [\App\Http\Controllers\Auth\LoginController::class, 'showGoogleVerify'])->name('auth.google.verify');
-Route::post('/auth/google/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback');
-Route::get('/auth/google/password', [\App\Http\Controllers\Auth\LoginController::class, 'showGooglePassword'])->name('auth.google.password');
-Route::post('/auth/google/password', [\App\Http\Controllers\Auth\LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit');
-Route::post('/auth/google/forgot-password', [\App\Http\Controllers\Auth\LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot');
+Route::get('/auth/google', [LoginController::class, 'redirectToGoogle'])->name('auth.google');
+Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email');
+Route::get('/auth/google/verify', [LoginController::class, 'showGoogleVerify'])->name('auth.google.verify');
+Route::post('/auth/google/callback', [LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+Route::get('/auth/google/password', [LoginController::class, 'showGooglePassword'])->name('auth.google.password');
+Route::post('/auth/google/password', [LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit');
+Route::post('/auth/google/forgot-password', [LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot');
 
 // Password Reset Routes
-Route::get('/forgot-password', [\App\Http\Controllers\Auth\LoginController::class, 'showForgotPasswordForm'])->name('password.request');
-Route::post('/forgot-password', [\App\Http\Controllers\Auth\LoginController::class, 'sendResetLinkEmail'])->name('password.email');
-Route::get('/reset-password/{token}', [\App\Http\Controllers\Auth\LoginController::class, 'showResetPasswordForm'])->name('password.reset');
-Route::post('/reset-password', [\App\Http\Controllers\Auth\LoginController::class, 'resetPassword'])->name('password.update');
-
+Route::get('/forgot-password', [LoginController::class, 'showForgotPasswordForm'])->name('password.request');
+Route::post('/forgot-password', [LoginController::class, 'sendResetLinkEmail'])->name('password.email');
+Route::get('/reset-password/{token}', [LoginController::class, 'showResetPasswordForm'])->name('password.reset');
+Route::post('/reset-password', [LoginController::class, 'resetPassword'])->name('password.update');
 
 // Public GitHub Authentication Mock (Local Fallback)
-Route::get('/auth/github', [\App\Http\Controllers\Auth\LoginController::class, 'redirectToGithub'])->name('auth.github');
-Route::post('/auth/github/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleGithubCallback'])->name('auth.github.callback');
+Route::get('/auth/github', [LoginController::class, 'redirectToGithub'])->name('auth.github');
+Route::post('/auth/github/callback', [LoginController::class, 'handleGithubCallback'])->name('auth.github.callback');
 
 // Production OAuth Routes (Laravel Socialite)
-Route::get('/auth/{provider}/redirect', [\App\Http\Controllers\Auth\LoginController::class, 'redirectToProvider'])->name('auth.provider.redirect');
-Route::get('/auth/{provider}/callback', [\App\Http\Controllers\Auth\LoginController::class, 'handleProviderCallback'])->name('auth.provider.callback');
+Route::get('/auth/{provider}/redirect', [LoginController::class, 'redirectToProvider'])->name('auth.provider.redirect');
+Route::get('/auth/{provider}/callback', [LoginController::class, 'handleProviderCallback'])->name('auth.provider.callback');
 
 // Authentication Routes
 Route::get('/register', [RegisterController::class, 'show'])->name('register.show');
@@ -55,18 +57,18 @@ Route::middleware('auth')->group(function () {
     })->name('dashboard');
 
     // Settings & Account preferences
-    Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'show'])->name('settings.show');
-    Route::put('/settings/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('settings.profile.update');
-    Route::put('/settings/password', [\App\Http\Controllers\SettingsController::class, 'updatePassword'])->name('settings.password.update');
-    Route::post('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
-    Route::post('/settings/gmail/connect', [\App\Http\Controllers\SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect');
-    Route::post('/settings/gmail/verify', [\App\Http\Controllers\SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify');
-    Route::post('/settings/gmail/disconnect', [\App\Http\Controllers\SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
-    Route::post('/settings/github/disconnect', [\App\Http\Controllers\SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
+    Route::get('/settings', [SettingsController::class, 'show'])->name('settings.show');
+    Route::put('/settings/profile', [SettingsController::class, 'updateProfile'])->name('settings.profile.update');
+    Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password.update');
+    Route::post('/settings/notifications', [SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
+    Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect');
+    Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify');
+    Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
+    Route::post('/settings/github/disconnect', [SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
 
     // Certificates
-    Route::post('/classes/{class_id}/claim-certificate', [\App\Http\Controllers\CertificateController::class, 'claim'])->name('classes.claim-certificate');
-    Route::get('/certificates/{id}', [\App\Http\Controllers\CertificateController::class, 'show'])->name('certificates.show');
+    Route::post('/classes/{class_id}/claim-certificate', [CertificateController::class, 'claim'])->name('classes.claim-certificate');
+    Route::get('/certificates/{id}', [CertificateController::class, 'show'])->name('certificates.show');
 
     // Classes & Module management (NetAcad inspired)
     Route::resource('classes', ClassController::class);
@@ -100,7 +102,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profiles/{id}', [StudentProfileController::class, 'destroy'])->name('profiles.destroy');
 
     // Global Search
-    Route::get('/search', [\App\Http\Controllers\SearchController::class, 'search'])->name('search');
+    Route::get('/search', [SearchController::class, 'search'])->name('search');
 
     // Notifications
     Route::post('/notifications/mark-as-read', function () {

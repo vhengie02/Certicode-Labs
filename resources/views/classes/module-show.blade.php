@@ -6,10 +6,10 @@
 @endsection
 
 @section('content')
-<div class="h-[calc(100vh-8.5rem)] flex flex-col lg:flex-row gap-6 overflow-hidden -mt-4">
+<div class="flex flex-col lg:flex-row gap-6 -mt-4">
     
     <!-- LEFT PANEL: NetAcad-Style Course outline & Resources tabs -->
-    <div class="w-full lg:w-80 flex flex-col bg-[#161B22] rounded-xl border border-slate-800 shrink-0 overflow-hidden">
+    <div class="w-full lg:w-80 flex flex-col bg-[#161B22] rounded-xl border border-slate-800 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-hidden">
         <!-- Tabs Header -->
         <div class="flex border-b border-slate-800 bg-slate-950">
             <button id="tab-outline-btn" onclick="switchTab('outline')" class="flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-indigo-500 text-white transition-all">
@@ -119,7 +119,7 @@
     </div>
 
     <!-- MAIN CENTER CONTENT: Module Lesson Material & Sandbox challenges -->
-    <div class="flex-1 flex flex-col overflow-y-auto gap-6 focus:outline-none">
+    <div class="flex-1 flex flex-col gap-6 focus:outline-none">
         
         <!-- Module Lesson Content Card -->
         <div class="glass-panel p-8 rounded-xl border border-slate-800 space-y-6 relative overflow-hidden">

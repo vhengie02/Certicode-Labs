@@ -24,9 +24,6 @@
                         Manage Classes
                     </a>
                 @endif
-                <a href="{{ route('profiles.edit', auth()->id()) }}" class="inline-flex items-center px-4 py-2 border border-slate-800 text-sm font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-800 transition-colors">
-                    Edit Profile
-                </a>
             </div>
         </div>
     </div>
@@ -150,6 +147,7 @@
     @endif
 
     <!-- Telemetry Log Tracker Table -->
+    @if(auth()->user()->role !== 'student')
     <div class="glass-panel p-6 rounded-lg border border-slate-800">
         <h3 class="text-sm font-bold text-white mb-4 uppercase tracking-wider text-slate-400">Integrity & Anomaly Telemetry Monitor</h3>
         <div class="overflow-x-auto">
@@ -201,6 +199,7 @@
             </table>
         </div>
     </div>
+    @endif
 </div>
 @endsection
 

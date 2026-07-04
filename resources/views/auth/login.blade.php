@@ -112,8 +112,8 @@
     </div>
 
     <!-- RIGHT SIDE: Split Login Form Panel -->
-    <div class="w-full md:w-1/2 lg:w-2/5 flex flex-col justify-center bg-[#0D1117] px-8 sm:px-16 md:px-12 lg:px-16 xl:px-20 overflow-y-auto">
-        <div class="max-w-md w-full mx-auto space-y-6 py-12">
+    <div class="w-full md:w-1/2 lg:w-2/5 flex flex-col bg-[#0D1117] px-8 sm:px-16 md:px-12 lg:px-16 xl:px-20 overflow-y-auto">
+        <div class="max-w-md w-full mx-auto my-auto space-y-6 py-12">
             <!-- Mobile Brand Header -->
             <div class="flex items-center space-x-2 md:hidden mb-8">
                 <div class="h-8 w-8 rounded bg-blue-600 flex items-center justify-center text-white font-bold text-sm">

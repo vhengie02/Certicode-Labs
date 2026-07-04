@@ -200,10 +200,21 @@ class ClassController extends Controller
     public function acceptInvite(Request $request, $class_id)
     {
         $class = SchoolClass::findOrFail($class_id);
+        $student = auth()->user();
         
-        $class->students()->updateExistingPivot(auth()->id(), [
+        $class->students()->updateExistingPivot($student->id, [
             'status' => 'enrolled'
         ]);
+
+        // Notify the instructor
+        if ($class->instructor) {
+            $class->instructor->notify(new \App\Notifications\ClassActivityNotification(
+                "Student Joined Class: {$class->name}",
+                "{$student->name} has accepted your invitation and joined the class '{$class->name}'.",
+                route('classes.show', $class->id),
+                'class'
+            ));
+        }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Invitation accepted. Welcome to ' . $class->name . '!');
     }
@@ -237,13 +248,22 @@ class ClassController extends Controller
             'attachments.*' => 'file|max:20480', // Max 20MB
         ]);
 
+        $parentId = $validated['parent_id'] ?? null;
+        $existingCount = Module::where('class_id', $class->id)
+            ->where('parent_id', $parentId)
+            ->count();
+
+        $orderIndex = isset($validated['order_index'])
+            ? min(max(0, (int)$validated['order_index']), $existingCount)
+            : $existingCount;
+
         $module = Module::create([
             'class_id' => $class->id,
-            'parent_id' => $validated['parent_id'] ?? null,
+            'parent_id' => $parentId,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'content' => $validated['content'],
-            'order_index' => $validated['order_index'] ?? 0,
+            'order_index' => $orderIndex,
         ]);
 
         // Handle file attachments
@@ -337,12 +357,22 @@ class ClassController extends Controller
             'remove_attachments.*' => 'exists:module_attachments,id',
         ]);
 
+        $parentId = $validated['parent_id'] ?? null;
+        $existingCount = Module::where('class_id', $class->id)
+            ->where('parent_id', $parentId)
+            ->where('id', '!=', $module->id)
+            ->count();
+
+        $orderIndex = isset($validated['order_index'])
+            ? min(max(0, (int)$validated['order_index']), $existingCount)
+            : $existingCount;
+
         $module->update([
-            'parent_id' => $validated['parent_id'] ?? null,
+            'parent_id' => $parentId,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'content' => $validated['content'],
-            'order_index' => $validated['order_index'] ?? 0,
+            'order_index' => $orderIndex,
         ]);
 
         // Remove marked attachments

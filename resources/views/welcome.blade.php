@@ -9,6 +9,13 @@
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+        @font-face {
+            font-family: 'Brick Sans';
+            src: url('/fonts/BrickSans-Bold.otf') format('opentype');
+            font-weight: bold;
+            font-style: normal;
+            font-display: swap;
+        }
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0D1117;
@@ -20,14 +27,10 @@
 
     <!-- Top Navigation -->
     <header class="w-full max-w-7xl mx-auto px-6 h-16 flex items-center justify-between border-b border-slate-800">
-        <div class="flex items-center space-x-2.5">
-            <div class="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                <!-- Logo Shield SVG -->
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                </svg>
-            </div>
-            <span class="text-lg font-bold text-white tracking-tight">Certicode Labs</span>
+        <div class="flex items-center">
+            <span class="text-2xl font-bold text-white tracking-wider leading-[1.15] uppercase" style="font-family: 'Brick Sans', sans-serif;">
+                Certicode<br>Labs
+            </span>
         </div>
 
         <nav class="flex items-center space-x-4">

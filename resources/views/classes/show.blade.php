@@ -7,10 +7,10 @@
 
 @section('content')
 <!-- Master Layout Split (Left Modules Tree + Main Grid) -->
-<div class="h-[calc(100vh-8.5rem)] flex flex-col lg:flex-row gap-6 overflow-hidden -mt-4">
+<div class="flex flex-col lg:flex-row gap-6 -mt-4">
     
     <!-- LEFT PANEL: NetAcad Course Modules Navigation Tree -->
-    <div class="w-full lg:w-72 flex flex-col bg-[#1C2333] rounded-xl border border-slate-800 p-4 overflow-y-auto shrink-0 z-10">
+    <div class="w-full lg:w-72 flex flex-col bg-[#1C2333] rounded-xl border border-slate-800 p-4 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-y-auto z-10">
         <div class="mb-4 pb-3 border-b border-slate-800/80">
             <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Course Outline</span>
             <h2 class="text-base font-bold text-white mt-1">{{ $class->name }}</h2>
@@ -146,7 +146,7 @@
     </div>
 
     <!-- MAIN CENTER PANELS: Overview & Roster -->
-    <div class="flex-1 flex flex-col overflow-y-auto gap-6 focus:outline-none">
+    <div class="flex-1 flex flex-col gap-6 focus:outline-none">
         
         <!-- Class Specification Card -->
         <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
