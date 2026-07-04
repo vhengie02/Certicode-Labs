@@ -13,7 +13,7 @@ class CertificateController extends Controller
     /**
      * Claim a certificate for completing a class.
      */
-    public function claim($class_id)
+    public function claim(int $class_id)
     {
         $user = auth()->user();
         $class = SchoolClass::with('modules.laboratories')->findOrFail($class_id);
@@ -67,7 +67,7 @@ class CertificateController extends Controller
     /**
      * Display the specified certificate.
      */
-    public function show($id)
+    public function show(int $id)
     {
         $certificate = Certificate::with(['user', 'schoolClass.instructor'])->findOrFail($id);
         $user = auth()->user();

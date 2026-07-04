@@ -25,7 +25,7 @@ class StudentProfileController extends Controller
     /**
      * Show the profile edit form.
      */
-    public function edit($id)
+    public function edit(int $id)
     {
         $user = User::findOrFail($id);
 
@@ -40,7 +40,7 @@ class StudentProfileController extends Controller
     /**
      * Update the user profile.
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id)
     {
         $user = User::findOrFail($id);
 
@@ -81,7 +81,7 @@ class StudentProfileController extends Controller
     /**
      * Remove the user (Admin only).
      */
-    public function destroy($id)
+    public function destroy(int $id)
     {
         if (auth()->user()->role !== 'admin') {
             abort(403, 'Unauthorized.');

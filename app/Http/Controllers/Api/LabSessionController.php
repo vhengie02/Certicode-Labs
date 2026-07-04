@@ -24,7 +24,7 @@ class LabSessionController extends Controller
     /**
      * Start a new laboratory session for a student.
      */
-    public function startSession(Request $request, $labId)
+    public function startSession(Request $request, int $labId)
     {
         $lab = Laboratory::findOrFail($labId);
         $user = $request->user();
@@ -48,7 +48,7 @@ class LabSessionController extends Controller
     /**
      * Submit real-time telemetry logs (tab switches, webcam face detection status).
      */
-    public function submitTelemetry(Request $request, $sessionId)
+    public function submitTelemetry(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
 
@@ -111,7 +111,7 @@ class LabSessionController extends Controller
     /**
      * Compile/Run student code submissions.
      */
-    public function executeCode(Request $request, $sessionId)
+    public function executeCode(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
 
@@ -234,7 +234,7 @@ class LabSessionController extends Controller
      * Read the GitHub API to parse collaboration/contribution stats.
      * (Phase 1 Integration)
      */
-    public function syncGithubContributions(Request $request, $sessionId)
+    public function syncGithubContributions(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
         $user = $session->user;

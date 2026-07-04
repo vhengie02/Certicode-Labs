@@ -76,7 +76,7 @@ class ClassController extends Controller
     /**
      * Display the specified class details.
      */
-    public function show($id)
+    public function show(int $id)
     {
         $class = SchoolClass::with(['modules.laboratories.labSessions', 'students', 'instructor'])->findOrFail($id);
         $user = Auth::user();
@@ -104,7 +104,7 @@ class ClassController extends Controller
     /**
      * Show form to edit class.
      */
-    public function edit($id)
+    public function edit(int $id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
@@ -114,7 +114,7 @@ class ClassController extends Controller
     /**
      * Update class.
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
@@ -132,7 +132,7 @@ class ClassController extends Controller
     /**
      * Delete class.
      */
-    public function destroy($id)
+    public function destroy(int $id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
@@ -173,7 +173,7 @@ class ClassController extends Controller
     /**
      * Invite student by Email (Gmail invite).
      */
-    public function inviteStudent(Request $request, $id)
+    public function inviteStudent(Request $request, int $id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
@@ -207,7 +207,7 @@ class ClassController extends Controller
     /**
      * Accept Class invitation.
      */
-    public function acceptInvite(Request $request, $class_id)
+    public function acceptInvite(Request $request, int $class_id)
     {
         $class = SchoolClass::findOrFail($class_id);
         $student = Auth::user();
@@ -235,7 +235,7 @@ class ClassController extends Controller
     /**
      * Show form to create a module.
      */
-    public function createModule($class_id)
+    public function createModule(int $class_id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
@@ -246,7 +246,7 @@ class ClassController extends Controller
     /**
      * Store a Module inside a Class.
      */
-    public function storeModule(Request $request, $class_id)
+    public function storeModule(Request $request, int $class_id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
@@ -308,7 +308,7 @@ class ClassController extends Controller
     /**
      * Display a specific module.
      */
-    public function showModule($class_id, $module_id)
+    public function showModule(int $class_id, int $module_id)
     {
         $class = SchoolClass::with('modules')->findOrFail($class_id);
         $module = Module::with(['laboratories', 'attachments'])->findOrFail($module_id);
@@ -343,7 +343,7 @@ class ClassController extends Controller
     /**
      * Edit a specific module.
      */
-    public function editModule($class_id, $module_id)
+    public function editModule(int $class_id, int $module_id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
@@ -355,7 +355,7 @@ class ClassController extends Controller
     /**
      * Update a specific module.
      */
-    public function updateModule(Request $request, $class_id, $module_id)
+    public function updateModule(Request $request, int $class_id, int $module_id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
@@ -420,7 +420,7 @@ class ClassController extends Controller
     /**
      * Delete a specific module.
      */
-    public function destroyModule($class_id, $module_id)
+    public function destroyModule(int $class_id, int $module_id)
     {
         $this->authorizeInstructor();
         $module = Module::findOrFail($module_id);
@@ -438,7 +438,7 @@ class ClassController extends Controller
     /**
      * Download attachment.
      */
-    public function downloadAttachment($id)
+    public function downloadAttachment(int $id)
     {
         $attachment = \App\Models\ModuleAttachment::findOrFail($id);
         $module = $attachment->module;
@@ -462,13 +462,15 @@ class ClassController extends Controller
 
         $filePath = (string) $attachment->file_path;
         $fileName = (string) $attachment->file_name;
-        return \Illuminate\Support\Facades\Storage::disk('public')->download($filePath, $fileName);
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        return $disk->download($filePath, $fileName);
     }
 
     /**
      * Display real-time telemetry and anomalies monitor dashboard.
      */
-    public function telemetry($class_id)
+    public function telemetry(int $class_id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
@@ -493,7 +495,7 @@ class ClassController extends Controller
     /**
      * View detailed timeline for a specific student workspace session.
      */
-    public function telemetryTimeline($id)
+    public function telemetryTimeline(int $id)
     {
         $this->authorizeInstructor();
         $session = \App\Models\LabSession::with(['user', 'laboratory'])->findOrFail($id);
@@ -512,7 +514,7 @@ class ClassController extends Controller
     /**
      * Mark an anomaly as resolved.
      */
-    public function resolveAnomaly($id)
+    public function resolveAnomaly(int $id)
     {
         $this->authorizeInstructor();
         $anomaly = \App\Models\Anomaly::findOrFail($id);

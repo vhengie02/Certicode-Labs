@@ -18,7 +18,7 @@ class LaboratoryController extends Controller
     /**
      * Show the form for creating a new laboratory.
      */
-    public function create($class_id = null)
+    public function create(?int $class_id = null)
     {
         $this->authorizeAdminOrInstructor();
 
@@ -189,7 +189,7 @@ class LaboratoryController extends Controller
     /**
      * Start a new laboratory session for a student.
      */
-    public function startSession($id)
+    public function startSession(int $id)
     {
         $laboratory = Laboratory::findOrFail($id);
         $user = auth()->user();
@@ -212,7 +212,7 @@ class LaboratoryController extends Controller
     /**
      * Display the laboratory workspace session.
      */
-    public function showWorkspace($id)
+    public function showWorkspace(int $id)
     {
         $session = \App\Models\LabSession::with('laboratory')->findOrFail($id);
 
@@ -231,7 +231,7 @@ class LaboratoryController extends Controller
     /**
      * Complete and grade the laboratory workspace session.
      */
-    public function completeSession($id)
+    public function completeSession(int $id)
     {
         $session = \App\Models\LabSession::findOrFail($id);
 
