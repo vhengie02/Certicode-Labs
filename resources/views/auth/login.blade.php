@@ -75,18 +75,18 @@
         
         <!-- Logo and Brand Name -->
         <div class="flex items-center z-10">
-            <span class="text-2xl font-brick text-white tracking-wider leading-[1.15] uppercase">
-                Certicode<br>Labs
+            <span class="text-4xl font-brick tracking-wider leading-[1.1] uppercase text-white">
+                Certicode<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500">Labs</span>
             </span>
         </div>
 
         <!-- Middle Pitch Presentation -->
         <div class="max-w-xl space-y-6 z-10">
             <h1 class="text-3xl lg:text-4xl font-extrabold text-white leading-tight tracking-tight">
-                Verify coding competency with live execution telemetry.
+                Verify Your Coding Skills with Real-Time Sandbox Telemetry.
             </h1>
             <p class="text-slate-400 text-sm leading-relaxed">
-                Connect your workspace sandbox to learning modules, verify completion through automated test validations, and earn authenticated certificates.
+                Unlock hands-on developer modules, practice in secure sandbox environments, and automatically verify your code milestones to build your verified tech credentials.
             </p>
             <!-- Feature list with SVGs -->
             <ul class="space-y-4 pt-4">
@@ -122,8 +122,8 @@
         <div class="max-w-md w-full mx-auto my-auto space-y-6 py-12">
             <!-- Mobile Brand Header -->
             <div class="flex items-center md:hidden mb-8">
-                <span class="text-xl font-brick text-white tracking-wider leading-[1.15] uppercase">
-                    Certicode<br>Labs
+                <span class="text-3xl font-brick tracking-wider leading-[1.1] uppercase text-white">
+                    Certicode<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500">Labs</span>
                 </span>
             </div>
 
@@ -135,7 +135,7 @@
                 <p class="text-sm text-slate-400 mt-2">
                     Enter your email credentials below or
                     <a href="{{ route('register.show') }}" class="font-semibold text-blue-500 hover:underline">
-                        create a new account
+                        create account
                     </a>
                 </p>
             </div>

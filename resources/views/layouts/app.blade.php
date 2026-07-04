@@ -6,8 +6,8 @@
     <title>@yield('title', 'Certicode Labs') - AI Competency Platform</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    <!-- Inter & JetBrains Mono Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Design System Theme Overrides -->
     <script>
@@ -26,14 +26,14 @@
                             700: '#1158c7',
                         },
                         green: {
-                            50: '#f0fdf4',
+                            50: '#f0df4',
                             100: '#dcfce7',
                             200: '#bbf7d0',
                             300: '#86efac',
                             400: '#4ade80',
-                            500: '#2EA043', // GitHub Hover Green
-                            600: '#238636', // GitHub Primary Green
-                            700: '#1a6528',
+                            500: '#22C55E', // CTA/Accent green
+                            600: '#16a34a',
+                            700: '#15803d',
                         },
                         indigo: {
                             50: '#eff6ff',
@@ -63,8 +63,8 @@
                         }
                     },
                     fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'monospace'],
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
                         brick: ['"Brick Sans"', 'sans-serif']
                     }
                 }
@@ -80,26 +80,28 @@
             font-display: swap;
         }
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0D1117;
-            color: #E6EDF3;
+            font-family: 'IBM Plex Sans', sans-serif;
+            background-color: #0F172A;
+            color: #F8FAFC;
         }
         .glass-panel {
-            background-color: #161B22;
-            border: 1px solid #30363D;
+            background-color: #1E293B;
+            border: 1px solid #334155;
         }
         .glass-card {
-            background-color: #161B22;
-            border: 1px solid #30363D;
-            transition: all 150ms ease;
+            background-color: #1E293B;
+            border: 1px solid #334155;
+            transition: all 200ms ease;
         }
         .glass-card:hover {
-            border-color: #388BFD;
+            border-color: #22C55E;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+            transform: translateY(-1px);
         }
         /* Custom sidebar active state style matching GitHub */
         .sidebar-active-item {
             background-color: #21262D !important;
-            border-left: 4px solid #f78166 !important; /* GitHub's active tab coral border */
+            border-left: 4px solid #22C55E !important; /* Design system green active indicator */
             border-top-left-radius: 0px !important;
             border-bottom-left-radius: 0px !important;
             color: #ffffff !important;
@@ -110,14 +112,14 @@
             height: 8px;
         }
         ::-webkit-scrollbar-track {
-            background: #0D1117;
+            background: #0F172A;
         }
         ::-webkit-scrollbar-thumb {
-            background: #30363D;
+            background: #1E293B;
             border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #8B949E;
+            background: #334155;
         }
     </style>
 </head>
@@ -125,21 +127,21 @@
 
     <!-- Main Content Shell -->
     <div class="flex flex-col flex-1 overflow-hidden">
-        <!-- Top bar (56px tall) -->
-        <header class="h-14 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 z-50 flex-shrink-0">
+        <!-- Top bar (64px tall) -->
+        <header class="h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 z-50 flex-shrink-0">
             <div class="flex-1 flex items-center justify-between">
                 <!-- Left Header: Logo & Branding + Breadcrumbs -->
                 <div class="flex items-center space-x-4">
                     <!-- Logo / Link to Dashboard -->
                     <a href="{{ route('dashboard') }}" class="flex items-center hover:opacity-90 transition-opacity">
-                        <span class="text-[17px] font-brick text-white tracking-wider leading-[1.15] uppercase">
-                            Certicode<br>Labs
+                        <span class="text-2xl font-bold tracking-wider leading-[1.1] uppercase text-white font-brick" style="font-family: 'Brick Sans', sans-serif;">
+                            Certicode<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500">Labs</span>
                         </span>
                     </a>
                     
                     <span class="text-slate-700">/</span>
                     
-                    <h2 class="text-xs font-semibold text-slate-400">@yield('page_header', 'Workspace')</h2>
+                    <h2 class="text-xs font-semibold text-slate-400 font-mono">@yield('page_header', 'Workspace')</h2>
                 </div>
 
                 <!-- Center Search Input (GitHub Style) -->

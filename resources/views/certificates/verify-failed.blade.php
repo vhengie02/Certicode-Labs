@@ -5,17 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Verify Certificate - Failed</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0D1117;
-            color: #E6EDF3;
+            font-family: 'IBM Plex Sans', sans-serif;
+            background-color: #0F172A;
+            color: #F8FAFC;
+        }
+        h1, h2, h3, h4, h5, h6, .font-mono {
+            font-family: 'JetBrains Mono', monospace;
         }
     </style>
 </head>
 <body class="min-h-full flex items-center justify-center p-6 bg-slate-950">
-    <div class="max-w-md w-full bg-[#161B22] border border-slate-800 rounded-2xl p-8 relative overflow-hidden shadow-2xl space-y-6">
+    <div class="max-w-md w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-8 relative overflow-hidden shadow-2xl space-y-6 transition-all duration-300 hover:border-slate-700">
         <!-- Background accents -->
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(239,68,68,0.06),transparent)] pointer-events-none"></div>
 

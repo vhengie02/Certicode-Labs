@@ -10,57 +10,26 @@
         tailwind.config = {
             theme: {
                 extend: {
-                    colors: {
-                        blue: {
-                            50: '#f0f6fc',
-                            100: '#c9d1d9',
-                            200: '#b1bac4',
-                            300: '#8b949e',
-                            400: '#58A6FF',
-                            500: '#388BFD',
-                            600: '#1F6FEB',
-                            700: '#1158c7',
-                        },
-                        green: {
-                            50: '#f0fdf4',
-                            100: '#dcfce7',
-                            200: '#bbf7d0',
-                            300: '#86efac',
-                            400: '#4ade80',
-                            500: '#2EA043',
-                            600: '#238636',
-                            700: '#1a6528',
-                        },
-                        slate: {
-                            50: '#f8fafc',
-                            100: '#f1f5f9',
-                            200: '#e2e8f0',
-                            300: '#cbd5e1',
-                            400: '#8B949E',
-                            500: '#64748b',
-                            600: '#475569',
-                            700: '#334155',
-                            800: '#30363D',
-                            900: '#161B22',
-                            950: '#0D1117',
-                        }
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
                     }
                 }
             }
         }
     </script>
-    <!-- Inter Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0D1117;
-            color: #E6EDF3;
+            font-family: 'IBM Plex Sans', sans-serif;
+            background-color: #0F172A;
+            color: #F8FAFC;
         }
     </style>
 </head>
 <body class="h-full flex items-center justify-center p-4">
-    <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl space-y-6">
+    <div class="max-w-md w-full bg-slate-900/60 border border-slate-800 rounded-xl p-8 shadow-2xl space-y-6 transition-all duration-300 hover:border-slate-700">
         <!-- Logo and Header -->
         <div class="flex flex-col items-center space-y-4">
             <div class="h-12 w-12 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
