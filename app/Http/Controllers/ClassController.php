@@ -15,10 +15,11 @@ class ClassController extends Controller
      */
     public function index()
     {
+        /** @var \App\Models\User|null $user */
         $user = auth()->user();
         $invitedClasses = collect();
 
-        if ($user->role === 'student') {
+        if ($user && $user->role === 'student') {
             $classes = $user->classes()->with('instructor')->latest()->get();
             $invitedClasses = $user->invitedClasses()->with('instructor')->latest()->get();
         } else {
@@ -63,7 +64,7 @@ class ClassController extends Controller
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
             'code' => $code,
-            'instructor_id' => auth()->id(),
+            'instructor_id' => (int) auth()->id(),
         ]);
 
         return redirect()->route('classes.index')->with('success', 'Class created successfully with join code: ' . $code);
@@ -75,10 +76,11 @@ class ClassController extends Controller
     public function show($id)
     {
         $class = SchoolClass::with(['modules.laboratories.labSessions', 'students', 'instructor'])->findOrFail($id);
+        /** @var \App\Models\User|null $user */
         $user = auth()->user();
 
         // Authorize student access
-        if ($user->role === 'student') {
+        if ($user && $user->role === 'student') {
             $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
             $isInvited = $class->students()->where('student_id', $user->id)->wherePivot('status', 'invited')->exists();
             
@@ -149,13 +151,16 @@ class ClassController extends Controller
             return redirect()->back()->with('error', 'Invalid enrollment code. Please check with your instructor.');
         }
 
-        // Attach student
-        $class->students()->syncWithoutDetaching([
-            auth()->id() => ['status' => 'enrolled']
-        ]);
+        $userId = auth()->id();
+        if ($userId) {
+            // Attach student
+            $class->students()->syncWithoutDetaching([
+                $userId => ['status' => 'enrolled']
+            ]);
 
-        // If they had an invitation, make sure it is updated to enrolled
-        $class->students()->updateExistingPivot(auth()->id(), ['status' => 'enrolled']);
+            // If they had an invitation, make sure it is updated to enrolled
+            $class->students()->updateExistingPivot($userId, ['status' => 'enrolled']);
+        }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Successfully enrolled in ' . $class->name);
     }
@@ -200,11 +205,13 @@ class ClassController extends Controller
     public function acceptInvite(Request $request, $class_id)
     {
         $class = SchoolClass::findOrFail($class_id);
+        /** @var \App\Models\User|null $student */
         $student = auth()->user();
-        
-        $class->students()->updateExistingPivot($student->id, [
-            'status' => 'enrolled'
-        ]);
+        if ($student) {
+            $class->students()->updateExistingPivot($student->id, [
+                'status' => 'enrolled'
+            ]);
+        }
 
         // Notify the instructor
         if ($class->instructor) {
@@ -299,10 +306,11 @@ class ClassController extends Controller
     {
         $class = SchoolClass::with('modules')->findOrFail($class_id);
         $module = Module::with(['laboratories', 'attachments'])->findOrFail($module_id);
+        /** @var \App\Models\User|null $user */
         $user = auth()->user();
 
         // Check if student is enrolled in the class
-        if ($user->role === 'student') {
+        if ($user && $user->role === 'student') {
             $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
             if (!$isEnrolled) {
                 abort(403, 'Unauthorized.');
@@ -424,13 +432,15 @@ class ClassController extends Controller
      */
     public function downloadAttachment($id)
     {
+        /** @var \App\Models\ModuleAttachment $attachment */
         $attachment = \App\Models\ModuleAttachment::findOrFail($id);
         $module = $attachment->module;
         $class = $module->schoolClass;
+        /** @var \App\Models\User|null $user */
         $user = auth()->user();
 
         // Authorize access to attachment (must be enrolled in the class or instructor)
-        if ($user->role === 'student') {
+        if ($user && $user->role === 'student') {
             $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
             if (!$isEnrolled) {
                 abort(403, 'Unauthorized.');
@@ -441,7 +451,9 @@ class ClassController extends Controller
             abort(404, 'File not found.');
         }
 
-        return \Illuminate\Support\Facades\Storage::disk('public')->download($attachment->file_path, $attachment->file_name);
+        $filePath = (string) $attachment->file_path;
+        $fileName = (string) $attachment->file_name;
+        return \Illuminate\Support\Facades\Storage::disk('public')->download($filePath, $fileName);
     }
 
     /**
@@ -505,7 +517,9 @@ class ClassController extends Controller
      */
     protected function authorizeInstructor()
     {
-        $role = auth()->user()->role ?? 'student';
+        /** @var \App\Models\User|null $user */
+        $user = auth()->user();
+        $role = $user ? $user->role : 'student';
         if ($role !== 'admin' && $role !== 'instructor') {
             abort(403, 'Unauthorized action.');
         }

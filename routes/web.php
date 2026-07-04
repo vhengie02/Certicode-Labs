@@ -106,7 +106,11 @@ Route::middleware('auth')->group(function () {
 
     // Notifications
     Route::post('/notifications/mark-as-read', function () {
-        auth()->user()->unreadNotifications->markAsRead();
+        /** @var \App\Models\User|null $user */
+        $user = auth()->user();
+        if ($user) {
+            $user->unreadNotifications->markAsRead();
+        }
         return response()->json(['status' => 'success']);
     })->name('notifications.mark-as-read');
 });

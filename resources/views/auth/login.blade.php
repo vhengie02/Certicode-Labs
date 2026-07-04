@@ -10,6 +10,9 @@
         tailwind.config = {
             theme: {
                 extend: {
+                    fontFamily: {
+                        brick: ['"Brick Sans"', 'sans-serif'],
+                    },
                     colors: {
                         blue: {
                             50: '#f0f6fc',
@@ -52,6 +55,12 @@
     <!-- Inter Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+        @font-face {
+            font-family: 'Brick Sans';
+            src: url('/fonts/BrickSans-Bold.otf') format('opentype');
+            font-weight: bold;
+            font-style: normal;
+        }
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0D1117;
@@ -65,13 +74,10 @@
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(37,99,235,0.06),transparent)] pointer-events-none"></div>
         
         <!-- Logo and Brand Name -->
-        <div class="flex items-center space-x-3 z-10">
-            <div class="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                </svg>
-            </div>
-            <span class="text-xl font-bold text-white tracking-tight">Certicode Labs</span>
+        <div class="flex items-center z-10">
+            <span class="text-2xl font-brick text-white tracking-wider leading-[1.15] uppercase">
+                Certicode<br>Labs
+            </span>
         </div>
 
         <!-- Middle Pitch Presentation -->
@@ -115,11 +121,10 @@
     <div class="w-full md:w-1/2 lg:w-2/5 flex flex-col bg-[#0D1117] px-8 sm:px-16 md:px-12 lg:px-16 xl:px-20 overflow-y-auto">
         <div class="max-w-md w-full mx-auto my-auto space-y-6 py-12">
             <!-- Mobile Brand Header -->
-            <div class="flex items-center space-x-2 md:hidden mb-8">
-                <div class="h-8 w-8 rounded bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
-                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                </div>
-                <span class="text-lg font-bold text-white">Certicode Labs</span>
+            <div class="flex items-center md:hidden mb-8">
+                <span class="text-xl font-brick text-white tracking-wider leading-[1.15] uppercase">
+                    Certicode<br>Labs
+                </span>
             </div>
 
             <!-- Header Titles -->
