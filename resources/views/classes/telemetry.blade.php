@@ -25,7 +25,7 @@
                     </h3>
                 </div>
                 <div class="h-10 w-10 rounded-lg bg-slate-950 flex items-center justify-center border border-slate-800">
-                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <svg class="w-5 h-5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 </div>
             </div>
             <p class="text-xs text-slate-500 mt-4">Active coding workspaces right now.</p>
@@ -154,7 +154,7 @@
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">{{ $sess->user->name }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-350">{{ $sess->laboratory->title }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                <span class="px-2 py-0.5 rounded text-[11px] font-medium {{ $sess->status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse' }}">
+                                <span class="px-2 py-0.5 rounded text-[11px] font-medium {{ $sess->status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30 animate-pulse' }}">
                                     {{ $sess->status }}
                                 </span>
                             </td>
@@ -166,7 +166,7 @@
                                 <div>End: {{ $sess->ended_at ? \Carbon\Carbon::parse($sess->ended_at)->format('M-d H:i') : '-' }}</div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                                <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-indigo-500/40 text-xs font-bold rounded-lg text-indigo-400 hover:text-white transition">
+                                <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center px-3 py-1.5 bg-[#171717] border border-[#2e2e2e] hover:border-[#3ecf8e]/40 text-xs font-mono font-medium rounded-[6px] text-[#3ecf8e] hover:text-[#00c573] transition">
                                     <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2"></path></svg>
                                     View Log Timeline
                                 </a>

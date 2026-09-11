@@ -9,10 +9,10 @@
 <div class="flex flex-col lg:flex-row gap-6 -mt-4">
     
     <!-- LEFT PANEL: NetAcad-Style Course outline & Resources tabs -->
-    <div class="w-full lg:w-80 flex flex-col bg-[#161B22] rounded-xl border border-slate-800 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-hidden">
+    <div class="w-full lg:w-80 flex flex-col bg-[#141414] rounded-xl border border-slate-800 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-hidden">
         <!-- Tabs Header -->
         <div class="flex border-b border-slate-800 bg-slate-950">
-            <button id="tab-outline-btn" onclick="switchTab('outline')" class="flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-indigo-500 text-white transition-all">
+            <button id="tab-outline-btn" onclick="switchTab('outline')" class="flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-[#3ecf8e] text-white transition-all">
                 Course Outline
             </button>
             <button id="tab-resources-btn" onclick="switchTab('resources')" class="flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-transparent text-slate-400 hover:text-white transition-all">
@@ -185,14 +185,14 @@
                                 @endphp
 
                                 @if($activeSession)
-                                    <a href="{{ route('sessions.show', $activeSession->id) }}" class="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-xs font-bold rounded-lg text-white transition-colors">
-                                        Resume Lab
+                                    <a href="{{ route('sessions.show', $activeSession->id) }}" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
+                                        Resume Lab &rarr;
                                     </a>
                                 @else
                                     <form action="{{ route('laboratories.start', $lab->id) }}" method="POST">
                                         @csrf
-                                        <button type="submit" class="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-xs font-bold rounded-lg text-white transition-colors">
-                                            Start Lab
+                                        <button type="submit" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
+                                            Start Lab &rarr;
                                         </button>
                                     </form>
                                 @endif
@@ -200,7 +200,7 @@
                         </div>
                     </div>
                 @empty
-                    <div class="col-span-full py-6 text-center text-xs text-slate-500">
+                    <div class="col-span-full py-6 text-center text-xs text-slate-500 font-mono">
                         No coding challenges (laboratories) are currently assigned to this module.
                     </div>
                 @endforelse
@@ -217,7 +217,7 @@
         
         <div class="flex items-center justify-between pt-4 border-t border-slate-800/80 mt-2 shrink-0">
             @if($prevModule)
-                <a href="{{ route('modules.show', [$class->id, $prevModule->id]) }}" class="px-4 py-2 border border-slate-800 hover:border-slate-700 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition">
+                <a href="{{ route('modules.show', [$class->id, $prevModule->id]) }}" class="px-4 py-2 border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] text-xs font-mono font-medium rounded-[6px] text-[#ededed] transition">
                     &larr; Previous: {{ $prevModule->title }}
                 </a>
             @else
@@ -225,12 +225,12 @@
             @endif
 
             @if($nextModule)
-                <a href="{{ route('modules.show', [$class->id, $nextModule->id]) }}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold rounded-lg text-white transition shadow-lg shadow-indigo-600/10">
+                <a href="{{ route('modules.show', [$class->id, $nextModule->id]) }}" class="px-4 py-2 border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-mono font-medium rounded-[6px] text-[#ededed] transition">
                     Next: {{ $nextModule->title }} &rarr;
                 </a>
             @else
-                <a href="{{ route('classes.show', $class->id) }}" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-xs font-bold rounded-lg text-white transition shadow-lg shadow-green-600/10">
-                    Complete Course Syllabus
+                <a href="{{ route('classes.show', $class->id) }}" class="px-5 py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition shadow-none">
+                    Complete Course Syllabus &rarr;
                 </a>
             @endif
         </div>

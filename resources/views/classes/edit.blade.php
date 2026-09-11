@@ -5,8 +5,11 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto">
-    <div class="glass-panel rounded-lg p-8 border border-slate-800">
-        <h2 class="text-lg font-bold text-white mb-6 uppercase tracking-wider text-slate-400">Modify Class Specifications</h2>
+    <div class="rounded-xl p-8 bg-[#171717] border border-[#2e2e2e]">
+        <div class="mb-6">
+            <span class="text-[10px] font-mono uppercase tracking-wider text-[#3ecf8e] block">Class Definition</span>
+            <h2 class="text-lg font-bold text-[#ededed] mt-0.5">Modify Class Specifications</h2>
+        </div>
 
         <form action="{{ route('classes.update', $class->id) }}" method="POST" class="space-y-6">
             @csrf
@@ -14,27 +17,27 @@
 
             <!-- Class Name -->
             <div>
-                <label for="name" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Class Title / Name</label>
+                <label for="name" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Class Title / Name</label>
                 <input type="text" name="name" id="name" required value="{{ old('name', $class->name) }}"
-                    class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">
-                @error('name') <p class="text-rose-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
+                    class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">
+                @error('name') <p class="text-red-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
             </div>
 
             <!-- Description -->
             <div>
-                <label for="description" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Class Description</label>
+                <label for="description" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Class Description</label>
                 <textarea name="description" id="description" rows="4"
-                    class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">{{ old('description', $class->description) }}</textarea>
-                @error('description') <p class="text-rose-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
+                    class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">{{ old('description', $class->description) }}</textarea>
+                @error('description') <p class="text-red-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
             </div>
 
             <!-- Action buttons -->
-            <div class="flex justify-end space-x-3 pt-6 border-t border-slate-800/80">
-                <a href="{{ route('classes.show', $class->id) }}" class="px-4 py-2 border border-slate-800 text-xs font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-850 transition-colors">
+            <div class="flex justify-end space-x-3 pt-6 border-t border-[#232323]">
+                <a href="{{ route('classes.show', $class->id) }}" class="px-4 py-2 border border-[#2e2e2e] text-xs font-mono font-medium rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
                     Cancel
                 </a>
-                <button type="submit" class="px-4 py-2 border border-transparent text-xs font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-colors shadow-lg shadow-green-500/20">
-                    Save Changes
+                <button type="submit" class="px-5 py-2 text-xs font-semibold rounded-full text-[#0f0f0f] bg-[#3ecf8e] hover:bg-[#00c573] transition-colors shadow-none">
+                    Save Changes &rarr;
                 </button>
             </div>
         </form>

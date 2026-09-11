@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950">
+<html lang="en" class="h-full bg-[#0f0f0f] text-[#ededed]">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Forgot Password - Certicode Labs</title>
+    <!-- Google Fonts: Inter & Source Code Pro -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,35 +15,48 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['"IBM Plex Sans"', 'sans-serif'],
-                        mono: ['"JetBrains Mono"', 'monospace'],
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+                        mono: ['"Source Code Pro"', 'ui-monospace', 'monospace'],
+                    },
+                    colors: {
+                        canvas: '#0f0f0f',
+                        surface: '#171717',
+                        elevated: '#1c1c1c',
+                        brand: {
+                            DEFAULT: '#3ecf8e',
+                            hover: '#00c573',
+                            muted: 'rgba(62, 207, 142, 0.15)',
+                        },
+                        border: {
+                            hairline: '#2e2e2e',
+                            subtle: '#232323',
+                            elevated: '#383838',
+                        }
                     }
                 }
             }
         }
     </script>
-    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: #0F172A;
-            color: #F8FAFC;
+            font-family: 'Inter', sans-serif;
+            background-color: #0f0f0f;
+            color: #ededed;
         }
     </style>
 </head>
-<body class="h-full flex items-center justify-center p-4">
-    <div class="max-w-md w-full bg-slate-900/60 border border-slate-800 rounded-xl p-8 shadow-2xl space-y-6 transition-all duration-300 hover:border-slate-700">
+<body class="h-full flex items-center justify-center p-4 selection:bg-[#3ecf8e]/20 selection:text-[#3ecf8e]">
+    <div class="max-w-md w-full bg-[#171717] border border-[#2e2e2e] rounded-xl p-8 space-y-6">
         <!-- Logo and Header -->
-        <div class="flex flex-col items-center space-y-4">
-            <div class="h-12 w-12 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+        <div class="flex flex-col items-center space-y-3">
+            <div class="w-10 h-10 rounded-[6px] bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                 </svg>
             </div>
             <div class="text-center space-y-1">
-                <h1 class="text-xl font-extrabold text-white tracking-tight">Forgot Password</h1>
-                <p class="text-xs text-slate-400">Enter your email to receive a password reset link</p>
+                <h1 class="text-xl font-bold text-[#ededed] tracking-tight">Forgot Password</h1>
+                <p class="text-xs text-[#888888]">Enter your email to receive a password reset link</p>
             </div>
         </div>
 
@@ -49,15 +66,15 @@
 
             <!-- Success Alert -->
             @if (session('status'))
-                <div class="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4">
-                    <p class="text-xs text-emerald-300 font-medium leading-relaxed">{{ session('status') }}</p>
+                <div class="rounded-[6px] bg-[#141414] border border-[#3ecf8e]/30 p-3.5">
+                    <p class="text-xs text-[#3ecf8e] font-medium leading-relaxed">{{ session('status') }}</p>
                 </div>
             @endif
 
             <!-- Errors Alert -->
             @if ($errors->any())
-                <div class="rounded-lg bg-red-500/10 border border-red-500/20 p-4">
-                    <ul class="list-disc list-inside text-xs text-rose-300 space-y-0.5">
+                <div class="rounded-[6px] bg-[#141414] border border-red-500/30 p-3.5">
+                    <ul class="list-disc list-inside text-xs text-red-300 space-y-0.5">
                         @foreach ($errors->all() as $error)
                             <li>{{ $error }}</li>
                         @endforeach
@@ -67,20 +84,20 @@
 
             <!-- Email Input -->
             <div>
-                <label for="email" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Email Address</label>
+                <label for="email" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-1.5">Email Address</label>
                 <input id="email" name="email" type="email" required autofocus value="{{ old('email') }}"
-                       class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                       placeholder="name@email.com">
+                       class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors"
+                       placeholder="developer@example.com">
             </div>
 
-            <!-- Action Button -->
-            <button type="submit" class="w-full py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 focus:outline-none transition-colors shadow-lg shadow-green-500/20 active:scale-[0.98]">
+            <!-- Action Button: Pill CTA -->
+            <button type="submit" class="w-full py-2.5 px-4 rounded-full bg-[#3ecf8e] text-sm font-semibold text-[#0f0f0f] hover:bg-[#00c573] focus:outline-none transition-colors">
                 Send Reset Link
             </button>
 
             <!-- Back link -->
-            <div class="text-center pt-2">
-                <a href="{{ route('login') }}" class="text-xs text-slate-500 hover:text-white transition-colors">
+            <div class="text-center pt-2 border-t border-[#232323]">
+                <a href="{{ route('login') }}" class="text-xs font-mono text-[#666666] hover:text-[#ededed] transition-colors">
                     &larr; Back to Login
                 </a>
             </div>

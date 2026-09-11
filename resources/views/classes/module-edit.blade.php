@@ -6,10 +6,11 @@
 @endsection
 
 @section('content')
-<div class="max-w-3xl mx-auto glass-panel p-8 rounded-xl border border-slate-800 space-y-6">
+<div class="max-w-3xl mx-auto p-8 rounded-xl bg-[#171717] border border-[#2e2e2e] space-y-6">
     <div>
-        <h2 class="text-xl font-bold text-white">Modify Learning Module</h2>
-        <p class="text-xs text-slate-400 mt-1">Update title, syllabus details, theoretical lessons, and associated downloadable files.</p>
+        <span class="text-[10px] font-mono uppercase tracking-wider text-[#3ecf8e] block">Curriculum Builder</span>
+        <h2 class="text-xl font-bold text-[#ededed] mt-0.5">Modify Learning Module</h2>
+        <p class="text-xs text-[#888888] mt-1 font-mono">Update title, syllabus details, theoretical lessons, and associated downloadable files.</p>
     </div>
 
     <form action="{{ route('modules.update', [$class->id, $module->id]) }}" method="POST" enctype="multipart/form-data" class="space-y-6">
@@ -18,39 +19,39 @@
 
         <!-- Title -->
         <div>
-            <label for="title" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Module Title</label>
+            <label for="title" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Module Title</label>
             <input type="text" name="title" id="title" required value="{{ old('title', $module->title) }}" placeholder="e.g. Module 1: Variables & Operations" 
-                   class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500">
+                   class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">
         </div>
 
         <!-- Brief summary -->
         <div>
-            <label for="description" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Brief Summary</label>
+            <label for="description" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Brief Summary</label>
             <input type="text" name="description" id="description" value="{{ old('description', $module->description) }}" placeholder="Overview of module content" 
-                   class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500">
+                   class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">
         </div>
 
         <!-- Content with CKEditor -->
         <div>
-            <label for="module-content" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Lesson Readings & Materials</label>
+            <label for="module-content" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Lesson Readings & Materials</label>
             <div class="text-slate-900">
-                <textarea name="content" id="module-content" rows="12" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 font-sans">{{ old('content', $module->content) }}</textarea>
+                <textarea name="content" id="module-content" rows="12" class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">{{ old('content', $module->content) }}</textarea>
             </div>
         </div>
 
         <!-- Current File attachments list with deletion checkboxes -->
         @if($module->attachments->count() > 0)
-            <div class="p-4 bg-slate-900/40 border border-slate-850 rounded-xl space-y-3">
-                <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Current Attachments</span>
+            <div class="p-4 bg-[#141414] border border-[#2e2e2e] rounded-[6px] space-y-3">
+                <span class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3]">Current Attachments</span>
                 <div class="space-y-2">
                     @foreach($module->attachments as $attachment)
-                        <div class="flex items-center justify-between p-2 bg-slate-950 rounded-lg border border-slate-850 text-xs">
-                            <span class="text-white truncate flex items-center">
-                                <svg class="w-3.5 h-3.5 mr-1.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        <div class="flex items-center justify-between p-2.5 bg-[#171717] rounded-[6px] border border-[#2e2e2e] text-xs font-mono">
+                            <span class="text-[#ededed] truncate flex items-center">
+                                <svg class="w-3.5 h-3.5 mr-1.5 text-[#3ecf8e] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                                 {{ $attachment->file_name }} ({{ number_format($attachment->file_size / 1024, 1) }} KB)
                             </span>
-                            <label class="flex items-center text-rose-400 cursor-pointer select-none">
-                                <input type="checkbox" name="remove_attachments[]" value="{{ $attachment->id }}" class="mr-1.5 h-3.5 w-3.5 rounded text-rose-600 bg-slate-900 border-slate-700 focus:ring-rose-500">
+                            <label class="flex items-center text-red-400 cursor-pointer select-none">
+                                <input type="checkbox" name="remove_attachments[]" value="{{ $attachment->id }}" class="mr-1.5 h-3.5 w-3.5 rounded-[4px] bg-[#141414] border-[#2e2e2e] text-red-500 focus:ring-0">
                                 Remove File
                             </label>
                         </div>
@@ -61,20 +62,20 @@
 
         <!-- Upload new file attachments -->
         <div>
-            <label for="attachments" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Upload Additional Files / Resources</label>
+            <label for="attachments" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Upload Additional Files / Resources</label>
             <input type="file" name="attachments[]" id="attachments" multiple
-                   class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-white hover:file:bg-slate-750">
+                   class="w-full text-xs text-[#888888] font-mono file:mr-4 file:py-2 file:px-4 file:rounded-[6px] file:border file:border-[#2e2e2e] file:text-xs file:font-medium file:bg-[#141414] file:text-[#ededed] hover:file:bg-[#202020]">
         </div>
 
         <!-- Parent Module (Sub-module setting) -->
         <div>
-            <label for="parent_id" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Parent Module (Optional)</label>
+            <label for="parent_id" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Parent Module (Optional)</label>
             <select name="parent_id" id="parent_id" 
-                    class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500">
-                <option value="">-- None (Make it a main module) --</option>
+                    class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">
+                <option value="" class="bg-[#141414] text-[#888888]">-- None (Make it a main module) --</option>
                 @foreach($class->modules->where('parent_id', null) as $parentMod)
                     @if($parentMod->id !== $module->id)
-                        <option value="{{ $parentMod->id }}" {{ old('parent_id', $module->parent_id) == $parentMod->id ? 'selected' : '' }}>
+                        <option value="{{ $parentMod->id }}" {{ old('parent_id', $module->parent_id) == $parentMod->id ? 'selected' : '' }} class="bg-[#141414] text-[#ededed]">
                             {{ $parentMod->title }}
                         </option>
                     @endif
@@ -84,15 +85,15 @@
 
         <!-- Order index -->
         <div>
-            <label for="order_index" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Order Index</label>
+            <label for="order_index" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Order Index</label>
             <input type="number" name="order_index" id="order_index" required value="{{ old('order_index', $module->order_index) }}" min="0" 
-                   class="w-32 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500">
+                   class="w-32 px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">
         </div>
 
         <!-- Actions -->
-        <div class="flex justify-end space-x-3 pt-4 border-t border-slate-800/80">
-            <a href="{{ route('modules.show', [$class->id, $module->id]) }}" class="px-4 py-2 border border-slate-800 text-xs font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-800 transition">Cancel</a>
-            <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-xs font-semibold rounded-lg text-white transition shadow-lg shadow-green-500/20">Update Module</button>
+        <div class="flex justify-end space-x-3 pt-4 border-t border-[#232323]">
+            <a href="{{ route('modules.show', [$class->id, $module->id]) }}" class="px-4 py-2 border border-[#2e2e2e] text-xs font-mono font-medium rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition">Cancel</a>
+            <button type="submit" class="px-5 py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition shadow-none">Update Module &rarr;</button>
         </div>
     </form>
 </div>

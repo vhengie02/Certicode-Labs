@@ -36,6 +36,7 @@ class User extends Authenticatable
         'notify_lab',
         'notify_certificate',
         'notify_email_channel',
+        'auth_user_id',
     ];
 
     /**
@@ -46,6 +47,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'gmail_verification_code',
     ];
 
     /**

@@ -50,3 +50,12 @@ This creates a default student:
     -   **Lab Session ID**: `1` (or your active session ID)
     -   **API Token**: Leave blank for public prototyping routes, or use your API token.
 7.  Open or create a Java file, start writing, and use the panel controls to check your progress!
+
+## Roadmap & Planned Features
+
+See [TODO.md](../TODO.md) in the project root for full architectural details and progress tracking:
+- **Auto-Generated Starter Files & Client-Side Filename Integrity**: Workspace generation with `FileSystemWatcher` validation to prevent submission of missing/renamed files.
+- **Code Change Tracking (Diff View)**: Real-time sidebar diff summary (`+added/-deleted`) and team line-level blame attribution.
+- **Team Chat**: Private, ephemeral peer-to-peer chat for collaborative lab sessions.
+- **Architecture Split**: REST protocol for solo exercises, persistent WebSockets (Laravel Reverb) for team exercises.
+

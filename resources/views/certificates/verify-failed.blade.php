@@ -1,68 +1,69 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950">
+<html lang="en" class="h-full bg-[#0f0f0f] text-[#ededed]">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Verify Certificate - Failed</title>
+    <!-- Google Fonts: Inter & Source Code Pro -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['"IBM Plex Sans"', 'sans-serif'],
-                        mono: ['"JetBrains Mono"', 'monospace'],
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+                        mono: ['"Source Code Pro"', 'ui-monospace', 'monospace'],
+                    },
+                    colors: {
+                        canvas: '#0f0f0f',
+                        surface: '#171717',
                     }
                 }
             }
         }
     </script>
-    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: #0F172A;
-            color: #F8FAFC;
-        }
-        h1, h2, h3, h4, h5, h6, .font-mono {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Inter', sans-serif;
+            background-color: #0f0f0f;
+            color: #ededed;
         }
     </style>
 </head>
-<body class="min-h-full flex items-center justify-center p-6 bg-slate-950">
-    <div class="max-w-md w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-8 relative overflow-hidden shadow-2xl space-y-6 transition-all duration-300 hover:border-slate-700">
-        <!-- Background accents -->
-        <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(239,68,68,0.06),transparent)] pointer-events-none"></div>
-
+<body class="min-h-full flex items-center justify-center p-6 bg-[#0f0f0f] selection:bg-[#3ecf8e]/20 selection:text-[#3ecf8e]">
+    <div class="max-w-md w-full bg-[#171717] border border-[#2e2e2e] rounded-xl p-8 relative overflow-hidden space-y-6">
         <!-- Failure Emblem -->
         <div class="flex flex-col items-center text-center space-y-3">
-            <div class="h-16 w-16 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 shadow-lg shadow-rose-500/5">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="h-14 w-14 rounded-full bg-[#141414] border border-red-500/30 flex items-center justify-center text-red-400">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                 </svg>
             </div>
             <div>
-                <span class="px-2.5 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider bg-rose-500/10 text-rose-450 border border-rose-500/20 uppercase">
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider bg-[#141414] text-red-400 border border-red-500/30 uppercase">
                     Verification Failed
                 </span>
-                <h1 class="text-xl font-bold text-white mt-2">Invalid Certificate Hash</h1>
+                <h1 class="text-xl font-bold text-[#ededed] mt-2">Invalid Certificate Hash</h1>
             </div>
         </div>
 
         <!-- Details -->
-        <div class="border-t border-slate-800/80 pt-5 text-center text-sm space-y-4">
-            <p class="text-slate-400 leading-relaxed">
-                The verification code you provided (<span class="font-mono text-rose-400 font-bold uppercase">{{ $code }}</span>) is invalid or has not been registered inside the Certicode telemetry ledger database.
+        <div class="border-t border-[#232323] pt-5 text-center text-xs space-y-3">
+            <p class="text-[#a3a3a3] leading-relaxed">
+                The verification code provided (<span class="font-mono text-red-400 font-bold uppercase">{{ $code }}</span>) is invalid or has not been logged in the Certicode ledger.
             </p>
-            <p class="text-xs text-slate-500">
-                Please verify the code format, check for typing errors, or request the issuer to send a corrected link.
+            <p class="text-[#666666] font-mono">
+                Please check for typing errors or request a direct verification link from the student.
             </p>
         </div>
 
-        <div class="pt-4 text-center">
-            <a href="/" class="inline-flex items-center text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors">
-                Return to Certicode Labs Homepage
+        <div class="pt-4 text-center border-t border-[#232323]">
+            <a href="/" class="inline-flex items-center text-xs font-mono text-[#666666] hover:text-[#ededed] transition-colors">
+                &larr; Return to Certicode Labs
             </a>
         </div>
     </div>

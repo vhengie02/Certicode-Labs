@@ -1,70 +1,98 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>@yield('title', 'Certicode Labs') - Certicode Labs</title>
+
+    <!-- Immediate Theme Initialization (No-FOUC) -->
+    <script>
+        (function() {
+            try {
+                const stored = localStorage.getItem('theme') || 'system';
+                const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const isDark = stored === 'dark' || (stored === 'system' && systemDark);
+                if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.classList.remove('light');
+                    document.documentElement.style.colorScheme = 'dark';
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.classList.add('light');
+                    document.documentElement.style.colorScheme = 'light';
+                }
+            } catch (e) {}
+        })();
+    </script>
+
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Google Fonts: Inter (Circular-like geometric sans) & Source Code Pro -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     
-    <!-- Design System Theme Overrides -->
+    <!-- Design System Theme Overrides (Supabase Palette) -->
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        blue: {
-                            50: '#f0f6fc',
-                            100: '#c9d1d9',
-                            200: '#b1bac4',
-                            300: '#8b949e',
-                            400: '#58A6FF', // GitHub Light Accent Blue
-                            500: '#388BFD', // GitHub Active/Hover Accent Blue
-                            600: '#1F6FEB', // GitHub Primary Accent Blue
-                            700: '#1158c7',
+                        brand: {
+                            DEFAULT: '#3ecf8e',
+                            hover: '#00c573',
+                            border: 'rgba(62, 207, 142, 0.3)',
                         },
                         green: {
-                            50: '#f0df4',
+                            50: '#f0fdf4',
                             100: '#dcfce7',
                             200: '#bbf7d0',
                             300: '#86efac',
-                            400: '#4ade80',
-                            500: '#22C55E', // CTA/Accent green
-                            600: '#16a34a',
+                            400: '#3ecf8e',
+                            500: '#3ecf8e', // Supabase Emerald
+                            600: '#00c573', // Supabase Hover Emerald
                             700: '#15803d',
                         },
+                        emerald: {
+                            400: '#3ecf8e',
+                            500: '#3ecf8e',
+                            600: '#00c573',
+                            700: '#00a862',
+                        },
                         indigo: {
-                            50: '#eff6ff',
-                            100: '#dbeafe',
-                            200: '#bfdbfe',
-                            300: '#93c5fd',
-                            400: '#60a5fa',
-                            500: '#3b82f6',
-                            600: '#2563EB',
-                            700: '#1d4ed8',
-                            800: '#1e40af',
-                            900: '#1e3a8a',
-                            950: '#172554',
+                            400: '#3ecf8e',
+                            500: '#3ecf8e',
+                            600: '#00c573',
+                            700: '#00a862',
+                            800: '#1c1c1c',
+                            900: '#171717',
+                            950: '#0f0f0f',
+                        },
+                        blue: {
+                            400: '#3ecf8e',
+                            500: '#3ecf8e',
+                            600: '#00c573',
+                            700: '#00a862',
                         },
                         slate: {
-                            50: '#f8fafc',
-                            100: '#f1f5f9',
-                            200: '#e2e8f0',
-                            300: '#cbd5e1',
-                            400: '#8B949E', // Text Secondary
-                            500: '#64748b',
-                            600: '#475569',
-                            700: '#334155',
-                            800: '#30363D', // Border/Divider (GitHub Border)
-                            900: '#161B22', // Secondary Background / Card (GitHub Surface)
-                            950: '#0D1117', // Primary Background (GitHub Canvas)
+                            50: '#fafafa',
+                            100: '#f5f5f5',
+                            200: '#e5e5e5',
+                            300: '#d4d4d4',
+                            400: '#a3a3a3', // Text Muted
+                            500: '#737373',
+                            600: '#525252',
+                            700: '#404040',
+                            800: '#2e2e2e', // 1px Hairline Border
+                            850: '#1c1c1c', // Elevated Card
+                            900: '#171717', // Surface Card
+                            950: '#0f0f0f', // Near-black Canvas
                         }
                     },
                     fontFamily: {
-                        sans: ['"IBM Plex Sans"', 'sans-serif'],
-                        mono: ['"JetBrains Mono"', 'monospace'],
+                        sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+                        mono: ['"Source Code Pro"', '"JetBrains Mono"', 'monospace'],
                         brick: ['"Brick Sans"', 'sans-serif']
                     }
                 }
@@ -80,68 +108,363 @@
             font-display: swap;
         }
         body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: #0F172A;
-            color: #F8FAFC;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #0f0f0f;
+            color: #ededed;
         }
-        .glass-panel {
-            background-color: #1E293B;
-            border: 1px solid #334155;
+        .glass-panel, .surface-panel {
+            background-color: #171717;
+            border: 1px solid #2e2e2e;
+            border-radius: 8px;
         }
-        .glass-card {
-            background-color: #1E293B;
-            border: 1px solid #334155;
-            transition: all 200ms ease;
+        .glass-card, .surface-card {
+            background-color: #171717;
+            border: 1px solid #2e2e2e;
+            border-radius: 8px;
+            transition: border-color 150ms ease, background-color 150ms ease;
         }
-        .glass-card:hover {
-            border-color: #22C55E;
-            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
-            transform: translateY(-1px);
+        .glass-card:hover, .surface-card:hover {
+            border-color: rgba(62, 207, 142, 0.35);
+            background-color: #1c1c1c;
+            box-shadow: none !important;
         }
-        /* Custom sidebar active state style matching GitHub */
+        /* Supabase Pill CTA */
+        .btn-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            background-color: #3ecf8e;
+            color: #0f0f0f;
+            font-weight: 600;
+            font-size: 0.8125rem;
+            padding: 0.5rem 1.25rem;
+            transition: background-color 150ms ease;
+        }
+        .btn-pill:hover {
+            background-color: #00c573;
+        }
+        /* Supabase 6px Secondary Button */
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            background-color: #171717;
+            border: 1px solid #2e2e2e;
+            color: #ededed;
+            font-weight: 500;
+            font-size: 0.8125rem;
+            padding: 0.4rem 0.875rem;
+            transition: background-color 150ms ease, border-color 150ms ease;
+        }
+        .btn-secondary:hover {
+            background-color: #222222;
+            border-color: #3a3a3a;
+        }
+        /* Uppercase technical tags */
+        .tech-tag {
+            font-family: 'Source Code Pro', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.6875rem;
+            font-weight: 600;
+        }
+        /* Custom sidebar active state style matching Supabase */
         .sidebar-active-item {
-            background-color: #21262D !important;
-            border-left: 4px solid #22C55E !important; /* Design system green active indicator */
+            background-color: #1c1c1c !important;
+            border-left: 3px solid #3ecf8e !important;
             border-top-left-radius: 0px !important;
             border-bottom-left-radius: 0px !important;
             color: #ffffff !important;
         }
-        /* Custom scrollbar matching GitHub Dark */
+        /* Custom scrollbar matching Supabase Dark */
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
         }
         ::-webkit-scrollbar-track {
-            background: #0F172A;
+            background: #0f0f0f;
         }
         ::-webkit-scrollbar-thumb {
-            background: #1E293B;
-            border-radius: 4px;
+            background: #2e2e2e;
+            border-radius: 3px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #334155;
+            background: #404040;
+        }
+
+        /* ==========================================================================
+           SUPABASE LIGHT MODE SYSTEM (UI-UX PRO MAX SPECIFICATION)
+           Applied dynamically when html does not have .dark or has .light
+           ========================================================================== */
+        html:not(.dark) body {
+            background-color: #f8f9fa !important;
+            color: #111827 !important;
+        }
+
+        /* 1. Canvas & Surface Backgrounds */
+        html:not(.dark) .bg-\[\#0f0f0f\],
+        html:not(.dark) .bg-slate-950 {
+            background-color: #f8f9fa !important;
+        }
+        html:not(.dark) .bg-\[\#171717\],
+        html:not(.dark) .bg-slate-900 {
+            background-color: #ffffff !important;
+        }
+        html:not(.dark) .bg-\[\#141414\] {
+            background-color: #f9fafb !important;
+        }
+        html:not(.dark) .bg-\[\#1c1c1c\],
+        html:not(.dark) .bg-slate-850 {
+            background-color: #f3f4f6 !important;
+        }
+        html:not(.dark) .bg-\[\#222222\],
+        html:not(.dark) .bg-slate-800 {
+            background-color: #e5e7eb !important;
+        }
+
+        /* 2. Crisp 1px Hairline Borders */
+        html:not(.dark) .border-\[\#2e2e2e\],
+        html:not(.dark) .border-\[\#2e2e2e\]\/30,
+        html:not(.dark) .border-slate-800,
+        html:not(.dark) .border-slate-850,
+        html:not(.dark) .border-slate-700 {
+            border-color: #e5e7eb !important;
+        }
+        html:not(.dark) .border-\[\#232323\],
+        html:not(.dark) .divide-slate-800,
+        html:not(.dark) .divide-slate-800\/60 {
+            border-color: #f0f2f5 !important;
+        }
+        html:not(.dark) .border-\[\#383838\] {
+            border-color: #d1d5db !important;
+        }
+
+        /* 3. Typography & High-Contrast Readability (WCAG 4.5:1+) */
+        html:not(.dark) .text-\[\#ededed\],
+        html:not(.dark) .text-slate-200 {
+            color: #111827 !important;
+        }
+        html:not(.dark) .text-\[\#a3a3a3\],
+        html:not(.dark) .text-slate-300 {
+            color: #374151 !important;
+        }
+        html:not(.dark) .text-\[\#888888\],
+        html:not(.dark) .text-slate-400 {
+            color: #4b5563 !important;
+        }
+        html:not(.dark) .text-\[\#666666\],
+        html:not(.dark) .text-slate-500 {
+            color: #6b7280 !important;
+        }
+        html:not(.dark) h1.text-white,
+        html:not(.dark) h2.text-white,
+        html:not(.dark) h3.text-white,
+        html:not(.dark) h4.text-white,
+        html:not(.dark) p.text-white,
+        html:not(.dark) header span.text-white {
+            color: #111827 !important;
+        }
+
+        /* 4. Signature Emerald Accent (Deepened for WCAG contrast on Light Canvas) */
+        html:not(.dark) .text-\[\#3ecf8e\] {
+            color: #059669 !important;
+        }
+        html:not(.dark) .btn-pill,
+        html:not(.dark) .bg-\[\#3ecf8e\] {
+            background-color: #059669 !important;
+            color: #ffffff !important;
+        }
+        html:not(.dark) .btn-pill:hover,
+        html:not(.dark) .hover\:bg-\[\#00c573\]:hover {
+            background-color: #047857 !important;
+            color: #ffffff !important;
+        }
+        html:not(.dark) .hover\:border-\[\#3ecf8e\]\/35:hover,
+        html:not(.dark) .hover\:border-\[\#3ecf8e\]\/50:hover {
+            border-color: rgba(5, 150, 105, 0.4) !important;
+        }
+
+        /* 5. Panels, Cards & Interactive Surfaces */
+        html:not(.dark) .glass-panel,
+        html:not(.dark) .surface-panel,
+        html:not(.dark) .glass-card,
+        html:not(.dark) .surface-card {
+            background-color: #ffffff !important;
+            border: 1px solid #e5e7eb !important;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04) !important;
+        }
+        html:not(.dark) .glass-card:hover,
+        html:not(.dark) .surface-card:hover {
+            border-color: rgba(5, 150, 105, 0.4) !important;
+            background-color: #ffffff !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+        }
+
+        /* 6. Form Controls & Dropdown Inputs */
+        html:not(.dark) input[type="text"],
+        html:not(.dark) input[type="email"],
+        html:not(.dark) input[type="password"],
+        html:not(.dark) input[type="number"],
+        html:not(.dark) select,
+        html:not(.dark) textarea {
+            background-color: #ffffff !important;
+            border: 1px solid #d1d5db !important;
+            color: #111827 !important;
+        }
+        html:not(.dark) input::placeholder,
+        html:not(.dark) textarea::placeholder {
+            color: #9ca3af !important;
+        }
+        html:not(.dark) select option {
+            background-color: #ffffff !important;
+            color: #111827 !important;
+        }
+        html:not(.dark) input:focus,
+        html:not(.dark) select:focus,
+        html:not(.dark) textarea:focus {
+            border-color: #059669 !important;
+            box-shadow: 0 0 0 1px #059669 !important;
+        }
+
+        /* 7. Switch Toggles */
+        html:not(.dark) .sr-only.peer + div {
+            background-color: #e5e7eb !important;
+            border-color: #d1d5db !important;
+        }
+        html:not(.dark) .sr-only.peer + div:after {
+            background-color: #ffffff !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15) !important;
+        }
+        html:not(.dark) .sr-only.peer:checked + div {
+            background-color: #059669 !important;
+            border-color: #059669 !important;
+        }
+        html:not(.dark) .sr-only.peer:checked + div:after {
+            background-color: #ffffff !important;
+        }
+
+        /* 8. Top Navigation & Dropdown Panels */
+        html:not(.dark) header.h-15 {
+            background-color: #ffffff !important;
+            border-bottom: 1px solid #e5e7eb !important;
+        }
+        html:not(.dark) header input[placeholder="Search..."] {
+            background-color: #f8f9fa !important;
+            border-color: #e5e7eb !important;
+            color: #111827 !important;
+        }
+        html:not(.dark) #notifications-dropdown,
+        html:not(.dark) #profile-dropdown {
+            background-color: #ffffff !important;
+            border-color: #e5e7eb !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+        }
+        html:not(.dark) #notifications-dropdown .bg-slate-950,
+        html:not(.dark) #profile-dropdown .bg-slate-950\/40 {
+            background-color: #f9fafb !important;
+            border-color: #e5e7eb !important;
+        }
+        html:not(.dark) #notifications-list a:hover,
+        html:not(.dark) #profile-dropdown a:hover,
+        html:not(.dark) #profile-dropdown button:hover {
+            background-color: #f3f4f6 !important;
+            color: #111827 !important;
+        }
+
+        /* 9. Search Command Palette Modal */
+        html:not(.dark) #search-modal > div:last-child {
+            background-color: #ffffff !important;
+            border-color: #e5e7eb !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
+        }
+        html:not(.dark) #search-modal input {
+            color: #111827 !important;
+        }
+        html:not(.dark) #search-quick-links a:hover,
+        html:not(.dark) #search-results a:hover {
+            background-color: #f3f4f6 !important;
+            color: #111827 !important;
+        }
+        html:not(.dark) #search-results a.bg-slate-800\/80 {
+            background-color: #f3f4f6 !important;
+            color: #111827 !important;
+        }
+
+        /* 10. Secondary Button & Sidebar Active */
+        html:not(.dark) .btn-secondary {
+            background-color: #ffffff !important;
+            border: 1px solid #e5e7eb !important;
+            color: #1f2937 !important;
+        }
+        html:not(.dark) .btn-secondary:hover {
+            background-color: #f9fafb !important;
+            border-color: #d1d5db !important;
+        }
+        html:not(.dark) .sidebar-active-item {
+            background-color: #f3f4f6 !important;
+            border-left: 3px solid #059669 !important;
+            color: #111827 !important;
+        }
+
+        /* 11. Light Scrollbars */
+        html:not(.dark) ::-webkit-scrollbar-track {
+            background: #f8f9fa;
+        }
+        html:not(.dark) ::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+        html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        /* 12. Active Theme Selection Cards */
+        html:not(.dark) .active-theme-card {
+            border-color: #059669 !important;
+            background-color: #ffffff !important;
+            box-shadow: 0 0 0 1px #059669 !important;
+        }
+        html:not(.dark) .theme-check-badge {
+            background-color: #059669 !important;
+            color: #ffffff !important;
+        }
+        html:not(.dark) #theme-status-indicator {
+            background-color: #ecfdf5 !important;
+            border-color: #a7f3d0 !important;
+            color: #047857 !important;
+        }
+        html:not(.dark) #theme-status-indicator span.rounded-full {
+            background-color: #059669 !important;
         }
     </style>
 </head>
-<body class="h-full text-slate-100 bg-slate-950 flex flex-col overflow-hidden" data-is-instructor-or-admin="{{ auth()->user() && (auth()->user()->role === 'instructor' || auth()->user()->role === 'admin') ? 'true' : 'false' }}">
+<body class="h-full text-[#ededed] bg-[#0f0f0f] flex flex-col overflow-hidden" data-is-instructor-or-admin="{{ auth()->user() && (auth()->user()->role === 'instructor' || auth()->user()->role === 'admin') ? 'true' : 'false' }}">
 
     <!-- Main Content Shell -->
     <div class="flex flex-col flex-1 overflow-hidden">
-        <!-- Top bar (64px tall) -->
-        <header class="h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-6 z-50 flex-shrink-0">
+        <!-- Top bar (60px tall with hairline border) -->
+        <header class="h-15 bg-[#171717] border-b border-[#2e2e2e] flex items-center justify-between px-6 z-50 flex-shrink-0">
             <div class="flex-1 flex items-center justify-between">
                 <!-- Left Header: Logo & Branding + Breadcrumbs -->
                 <div class="flex items-center space-x-4">
                     <!-- Logo / Link to Dashboard -->
-                    <a href="{{ route('dashboard') }}" class="flex items-center hover:opacity-90 transition-opacity">
-                        <span class="text-2xl font-bold tracking-wider leading-[1.1] uppercase text-white font-brick" style="font-family: 'Brick Sans', sans-serif;">
-                            Certicode<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500">Labs</span>
+                    <a href="{{ route('dashboard') }}" class="flex items-center space-x-2.5 hover:opacity-95 transition-opacity">
+                        <div class="w-7 h-7 rounded-md bg-[#0f0f0f] border border-[#2e2e2e] flex items-center justify-center">
+                            <!-- Supabase-inspired emerald icon -->
+                            <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M21.362 9.354H12V.396a.396.396 0 0 0-.716-.233L.103 13.916a.396.396 0 0 0 .307.632H9.6v9.056a.396.396 0 0 0 .716.233l11.181-13.753a.396.396 0 0 0-.307-.632z"/>
+                            </svg>
+                        </div>
+                        <span class="text-base font-bold tracking-tight text-white flex items-center gap-1 font-sans">
+                            Certicode<span class="text-[#3ecf8e]">Labs</span>
                         </span>
                     </a>
                     
-                    <span class="text-slate-700">/</span>
+                    <span class="text-[#404040]">/</span>
                     
-                    <h2 class="text-xs font-semibold text-slate-400 font-mono">@yield('page_header', 'Workspace')</h2>
+                    <h2 class="text-xs font-medium text-[#a3a3a3] font-mono tracking-wide uppercase">@yield('page_header', 'Workspace')</h2>
                 </div>
 
                 <!-- Center Search Input (GitHub Style) -->
@@ -156,7 +479,19 @@
                 </div>
 
                 <!-- Right Actions & Profile Dropdown -->
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-3">
+                    <!-- Quick Theme Toggle Button -->
+                    <button id="quick-theme-toggle" onclick="toggleQuickTheme()" title="Toggle theme (Light / Dark)" aria-label="Toggle theme" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none flex items-center justify-center">
+                        <!-- Sun icon (shown when dark, click to switch to light) -->
+                        <svg id="theme-toggle-sun" class="w-4 h-4 hidden text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                        <!-- Moon icon (shown when light, click to switch to dark) -->
+                        <svg id="theme-toggle-moon" class="w-4 h-4 hidden text-[#059669]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                        </svg>
+                    </button>
+
                     <!-- Notification Bell and Dropdown -->
                     <div class="relative" id="notification-bell-container">
                         @php
@@ -240,28 +575,28 @@
         <!-- Main Viewport -->
         <main class="flex-1 relative overflow-y-auto focus:outline-none py-8 px-6">
             @if(session('success'))
-                <div class="mb-6 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 flex items-center justify-between shadow-lg">
-                    <div class="flex items-center space-x-2">
-                        <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="text-sm font-semibold">{{ session('success') }}</span>
+                <div class="mb-6 p-3.5 rounded-md border border-[#16a34a]/30 bg-[#16a34a]/5 text-[#16a34a] flex items-center justify-between">
+                    <div class="flex items-center space-x-2.5">
+                        <svg class="w-4 h-4 text-[#16a34a]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-xs font-semibold">{{ session('success') }}</span>
                     </div>
                 </div>
             @endif
 
             @if(session('error'))
-                <div class="mb-6 p-4 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-400 flex items-center justify-between shadow-lg">
-                    <div class="flex items-center space-x-2">
-                        <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="text-sm font-semibold">{{ session('error') }}</span>
+                <div class="mb-6 p-3.5 rounded-md border border-[#dc2626]/30 bg-[#dc2626]/5 text-[#dc2626] flex items-center justify-between">
+                    <div class="flex items-center space-x-2.5">
+                        <svg class="w-4 h-4 text-[#dc2626]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-xs font-semibold">{{ session('error') }}</span>
                     </div>
                 </div>
             @endif
 
             @if(session('warning'))
-                <div class="mb-6 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-400 flex items-center justify-between shadow-lg">
-                    <div class="flex items-center space-x-2">
-                        <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <span class="text-sm font-semibold">{{ session('warning') }}</span>
+                <div class="mb-6 p-3.5 rounded-md border border-[#eab308]/30 bg-[#eab308]/5 text-[#eab308] flex items-center justify-between">
+                    <div class="flex items-center space-x-2.5">
+                        <svg class="w-4 h-4 text-[#eab308]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <span class="text-xs font-semibold">{{ session('warning') }}</span>
                     </div>
                 </div>
             @endif
@@ -579,6 +914,75 @@
                     items[activeIndex].classList.add('bg-slate-800/80', 'text-white');
                     items[activeIndex].scrollIntoView({ block: 'nearest' });
                 }
+            }
+        });
+
+        // Global Theme Management
+        window.applyTheme = function(theme) {
+            try {
+                localStorage.setItem('theme', theme);
+                const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const isDark = theme === 'dark' || (theme === 'system' && systemDark);
+                
+                if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.classList.remove('light');
+                    document.documentElement.style.colorScheme = 'dark';
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.classList.add('light');
+                    document.documentElement.style.colorScheme = 'light';
+                }
+                
+                // Update Quick Theme Toggle Icons
+                const sunIcon = document.getElementById('theme-toggle-sun');
+                const moonIcon = document.getElementById('theme-toggle-moon');
+                if (sunIcon && moonIcon) {
+                    if (isDark) {
+                        sunIcon.classList.remove('hidden');
+                        moonIcon.classList.add('hidden');
+                    } else {
+                        sunIcon.classList.add('hidden');
+                        moonIcon.classList.remove('hidden');
+                    }
+                }
+                
+                window.dispatchEvent(new CustomEvent('certicode:themechange', { detail: { theme, isDark } }));
+            } catch (e) {
+                console.error('Theme switch error:', e);
+            }
+        };
+
+        window.toggleQuickTheme = function() {
+            const isDark = document.documentElement.classList.contains('dark');
+            const newTheme = isDark ? 'light' : 'dark';
+            window.applyTheme(newTheme);
+        };
+
+        // Initialize theme UI state
+        (function initThemeIcons() {
+            const stored = localStorage.getItem('theme') || 'system';
+            const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDark = stored === 'dark' || (stored === 'system' && systemDark);
+            
+            const sunIcon = document.getElementById('theme-toggle-sun');
+            const moonIcon = document.getElementById('theme-toggle-moon');
+            if (sunIcon && moonIcon) {
+                if (isDark) {
+                    sunIcon.classList.remove('hidden');
+                    moonIcon.classList.add('hidden');
+                } else {
+                    sunIcon.classList.add('hidden');
+                    moonIcon.classList.remove('hidden');
+                }
+            }
+        })();
+
+        // Listen for OS color scheme changes when system mode is selected
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+            const stored = localStorage.getItem('theme') || 'system';
+            if (stored === 'system') {
+                window.applyTheme('system');
             }
         });
     </script>

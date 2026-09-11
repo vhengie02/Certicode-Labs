@@ -10,7 +10,7 @@
 <div class="flex flex-col lg:flex-row gap-6 -mt-4">
     
     <!-- LEFT PANEL: NetAcad Course Modules Navigation Tree -->
-    <div class="w-full lg:w-72 flex flex-col bg-[#1C2333] rounded-xl border border-slate-800 p-4 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-y-auto z-10">
+    <div class="w-full lg:w-72 flex flex-col bg-[#141414] rounded-xl border border-slate-800 p-4 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-y-auto z-10">
         <div class="mb-4 pb-3 border-b border-slate-800/80">
             <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Course Outline</span>
             <h2 class="text-base font-bold text-white mt-1">{{ $class->name }}</h2>
@@ -135,10 +135,10 @@
         <!-- Instructor Module Addition Controls -->
         @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
             <div class="mt-4 pt-4 border-t border-slate-800/80 space-y-2 shrink-0">
-                <a href="{{ route('modules.create', $class->id) }}" class="block text-center w-full py-2 bg-slate-900 hover:bg-slate-850 text-xs font-bold rounded-lg text-white border border-slate-800 transition">
+                <a href="{{ route('modules.create', $class->id) }}" class="block text-center w-full py-2 bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-mono font-medium rounded-[6px] text-[#ededed] border border-[#2e2e2e] transition">
                     + Add New Module
                 </a>
-                <a href="{{ route('laboratories.create', $class->id) }}" class="block text-center py-2 bg-green-600 hover:bg-green-500 text-xs font-bold rounded-lg text-white transition shadow-lg shadow-green-500/20">
+                <a href="{{ route('laboratories.create', $class->id) }}" class="block text-center py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition shadow-none">
                     + Add Lab Exercise
                 </a>
             </div>
@@ -376,8 +376,8 @@
                             <input type="email" name="email" id="invite-email" required placeholder="student@gmail.com" 
                                    class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500">
                         </div>
-                        <button type="submit" class="w-full py-2 bg-green-600 hover:bg-green-500 text-xs font-bold rounded-lg text-white transition-colors shadow-lg shadow-green-500/20">
-                            Send Invitation
+                        <button type="submit" class="w-full py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors shadow-none">
+                            Send Invitation &rarr;
                         </button>
                     </form>
                     <p class="text-[10px] text-slate-500 leading-relaxed">

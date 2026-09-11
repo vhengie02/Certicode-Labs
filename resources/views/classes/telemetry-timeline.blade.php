@@ -32,7 +32,7 @@
     <!-- Workspace Details Panel -->
     <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
         <div>
-            <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Session Metadata</span>
+            <span class="text-[10px] font-mono font-bold text-[#3ecf8e] uppercase tracking-wider block">Session Metadata</span>
             <h2 class="text-xl font-bold text-white mt-1">Workspace Session Log Details</h2>
         </div>
 
@@ -47,7 +47,7 @@
             </div>
             <div>
                 <span class="text-slate-500 block mb-1 uppercase tracking-wider text-[10px]">Status</span>
-                <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold uppercase {{ $session->status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse' }}">
+                <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold uppercase {{ $session->status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30 animate-pulse' }}">
                     {{ $session->status }}
                 </span>
             </div>
@@ -91,10 +91,10 @@
                                 @if(!$anomaly->resolved)
                                     <form action="{{ route('anomalies.resolve', $anomaly->id) }}" method="POST" class="m-0">
                                         @csrf
-                                        <button type="submit" class="text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider">Resolve</button>
+                                        <button type="submit" class="text-[#3ecf8e] hover:text-[#00c573] font-bold uppercase tracking-wider">Resolve</button>
                                     </form>
                                 @else
-                                    <span class="text-emerald-500 font-bold uppercase">Resolved</span>
+                                    <span class="text-[#3ecf8e] font-bold uppercase">Resolved</span>
                                 @endif
                             </div>
                         </div>

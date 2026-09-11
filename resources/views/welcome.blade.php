@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950">
+<html lang="en" class="h-full bg-[#0f0f0f] text-[#ededed]">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Certicode Labs - AI-Powered Coding Education & Telemetry Platform</title>
+    <title>Certicode Labs - Telemetry-Powered Coding Education & Verification</title>
+    <!-- Google Fonts: Inter & Source Code Pro -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,52 +15,87 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['"IBM Plex Sans"', 'sans-serif'],
-                        mono: ['"JetBrains Mono"', 'monospace'],
-                        brick: ['"Brick Sans"', 'sans-serif'],
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['"Source Code Pro"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+                    },
+                    colors: {
+                        canvas: '#0f0f0f',
+                        surface: '#171717',
+                        elevated: '#1c1c1c',
+                        brand: {
+                            DEFAULT: '#3ecf8e',
+                            hover: '#00c573',
+                            muted: 'rgba(62, 207, 142, 0.15)',
+                        },
+                        border: {
+                            hairline: '#2e2e2e',
+                            subtle: '#232323',
+                            elevated: '#383838',
+                        }
                     }
                 }
             }
         }
     </script>
-    <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        @font-face {
-            font-family: 'Brick Sans';
-            src: url('/fonts/BrickSans-Bold.otf') format('opentype');
-            font-weight: bold;
-            font-style: normal;
-            font-display: swap;
-        }
         body {
-            font-family: 'IBM Plex Sans', sans-serif;
-            background-color: #0F172A;
-            color: #F8FAFC;
+            font-family: 'Inter', sans-serif;
+            background-color: #0f0f0f;
+            color: #ededed;
+            -webkit-font-smoothing: antialiased;
         }
+        .mono-tag {
+            font-family: 'Source Code Pro', monospace;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .bento-card {
+            background-color: #171717;
+            border: 1px solid #2e2e2e;
+            transition: all 0.2s ease-in-out;
+        }
+        .bento-card:hover {
+            border-color: rgba(62, 207, 142, 0.35);
+            background-color: #1a1a1a;
+        }
+        .code-syntax-keyword { color: #ff7b72; }
+        .code-syntax-string { color: #a5d6ff; }
+        .code-syntax-func { color: #d2a8ff; }
+        .code-syntax-comment { color: #8b949e; }
+        .code-syntax-brand { color: #3ecf8e; }
     </style>
 </head>
-<body class="h-full flex flex-col justify-between overflow-y-auto">
+<body class="min-h-full flex flex-col justify-between selection:bg-[#3ecf8e]/20 selection:text-[#3ecf8e]">
 
     <!-- Top Navigation -->
-    <header class="w-full max-w-7xl mx-auto px-6 h-20 flex items-center justify-between border-b border-slate-800">
-        <div class="flex items-center">
-            <span class="text-3xl font-bold tracking-wider leading-[1.1] uppercase text-white" style="font-family: 'Brick Sans', sans-serif;">
-                Certicode<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500">Labs</span>
+    <header class="w-full max-w-7xl mx-auto px-6 h-20 flex items-center justify-between border-b border-[#232323]">
+        <div class="flex items-center gap-3">
+            <a href="/" class="flex items-center gap-2.5 group">
+                <div class="w-8 h-8 rounded-[6px] bg-[#171717] border border-[#2e2e2e] group-hover:border-[#3ecf8e]/50 flex items-center justify-center transition-colors">
+                    <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                </div>
+                <span class="text-lg font-bold tracking-tight text-[#ededed]">
+                    Certicode <span class="text-[#3ecf8e]">Labs</span>
+                </span>
+            </a>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2e2e2e] text-[10px] font-mono text-[#a3a3a3] uppercase tracking-wider ml-2">
+                v2.4 TELEMETRY
             </span>
         </div>
 
         <nav class="flex items-center space-x-4">
             @auth
-                <a href="{{ route('dashboard') }}" class="inline-flex items-center px-4 py-2 border border-slate-800 text-xs font-semibold rounded-lg text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer">
-                    Dashboard
+                <a href="{{ route('dashboard') }}" class="inline-flex items-center px-4 py-2 rounded-[6px] border border-[#2e2e2e] bg-[#171717] text-xs font-semibold text-[#ededed] hover:bg-[#222222] hover:border-[#383838] transition">
+                    Dashboard &rarr;
                 </a>
             @else
-                <a href="{{ route('login') }}" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer">
-                    Log in
+                <a href="{{ route('login') }}" class="text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] transition-colors">
+                    Sign In
                 </a>
                 @if (Route::has('register.show'))
-                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-xs font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-colors shadow-lg shadow-green-500/20 cursor-pointer">
+                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-4 py-2 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
                         Get Started
                     </a>
                 @endif
@@ -64,86 +103,304 @@
         </nav>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 max-w-7xl mx-auto px-6 flex flex-col justify-center py-16">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <!-- Hero Content -->
-            <div class="space-y-6">
-                <h1 class="text-4xl md:text-5xl font-extrabold text-white leading-tight tracking-tight font-mono">
-                    Verify Your Coding Skills with Real-Time Sandbox Telemetry.
-                </h1>
-                <p class="text-slate-400 text-base md:text-lg leading-relaxed max-w-lg">
-                    Certicode Labs is an interactive learning playground where developer training meets automated skill verification. Connect your GitHub repositories, complete hands-on lab assignments in live sandboxes, and build a verified portfolio of your coding competence.
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-7xl mx-auto px-6 py-16 lg:py-24 space-y-24">
+        
+        <!-- Hero Section -->
+        <section class="text-center max-w-4xl mx-auto space-y-8">
+            <!-- Monospace status badge -->
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[#2e2e2e] bg-[#171717]">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse"></span>
+                <span class="mono-tag text-[11px] text-[#a3a3a3]">Next-Gen Sandbox Telemetry Engine</span>
+            </div>
+
+            <!-- Tight 72px Headline -->
+            <h1 class="text-4xl sm:text-6xl lg:text-[72px] font-extrabold text-[#ededed] tracking-tight leading-[1.02]">
+                Verify Real Coding Skills with <span class="text-[#3ecf8e]">Instant Telemetry.</span>
+            </h1>
+
+            <!-- Subtitle -->
+            <p class="text-base sm:text-xl text-[#a3a3a3] font-normal max-w-2xl mx-auto leading-relaxed">
+                Connect live IDE sandboxes, evaluate genuine code construction with AI rubrics, and issue cryptographically verifiable credentials for modern software engineers.
+            </p>
+
+            <!-- CTA Buttons -->
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                @auth
+                    <a href="{{ route('dashboard') }}" class="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3 rounded-full bg-[#3ecf8e] text-sm font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
+                        Launch Console &rarr;
+                    </a>
+                @else
+                    <a href="{{ route('register.show') }}" class="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3 rounded-full bg-[#3ecf8e] text-sm font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
+                        Create Developer Account &rarr;
+                    </a>
+                    <a href="{{ route('login') }}" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3 rounded-[6px] border border-[#2e2e2e] bg-[#171717] text-sm font-medium text-[#ededed] hover:bg-[#222222] hover:border-[#383838] transition">
+                        Sign In with Email
+                    </a>
+                @endauth
+            </div>
+
+            <!-- Developer CLI prompt pill -->
+            <div class="pt-4 flex items-center justify-center">
+                <div class="inline-flex items-center gap-3 px-4 py-2 rounded-[6px] bg-[#141414] border border-[#232323] text-xs font-mono text-[#a3a3a3]">
+                    <span class="text-[#3ecf8e] select-none">$</span>
+                    <span class="text-[#d1d1d1] select-all">npx @certicode/telemetry init</span>
+                    <span class="text-[10px] text-[#666666] uppercase tracking-wider pl-2 border-l border-[#2e2e2e]">VS Code Ready</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Supabase-Style Bento Grid Showcase -->
+        <section class="space-y-6">
+            <div class="flex flex-col md:flex-row md:items-end justify-between border-b border-[#232323] pb-4">
+                <div>
+                    <span class="mono-tag text-xs text-[#3ecf8e]">Architecture</span>
+                    <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-[#ededed] mt-1">
+                        Engineered for Developer Rigor.
+                    </h2>
+                </div>
+                <p class="text-xs text-[#888888] font-mono mt-2 md:mt-0">
+                    STATUS: REAL-TIME RUNTIME VERIFIED
                 </p>
-                <div class="flex items-center space-x-4">
-                    <a href="{{ route('register.show') }}" class="inline-flex items-center px-6 py-3 border border-transparent text-sm font-semibold rounded-lg text-white bg-green-600 hover:bg-green-500 transition-all duration-200 shadow-lg shadow-green-500/30 cursor-pointer">
-                        Create Account
-                    </a>
-                    <a href="{{ route('login') }}" class="inline-flex items-center px-6 py-3 border border-slate-800 text-sm font-semibold rounded-lg text-slate-300 bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer">
-                        Sign In
-                    </a>
-                </div>
             </div>
 
-            <!-- Hero Feature Cards -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <!-- Feature 1 -->
-                <div class="p-6 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900 hover:shadow-lg hover:shadow-emerald-500/5 hover:-translate-y-0.5 cursor-pointer">
-                    <div class="w-9 h-9 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-center justify-center text-blue-400">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                
+                <!-- Bento Tile 1: Live Code Editor Mockup (2 Cols) -->
+                <div class="md:col-span-2 bento-card rounded-xl p-6 flex flex-col justify-between overflow-hidden">
+                    <div>
+                        <!-- Editor Top Bar -->
+                        <div class="flex items-center justify-between border-b border-[#2e2e2e] pb-3 mb-4">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-[#2a2a2a]"></div>
+                                <div class="w-3 h-3 rounded-full bg-[#2a2a2a]"></div>
+                                <div class="w-3 h-3 rounded-full bg-[#2a2a2a]"></div>
+                                <span class="text-xs font-mono text-[#888888] ml-2">sandbox/engine.py</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-[#3ecf8e]"></span>
+                                <span class="mono-tag text-[10px] text-[#3ecf8e]">Live Sandbox</span>
+                            </div>
+                        </div>
+
+                        <!-- Code Body -->
+                        <pre class="font-mono text-xs sm:text-sm text-[#d4d4d4] leading-relaxed overflow-x-auto py-2"><code><span class="code-syntax-comment"># Certicode Verified Execution Engine</span>
+<span class="code-syntax-keyword">async def</span> <span class="code-syntax-func">verify_candidate_session</span>(session_id: <span class="code-syntax-keyword">str</span>):
+    sandbox = <span class="code-syntax-keyword">await</span> TelemetryCluster.attach(session_id)
+    telemetry = <span class="code-syntax-keyword">await</span> sandbox.stream_events()
+
+    <span class="code-syntax-comment"># Real-time integrity assertion</span>
+    <span class="code-syntax-keyword">assert</span> telemetry.tab_switches == <span class="code-syntax-string">0</span>
+    <span class="code-syntax-keyword">assert</span> telemetry.face_presence_score >= <span class="code-syntax-string">0.98</span>
+
+    <span class="code-syntax-keyword">return</span> <span class="code-syntax-brand">VerifiedCredential</span>(status=<span class="code-syntax-string">"PASSED"</span>, grade=<span class="code-syntax-string">"A+"</span>)</code></pre>
                     </div>
-                    <h3 class="font-bold text-white text-sm font-mono">Sandbox Workspace</h3>
-                    <p class="text-xs text-slate-400 leading-relaxed">
-                        Interactive terminals with full execution telemetry built for Bash, Python, and SQL scripts.
-                    </p>
+
+                    <!-- Editor Bottom Execution Tray -->
+                    <div class="mt-4 pt-3 border-t border-[#2e2e2e] flex flex-wrap items-center justify-between text-xs font-mono gap-2 text-[#888888]">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[#3ecf8e] font-bold">✓</span>
+                            <span class="text-[#d1d1d1]">14/14 test cases passed</span>
+                            <span class="text-[#666666]">(42ms)</span>
+                        </div>
+                        <span class="text-[11px] text-[#888888]">Memory: 18.2MB • CPU: 1.2%</span>
+                    </div>
                 </div>
 
-                <!-- Feature 2 -->
-                <div class="p-6 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900 hover:shadow-lg hover:shadow-emerald-500/5 hover:-translate-y-0.5 cursor-pointer">
-                    <div class="w-9 h-9 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-center text-emerald-400">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                <!-- Bento Tile 2: Real-Time Integrity Shield (1 Col) -->
+                <div class="bento-card rounded-xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="mono-tag text-[11px] text-[#a3a3a3]">Integrity Stream</span>
+                            <span class="px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#2e2e2e] text-[10px] font-mono text-[#3ecf8e]">
+                                ACTIVE
+                            </span>
+                        </div>
+                        <h3 class="text-lg font-bold text-[#ededed] mb-1">Integrity Shield</h3>
+                        <p class="text-xs text-[#888888] leading-relaxed mb-4">
+                            Continuous biometric confidence and tab-switch telemetry prevent ghostwriting.
+                        </p>
+
+                        <!-- Log feed -->
+                        <div class="space-y-2 bg-[#121212] border border-[#232323] rounded-[6px] p-3 font-mono text-[11px]">
+                            <div class="flex items-center justify-between text-[#3ecf8e]">
+                                <span>FOCUS_LOCKED</span>
+                                <span class="text-[#666666]">0.00s</span>
+                            </div>
+                            <div class="flex items-center justify-between text-[#d1d1d1]">
+                                <span>FACE_DETECT</span>
+                                <span class="text-[#888888]">CONF 99.4%</span>
+                            </div>
+                            <div class="flex items-center justify-between text-[#d1d1d1]">
+                                <span>TAB_SWITCH</span>
+                                <span class="text-[#3ecf8e]">0 DETECTED</span>
+                            </div>
+                            <div class="flex items-center justify-between text-[#a3a3a3]">
+                                <span>ANOMALY_INDEX</span>
+                                <span class="text-[#3ecf8e]">0.00 (CLEAN)</span>
+                            </div>
+                        </div>
                     </div>
-                    <h3 class="font-bold text-white text-sm font-mono">Integrity Shield</h3>
-                    <p class="text-xs text-slate-400 leading-relaxed">
-                        Real-time presence metrics and tab-switching monitoring to verify work authenticity.
-                    </p>
+
+                    <div class="mt-4 pt-3 border-t border-[#2e2e2e] flex items-center justify-between text-[11px] font-mono text-[#666666]">
+                        <span>Heartbeat interval</span>
+                        <span class="text-[#d1d1d1]">500ms</span>
+                    </div>
                 </div>
 
-                <!-- Feature 3 -->
-                <div class="p-6 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900 hover:shadow-lg hover:shadow-emerald-500/5 hover:-translate-y-0.5 cursor-pointer">
-                    <div class="w-9 h-9 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center justify-center text-yellow-400">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <!-- Bento Tile 3: Automated AI Rubric (1 Col) -->
+                <div class="bento-card rounded-xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="mono-tag text-[11px] text-[#a3a3a3]">Automated Evaluation</span>
+                            <span class="text-xs font-mono font-bold text-[#3ecf8e]">SCORE 98%</span>
+                        </div>
+                        <h3 class="text-lg font-bold text-[#ededed] mb-1">AI Rubric Engine</h3>
+                        <p class="text-xs text-[#888888] leading-relaxed mb-4">
+                            Instant rubric evaluation grades logic, safety, edge cases, and code cleanliness.
+                        </p>
+
+                        <!-- Metric bars -->
+                        <div class="space-y-3 font-mono text-xs">
+                            <div>
+                                <div class="flex justify-between text-[11px] text-[#a3a3a3] mb-1">
+                                    <span>Algorithmic Rigor</span>
+                                    <span class="text-[#ededed]">98%</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-[#232323] rounded-full overflow-hidden">
+                                    <div class="h-full bg-[#3ecf8e] rounded-full" style="width: 98%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] text-[#a3a3a3] mb-1">
+                                    <span>Defensive Programming</span>
+                                    <span class="text-[#ededed]">100%</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-[#232323] rounded-full overflow-hidden">
+                                    <div class="h-full bg-[#3ecf8e] rounded-full" style="width: 100%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] text-[#a3a3a3] mb-1">
+                                    <span>Code Hygiene & Types</span>
+                                    <span class="text-[#ededed]">95%</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-[#232323] rounded-full overflow-hidden">
+                                    <div class="h-full bg-[#3ecf8e] rounded-full" style="width: 95%"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <h3 class="font-bold text-white text-sm font-mono">GitHub Integration</h3>
-                    <p class="text-xs text-slate-400 leading-relaxed">
-                        Sync your code pushes directly to generate clean performance benchmarks and graphs.
-                    </p>
+
+                    <div class="mt-4 pt-3 border-t border-[#2e2e2e] flex items-center justify-between text-[11px] font-mono text-[#666666]">
+                        <span>Rubric standard</span>
+                        <span class="text-[#d1d1d1]">Certicode v2</span>
+                    </div>
                 </div>
 
-                <!-- Feature 4 -->
-                <div class="p-6 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900 hover:shadow-lg hover:shadow-emerald-500/5 hover:-translate-y-0.5 cursor-pointer">
-                    <div class="w-9 h-9 bg-purple-500/10 border border-purple-500/20 rounded-lg flex items-center justify-center text-purple-400">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                <!-- Bento Tile 4: Cryptographic Credentials (2 Cols) -->
+                <div class="md:col-span-2 bento-card rounded-xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="mono-tag text-[11px] text-[#a3a3a3]">Credential Authority</span>
+                            <span class="px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#2e2e2e] text-[10px] font-mono text-[#3ecf8e]">
+                                SIGNED & VERIFIED
+                            </span>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-[#ededed]">Verifiable Competency Certificates</h3>
+                                <p class="text-xs text-[#888888] mt-1 max-w-md">
+                                    Upon 100% curriculum completion and verified lab telemetry, students receive cryptographically signed credentials sharable with employers.
+                                </p>
+                            </div>
+                            <div class="p-4 rounded-[6px] bg-[#121212] border border-[#2e2e2e] font-mono text-xs text-left shrink-0">
+                                <div class="text-[#888888] text-[10px] uppercase">Certificate Code</div>
+                                <div class="text-[#3ecf8e] font-bold text-sm tracking-wider mt-0.5">CERT-9481-KD82</div>
+                                <div class="text-[10px] text-[#666666] mt-1">SHA-256: 0x9f2a...88c1</div>
+                            </div>
+                        </div>
                     </div>
-                    <h3 class="font-bold text-white text-sm font-mono">Learning Paths</h3>
-                    <p class="text-xs text-slate-400 leading-relaxed">
-                        NetAcad-inspired structure guides learners through step-by-step module trees.
-                    </p>
+
+                    <div class="mt-6 pt-3 border-t border-[#2e2e2e] flex flex-wrap items-center justify-between text-xs font-mono text-[#888888] gap-2">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                            </svg>
+                            <span class="text-[#d1d1d1]">Public verification endpoint included</span>
+                        </div>
+                        <span class="text-[#3ecf8e]">Supabase PostgreSQL Backed</span>
+                    </div>
                 </div>
+
             </div>
-        </div>
+        </section>
+
+        <!-- Feature Pillar Highlights -->
+        <section class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-6 border-t border-[#232323]">
+            <div class="p-5 rounded-lg border border-[#2e2e2e] bg-[#141414] space-y-2">
+                <div class="w-7 h-7 rounded-[4px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                </div>
+                <h4 class="text-sm font-semibold text-[#ededed]">Live Sandboxes</h4>
+                <p class="text-xs text-[#888888] leading-relaxed">
+                    Interactive isolated environments with zero local configuration required.
+                </p>
+            </div>
+
+            <div class="p-5 rounded-lg border border-[#2e2e2e] bg-[#141414] space-y-2">
+                <div class="w-7 h-7 rounded-[4px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                </div>
+                <h4 class="text-sm font-semibold text-[#ededed]">NetAcad Trees</h4>
+                <p class="text-xs text-[#888888] leading-relaxed">
+                    Modular course hierarchy organizes lessons and hands-on challenges sequentially.
+                </p>
+            </div>
+
+            <div class="p-5 rounded-lg border border-[#2e2e2e] bg-[#141414] space-y-2">
+                <div class="w-7 h-7 rounded-[4px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2"></path></svg>
+                </div>
+                <h4 class="text-sm font-semibold text-[#ededed]">Instructor Monitor</h4>
+                <p class="text-xs text-[#888888] leading-relaxed">
+                    Live timeline streams track student completion progress and flag integrity issues.
+                </p>
+            </div>
+
+            <div class="p-5 rounded-lg border border-[#2e2e2e] bg-[#141414] space-y-2">
+                <div class="w-7 h-7 rounded-[4px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h4 class="text-sm font-semibold text-[#ededed]">VS Code Integration</h4>
+                <p class="text-xs text-[#888888] leading-relaxed">
+                    Direct extension connection with automatic timer sync and automated evaluation.
+                </p>
+            </div>
+        </section>
+
     </main>
 
     <!-- Footer -->
-    <footer class="w-full border-t border-slate-800 bg-slate-950 py-6 text-center text-xs text-slate-500">
-        <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between">
-            <p>&copy; 2026 Certicode Labs. All rights reserved.</p>
-            <p class="mt-2 sm:mt-0 font-mono">Built for educators and developers.</p>
+    <footer class="w-full border-t border-[#232323] bg-[#0f0f0f] py-8 text-xs text-[#666666]">
+        <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-5 h-5 rounded-[4px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center">
+                    <svg class="w-3 h-3 text-[#3ecf8e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                </div>
+                <span class="text-[#a3a3a3] font-medium">Certicode Labs</span>
+                <span>&copy; 2026. Built for educators & engineers.</span>
+            </div>
+            <div class="flex items-center space-x-6 font-mono text-[11px]">
+                <a href="{{ route('login') }}" class="hover:text-[#3ecf8e] transition-colors">LOGIN</a>
+                <a href="{{ route('register.show') }}" class="hover:text-[#3ecf8e] transition-colors">REGISTER</a>
+                <span class="text-[#383838]">|</span>
+                <span class="text-[#3ecf8e]">POSTGRESQL CONNECTED</span>
+            </div>
         </div>
     </footer>
-
-</body>
-</html>
 
 </body>
 </html>
