@@ -30,6 +30,10 @@ class SandboxExecutionService
         $language = strtolower(trim($language));
         $startTime = microtime(true);
 
+        if ($language === 'java') {
+            return $this->executeJava($code, $startTime);
+        }
+
         if ($this->isDockerAvailable()) {
             return $this->executeInDocker($code, $language, $startTime);
         }
@@ -374,6 +378,159 @@ class SandboxExecutionService
         }
 
         return null;
+    }
+
+    /**
+     * Compiles and executes Java code.
+     */
+    protected function executeJava(string $code, float $startTime): array
+    {
+        $className = 'Main';
+        if (preg_match('/public\s+class\s+(\w+)/', $code, $matches)) {
+            $className = $matches[1];
+        }
+
+        $tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'certicode_java_' . uniqid();
+        if (!mkdir($tempDir)) {
+            return [
+                'output' => '',
+                'errors' => 'Failed to create temporary directory for Java execution.',
+                'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
+                'status' => 'error'
+            ];
+        }
+
+        $tempFile = $tempDir . DIRECTORY_SEPARATOR . $className . '.java';
+        file_put_contents($tempFile, $code);
+
+        try {
+            if ($this->isDockerAvailable()) {
+                // Docker compilation and execution
+                $mountPath = str_replace('\\', '/', $tempDir);
+                
+                // Compile in docker
+                $compileProcess = new Process([
+                    'docker', 'run', '--rm',
+                    '-v', "{$mountPath}:/app",
+                    '-w', '/app',
+                    'openjdk:17-slim',
+                    'javac', "{$className}.java"
+                ]);
+                $compileProcess->run();
+
+                if (!$compileProcess->isSuccessful()) {
+                    $errors = $compileProcess->getErrorOutput() ?: $compileProcess->getOutput();
+                    return [
+                        'output' => '',
+                        'errors' => "Java Compilation Error:\n" . $errors,
+                        'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
+                        'status' => 'error'
+                    ];
+                }
+
+                // Run in docker
+                $runProcess = new Process([
+                    'docker', 'run', '--rm',
+                    '--network', 'none',
+                    '--memory', '128m',
+                    '--cpus', '0.5',
+                    '-v', "{$mountPath}:/app",
+                    '-w', '/app',
+                    'openjdk:17-slim',
+                    'java', $className
+                ]);
+                $runProcess->setTimeout(5.0);
+                $runProcess->run();
+
+                $executionTime = (int) ((microtime(true) - $startTime) * 1000);
+
+                if ($runProcess->isSuccessful()) {
+                    return [
+                        'output' => $runProcess->getOutput(),
+                        'errors' => null,
+                        'execution_time_ms' => $executionTime,
+                        'status' => 'success'
+                    ];
+                } else {
+                    $errors = $runProcess->getErrorOutput() ?: $runProcess->getOutput();
+                    if ($runProcess->getExitCode() === null) {
+                        $errors = "Execution Timed Out (Maximum execution limit of 5.0 seconds reached).";
+                    }
+                    return [
+                        'output' => $runProcess->getOutput(),
+                        'errors' => $errors,
+                        'execution_time_ms' => $executionTime,
+                        'status' => 'error'
+                    ];
+                }
+            } else {
+                // Local compilation and execution
+                $javac = $this->resolveLocalExecutable(['javac']) ?? 'javac';
+                $java = $this->resolveLocalExecutable(['java']) ?? 'java';
+
+                $compileProcess = new Process([$javac, "{$className}.java"], $tempDir);
+                $compileProcess->run();
+
+                if (!$compileProcess->isSuccessful()) {
+                    $errors = $compileProcess->getErrorOutput() ?: $compileProcess->getOutput();
+                    return [
+                        'output' => '',
+                        'errors' => "Java Compilation Error:\n" . $errors,
+                        'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
+                        'status' => 'error'
+                    ];
+                }
+
+                $runProcess = new Process([$java, $className], $tempDir);
+                $runProcess->setTimeout(5.0);
+                $runProcess->run();
+
+                $executionTime = (int) ((microtime(true) - $startTime) * 1000);
+
+                if ($runProcess->isSuccessful()) {
+                    return [
+                        'output' => $runProcess->getOutput(),
+                        'errors' => null,
+                        'execution_time_ms' => $executionTime,
+                        'status' => 'success'
+                    ];
+                } else {
+                    $errors = $runProcess->getErrorOutput() ?: $runProcess->getOutput();
+                    if ($runProcess->getExitCode() === null) {
+                        $errors = "Execution Timed Out (Maximum execution limit of 5.0 seconds reached).";
+                    }
+                    return [
+                        'output' => $runProcess->getOutput(),
+                        'errors' => $errors,
+                        'execution_time_ms' => $executionTime,
+                        'status' => 'error'
+                    ];
+                }
+            }
+        } finally {
+            $this->cleanupDir($tempDir);
+        }
+    }
+
+    /**
+     * Recursively delete a directory and its contents.
+     */
+    protected function cleanupDir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            if (is_dir($path)) {
+                $this->cleanupDir($path);
+            } else {
+                @unlink($path);
+            }
+        }
+        @rmdir($dir);
     }
 }
 

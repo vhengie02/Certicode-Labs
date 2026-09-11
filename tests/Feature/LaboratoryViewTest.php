@@ -119,9 +119,10 @@ class LaboratoryViewTest extends TestCase
 
         $this->assertEquals(0, $laboratory->views_count);
 
-        // Show workspace directly
-        $response = $this->actingAs($student)->get(route('sessions.show', $session->id));
-        $response->assertStatus(200);
+        // Start workspace session
+        $response = $this->actingAs($student)->post(route('laboratories.start', $laboratory->id));
+        $response->assertRedirect();
+        $this->assertStringContainsString('vscode://', $response->headers->get('Location'));
 
         $this->assertEquals(1, $laboratory->fresh()->views_count);
     }

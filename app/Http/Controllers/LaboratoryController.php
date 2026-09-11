@@ -187,45 +187,49 @@ class LaboratoryController extends Controller
     }
 
     /**
-     * Start a new laboratory session for a student.
+     * Start a new laboratory session for a student and redirect to VS Code.
      */
     public function startSession(int $id)
     {
         $laboratory = Laboratory::findOrFail($id);
+        /** @var \App\Models\User|null $user */
         $user = auth()->user();
 
         $this->recordUniqueView($laboratory);
 
-        // Create or find session
-        $session = \App\Models\LabSession::firstOrCreate([
-            'lab_id' => $laboratory->id,
-            'user_id' => $user->id,
-            'status' => 'in_progress',
-        ], [
-            'started_at' => now(),
-            'performance_score' => 0.0,
-        ]);
+        // Find existing in-progress session
+        $session = \App\Models\LabSession::where('lab_id', $laboratory->id)
+            ->where('user_id', $user ? $user->id : null)
+            ->where('status', 'in_progress')
+            ->latest()
+            ->first();
 
-        return redirect()->route('sessions.show', $session->id)->with('success', 'Workspace session initialized.');
-    }
-
-    /**
-     * Display the laboratory workspace session.
-     */
-    public function showWorkspace(int $id)
-    {
-        $session = \App\Models\LabSession::with('laboratory')->findOrFail($id);
-
-        // A student can only view their own sessions, unless they are admin/instructor
-        if (auth()->id() !== $session->user_id && auth()->user()->role === 'student') {
-            abort(403, 'Unauthorized.');
+        // If session exists but has exceeded its time limit, mark it abandoned and start fresh
+        if ($session && $laboratory->time_limit > 0) {
+            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
+            if ($elapsed >= ($laboratory->time_limit * 60)) {
+                $session->update([
+                    'status' => 'abandoned',
+                    'ended_at' => now(),
+                ]);
+                $session = null;
+            }
         }
 
-        if ($session->laboratory) {
-            $this->recordUniqueView($session->laboratory);
+        if (!$session) {
+            $session = \App\Models\LabSession::create([
+                'lab_id' => $laboratory->id,
+                'user_id' => $user ? $user->id : null,
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'performance_score' => 0.0,
+            ]);
         }
 
-        return view('laboratories.workspace', compact('session'));
+        $backendUrl = request()->getSchemeAndHttpHost();
+        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&backendUrl=" . urlencode($backendUrl);
+
+        return redirect($vscodeUrl);
     }
 
     /**

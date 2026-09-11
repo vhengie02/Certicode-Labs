@@ -121,12 +121,15 @@
                         if ($log->event_type === 'tab_switch') {
                             $badgeColor = 'bg-amber-500/10 border-amber-500/20 text-amber-400';
                             $titleColor = 'text-amber-400';
-                        } elseif ($log->event_type === 'task_verified') {
+                        } elseif ($log->event_type === 'task_verified' || $log->event_type === 'session_completed') {
                             $badgeColor = 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
                             $titleColor = 'text-emerald-400';
                         } elseif ($log->event_type === 'code_execution') {
                             $badgeColor = 'bg-blue-500/10 border-blue-500/20 text-blue-400';
                             $titleColor = 'text-blue-400';
+                        } elseif ($log->event_type === 'check_progress') {
+                            $badgeColor = 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400';
+                            $titleColor = 'text-cyan-400';
                         } elseif ($log->event_type === 'github_sync') {
                             $badgeColor = 'bg-purple-500/10 border-purple-500/20 text-purple-400';
                             $titleColor = 'text-purple-400';
@@ -134,7 +137,7 @@
                     @endphp
                     <div class="relative">
                         <!-- Timeline circle dot -->
-                        <span class="absolute -left-[31px] top-1 h-3 w-3 rounded-full {{ $log->event_type === 'tab_switch' ? 'bg-amber-500 ring-4 ring-slate-950' : ($log->event_type === 'task_verified' ? 'bg-emerald-500 ring-4 ring-slate-950' : 'bg-slate-800 ring-4 ring-slate-950') }}"></span>
+                        <span class="absolute -left-[31px] top-1 h-3 w-3 rounded-full {{ $log->event_type === 'tab_switch' ? 'bg-amber-500 ring-4 ring-slate-950' : (in_array($log->event_type, ['task_verified', 'session_completed']) ? 'bg-emerald-500 ring-4 ring-slate-950' : ($log->event_type === 'check_progress' ? 'bg-cyan-500 ring-4 ring-slate-950' : 'bg-slate-800 ring-4 ring-slate-950')) }}"></span>
                         
                         <div class="space-y-1.5 text-left">
                             <div class="flex items-center justify-between">
@@ -156,6 +159,10 @@
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Executed student source code using <span class="font-mono text-indigo-400">{{ ucfirst($log->payload['language'] ?? 'bash') }}</span>. Output status: <span class="font-mono font-semibold">{{ $log->payload['status'] ?? 'unknown' }}</span> (Time: {{ $log->payload['execution_time_ms'] ?? 0 }}ms).
                                 </p>
+                            @elseif($log->event_type === 'check_progress')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    AI Check Progress evaluated via <span class="font-mono text-cyan-400">{{ ucfirst($log->payload['language'] ?? 'code') }}</span>. Correctness: <span class="font-bold text-white">{{ $log->payload['correctness_score'] ?? 0 }}%</span> (<span class="font-mono text-cyan-300">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks satisfied).
+                                </p>
                             @elseif($log->event_type === 'task_verified')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Verified task successfully! Verified ID(s): <span class="font-mono text-emerald-400">[{{ implode(', ', $log->payload['verified_task_ids'] ?? []) }}]</span>. Overall progress: <span class="font-bold text-white">{{ $log->payload['current_progress'] ?? '0' }}</span>, Score: <span class="font-bold text-white">{{ $log->payload['performance_score'] ?? 0 }}%</span>.
@@ -165,8 +172,8 @@
                                     Synced repository commits from GitHub profile. User commits: <span class="font-bold text-white">{{ $log->payload['commits'] ?? 0 }}</span>, Additions: <span class="font-mono text-emerald-400">+{{ $log->payload['additions'] ?? 0 }}</span>, Deletions: <span class="font-mono text-rose-400">-{{ $log->payload['deletions'] ?? 0 }}</span>.
                                 </p>
                             @elseif($log->event_type === 'session_completed')
-                                <p class="text-xs text-slate-300 font-bold leading-relaxed font-sans">
-                                    Completed workspace challenge session. Final score: {{ $log->payload['final_score'] ?? 0 }}% (Completed tasks: {{ $log->payload['completed_tasks_count'] ?? 0 }}).
+                                <p class="text-xs text-emerald-300 font-semibold leading-relaxed font-sans">
+                                    Completed and submitted lab exercise via VS Code. Final score: <span class="font-bold text-white">{{ $log->payload['final_score'] ?? 0 }}%</span> (<span class="font-bold text-white">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks passed, status: <span class="font-mono">{{ $log->payload['execution_status'] ?? 'completed' }}</span>).
                                 </p>
                             @else
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">

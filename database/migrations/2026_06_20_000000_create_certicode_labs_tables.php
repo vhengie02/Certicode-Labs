@@ -18,6 +18,9 @@ return new class extends Migration
             $table->text('description');
             $table->string('github_repo_template')->nullable();
             $table->json('tasks_definition')->nullable(); // Checklists, validation commands/scripts
+            $table->text('reference_solution')->nullable();
+            $table->text('rubric')->nullable();
+            $table->json('test_cases')->nullable();
             $table->integer('time_limit')->default(60); // In minutes
             $table->boolean('is_group_lab')->default(false);
             $table->timestamps();

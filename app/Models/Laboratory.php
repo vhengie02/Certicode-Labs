@@ -14,6 +14,9 @@ class Laboratory extends Model
         'description',
         'github_repo_template',
         'tasks_definition',
+        'reference_solution',
+        'rubric',
+        'test_cases',
         'time_limit',
         'is_group_lab',
         'module_id',
@@ -22,6 +25,7 @@ class Laboratory extends Model
 
     protected $casts = [
         'tasks_definition' => 'array',
+        'test_cases' => 'array',
         'is_group_lab' => 'boolean',
     ];
 

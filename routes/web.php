@@ -92,7 +92,6 @@ Route::middleware('auth')->group(function () {
     Route::resource('laboratories', LaboratoryController::class)->except(['index', 'create']);
     Route::get('/classes/{class_id}/laboratories/create', [LaboratoryController::class, 'create'])->name('laboratories.create');
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
-    Route::get('/sessions/{id}', [LaboratoryController::class, 'showWorkspace'])->name('sessions.show');
     Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
 
     // Student Profiles & Directory CRUD
@@ -105,6 +104,32 @@ Route::middleware('auth')->group(function () {
     Route::get('/search', [SearchController::class, 'search'])->name('search');
 
     // Notifications
+    Route::get('/notifications/fetch', function () {
+        /** @var \App\Models\User|null $user */
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['unreadCount' => 0, 'notifications' => []]);
+        }
+        
+        $unreadCount = $user->unreadNotifications->count();
+        $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
+            return [
+                'id' => $notif->id,
+                'unread' => $notif->unread(),
+                'url' => $notif->data['url'] ?? '#',
+                'title' => $notif->data['title'] ?? 'Notification',
+                'message' => $notif->data['message'] ?? '',
+                'type' => $notif->data['type'] ?? 'info',
+                'time' => $notif->created_at->diffForHumans(),
+            ];
+        });
+
+        return response()->json([
+            'unreadCount' => $unreadCount,
+            'notifications' => $notifications
+        ]);
+    })->name('notifications.fetch');
+
     Route::post('/notifications/mark-as-read', function () {
         /** @var \App\Models\User|null $user */
         $user = auth()->user();

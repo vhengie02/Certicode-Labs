@@ -30,14 +30,33 @@ class LabSessionController extends Controller
         $user = $request->user();
 
         // Find or create session
-        $session = LabSession::firstOrCreate([
-            'lab_id' => $lab->id,
-            'user_id' => $user->id,
-            'status' => 'in_progress',
-        ], [
-            'started_at' => now(),
-            'performance_score' => 0.0,
-        ]);
+        $session = LabSession::where('lab_id', $lab->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'in_progress')
+            ->latest()
+            ->first();
+
+        // If session exists but has exceeded its time limit, mark it abandoned and start fresh
+        if ($session && $lab->time_limit > 0) {
+            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
+            if ($elapsed >= ($lab->time_limit * 60)) {
+                $session->update([
+                    'status' => 'abandoned',
+                    'ended_at' => now(),
+                ]);
+                $session = null;
+            }
+        }
+
+        if (!$session) {
+            $session = LabSession::create([
+                'lab_id' => $lab->id,
+                'user_id' => $user->id,
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'performance_score' => 0.0,
+            ]);
+        }
 
         return response()->json([
             'message' => 'Lab session started.',
@@ -321,6 +340,170 @@ class LabSessionController extends Controller
                 'lines_added' => $additions,
                 'lines_deleted' => $deletions,
             ]
+        ]);
+    }
+
+    /**
+     * Get active laboratory session information.
+     */
+    public function getSession(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        $lab = $session->laboratory;
+
+        $timeLimitSeconds = ($lab->time_limit ?? 0) * 60;
+        $endTime = $session->ended_at ?? now();
+        $elapsedSeconds = ($session->started_at && $endTime->gte($session->started_at))
+            ? (int) $session->started_at->diffInSeconds($endTime, true)
+            : 0;
+        $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
+
+        return response()->json([
+            'session_id' => $session->id,
+            'status' => $session->status,
+            'started_at' => $session->started_at,
+            'elapsed_seconds' => $elapsedSeconds,
+            'time_remaining_seconds' => $timeRemainingSeconds,
+            'time_limit_minutes' => $lab->time_limit ?? 0,
+            'performance_score' => $session->performance_score,
+            'completed_tasks' => $session->completed_tasks ?? [],
+            'laboratory' => [
+                'id' => $lab->id,
+                'title' => $lab->title,
+                'description' => $lab->description,
+                'tasks_definition' => $lab->tasks_definition ?? [],
+            ]
+        ]);
+    }
+
+    /**
+     * Run an AI-based check progress check-in-progress assessment.
+     */
+    public function checkProgress(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+
+        $request->validate([
+            'code' => 'required|string',
+            'language' => 'required|string',
+        ]);
+
+        $evaluationService = app(\App\Services\LlmEvaluationService::class);
+        $evaluation = $evaluationService->evaluate($session, $request->code, $request->language);
+
+        $completedTasks = [];
+        if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
+            foreach ($evaluation['tasks'] as $taskEval) {
+                if (!empty($taskEval['completed'])) {
+                    $completedTasks[] = (int) $taskEval['id'];
+                }
+            }
+        }
+
+        $session->update([
+            'completed_tasks' => $completedTasks,
+            'performance_score' => (float) ($evaluation['correctness_score'] ?? $session->performance_score),
+        ]);
+
+        TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'check_progress',
+            'payload' => [
+                'language' => $request->language,
+                'correctness_score' => $evaluation['correctness_score'] ?? null,
+                'completed_tasks_count' => count($completedTasks),
+            ],
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'completed_tasks' => $completedTasks,
+            'performance_score' => $session->performance_score,
+            'evaluation' => $evaluation,
+        ]);
+    }
+
+    /**
+     * Submit session, execute code, grade, map competencies, and mark completed.
+     */
+    public function submitSession(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+
+        $request->validate([
+            'code' => 'required|string',
+            'language' => 'required|string',
+        ]);
+
+        // Execute code
+        $executionResult = $this->sandboxService->execute($request->code, $request->language);
+
+        // AI task-completion evaluation
+        $evaluationService = app(\App\Services\LlmEvaluationService::class);
+        $evaluation = $evaluationService->evaluate($session, $request->code, $request->language);
+
+        $completedTasks = [];
+        if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
+            foreach ($evaluation['tasks'] as $taskEval) {
+                if (!empty($taskEval['completed'])) {
+                    $completedTasks[] = (int) $taskEval['id'];
+                }
+            }
+        }
+
+        $finalScore = (float) ($evaluation['correctness_score'] ?? 0.0);
+        $session->update([
+            'status' => 'completed',
+            'ended_at' => now(),
+            'completed_tasks' => $completedTasks,
+            'performance_score' => $finalScore,
+        ]);
+
+        // Map competencies
+        $this->mapCompetencies($session, $finalScore);
+
+        TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'session_completed',
+            'payload' => [
+                'language' => $request->language,
+                'final_score' => $finalScore,
+                'completed_tasks_count' => count($completedTasks),
+                'execution_status' => $executionResult['status'] ?? 'unknown',
+            ],
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'completed_tasks' => $completedTasks,
+            'performance_score' => $session->performance_score,
+            'execution' => $executionResult,
+            'evaluation' => $evaluation,
+        ]);
+    }
+
+    /**
+     * Map completed lab tasks to student competencies.
+     */
+    protected function mapCompetencies(LabSession $session, float $score)
+    {
+        $user = $session->user;
+        if (!$user) {
+            return;
+        }
+
+        // Create/Update Java competency record
+        $competency = \App\Models\Competency::firstOrCreate([
+            'code' => 'COMP-JAVA-01',
+        ], [
+            'name' => 'Java OOP and Custom Exceptions Mastery',
+        ]);
+
+        \App\Models\StudentCompetency::updateOrCreate([
+            'user_id' => $user->id,
+            'competency_id' => $competency->id,
+        ], [
+            'score_achieved' => max($score, 0.0),
         ]);
     }
 }

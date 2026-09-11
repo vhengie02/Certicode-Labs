@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Dashboard')
-@section('page_header', 'Student Workspace Dashboard')
+@section('page_header', '   Dashboard')
 
 @section('content')
 <div class="space-y-8">

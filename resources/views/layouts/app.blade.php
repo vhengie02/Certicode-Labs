@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'Certicode Labs') - AI Competency Platform</title>
+    <title>@yield('title', 'Certicode Labs') - Certicode Labs</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
     <!-- Google Fonts: IBM Plex Sans & JetBrains Mono -->
@@ -123,7 +123,7 @@
         }
     </style>
 </head>
-<body class="h-full text-slate-100 bg-slate-950 flex flex-col overflow-hidden">
+<body class="h-full text-slate-100 bg-slate-950 flex flex-col overflow-hidden" data-is-instructor-or-admin="{{ auth()->user() && (auth()->user()->role === 'instructor' || auth()->user()->role === 'admin') ? 'true' : 'false' }}">
 
     <!-- Main Content Shell -->
     <div class="flex flex-col flex-1 overflow-hidden">
@@ -324,6 +324,77 @@
             });
         }
 
+        function pollNotifications() {
+            fetch("{{ route('notifications.fetch') }}")
+                .then(res => res.json())
+                .then(data => {
+                    // Update unread count badge
+                    const container = document.getElementById('notification-bell-container');
+                    if (!container) return;
+                    
+                    let dot = container.querySelector('span.bg-rose-500');
+                    if (data.unreadCount > 0) {
+                        if (!dot) {
+                            const btn = container.querySelector('button');
+                            dot = document.createElement('span');
+                            dot.className = 'absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950';
+                            btn.appendChild(dot);
+                        }
+                    } else {
+                        if (dot) dot.remove();
+                    }
+
+                    // Update "Mark all read" button in dropdown
+                    const header = document.querySelector('#notifications-dropdown div.px-4.py-2\\.5');
+                    if (header) {
+                        let markReadBtn = header.querySelector('button');
+                        if (data.unreadCount > 0) {
+                            if (!markReadBtn) {
+                                markReadBtn = document.createElement('button');
+                                markReadBtn.onclick = markAllAsRead;
+                                markReadBtn.className = 'text-indigo-400 hover:underline normal-case';
+                                markReadBtn.innerText = 'Mark all read';
+                                header.appendChild(markReadBtn);
+                            }
+                        } else {
+                            if (markReadBtn) markReadBtn.remove();
+                        }
+                    }
+
+                    // Update list items
+                    const list = document.getElementById('notifications-list');
+                    if (list) {
+                        if (data.notifications.length === 0) {
+                            list.innerHTML = `
+                                <div class="px-4 py-6 text-center text-xs text-slate-500">
+                                    No new notifications.
+                                </div>
+                            `;
+                        } else {
+                            list.innerHTML = data.notifications.map(notif => {
+                                const typeColor = notif.type === 'class' ? 'bg-indigo-400' : (notif.type === 'module' ? 'bg-blue-400' : (notif.type === 'certificate' ? 'bg-amber-400' : 'bg-emerald-400'));
+                                const unreadStyle = notif.unread ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '';
+                                return `
+                                    <a href="${notif.url}" class="block px-4 py-3 hover:bg-slate-850/40 transition ${unreadStyle}">
+                                        <div class="flex items-start space-x-2.5">
+                                            <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
+                                            <div class="overflow-hidden">
+                                                <p class="text-xs font-semibold text-white truncate">${notif.title}</p>
+                                                <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">${notif.message}</p>
+                                                <span class="text-[9px] text-slate-500 font-mono block mt-1">${notif.time}</span>
+                                            </div>
+                                        </div>
+                                    </a>
+                                `;
+                            }).join('');
+                        }
+                    }
+                });
+        }
+
+        // Start polling every 10 seconds
+        setInterval(pollNotifications, 10000);
+
         // --- Global Search Command Palette Logic ---
         let searchTimeout = null;
 
@@ -366,7 +437,7 @@
                 return;
             }
 
-            const isInstructorOrAdmin = @json(auth()->user()->role === 'instructor' || auth()->user()->role === 'admin');
+            const isInstructorOrAdmin = document.body.getAttribute('data-is-instructor-or-admin') === 'true';
             
             const navLinks = [
                 { label: 'Dashboard', url: "{{ route('dashboard') }}", type: 'Navigation', keywords: ['dashboard', 'home', 'dash'] },

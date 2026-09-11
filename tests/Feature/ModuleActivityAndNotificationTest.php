@@ -180,4 +180,37 @@ class ModuleActivityAndNotificationTest extends TestCase
         $this->assertEquals("Student Joined Class: {$this->class->name}", $notification->data['title']);
         $this->assertStringContainsString("has accepted your invitation and joined the class", $notification->data['message']);
     }
+
+    /**
+     * Test fetching user notifications via JSON endpoint.
+     */
+    public function test_can_fetch_notifications_via_json_route(): void
+    {
+        $this->class->students()->attach($this->student->id, ['status' => 'invited']);
+
+        $this->actingAs($this->student)
+            ->post("/classes/{$this->class->id}/invite-accept");
+
+        $response = $this->actingAs($this->instructor)
+            ->getJson(route('notifications.fetch'));
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'unreadCount',
+            'notifications' => [
+                '*' => [
+                    'id',
+                    'unread',
+                    'url',
+                    'title',
+                    'message',
+                    'type',
+                    'time',
+                ]
+            ]
+        ]);
+        
+        $this->assertEquals(1, $response->json('unreadCount'));
+        $this->assertEquals("Student Joined Class: {$this->class->name}", $response->json('notifications.0.title'));
+    }
 }

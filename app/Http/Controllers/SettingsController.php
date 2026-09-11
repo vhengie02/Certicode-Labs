@@ -57,8 +57,9 @@ class SettingsController extends Controller
 
         if (!app()->runningUnitTests()) {
             $lastSent = session('gmail_code_sent_at');
-            if ($lastSent && now()->diffInSeconds($lastSent) < 60) {
-                $secondsLeft = 60 - now()->diffInSeconds($lastSent);
+            $elapsed = $lastSent ? (int) now()->diffInSeconds($lastSent, true) : null;
+            if ($lastSent && $elapsed < 60) {
+                $secondsLeft = 60 - $elapsed;
                 return back()->withErrors(['code' => "Please wait {$secondsLeft} seconds before requesting a new code."]);
             }
         }
