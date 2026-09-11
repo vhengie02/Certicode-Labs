@@ -47,6 +47,11 @@ return new class extends Migration
         Schema::table('laboratories', function (Blueprint $table) {
             $table->foreignId('module_id')->nullable()->constrained('modules')->nullOnDelete();
         });
+
+        // 5. Update certificates table to associate with school_classes
+        Schema::table('certificates', function (Blueprint $table) {
+            $table->foreignId('class_id')->nullable()->constrained('school_classes')->cascadeOnDelete();
+        });
     }
 
     /**
@@ -54,6 +59,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::table('certificates', function (Blueprint $table) {
+            $table->dropForeign(['class_id']);
+            $table->dropColumn('class_id');
+        });
         Schema::table('laboratories', function (Blueprint $table) {
             $table->dropColumn('module_id');
         });
