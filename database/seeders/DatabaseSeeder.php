@@ -147,5 +147,15 @@ JAVA;
             'time_limit' => 30,
             'is_group_lab' => false,
         ]);
+
+        // 6. Seed initial in-progress lab session for testing
+        \App\Models\LabSession::create([
+            'lab_id' => $laboratory->id,
+            'user_id' => $student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+            'performance_score' => 0.0,
+            'completed_tasks' => [],
+        ]);
     }
 }
