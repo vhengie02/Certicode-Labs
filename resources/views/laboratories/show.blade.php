@@ -33,6 +33,53 @@
             <p class="whitespace-pre-line">{{ $laboratory->description }}</p>
         </div>
 
+        <!-- Starter Files Manifest Preview -->
+        @php
+            $starterFiles = $laboratory->getStarterFilesList();
+        @endphp
+        <div class="border-t border-[#232323] pt-6 mb-8" x-data="{ expandedFile: null }">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-xs font-mono uppercase font-bold tracking-wider text-[#a3a3a3]">Starter Workspace Files</h3>
+                    <p class="text-[11px] text-[#666666] mt-0.5">Automatically provisioned in the student's VS Code workspace upon session launch.</p>
+                </div>
+                <span class="text-[10px] font-mono text-[#3ecf8e] bg-[#141414] border border-[#3ecf8e]/30 px-2 py-0.5 rounded-full">
+                    {{ count($starterFiles) }} {{ count($starterFiles) === 1 ? 'FILE' : 'FILES' }}
+                </span>
+            </div>
+
+            <div class="space-y-3">
+                @foreach($starterFiles as $idx => $sfile)
+                    <div class="rounded-[6px] bg-[#141414] border border-[#2e2e2e] overflow-hidden">
+                        <div class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-[#1a1a1a] transition-colors"
+                             @click="expandedFile = expandedFile === {{ $idx }} ? null : {{ $idx }}">
+                            <div class="flex items-center space-x-3">
+                                <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                <span class="text-xs font-mono font-bold text-[#ededed]">{{ $sfile['name'] }}</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                @if(!empty($sfile['is_primary']))
+                                    <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-[#3ecf8e]/10 text-[#3ecf8e] border border-[#3ecf8e]/20 font-bold">
+                                        Primary (Auto-Open)
+                                    </span>
+                                @endif
+                                @if(!empty($sfile['is_readonly']))
+                                    <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-[#2e2e2e] text-[#a3a3a3] border border-[#383838]">
+                                        Read-Only
+                                    </span>
+                                @endif
+                                <span class="text-[10px] font-mono text-[#888888]" x-text="expandedFile === {{ $idx }} ? '▲ Hide' : '▼ View Code'"></span>
+                            </div>
+                        </div>
+
+                        <div x-show="expandedFile === {{ $idx }}" x-collapse style="display: none;" class="border-t border-[#232323] p-3 bg-[#0d0d0d]">
+                            <pre class="text-xs font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre"><code>{{ $sfile['content'] }}</code></pre>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
         @if(!empty($laboratory->tasks_definition))
             <div class="border-t border-[#232323] pt-6 mb-8">
                 <div class="flex items-center justify-between mb-4">
@@ -55,6 +102,166 @@
                             </div>
                         </div>
                     @endforeach
+                </div>
+            </div>
+        @endif
+
+        <!-- Team Collaboration & Live Metrics (for Group Labs) -->
+        @if($laboratory->is_group_lab && $activeSession)
+            <div class="border-t border-[#232323] pt-6 mb-8" 
+                 x-data="{
+                     activeTab: 'chat',
+                     messages: [],
+                     newMessage: '',
+                     codeSnippet: '',
+                     showSnippetInput: false,
+                     contributions: [],
+                     diffStats: {},
+                     loading: false,
+                     sessionId: {{ $activeSession->id }},
+                     init() {
+                         this.fetchChats();
+                         this.fetchSessionStats();
+                         setInterval(() => {
+                             this.fetchChats();
+                             this.fetchSessionStats();
+                         }, 5000);
+                     },
+                     async fetchChats() {
+                         try {
+                             const res = await fetch(`/api/v1/sessions/${this.sessionId}/chat`);
+                             const data = await res.json();
+                             if (data.chats) this.messages = data.chats;
+                         } catch (e) {}
+                     },
+                     async fetchSessionStats() {
+                         try {
+                             const res = await fetch(`/api/v1/sessions/${this.sessionId}`);
+                             const data = await res.json();
+                             if (data.code_contributions) this.contributions = data.code_contributions;
+                             if (data.diff_stats) this.diffStats = data.diffStats;
+                         } catch (e) {}
+                     },
+                     async sendMessage() {
+                         if (!this.newMessage.trim()) return;
+                         try {
+                             const res = await fetch(`/api/v1/sessions/${this.sessionId}/chat`, {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ message: this.newMessage, code_snippet: this.codeSnippet || null })
+                             });
+                             const data = await res.json();
+                             if (data.chat) {
+                                 this.messages.push(data.chat);
+                                 this.newMessage = '';
+                                 this.codeSnippet = '';
+                                 this.showSnippetInput = false;
+                             }
+                         } catch (e) {}
+                     }
+                 }">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex space-x-2 border-b border-[#2e2e2e]">
+                        <button type="button" @click="activeTab = 'chat'" 
+                            :class="activeTab === 'chat' ? 'border-[#3ecf8e] text-[#3ecf8e]' : 'border-transparent text-[#888888] hover:text-[#ededed]'"
+                            class="px-3 py-1.5 border-b-2 font-mono text-xs font-bold transition-colors">
+                            Team Chat (Live)
+                        </button>
+                        <button type="button" @click="activeTab = 'diff'" 
+                            :class="activeTab === 'diff' ? 'border-[#3ecf8e] text-[#3ecf8e]' : 'border-transparent text-[#888888] hover:text-[#ededed]'"
+                            class="px-3 py-1.5 border-b-2 font-mono text-xs font-bold transition-colors">
+                            Code Contributions & Diff
+                        </button>
+                    </div>
+                    <span class="text-[10px] font-mono text-[#3ecf8e] flex items-center">
+                        <span class="w-2 h-2 rounded-full bg-[#3ecf8e] animate-pulse mr-1.5"></span>
+                        TEAM SYNC ACTIVE
+                    </span>
+                </div>
+
+                <!-- Chat Pane -->
+                <div x-show="activeTab === 'chat'" class="rounded-[6px] bg-[#141414] border border-[#2e2e2e] p-4 flex flex-col h-80">
+                    <div class="flex-1 overflow-y-auto space-y-3 pr-2" id="web-chat-feed">
+                        <template x-if="messages.length === 0">
+                            <div class="h-full flex items-center justify-center text-xs font-mono text-[#666666]">
+                                No messages yet. Say hello to your teammates!
+                            </div>
+                        </template>
+                        <template x-for="msg in messages" :key="msg.id">
+                            <div class="flex items-start space-x-2.5">
+                                <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-[#0f0f0f] flex-shrink-0"
+                                      :style="`background-color: ${msg.avatar_color || '#3ecf8e'}`" x-text="msg.initials"></span>
+                                <div class="flex-1 bg-[#171717] border border-[#2e2e2e] rounded-[6px] p-2.5">
+                                    <div class="flex items-center justify-between text-[11px] mb-1">
+                                        <span class="font-bold text-[#ededed]" x-text="msg.user_name"></span>
+                                        <span class="font-mono text-[#666666] text-[10px]" x-text="msg.time"></span>
+                                    </div>
+                                    <p class="text-xs text-[#d4d4d4]" x-text="msg.message"></p>
+                                    <template x-if="msg.code_snippet">
+                                        <pre class="mt-2 p-2 bg-[#0c0c0c] border border-[#222222] rounded text-[11px] font-mono text-[#3ecf8e] overflow-x-auto whitespace-pre" x-text="msg.code_snippet"></pre>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <form @submit.prevent="sendMessage()" class="mt-3 pt-3 border-t border-[#232323] space-y-2">
+                        <template x-if="showSnippetInput">
+                            <textarea x-model="codeSnippet" placeholder="// Paste code snippet here..." rows="3"
+                                class="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#2e2e2e] rounded text-xs font-mono text-[#ededed] focus:outline-none focus:border-[#3ecf8e]"></textarea>
+                        </template>
+                        <div class="flex items-center space-x-2">
+                            <button type="button" @click="showSnippetInput = !showSnippetInput" 
+                                class="p-2 rounded bg-[#171717] border border-[#2e2e2e] text-[#888888] hover:text-[#3ecf8e] text-xs font-mono" title="Attach Code Snippet">
+                                &lt;/&gt;
+                            </button>
+                            <input type="text" x-model="newMessage" placeholder="Type a message to teammates..." 
+                                class="flex-1 px-3 py-2 bg-[#171717] border border-[#2e2e2e] rounded text-xs text-[#ededed] focus:outline-none focus:border-[#3ecf8e]">
+                            <button type="submit" class="px-4 py-2 bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold rounded hover:bg-[#00c573] transition-colors">
+                                Send
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Diff & Contributions Pane -->
+                <div x-show="activeTab === 'diff'" style="display: none;" class="rounded-[6px] bg-[#141414] border border-[#2e2e2e] p-4">
+                    <div class="mb-4 flex items-center justify-between">
+                        <span class="text-xs font-mono uppercase text-[#a3a3a3]">Team Code Contributions</span>
+                        <div class="text-xs font-mono">
+                            <span class="text-[#3ecf8e] font-bold" x-text="`+${diffStats.lines_added || 0}`"></span>
+                            <span class="text-[#666666]">/</span>
+                            <span class="text-red-400 font-bold" x-text="`-${diffStats.lines_deleted || 0}`"></span>
+                        </div>
+                    </div>
+
+                    <template x-if="contributions.length === 0">
+                        <div class="text-center py-6 text-xs font-mono text-[#666666]">
+                            No code diffs recorded yet. Edits made in the VS Code extension will appear here.
+                        </div>
+                    </template>
+
+                    <div class="space-y-4">
+                        <template x-for="c in contributions" :key="c.user_id">
+                            <div class="p-3 bg-[#171717] border border-[#2e2e2e] rounded-[6px]">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="w-2.5 h-2.5 rounded-full" :style="`background-color: ${c.avatar_color}`"></span>
+                                        <span class="font-bold text-[#ededed]" x-text="c.name"></span>
+                                    </div>
+                                    <span class="font-mono text-[#3ecf8e] font-bold" x-text="`${c.contribution_percent || 0}%`"></span>
+                                </div>
+                                <div class="w-full bg-[#101010] h-2 rounded-full overflow-hidden mb-2">
+                                    <div class="h-full rounded-full transition-all duration-500" 
+                                         :style="`width: ${c.contribution_percent || 0}%; background-color: ${c.avatar_color}`"></div>
+                                </div>
+                                <div class="flex items-center justify-between text-[11px] font-mono text-[#888888]">
+                                    <span>Lines: <strong class="text-[#3ecf8e]" x-text="`+${c.lines_added}`"></strong> / <strong class="text-red-400" x-text="`-${c.lines_deleted}`"></strong></span>
+                                    <span>Edits: <strong class="text-[#ededed]" x-text="c.edit_count"></strong></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </div>
         @endif

@@ -47,6 +47,9 @@ class LaboratoryController extends Controller
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'starter_files' => 'nullable|array',
+            'starter_files.*.name' => 'nullable|string|max:255',
+            'starter_files.*.content' => 'nullable|string',
         ]);
 
         // Convert key-value tasks to JSON structures
@@ -61,6 +64,29 @@ class LaboratoryController extends Controller
             }
         }
 
+        // Process starter files manifest
+        $starterFiles = [];
+        if (!empty($request->input('starter_files')) && is_array($request->input('starter_files'))) {
+            $hasPrimary = false;
+            foreach ($request->input('starter_files') as $file) {
+                if (!empty($file['name'])) {
+                    $isPrimary = !empty($file['is_primary']);
+                    if ($isPrimary) {
+                        $hasPrimary = true;
+                    }
+                    $starterFiles[] = [
+                        'name' => trim($file['name']),
+                        'content' => $file['content'] ?? '',
+                        'is_primary' => $isPrimary,
+                        'is_readonly' => !empty($file['is_readonly']),
+                    ];
+                }
+            }
+            if (!$hasPrimary && count($starterFiles) > 0) {
+                $starterFiles[0]['is_primary'] = true;
+            }
+        }
+
         $module = \App\Models\Module::findOrFail($validated['module_id']);
 
         $lab = Laboratory::create([
@@ -71,6 +97,7 @@ class LaboratoryController extends Controller
             'is_group_lab' => $request->has('is_group_lab'),
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            'starter_files' => !empty($starterFiles) ? $starterFiles : null,
         ]);
 
         // Send notifications to enrolled students
@@ -134,6 +161,9 @@ class LaboratoryController extends Controller
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'starter_files' => 'nullable|array',
+            'starter_files.*.name' => 'nullable|string|max:255',
+            'starter_files.*.content' => 'nullable|string',
         ]);
 
         $tasksDefinition = [];
@@ -147,6 +177,29 @@ class LaboratoryController extends Controller
             }
         }
 
+        // Process starter files manifest
+        $starterFiles = [];
+        if (!empty($request->input('starter_files')) && is_array($request->input('starter_files'))) {
+            $hasPrimary = false;
+            foreach ($request->input('starter_files') as $file) {
+                if (!empty($file['name'])) {
+                    $isPrimary = !empty($file['is_primary']);
+                    if ($isPrimary) {
+                        $hasPrimary = true;
+                    }
+                    $starterFiles[] = [
+                        'name' => trim($file['name']),
+                        'content' => $file['content'] ?? '',
+                        'is_primary' => $isPrimary,
+                        'is_readonly' => !empty($file['is_readonly']),
+                    ];
+                }
+            }
+            if (!$hasPrimary && count($starterFiles) > 0) {
+                $starterFiles[0]['is_primary'] = true;
+            }
+        }
+
         $module = \App\Models\Module::findOrFail($validated['module_id']);
 
         $laboratory->update([
@@ -157,6 +210,7 @@ class LaboratoryController extends Controller
             'is_group_lab' => $request->has('is_group_lab'),
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            'starter_files' => !empty($starterFiles) ? $starterFiles : null,
         ]);
 
         return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.');

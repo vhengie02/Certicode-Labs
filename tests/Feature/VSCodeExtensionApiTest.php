@@ -186,4 +186,97 @@ JAVA;
             'score_achieved' => 100.0,
         ]);
     }
+
+    /**
+     * Test retrieving session info includes starter files manifest.
+     */
+    public function test_session_info_includes_starter_files(): void
+    {
+        $this->laboratory->update([
+            'starter_files' => [
+                ['name' => 'TaskManager.java', 'content' => '// Primary', 'is_primary' => true, 'is_readonly' => false],
+                ['name' => 'Task.java', 'content' => '// Model', 'is_primary' => false, 'is_readonly' => false],
+            ]
+        ]);
+
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->getJson("/api/v1/sessions/{$session->id}");
+
+        $response->assertStatus(200);
+        $files = $response->json('laboratory.starter_files');
+        $this->assertCount(2, $files);
+        $this->assertEquals('TaskManager.java', $files[0]['name']);
+        $this->assertTrue($files[0]['is_primary']);
+    }
+
+    /**
+     * Test recording line diff updates diff_stats and code_contributions.
+     */
+    public function test_can_record_line_diff(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/diff", [
+                'lines_added' => 42,
+                'lines_deleted' => 10,
+                'lines_modified' => 5,
+                'files' => [
+                    ['name' => 'TaskManager.java', 'added' => 42, 'deleted' => 10]
+                ]
+            ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonFragment(['status' => 'success']);
+        $this->assertEquals(42, $response->json('diff_stats.lines_added'));
+        $this->assertEquals(10, $response->json('diff_stats.lines_deleted'));
+
+        $fresh = $session->fresh();
+        $this->assertEquals(42, $fresh->diff_stats['lines_added']);
+        $this->assertNotEmpty($fresh->code_contributions);
+    }
+
+    /**
+     * Test ephemeral team chat send and retrieve.
+     */
+    public function test_team_chat_send_and_retrieve(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        // Send chat message
+        $sendResponse = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/chat", [
+                'message' => 'Hey team, I implemented the exception class!',
+                'code_snippet' => 'class InvalidAgeException extends Exception {}',
+            ]);
+
+        $sendResponse->assertStatus(200);
+        $sendResponse->assertJsonFragment(['status' => 'success']);
+        $this->assertEquals('Hey team, I implemented the exception class!', $sendResponse->json('chat.message'));
+
+        // Retrieve messages
+        $getResponse = $this->actingAs($this->student)
+            ->getJson("/api/v1/sessions/{$session->id}/chat");
+
+        $getResponse->assertStatus(200);
+        $this->assertCount(1, $getResponse->json('chats'));
+        $this->assertEquals('Hey team, I implemented the exception class!', $getResponse->json('chats.0.message'));
+    }
 }

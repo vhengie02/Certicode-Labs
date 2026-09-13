@@ -19,6 +19,8 @@ class LabSession extends Model
         'status',
         'performance_score',
         'completed_tasks',
+        'diff_stats',
+        'code_contributions',
     ];
 
     protected $casts = [
@@ -26,6 +28,8 @@ class LabSession extends Model
         'ended_at' => 'datetime',
         'performance_score' => 'float',
         'completed_tasks' => 'array',
+        'diff_stats' => 'array',
+        'code_contributions' => 'array',
     ];
 
     /**
@@ -66,5 +70,13 @@ class LabSession extends Model
     public function anomalies()
     {
         return $this->hasMany(Anomaly::class);
+    }
+
+    /**
+     * Get ephemeral team chats for this session.
+     */
+    public function chats()
+    {
+        return $this->hasMany(LabSessionChat::class, 'lab_session_id');
     }
 }

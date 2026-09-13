@@ -106,4 +106,62 @@ class LaboratoryCrudTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    /**
+     * Test instructor can create laboratory with multiple starter files.
+     */
+    public function test_instructor_can_create_and_update_laboratory_with_starter_files(): void
+    {
+        $class = \App\Models\SchoolClass::create([
+            'name' => 'CS 101',
+            'code' => 'CS101-01',
+            'instructor_id' => $this->instructor->id,
+        ]);
+
+        $module = \App\Models\Module::create([
+            'title' => 'Intro to OOP',
+            'class_id' => $class->id,
+            'order' => 1,
+        ]);
+
+        $createResponse = $this->actingAs($this->instructor)
+            ->post(route('laboratories.store'), [
+                'title' => 'Multi-file Starter Lab',
+                'description' => 'Build a multi-file task manager application.',
+                'time_limit' => 45,
+                'module_id' => $module->id,
+                'tasks' => [
+                    ['task' => 'Create TaskManager', 'command' => 'test-command'],
+                ],
+                'starter_files' => [
+                    [
+                        'name' => 'TaskManager.java',
+                        'content' => 'public class TaskManager {}',
+                        'is_primary' => '1',
+                        'is_readonly' => '0',
+                    ],
+                    [
+                        'name' => 'Task.java',
+                        'content' => 'public class Task {}',
+                        'is_primary' => '0',
+                        'is_readonly' => '0',
+                    ],
+                    [
+                        'name' => 'TaskInterface.java',
+                        'content' => 'public interface TaskInterface {}',
+                        'is_primary' => '0',
+                        'is_readonly' => '1',
+                    ],
+                ],
+            ]);
+
+        $createResponse->assertRedirect(route('classes.show', $class->id));
+
+        $lab = Laboratory::where('title', 'Multi-file Starter Lab')->first();
+        $this->assertNotNull($lab);
+        $this->assertCount(3, $lab->starter_files);
+        $this->assertEquals('TaskManager.java', $lab->starter_files[0]['name']);
+        $this->assertTrue($lab->starter_files[0]['is_primary']);
+        $this->assertTrue($lab->starter_files[2]['is_readonly']);
+    }
 }

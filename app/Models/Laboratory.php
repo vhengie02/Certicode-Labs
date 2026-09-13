@@ -21,13 +21,36 @@ class Laboratory extends Model
         'is_group_lab',
         'module_id',
         'views_count',
+        'starter_files',
     ];
 
     protected $casts = [
         'tasks_definition' => 'array',
         'test_cases' => 'array',
         'is_group_lab' => 'boolean',
+        'starter_files' => 'array',
     ];
+
+    /**
+     * Get normalized starter files with backward-compatibility fallback.
+     */
+    public function getStarterFilesList(): array
+    {
+        if (!empty($this->starter_files) && is_array($this->starter_files) && count($this->starter_files) > 0) {
+            return $this->starter_files;
+        }
+
+        $defaultContent = $this->reference_solution ?: "// CertiCode Labs - Starter Code\npublic class TaskManager {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, CertiCode Labs!\");\n    }\n}\n";
+
+        return [
+            [
+                'name' => 'TaskManager.java',
+                'content' => $defaultContent,
+                'is_primary' => true,
+                'is_readonly' => false,
+            ]
+        ];
+    }
 
     /**
      * Get the module this laboratory belongs to.

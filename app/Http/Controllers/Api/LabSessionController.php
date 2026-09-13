@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Laboratory;
 use App\Models\LabSession;
+use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
 use App\Models\Anomaly;
 use App\Services\SandboxExecutionService;
@@ -348,7 +349,7 @@ class LabSessionController extends Controller
      */
     public function getSession(Request $request, int $sessionId)
     {
-        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        $session = LabSession::with(['laboratory', 'user', 'group.members'])->findOrFail($sessionId);
         $lab = $session->laboratory;
 
         $timeLimitSeconds = ($lab->time_limit ?? 0) * 60;
@@ -357,6 +358,28 @@ class LabSessionController extends Controller
             ? (int) $session->started_at->diffInSeconds($endTime, true)
             : 0;
         $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
+
+        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
+        $currentUser = $request->user() ?? $session->user;
+        $userId = $currentUser ? $currentUser->id : 1;
+        $userName = $currentUser ? $currentUser->name : 'Student';
+        $userColor = $colors[$userId % count($colors)];
+
+        $teammates = [];
+        if ($session->group && $session->group->members) {
+            foreach ($session->group->members as $member) {
+                $mColor = $colors[$member->id % count($colors)];
+                $nameParts = explode(' ', $member->name);
+                $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+                $teammates[] = [
+                    'id' => $member->id,
+                    'name' => $member->name,
+                    'initials' => $initials ?: 'ST',
+                    'avatar_color' => $mColor,
+                    'contribution_score' => (float) ($member->pivot->contribution_score ?? 0.0),
+                ];
+            }
+        }
 
         return response()->json([
             'session_id' => $session->id,
@@ -367,11 +390,23 @@ class LabSessionController extends Controller
             'time_limit_minutes' => $lab->time_limit ?? 0,
             'performance_score' => $session->performance_score,
             'completed_tasks' => $session->completed_tasks ?? [],
+            'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
+            'code_contributions' => $session->code_contributions ?? [],
+            'current_user' => [
+                'id' => $userId,
+                'name' => $userName,
+                'initials' => strtoupper(substr($userName, 0, 2)),
+                'avatar_color' => $userColor,
+            ],
+            'is_group_lab' => (bool) $lab->is_group_lab,
+            'teammates' => $teammates,
             'laboratory' => [
                 'id' => $lab->id,
                 'title' => $lab->title,
                 'description' => $lab->description,
+                'is_group_lab' => (bool) $lab->is_group_lab,
                 'tasks_definition' => $lab->tasks_definition ?? [],
+                'starter_files' => $lab->getStarterFilesList(),
             ]
         ]);
     }
@@ -384,12 +419,27 @@ class LabSessionController extends Controller
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
         $request->validate([
-            'code' => 'required|string',
+            'code' => 'nullable|string',
+            'files' => 'nullable|array',
             'language' => 'required|string',
         ]);
 
+        $code = $request->code;
+        if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
+            foreach ($request->input('files') as $f) {
+                if (!empty($f['is_primary']) && !empty($f['content'])) {
+                    $code = $f['content'];
+                    break;
+                }
+            }
+            if (empty($code) && count($request->input('files')) > 0) {
+                $code = $request->input('files')[0]['content'] ?? '';
+            }
+        }
+        $code = $code ?? '';
+
         $evaluationService = app(\App\Services\LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $request->code, $request->language);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language);
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -431,16 +481,31 @@ class LabSessionController extends Controller
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
         $request->validate([
-            'code' => 'required|string',
+            'code' => 'nullable|string',
+            'files' => 'nullable|array',
             'language' => 'required|string',
         ]);
 
+        $code = $request->code;
+        if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
+            foreach ($request->input('files') as $f) {
+                if (!empty($f['is_primary']) && !empty($f['content'])) {
+                    $code = $f['content'];
+                    break;
+                }
+            }
+            if (empty($code) && count($request->input('files')) > 0) {
+                $code = $request->input('files')[0]['content'] ?? '';
+            }
+        }
+        $code = $code ?? '';
+
         // Execute code
-        $executionResult = $this->sandboxService->execute($request->code, $request->language);
+        $executionResult = $this->sandboxService->execute($code, $request->language);
 
         // AI task-completion evaluation
         $evaluationService = app(\App\Services\LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $request->code, $request->language);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language);
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -479,6 +544,179 @@ class LabSessionController extends Controller
             'performance_score' => $session->performance_score,
             'execution' => $executionResult,
             'evaluation' => $evaluation,
+        ]);
+    }
+
+    /**
+     * Record real-time line diffs and contribution metrics.
+     */
+    public function recordDiff(Request $request, int $sessionId)
+    {
+        $session = LabSession::with(['laboratory', 'user'])->findOrFail($sessionId);
+
+        $request->validate([
+            'lines_added' => 'required|integer|min:0',
+            'lines_deleted' => 'required|integer|min:0',
+            'lines_modified' => 'nullable|integer|min:0',
+            'files' => 'nullable|array',
+            'blame_blocks' => 'nullable|array',
+        ]);
+
+        $currentUser = $request->user() ?? $session->user;
+        $userId = $currentUser ? $currentUser->id : 1;
+        $userName = $currentUser ? $currentUser->name : 'Student';
+        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
+        $userColor = $colors[$userId % count($colors)];
+
+        $diffStats = [
+            'lines_added' => (int) $request->lines_added,
+            'lines_deleted' => (int) $request->lines_deleted,
+            'lines_modified' => (int) ($request->lines_modified ?? 0),
+            'files' => $request->files ?? [],
+            'updated_at' => now()->toIso8601String(),
+        ];
+
+        // Maintain contribution aggregation per student
+        $contributions = $session->code_contributions ?? [];
+        $existingIndex = -1;
+        foreach ($contributions as $idx => $c) {
+            if (($c['user_id'] ?? null) == $userId) {
+                $existingIndex = $idx;
+                break;
+            }
+        }
+
+        $userContrib = [
+            'user_id' => $userId,
+            'name' => $userName,
+            'avatar_color' => $userColor,
+            'lines_added' => (int) $request->lines_added,
+            'lines_deleted' => (int) $request->lines_deleted,
+            'lines_modified' => (int) ($request->lines_modified ?? 0),
+            'last_active_at' => now()->toIso8601String(),
+            'edit_count' => ($existingIndex >= 0 ? ($contributions[$existingIndex]['edit_count'] ?? 1) + 1 : 1),
+        ];
+
+        if ($existingIndex >= 0) {
+            $contributions[$existingIndex] = $userContrib;
+        } else {
+            $contributions[] = $userContrib;
+        }
+
+        // Calculate total lines across all contributors for percentage
+        $totalLines = 0;
+        foreach ($contributions as $c) {
+            $totalLines += ($c['lines_added'] + $c['lines_modified']);
+        }
+
+        foreach ($contributions as &$c) {
+            $myLines = $c['lines_added'] + $c['lines_modified'];
+            $c['contribution_percent'] = $totalLines > 0 ? round(($myLines / $totalLines) * 100, 1) : 100.0;
+        }
+
+        $session->update([
+            'diff_stats' => $diffStats,
+            'code_contributions' => $contributions,
+        ]);
+
+        // If in a group, update pivot contribution_score
+        if ($session->group_id && $currentUser) {
+            $userPercent = 100.0;
+            foreach ($contributions as $c) {
+                if ($c['user_id'] == $userId) {
+                    $userPercent = $c['contribution_percent'];
+                    break;
+                }
+            }
+            \DB::table('group_members')
+                ->where('group_id', $session->group_id)
+                ->where('user_id', $userId)
+                ->update(['contribution_score' => $userPercent]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'diff_stats' => $diffStats,
+            'code_contributions' => $contributions,
+        ]);
+    }
+
+    /**
+     * Get ephemeral team chats for active session.
+     */
+    public function getChats(Request $request, int $sessionId)
+    {
+        $session = LabSession::findOrFail($sessionId);
+
+        $chats = LabSessionChat::where('lab_session_id', $session->id)
+            ->orderBy('id', 'asc')
+            ->limit(100)
+            ->get()
+            ->map(function ($chat) {
+                $nameParts = explode(' ', $chat->user_name);
+                $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+                return [
+                    'id' => $chat->id,
+                    'user_id' => $chat->user_id,
+                    'user_name' => $chat->user_name,
+                    'initials' => $initials ?: 'ST',
+                    'avatar_color' => $chat->avatar_color,
+                    'message' => $chat->message,
+                    'code_snippet' => $chat->code_snippet,
+                    'time' => $chat->created_at ? $chat->created_at->format('H:i') : '',
+                    'created_at' => $chat->created_at,
+                ];
+            });
+
+        return response()->json([
+            'status' => 'success',
+            'chats' => $chats,
+        ]);
+    }
+
+    /**
+     * Send an ephemeral team chat message.
+     */
+    public function sendChat(Request $request, int $sessionId)
+    {
+        $session = LabSession::findOrFail($sessionId);
+
+        $request->validate([
+            'message' => 'required|string|max:2000',
+            'code_snippet' => 'nullable|string|max:5000',
+        ]);
+
+        $currentUser = $request->user() ?? $session->user;
+        $userId = $currentUser ? $currentUser->id : 1;
+        $userName = $currentUser ? $currentUser->name : 'Student';
+        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
+        $userColor = $colors[$userId % count($colors)];
+
+        $chat = LabSessionChat::create([
+            'lab_session_id' => $session->id,
+            'user_id' => $userId,
+            'user_name' => $userName,
+            'avatar_color' => $userColor,
+            'message' => $request->message,
+            'code_snippet' => $request->code_snippet,
+        ]);
+
+        $nameParts = explode(' ', $chat->user_name);
+        $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+
+        return response()->json([
+            'status' => 'success',
+            'chat' => [
+                'id' => $chat->id,
+                'user_id' => $chat->user_id,
+                'user_name' => $chat->user_name,
+                'initials' => $initials ?: 'ST',
+                'avatar_color' => $chat->avatar_color,
+                'message' => $chat->message,
+                'code_snippet' => $chat->code_snippet,
+                'time' => $chat->created_at ? $chat->created_at->format('H:i') : now()->format('H:i'),
+                'created_at' => $chat->created_at,
+            ],
         ]);
     }
 

@@ -34,6 +34,19 @@ class SidebarProvider {
         this._backendUrl = 'http://localhost';
         this._isReconnecting = false;
         this._lastSessionData = null;
+        // Feature 1: Starter Files & Integrity
+        this._starterFileSnapshots = new Map();
+        this._filesGenerated = false;
+        this._missingFiles = [];
+        this._lastDiffStats = {
+            lines_added: 0,
+            lines_deleted: 0,
+            lines_modified: 0,
+            files: []
+        };
+        // Feature 3: Team Chat
+        this._unreadChatCount = 0;
+        this._isChatTabActive = false;
     }
     resolveWebviewView(webviewView, context, _token) {
         this._view = webviewView;
@@ -64,11 +77,31 @@ class SidebarProvider {
                     this.handleExit();
                     break;
                 }
+                case 'sendChat': {
+                    this.handleSendChat(data.message, data.codeSnippet);
+                    break;
+                }
+                case 'setChatTabActive': {
+                    this._isChatTabActive = data.active;
+                    if (data.active) {
+                        this._unreadChatCount = 0;
+                        this._view?.webview.postMessage({ type: 'unreadReset' });
+                    }
+                    break;
+                }
+                case 'retryFileGeneration': {
+                    if (this._lastSessionData?.laboratory?.starter_files) {
+                        await this.provisionStarterFiles(this._lastSessionData.laboratory.starter_files);
+                    }
+                    break;
+                }
             }
         });
+        // Setup FileSystemWatcher and Document change tracking
+        this.setupWorkspaceWatchers();
     }
     /**
-     * Shows a input prompt to connect from VS Code commands palette
+     * Shows an input prompt to connect from VS Code commands palette
      */
     async connectSessionPrompt() {
         const url = await vscode.window.showInputBox({
@@ -121,12 +154,21 @@ class SidebarProvider {
         if (this._pingInterval) {
             clearInterval(this._pingInterval);
         }
+        if (this._chatPollInterval) {
+            clearInterval(this._chatPollInterval);
+        }
+        this._filesGenerated = false;
+        this._unreadChatCount = 0;
         // Run sync immediately
         this.syncSessionState();
         // Run sync every 15 seconds to detect dropped connections / keepalive
         this._pingInterval = setInterval(() => {
             this.syncSessionState();
         }, 15000);
+        // Run chat sync every 4 seconds
+        this._chatPollInterval = setInterval(() => {
+            this.fetchChatMessages();
+        }, 4000);
     }
     async syncSessionState() {
         if (!this._sessionId) {
@@ -139,11 +181,20 @@ class SidebarProvider {
                 this._isReconnecting = false;
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
+                // Feature 1: Provision starter files on first connect
+                if (!this._filesGenerated && data.laboratory?.starter_files && Array.isArray(data.laboratory.starter_files)) {
+                    await this.provisionStarterFiles(data.laboratory.starter_files);
+                }
+                else {
+                    await this.verifyWorkspaceFileIntegrity();
+                }
                 this._view?.webview.postMessage({
                     type: 'update',
                     data: data,
                     isReconnecting: false
                 });
+                // Fetch chats if group lab
+                this.fetchChatMessages();
             }
             else {
                 throw new Error(`Server returned status code: ${result.status}`);
@@ -157,26 +208,305 @@ class SidebarProvider {
             });
         }
     }
+    /**
+     * Feature 1: Generate starter files in active workspace and open primary file.
+     */
+    async provisionStarterFiles(starterFiles) {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            vscode.window.showWarningMessage('CertiCode Labs: Please open a workspace folder to generate exercise files.');
+            return;
+        }
+        const rootUri = workspaceFolders[0].uri;
+        let primaryUri = null;
+        for (const file of starterFiles) {
+            if (!file.name) {
+                continue;
+            }
+            const fileUri = vscode.Uri.joinPath(rootUri, file.name);
+            // Cache snapshot for diff engine
+            if (!this._starterFileSnapshots.has(file.name)) {
+                this._starterFileSnapshots.set(file.name, file.content || '');
+            }
+            let exists = false;
+            try {
+                await vscode.workspace.fs.stat(fileUri);
+                exists = true;
+            }
+            catch {
+                exists = false;
+            }
+            if (!exists) {
+                const enc = new TextEncoder();
+                await vscode.workspace.fs.writeFile(fileUri, enc.encode(file.content || ''));
+            }
+            if (file.is_primary) {
+                primaryUri = fileUri;
+            }
+        }
+        // Auto-open primary starter file
+        if (primaryUri) {
+            try {
+                const doc = await vscode.workspace.openTextDocument(primaryUri);
+                await vscode.window.showTextDocument(doc, { preview: false });
+            }
+            catch (e) {
+                console.error('Failed to open primary document', e);
+            }
+        }
+        this._filesGenerated = true;
+        await this.verifyWorkspaceFileIntegrity();
+        await this.computeAndSyncDiffs();
+    }
+    /**
+     * Feature 1: Filename integrity watcher - verify all required starter files exist.
+     */
+    async verifyWorkspaceFileIntegrity() {
+        if (!this._lastSessionData?.laboratory?.starter_files) {
+            return;
+        }
+        const starterFiles = this._lastSessionData.laboratory.starter_files;
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            return;
+        }
+        const rootUri = workspaceFolders[0].uri;
+        const missing = [];
+        for (const file of starterFiles) {
+            if (!file.name) {
+                continue;
+            }
+            const fileUri = vscode.Uri.joinPath(rootUri, file.name);
+            try {
+                await vscode.workspace.fs.stat(fileUri);
+            }
+            catch {
+                missing.push(file.name);
+            }
+        }
+        this._missingFiles = missing;
+        this._view?.webview.postMessage({
+            type: 'integrityStatus',
+            valid: missing.length === 0,
+            missing: missing
+        });
+    }
+    /**
+     * Feature 2: Workspace watchers for file integrity and code change diffs
+     */
+    setupWorkspaceWatchers() {
+        if (this._fileWatcher) {
+            this._fileWatcher.dispose();
+        }
+        this._fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+        this._fileWatcher.onDidCreate(() => this.verifyWorkspaceFileIntegrity());
+        this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity());
+        // Watch document changes for live diff tracking
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (!this._sessionId || !this._lastSessionData) {
+                return;
+            }
+            // Check if document belongs to workspace starter files
+            const fileName = event.document.fileName;
+            const isTracked = this._lastSessionData.laboratory?.starter_files?.some((f) => fileName.endsWith(f.name));
+            if (isTracked) {
+                if (this._diffDebounceTimer) {
+                    clearTimeout(this._diffDebounceTimer);
+                }
+                this._diffDebounceTimer = setTimeout(() => {
+                    this.computeAndSyncDiffs();
+                }, 2000);
+            }
+        });
+        vscode.workspace.onDidSaveTextDocument(() => {
+            if (this._sessionId && this._lastSessionData) {
+                this.computeAndSyncDiffs();
+            }
+        });
+    }
+    /**
+     * Feature 2: Compute line diffs and sync with backend
+     */
+    async computeAndSyncDiffs() {
+        if (!this._sessionId || !this._lastSessionData) {
+            return;
+        }
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            return;
+        }
+        const starterFiles = this._lastSessionData.laboratory?.starter_files || [];
+        let totalAdded = 0;
+        let totalDeleted = 0;
+        let totalModified = 0;
+        const filesSummary = [];
+        for (const sfile of starterFiles) {
+            const initialContent = this._starterFileSnapshots.get(sfile.name) ?? (sfile.content || '');
+            const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, sfile.name);
+            let currentContent = '';
+            try {
+                const data = await vscode.workspace.fs.readFile(fileUri);
+                currentContent = new TextDecoder().decode(data);
+            }
+            catch {
+                continue;
+            }
+            const diff = this.calculateLineDiff(initialContent, currentContent);
+            totalAdded += diff.added;
+            totalDeleted += diff.deleted;
+            totalModified += diff.modified;
+            filesSummary.push({
+                name: sfile.name,
+                added: diff.added,
+                deleted: diff.deleted,
+                modified: diff.modified
+            });
+        }
+        this._lastDiffStats = {
+            lines_added: totalAdded,
+            lines_deleted: totalDeleted,
+            lines_modified: totalModified,
+            files: filesSummary
+        };
+        // Notify Webview with live diffs
+        this._view?.webview.postMessage({
+            type: 'diffUpdate',
+            diffStats: this._lastDiffStats
+        });
+        // Transmit diff payload to backend
+        try {
+            const prefix = this._apiToken ? '/api' : '/api/v1';
+            await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/diff`, {
+                lines_added: totalAdded,
+                lines_deleted: totalDeleted,
+                lines_modified: totalModified,
+                files: filesSummary
+            });
+        }
+        catch (e) {
+            console.error('Failed to sync diff to backend', e);
+        }
+    }
+    /**
+     * Calculate line additions, deletions, and modifications relative to snapshot.
+     */
+    calculateLineDiff(initial, current) {
+        const initialLines = initial.split(/\r?\n/);
+        const currentLines = current.split(/\r?\n/);
+        const initialSet = new Set(initialLines.map(l => l.trim()));
+        const currentSet = new Set(currentLines.map(l => l.trim()));
+        let rawAdded = 0;
+        for (const line of currentLines) {
+            if (line.trim().length > 0 && !initialSet.has(line.trim())) {
+                rawAdded++;
+            }
+        }
+        let rawDeleted = 0;
+        for (const line of initialLines) {
+            if (line.trim().length > 0 && !currentSet.has(line.trim())) {
+                rawDeleted++;
+            }
+        }
+        const modified = Math.min(rawAdded, rawDeleted);
+        return {
+            added: Math.max(0, rawAdded - modified),
+            deleted: Math.max(0, rawDeleted - modified),
+            modified: modified
+        };
+    }
+    /**
+     * Feature 3: Fetch ephemeral chat messages
+     */
+    async fetchChatMessages() {
+        if (!this._sessionId) {
+            return;
+        }
+        try {
+            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/chat`);
+            if (res.status === 200) {
+                const data = JSON.parse(res.body);
+                const chats = data.chats || [];
+                if (!this._isChatTabActive && chats.length > 0) {
+                    this._unreadChatCount = chats.length;
+                }
+                this._view?.webview.postMessage({
+                    type: 'chatUpdate',
+                    chats: chats,
+                    unreadCount: this._unreadChatCount
+                });
+            }
+        }
+        catch (e) {
+            console.error('Failed to fetch chat messages', e);
+        }
+    }
+    /**
+     * Feature 3: Send ephemeral chat message
+     */
+    async handleSendChat(message, codeSnippet) {
+        if (!this._sessionId) {
+            return;
+        }
+        try {
+            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const res = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/chat`, {
+                message,
+                code_snippet: codeSnippet || null
+            });
+            if (res.status === 200) {
+                await this.fetchChatMessages();
+            }
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`Send Chat Error: ${err.message}`);
+        }
+    }
     async handleCheckProgress() {
         if (!this._sessionId) {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
         }
-        const activeEditor = vscode.window.activeTextEditor;
-        if (!activeEditor) {
+        // Collect all workspace files for evaluation
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        let primaryCode = '';
+        const filesPayload = [];
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
+            for (const sfile of starterFiles) {
+                const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, sfile.name);
+                try {
+                    const data = await vscode.workspace.fs.readFile(fileUri);
+                    const content = new TextDecoder().decode(data);
+                    filesPayload.push({
+                        name: sfile.name,
+                        content: content,
+                        is_primary: !!sfile.is_primary
+                    });
+                    if (sfile.is_primary) {
+                        primaryCode = content;
+                    }
+                }
+                catch { }
+            }
+        }
+        // Fallback to active editor text if filesPayload empty
+        if (!primaryCode) {
+            const activeEditor = vscode.window.activeTextEditor;
+            if (activeEditor) {
+                primaryCode = activeEditor.document.getText();
+            }
+        }
+        if (!primaryCode && filesPayload.length === 0) {
             vscode.window.showErrorMessage('Please open your Java code file to check progress.');
             return;
-        }
-        const code = activeEditor.document.getText();
-        const docName = activeEditor.document.fileName;
-        if (!docName.endsWith('.java')) {
-            vscode.window.showWarningMessage('Warning: The active editor is not a Java source file (.java).');
         }
         this._view?.webview.postMessage({ type: 'status', message: 'Analyzing code with AI evaluator...' });
         try {
             const prefix = this._apiToken ? '/api' : '/api/v1';
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/check-progress`, {
-                code: code,
+                code: primaryCode,
+                files: filesPayload,
                 language: 'java'
             });
             if (result.status === 200) {
@@ -207,12 +537,43 @@ class SidebarProvider {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
         }
-        const activeEditor = vscode.window.activeTextEditor;
-        if (!activeEditor) {
-            vscode.window.showErrorMessage('Please open your Java code file to submit.');
+        // Feature 1 Client-Side Filename Integrity Check
+        if (this._missingFiles && this._missingFiles.length > 0) {
+            vscode.window.showErrorMessage(`Submission blocked: Missing required file(s): ${this._missingFiles.join(', ')}. Please restore or recreate the file to submit.`);
             return;
         }
-        const code = activeEditor.document.getText();
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        let primaryCode = '';
+        const filesPayload = [];
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
+            for (const sfile of starterFiles) {
+                const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, sfile.name);
+                try {
+                    const data = await vscode.workspace.fs.readFile(fileUri);
+                    const content = new TextDecoder().decode(data);
+                    filesPayload.push({
+                        name: sfile.name,
+                        content: content,
+                        is_primary: !!sfile.is_primary
+                    });
+                    if (sfile.is_primary) {
+                        primaryCode = content;
+                    }
+                }
+                catch { }
+            }
+        }
+        if (!primaryCode) {
+            const activeEditor = vscode.window.activeTextEditor;
+            if (activeEditor) {
+                primaryCode = activeEditor.document.getText();
+            }
+        }
+        if (!primaryCode && filesPayload.length === 0) {
+            vscode.window.showErrorMessage('Please open or generate your solution files before submitting.');
+            return;
+        }
         const confirm = await vscode.window.showWarningMessage('Submit Lab Solution: Are you sure you want to finalize your submission? This compiles, runs test cases, evaluates competencies, and completes your session.', { modal: true }, 'Yes, Submit');
         if (confirm !== 'Yes, Submit') {
             return;
@@ -221,7 +582,8 @@ class SidebarProvider {
         try {
             const prefix = this._apiToken ? '/api' : '/api/v1';
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/submit`, {
-                code: code,
+                code: primaryCode,
+                files: filesPayload,
                 language: 'java'
             });
             if (result.status === 200) {
@@ -233,6 +595,9 @@ class SidebarProvider {
                 });
                 if (this._pingInterval) {
                     clearInterval(this._pingInterval);
+                }
+                if (this._chatPollInterval) {
+                    clearInterval(this._chatPollInterval);
                 }
             }
             else {
@@ -257,8 +622,14 @@ class SidebarProvider {
         if (this._pingInterval) {
             clearInterval(this._pingInterval);
         }
+        if (this._chatPollInterval) {
+            clearInterval(this._chatPollInterval);
+        }
         this._sessionId = undefined;
         this._lastSessionData = null;
+        this._filesGenerated = false;
+        this._starterFileSnapshots.clear();
+        this._missingFiles = [];
         this._view?.webview.postMessage({ type: 'disconnected' });
         vscode.window.showInformationMessage('Exited CertiCode Labs session.');
     }
@@ -324,37 +695,39 @@ class SidebarProvider {
             font-size: var(--vscode-font-size, 13px);
             color: var(--vscode-foreground);
             background-color: var(--vscode-sideBar-background);
-            padding: 10px;
+            padding: 8px;
             margin: 0;
             box-sizing: border-box;
         }
         .container {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
         .header {
             font-weight: bold;
-            font-size: 1.2em;
-            margin-bottom: 5px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            padding-bottom: 5px;
+            font-size: 1.15em;
+            margin-bottom: 4px;
             color: var(--vscode-sideBarTitle-foreground);
         }
         .sub-header {
             color: var(--vscode-descriptionForeground);
-            font-size: 0.95em;
+            font-size: 0.9em;
             line-height: 1.35;
         }
         .connection-status {
-            padding: 6px 10px;
-            font-size: 0.9em;
+            padding: 5px 8px;
+            font-size: 0.85em;
             border-radius: 3px;
             font-weight: bold;
             display: flex;
             align-items: center;
+            justify-content: space-between;
+        }
+        .status-left {
+            display: flex;
+            align-items: center;
             gap: 6px;
-            margin-bottom: 5px;
         }
         .status-dot {
             width: 8px;
@@ -362,12 +735,12 @@ class SidebarProvider {
             border-radius: 50%;
         }
         .status-connected {
-            background-color: rgba(74, 186, 120, 0.15);
-            color: #4aba78;
-            border: 1px solid rgba(74, 186, 120, 0.3);
+            background-color: rgba(62, 207, 142, 0.12);
+            color: #3ecf8e;
+            border: 1px solid rgba(62, 207, 142, 0.25);
         }
         .status-connected .status-dot {
-            background-color: #4aba78;
+            background-color: #3ecf8e;
         }
         .status-reconnecting {
             background-color: rgba(245, 166, 35, 0.15);
@@ -378,60 +751,133 @@ class SidebarProvider {
         .status-reconnecting .status-dot {
             background-color: #f5a623;
         }
+        .diff-pill {
+            font-size: 0.8em;
+            font-family: var(--vscode-editor-font-family, monospace);
+            padding: 2px 6px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--vscode-panel-border);
+        }
+        .diff-added { color: #3ecf8e; }
+        .diff-deleted { color: #f87171; }
+
+        /* Feature 1 Integrity Warning Banner */
+        .integrity-alert {
+            background-color: rgba(248, 113, 113, 0.12);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: #fca5a5;
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            line-height: 1.35;
+        }
+        .integrity-alert strong { color: #f87171; }
+
+        /* Navigation Tabs */
+        .tabs-nav {
+            display: flex;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            gap: 2px;
+            margin-top: 4px;
+        }
+        .tab-btn {
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--vscode-descriptionForeground);
+            padding: 6px 10px;
+            font-size: 0.85em;
+            font-family: inherit;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            color: var(--vscode-foreground);
+        }
+        .tab-btn.active {
+            color: #3ecf8e;
+            border-bottom: 2px solid #3ecf8e;
+        }
+        .tab-badge {
+            font-size: 0.75em;
+            background-color: #3ecf8e;
+            color: #0f0f0f;
+            border-radius: 8px;
+            padding: 1px 5px;
+            font-weight: bold;
+        }
+
+        .tab-content {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .tab-content.active {
+            display: flex;
+        }
+
         .form-group {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
         }
         label {
-            font-weight: bold;
-            font-size: 0.9em;
+            font-weight: 600;
+            font-size: 0.85em;
         }
-        input {
+        input, textarea {
             background-color: var(--vscode-input-background);
             color: var(--vscode-input-foreground);
             border: 1px solid var(--vscode-input-border, transparent);
-            padding: 6px;
+            padding: 6px 8px;
             border-radius: 2px;
             font-family: inherit;
+            font-size: 0.9em;
         }
-        input:focus {
+        input:focus, textarea:focus {
             outline: 1px solid var(--vscode-focusBorder);
         }
         button {
             background-color: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
             border: none;
-            padding: 8px 12px;
+            padding: 7px 12px;
             border-radius: 2px;
             cursor: pointer;
-            font-weight: bold;
+            font-weight: 600;
+            font-size: 0.9em;
             display: flex;
             justify-content: center;
             align-items: center;
+            transition: opacity 0.2s;
         }
         button:hover {
             background-color: var(--vscode-button-hoverBackground);
         }
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
         .btn-secondary {
-            background-color: var(--vscode-button-secondaryBackground, #5f5f5f);
+            background-color: var(--vscode-button-secondaryBackground, #3a3a3a);
             color: var(--vscode-button-secondaryForeground, #ffffff);
         }
         .btn-secondary:hover {
-            background-color: var(--vscode-button-secondaryHoverBackground, #777777);
-        }
-        .btn-danger {
-            background-color: #d9534f;
-            color: white;
-        }
-        .btn-danger:hover {
-            background-color: #c9302c;
+            background-color: var(--vscode-button-secondaryHoverBackground, #4a4a4a);
         }
         .timer-box {
-            font-size: 1.3em;
+            font-size: 1.25em;
             font-weight: bold;
             text-align: center;
-            padding: 10px;
+            padding: 8px;
             background-color: var(--vscode-editor-background);
             border: 1px solid var(--vscode-panel-border);
             border-radius: 4px;
@@ -449,18 +895,18 @@ class SidebarProvider {
             background-color: var(--vscode-editor-background);
             border: 1px solid var(--vscode-panel-border);
             border-radius: 4px;
-            padding: 10px;
+            padding: 8px 10px;
         }
         .task-list {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
         }
         .task-item {
             display: flex;
             flex-direction: column;
-            padding: 8px;
-            border-radius: 4px;
+            padding: 7px;
+            border-radius: 3px;
             border: 1px solid var(--vscode-panel-border);
             background-color: var(--vscode-sideBar-background);
         }
@@ -468,16 +914,17 @@ class SidebarProvider {
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
-            gap: 8px;
+            gap: 6px;
         }
         .task-title {
             font-weight: 500;
             line-height: 1.3;
+            font-size: 0.92em;
         }
         .task-badge {
-            font-size: 0.8em;
+            font-size: 0.75em;
             padding: 2px 6px;
-            border-radius: 10px;
+            border-radius: 8px;
             font-weight: bold;
             white-space: nowrap;
         }
@@ -487,37 +934,16 @@ class SidebarProvider {
             border: 1px solid rgba(245, 166, 35, 0.3);
         }
         .badge-complete {
-            background-color: rgba(74, 186, 120, 0.15);
-            color: #4aba78;
-            border: 1px solid rgba(74, 186, 120, 0.3);
+            background-color: rgba(62, 207, 142, 0.15);
+            color: #3ecf8e;
+            border: 1px solid rgba(62, 207, 142, 0.3);
         }
         .task-feedback {
-            font-size: 0.88em;
-            color: var(--vscode-descriptionForeground);
-            margin-top: 6px;
-            border-top: 1px dashed var(--vscode-panel-border);
-            padding-top: 6px;
-        }
-        .section-title {
-            font-weight: bold;
-            margin-top: 5px;
-            margin-bottom: 5px;
-            text-transform: uppercase;
             font-size: 0.85em;
-            letter-spacing: 0.5px;
             color: var(--vscode-descriptionForeground);
-        }
-        .console-output {
-            background-color: #1e1e1e;
-            color: #e0e0e0;
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: 0.88em;
-            padding: 8px;
-            border-radius: 3px;
-            white-space: pre-wrap;
-            max-height: 140px;
-            overflow-y: auto;
-            border: 1px solid var(--vscode-panel-border);
+            margin-top: 5px;
+            border-top: 1px dashed var(--vscode-panel-border);
+            padding-top: 5px;
         }
         .feedback-box {
             font-style: italic;
@@ -525,19 +951,117 @@ class SidebarProvider {
             padding: 8px;
             border-radius: 3px;
             background-color: rgba(255, 255, 255, 0.03);
-            border-left: 3px solid var(--vscode-focusBorder);
+            border-left: 3px solid #3ecf8e;
         }
-        .actions {
+        .console-output {
+            background-color: #141414;
+            color: #ededed;
+            font-family: var(--vscode-editor-font-family, monospace);
+            font-size: 0.85em;
+            padding: 8px;
+            border-radius: 3px;
+            white-space: pre-wrap;
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid var(--vscode-panel-border);
+        }
+
+        /* Starter files list styling */
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px 8px;
+            border-radius: 3px;
+            background: var(--vscode-sideBar-background);
+            border: 1px solid var(--vscode-panel-border);
+            font-family: var(--vscode-editor-font-family, monospace);
+            font-size: 0.85em;
+        }
+        .file-badge {
+            font-size: 0.75em;
+            padding: 1px 5px;
+            border-radius: 6px;
+        }
+
+        /* Feature 3: Team Chat Styles */
+        .chat-feed {
             display: flex;
             flex-direction: column;
             gap: 8px;
-            margin-top: 5px;
+            height: 220px;
+            overflow-y: auto;
+            padding: 4px;
+            background-color: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+        }
+        .chat-msg {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background-color: var(--vscode-sideBar-background);
+            border: 1px solid var(--vscode-panel-border);
+        }
+        .chat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8em;
+        }
+        .chat-author {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: bold;
+        }
+        .chat-avatar {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .chat-time {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+        }
+        .chat-text {
+            font-size: 0.9em;
+            word-break: break-word;
+        }
+        .chat-snippet {
+            margin-top: 4px;
+            padding: 4px 6px;
+            background-color: #0e0e0e;
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 2px;
+            font-family: var(--vscode-editor-font-family, monospace);
+            font-size: 0.82em;
+            color: #3ecf8e;
+            white-space: pre-wrap;
+            max-height: 80px;
+            overflow-y: auto;
+        }
+        .chat-input-row {
+            display: flex;
+            gap: 4px;
+        }
+
+        /* Actions */
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 6px;
         }
         .loader-status {
             font-style: italic;
             color: var(--vscode-descriptionForeground);
             text-align: center;
-            margin-top: 10px;
+            margin-top: 6px;
+            font-size: 0.88em;
             animation: pulse 1.5s infinite;
         }
         @keyframes pulse {
@@ -571,40 +1095,132 @@ class SidebarProvider {
     </div>
 
     <div id="session-screen" class="container" style="display: none;">
+        <!-- Connection & Live Diff Status -->
         <div id="status-banner" class="connection-status status-connected">
-            <div class="status-dot"></div>
-            <span id="status-text">Connected</span>
+            <div class="status-left">
+                <div class="status-dot"></div>
+                <span id="status-text">Connected</span>
+            </div>
+            <div class="diff-pill" id="diff-counter-pill">
+                <span class="diff-added" id="pill-added">+0</span> / <span class="diff-deleted" id="pill-deleted">-0</span>
+            </div>
         </div>
 
+        <!-- Feature 1 Client-Side Integrity Warning -->
+        <div id="integrity-alert" class="integrity-alert" style="display: none;">
+            <span>⚠️</span>
+            <div class="flex-1">
+                <span id="integrity-text">Missing required starter file.</span>
+                <div style="margin-top: 4px;">
+                    <a href="#" id="regenerate-files-link" style="color: #3ecf8e; text-decoration: underline; font-size: 0.9em;">Re-generate missing starter files</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timer -->
         <div class="timer-box">
             <span id="timer-display">00:00</span>
             <span id="timer-label" class="timer-label">Time Remaining</span>
         </div>
 
-        <div class="card">
-            <div class="header" id="lab-title">Lab Title</div>
-            <div class="sub-header" id="lab-desc" style="max-height: 100px; overflow-y: auto;">Lab description goes here...</div>
+        <!-- Tabbed Navigation -->
+        <div class="tabs-nav">
+            <button class="tab-btn active" data-tab="tab-instructions">Instructions</button>
+            <button class="tab-btn" data-tab="tab-tasks">Tasks</button>
+            <button class="tab-btn" data-tab="tab-diff">Diff View</button>
+            <button class="tab-btn" data-tab="tab-chat" id="tab-chat-btn">
+                Team Chat
+                <span class="tab-badge" id="chat-badge" style="display: none;">0</span>
+            </button>
         </div>
 
-        <div class="section-title">Requirements Checklist</div>
-        <div class="task-list" id="tasks-container">
-            <!-- Tasks populated dynamically -->
-        </div>
+        <!-- TAB 1: Instructions & Starter Files -->
+        <div id="tab-instructions" class="tab-content active">
+            <div class="card">
+                <div class="header" id="lab-title">Lab Title</div>
+                <div class="sub-header" id="lab-desc" style="max-height: 120px; overflow-y: auto;">Lab description...</div>
+            </div>
 
-        <div id="llm-feedback-section" style="display: none;">
-            <div class="section-title">AI Rubric Feedback</div>
-            <div class="feedback-box" id="llm-feedback-text">
-                No feedback received yet. Run "Check Progress" to get feedback.
+            <div class="card">
+                <label style="margin-bottom: 6px; display: block;">Starter Workspace Files</label>
+                <div id="starter-files-list" style="display: flex; flex-direction: column; gap: 4px;">
+                    <!-- Starter files populated dynamically -->
+                </div>
             </div>
         </div>
 
-        <div id="console-output-section" style="display: none;">
-            <div class="section-title">Execution Console Output</div>
-            <div class="console-output" id="console-output-text"></div>
+        <!-- TAB 2: Tasks Checklist & Evaluation -->
+        <div id="tab-tasks" class="tab-content">
+            <div class="task-list" id="tasks-container">
+                <!-- Tasks populated dynamically -->
+            </div>
+
+            <div id="llm-feedback-section" style="display: none;">
+                <label style="margin-bottom: 4px; display: block;">AI Rubric Feedback</label>
+                <div class="feedback-box" id="llm-feedback-text"></div>
+            </div>
+
+            <div id="console-output-section" style="display: none;">
+                <label style="margin-bottom: 4px; display: block;">Console Output</label>
+                <div class="console-output" id="console-output-text"></div>
+            </div>
+        </div>
+
+        <!-- TAB 3: Code Change Tracking & Diff View -->
+        <div id="tab-diff" class="tab-content">
+            <div class="card" style="display: flex; justify-content: space-around; text-align: center;">
+                <div>
+                    <div style="font-size: 1.2em; font-weight: bold; color: #3ecf8e;" id="diff-total-added">+0</div>
+                    <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">Lines Added</div>
+                </div>
+                <div>
+                    <div style="font-size: 1.2em; font-weight: bold; color: #f87171;" id="diff-total-deleted">-0</div>
+                    <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">Lines Deleted</div>
+                </div>
+                <div>
+                    <div style="font-size: 1.2em; font-weight: bold; color: #38bdf8;" id="diff-total-modified">~0</div>
+                    <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">Modified</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <label style="margin-bottom: 6px; display: block;">File Change Breakdown</label>
+                <div id="diff-files-container" style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="color: var(--vscode-descriptionForeground); font-size: 0.85em; text-align: center; padding: 10px;">
+                        No file changes detected yet. Start coding to track diffs!
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="teammates-card" style="display: none;">
+                <label style="margin-bottom: 6px; display: block;">Teammate Contributions</label>
+                <div id="teammates-breakdown" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            </div>
+        </div>
+
+        <!-- TAB 4: Team Chat -->
+        <div id="tab-chat" class="tab-content">
+            <div class="chat-feed" id="chat-messages-container">
+                <div style="text-align: center; color: var(--vscode-descriptionForeground); padding: 20px; font-size: 0.85em;">
+                    Private team chat. Messages are shared only among teammates for this active session.
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div id="snippet-container" style="display: none;">
+                    <textarea id="chat-snippet-input" placeholder="// Optional code snippet..." rows="2" style="font-family: monospace; font-size: 0.82em; width: 100%; box-sizing: border-box;"></textarea>
+                </div>
+                <div class="chat-input-row">
+                    <button id="snippet-toggle-btn" class="btn-secondary" style="padding: 4px 8px; font-size: 0.8em;" title="Attach code snippet">&lt;/&gt;</button>
+                    <input type="text" id="chat-input" placeholder="Type a message..." style="flex: 1;">
+                    <button id="chat-send-btn" style="padding: 4px 10px;">Send</button>
+                </div>
+            </div>
         </div>
 
         <div id="action-status" class="loader-status" style="display: none;"></div>
 
+        <!-- Actions CTA -->
         <div class="actions">
             <button id="check-progress-btn">Check Progress (AI)</button>
             <button id="submit-btn">Submit Lab (Finalize)</button>
@@ -624,15 +1240,41 @@ class SidebarProvider {
         const apiTokenInput = document.getElementById('api-token');
         const connectBtn = document.getElementById('connect-btn');
         
-        // Session fields
+        // Session status & timer
         const statusBanner = document.getElementById('status-banner');
         const statusText = document.getElementById('status-text');
         const timerDisplay = document.getElementById('timer-display');
         const timerLabel = document.getElementById('timer-label');
         const labTitle = document.getElementById('lab-title');
         const labDesc = document.getElementById('lab-desc');
+        const starterFilesList = document.getElementById('starter-files-list');
         const tasksContainer = document.getElementById('tasks-container');
         const actionStatus = document.getElementById('action-status');
+
+        // Feature 1 Integrity
+        const integrityAlert = document.getElementById('integrity-alert');
+        const integrityText = document.getElementById('integrity-text');
+        const regenerateFilesLink = document.getElementById('regenerate-files-link');
+
+        // Feature 2 Diff UI
+        const pillAdded = document.getElementById('pill-added');
+        const pillDeleted = document.getElementById('pill-deleted');
+        const diffTotalAdded = document.getElementById('diff-total-added');
+        const diffTotalDeleted = document.getElementById('diff-total-deleted');
+        const diffTotalModified = document.getElementById('diff-total-modified');
+        const diffFilesContainer = document.getElementById('diff-files-container');
+        const teammatesCard = document.getElementById('teammates-card');
+        const teammatesBreakdown = document.getElementById('teammates-breakdown');
+
+        // Feature 3 Team Chat UI
+        const tabChatBtn = document.getElementById('tab-chat-btn');
+        const chatBadge = document.getElementById('chat-badge');
+        const chatMessagesContainer = document.getElementById('chat-messages-container');
+        const chatInput = document.getElementById('chat-input');
+        const chatSnippetInput = document.getElementById('chat-snippet-input');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+        const snippetToggleBtn = document.getElementById('snippet-toggle-btn');
+        const snippetContainer = document.getElementById('snippet-container');
         
         // Feedback & Console
         const llmFeedbackSection = document.getElementById('llm-feedback-section');
@@ -648,7 +1290,38 @@ class SidebarProvider {
         let timerVal = 0;
         let timerInterval = null;
         let isCountDown = true;
-        
+        let isIntegrityValid = true;
+
+        // Tabs Logic
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                btn.classList.add('active');
+                const targetId = btn.getAttribute('data-tab');
+                const targetEl = document.getElementById(targetId);
+                if (targetEl) targetEl.classList.add('active');
+
+                // Notify extension about chat tab state
+                const isChat = targetId === 'tab-chat';
+                vscode.postMessage({ type: 'setChatTabActive', active: isChat });
+                if (isChat) {
+                    chatBadge.style.display = 'none';
+                    chatBadge.innerText = '0';
+                }
+            });
+        });
+
+        regenerateFilesLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            vscode.postMessage({ type: 'retryFileGeneration' });
+        });
+
+        snippetToggleBtn.addEventListener('click', () => {
+            snippetContainer.style.display = snippetContainer.style.display === 'none' ? 'block' : 'none';
+        });
+
         connectBtn.addEventListener('click', () => {
             const backendUrl = backendUrlInput.value.trim();
             const sessionId = sessionIdInput.value.trim();
@@ -669,19 +1342,47 @@ class SidebarProvider {
                 apiToken: apiToken || null
             });
         });
-        
+
         checkProgressBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'checkProgress' });
         });
-        
+
         submitBtn.addEventListener('click', () => {
+            if (!isIntegrityValid) {
+                alert('Submission blocked: One or more required starter files are missing from your workspace.');
+                return;
+            }
             vscode.postMessage({ type: 'submit' });
         });
-        
+
         exitBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'exit' });
         });
-        
+
+        chatSendBtn.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        });
+
+        function sendChatMessage() {
+            const text = chatInput.value.trim();
+            const snippet = chatSnippetInput.value.trim();
+            if (!text && !snippet) return;
+
+            vscode.postMessage({
+                type: 'sendChat',
+                message: text || 'Code snippet shared:',
+                codeSnippet: snippet || null
+            });
+
+            chatInput.value = '';
+            chatSnippetInput.value = '';
+            snippetContainer.style.display = 'none';
+        }
+
         // Handle incoming extension messages
         window.addEventListener('message', event => {
             const message = event.data;
@@ -702,8 +1403,82 @@ class SidebarProvider {
                 case 'error':
                     actionStatus.style.display = 'none';
                     checkProgressBtn.disabled = false;
-                    submitBtn.disabled = false;
+                    submitBtn.disabled = !isIntegrityValid;
                     alert(message.message);
+                    break;
+
+                case 'integrityStatus':
+                    isIntegrityValid = message.valid;
+                    if (message.valid) {
+                        integrityAlert.style.display = 'none';
+                        submitBtn.disabled = false;
+                    } else {
+                        integrityAlert.style.display = 'flex';
+                        integrityText.innerHTML = \`<strong>Missing:</strong> \${message.missing.join(', ')} — this file is required for submission.\`;
+                        submitBtn.disabled = true;
+                    }
+                    break;
+
+                case 'diffUpdate':
+                    const ds = message.diffStats || {};
+                    const add = ds.lines_added || 0;
+                    const del = ds.lines_deleted || 0;
+                    const mod = ds.lines_modified || 0;
+
+                    pillAdded.innerText = \`+\${add}\`;
+                    pillDeleted.innerText = \`-\${del}\`;
+                    diffTotalAdded.innerText = \`+\${add}\`;
+                    diffTotalDeleted.innerText = \`-\${del}\`;
+                    diffTotalModified.innerText = \`~\${mod}\`;
+
+                    if (ds.files && ds.files.length > 0) {
+                        diffFilesContainer.innerHTML = '';
+                        ds.files.forEach(f => {
+                            const item = document.createElement('div');
+                            item.className = 'file-item';
+                            item.innerHTML = \`
+                                <span>\${f.name}</span>
+                                <span style="font-size:0.85em;">
+                                    <span class="diff-added">+\${f.added}</span> / <span class="diff-deleted">-\${f.deleted}</span>
+                                </span>
+                            \`;
+                            diffFilesContainer.appendChild(item);
+                        });
+                    }
+                    break;
+
+                case 'chatUpdate':
+                    const chats = message.chats || [];
+                    if (chats.length > 0) {
+                        chatMessagesContainer.innerHTML = '';
+                        chats.forEach(c => {
+                            const el = document.createElement('div');
+                            el.className = 'chat-msg';
+                            el.innerHTML = \`
+                                <div class="chat-header">
+                                    <div class="chat-author">
+                                        <span class="chat-avatar" style="background-color: \${c.avatar_color || '#3ecf8e'};"></span>
+                                        <span>\${c.user_name}</span>
+                                    </div>
+                                    <span class="chat-time">\${c.time || ''}</span>
+                                </div>
+                                <div class="chat-text">\${c.message}</div>
+                                \${c.code_snippet ? \`<pre class="chat-snippet">\${c.code_snippet}</pre>\` : ''}
+                            \`;
+                            chatMessagesContainer.appendChild(el);
+                        });
+                        chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                    }
+
+                    if (message.unreadCount > 0) {
+                        chatBadge.innerText = message.unreadCount;
+                        chatBadge.style.display = 'inline-block';
+                    }
+                    break;
+
+                case 'unreadReset':
+                    chatBadge.style.display = 'none';
+                    chatBadge.innerText = '0';
                     break;
                     
                 case 'reconnecting':
@@ -723,7 +1498,7 @@ class SidebarProvider {
                 case 'update':
                     actionStatus.style.display = 'none';
                     checkProgressBtn.disabled = false;
-                    submitBtn.disabled = false;
+                    submitBtn.disabled = !isIntegrityValid;
                     
                     connectionScreen.style.display = 'none';
                     sessionScreen.style.display = 'flex';
@@ -734,6 +1509,42 @@ class SidebarProvider {
                     const session = message.data;
                     labTitle.innerText = session.laboratory.title;
                     labDesc.innerText = session.laboratory.description;
+
+                    // Render Starter Files
+                    starterFilesList.innerHTML = '';
+                    const starterFiles = session.laboratory.starter_files || [];
+                    starterFiles.forEach(f => {
+                        const row = document.createElement('div');
+                        row.className = 'file-item';
+                        row.innerHTML = \`
+                            <span>\${f.name}</span>
+                            <span>
+                                \${f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : ''}
+                                \${f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : ''}
+                            </span>
+                        \`;
+                        starterFilesList.appendChild(row);
+                    });
+
+                    // Teammate breakdown for team labs
+                    if (session.is_group_lab && session.teammates && session.teammates.length > 0) {
+                        teammatesCard.style.display = 'block';
+                        teammatesBreakdown.innerHTML = '';
+                        session.teammates.forEach(tm => {
+                            const row = document.createElement('div');
+                            row.style.cssText = 'display:flex; justify-content:space-between; font-size:0.85em; padding:3px 0;';
+                            row.innerHTML = \`
+                                <div style="display:flex; align-items:center; gap:5px;">
+                                    <span style="width:8px; height:8px; border-radius:50%; background-color:\${tm.avatar_color};"></span>
+                                    <span>\${tm.name}</span>
+                                </div>
+                                <span style="font-weight:bold; color:#3ecf8e;">\${tm.contribution_score || 0}%</span>
+                            \`;
+                            teammatesBreakdown.appendChild(row);
+                        });
+                    } else {
+                        teammatesCard.style.display = 'none';
+                    }
                     
                     // Render Tasks list
                     tasksContainer.innerHTML = '';
@@ -788,7 +1599,7 @@ class SidebarProvider {
                 case 'submitResult':
                     actionStatus.style.display = 'none';
                     checkProgressBtn.disabled = false;
-                    submitBtn.disabled = false;
+                    submitBtn.disabled = !isIntegrityValid;
                     
                     if (message.type === 'submitResult') {
                         if (timerInterval) {

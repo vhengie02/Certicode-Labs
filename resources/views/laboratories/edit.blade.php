@@ -12,7 +12,25 @@
         </div>
 
         <form action="{{ route('laboratories.update', $laboratory->id) }}" method="POST" class="space-y-6" 
-              x-data="{ tasks: {{ json_encode(!empty($laboratory->tasks_definition) ? $laboratory->tasks_definition : [['task' => '', 'command' => '']]) }} }">
+              x-data="{ 
+                  tasks: {{ json_encode(!empty($laboratory->tasks_definition) ? $laboratory->tasks_definition : [['task' => '', 'command' => '']]) }},
+                  starterFiles: {{ json_encode($laboratory->getStarterFilesList()) }},
+                  setPrimary(idx) {
+                      this.starterFiles.forEach((f, i) => f.is_primary = (i === idx));
+                  },
+                  addFile() {
+                      this.starterFiles.push({ name: '', content: '', is_primary: false, is_readonly: false });
+                  },
+                  removeFile(idx) {
+                      if (this.starterFiles.length > 1) {
+                          const wasPrimary = this.starterFiles[idx].is_primary;
+                          this.starterFiles.splice(idx, 1);
+                          if (wasPrimary && this.starterFiles.length > 0) {
+                              this.starterFiles[0].is_primary = true;
+                          }
+                      }
+                  }
+              }">
             @csrf
             @method('PUT')
 
@@ -72,6 +90,56 @@
                 <label for="is_group_lab" class="ml-2.5 block text-xs font-mono uppercase tracking-wider text-[#ededed] cursor-pointer">
                     Enable Collaborative / Group Lab Activity
                 </label>
+            </div>
+
+            <!-- Starter Files Manager (Multi-File Starter Boilerplate) -->
+            <div class="border-t border-[#232323] pt-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <span class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3]">Auto-Generated Starter Files</span>
+                        <p class="text-[11px] text-[#666666] mt-0.5">Files automatically created in student workspace when launched via VS Code extension.</p>
+                    </div>
+                    <button type="button" @click="addFile()" 
+                        class="inline-flex items-center px-3 py-1.5 border border-[#2e2e2e] text-xs font-mono font-medium rounded-[6px] text-[#3ecf8e] bg-[#141414] hover:bg-[#202020] hover:border-[#3ecf8e]/35 transition-colors">
+                        + Add Starter File
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <template x-for="(file, index) in starterFiles" :key="index">
+                        <div class="p-4 rounded-[6px] bg-[#141414] border border-[#2e2e2e] space-y-3 relative">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#232323]">
+                                <div class="flex-1">
+                                    <label class="block text-[10px] font-mono uppercase tracking-wider text-[#888888]">File Name</label>
+                                    <input type="text" :name="`starter_files[${index}][name]`" x-model="file.name" required placeholder="e.g. TaskManager.java"
+                                        class="mt-1 block w-full px-3 py-1.5 bg-[#171717] border border-[#2e2e2e] rounded-[6px] text-xs text-[#ededed] font-mono focus:outline-none focus:border-[#3ecf8e]">
+                                </div>
+                                <div class="flex items-center space-x-4 pt-3 sm:pt-4">
+                                    <label class="inline-flex items-center cursor-pointer text-xs font-mono text-[#a3a3a3]">
+                                        <input type="radio" name="primary_file_selector" :checked="file.is_primary" @change="setPrimary(index)" class="text-[#3ecf8e] focus:ring-0">
+                                        <span class="ml-1.5 text-[11px]" :class="file.is_primary ? 'text-[#3ecf8e] font-bold' : 'text-[#888888]'">Primary (Auto-Open)</span>
+                                        <input type="hidden" :name="`starter_files[${index}][is_primary]`" :value="file.is_primary ? '1' : '0'">
+                                    </label>
+                                    <label class="inline-flex items-center cursor-pointer text-xs font-mono text-[#a3a3a3]">
+                                        <input type="checkbox" :name="`starter_files[${index}][is_readonly]`" value="1" x-model="file.is_readonly" class="rounded bg-[#171717] border-[#2e2e2e] text-[#3ecf8e] focus:ring-0">
+                                        <span class="ml-1.5 text-[11px] text-[#888888]">Read-Only</span>
+                                    </label>
+                                    <button type="button" @click="removeFile(index)" 
+                                        class="p-1.5 text-red-400 hover:text-red-300 hover:bg-[#171717] rounded-[4px] transition-colors"
+                                        :class="starterFiles.length <= 1 ? 'opacity-30 cursor-not-allowed' : ''" :disabled="starterFiles.length <= 1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-[10px] font-mono uppercase tracking-wider text-[#888888] mb-1">Starter Code / Boilerplate Content</label>
+                                <textarea :name="`starter_files[${index}][content]`" x-model="file.content" rows="6" placeholder="// Write starter code and instructions here..."
+                                    class="w-full px-3 py-2 bg-[#101010] border border-[#2e2e2e] rounded-[6px] text-xs font-mono text-[#ededed] placeholder-[#555555] focus:outline-none focus:border-[#3ecf8e]"></textarea>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
 
             <!-- Dynamic Task List Definition (Alpine.js) -->
