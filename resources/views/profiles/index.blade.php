@@ -56,7 +56,7 @@
 
                             <!-- Sessions Started count -->
                             <td class="px-6 py-4 whitespace-nowrap text-xs text-[#a3a3a3] font-mono">
-                                {{ $student->labSessions()->count() }} sessions
+                                {{ $student->lab_sessions_count ?? $student->labSessions()->count() }} sessions
                             </td>
 
                             <!-- Registration Date -->
@@ -91,5 +91,12 @@
             </table>
         </div>
     </div>
+
+    <!-- Pagination Controls -->
+    @if($students->hasPages())
+        <div class="mt-4 p-4 rounded-xl border border-[#2e2e2e] bg-[#171717] flex justify-between items-center text-xs font-mono text-[#a3a3a3]">
+            {{ $students->links() }}
+        </div>
+    @endif
 </div>
 @endsection

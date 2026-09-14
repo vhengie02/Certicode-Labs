@@ -126,4 +126,68 @@ class LaboratoryViewTest extends TestCase
 
         $this->assertEquals(1, $laboratory->fresh()->views_count);
     }
+
+    public function test_student_can_download_single_starter_file()
+    {
+        $student = User::create([
+            'name' => 'Student Jane',
+            'email' => 'student_download@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'student',
+        ]);
+
+        $laboratory = Laboratory::create([
+            'title' => 'POSIX Fork Lab',
+            'description' => 'IPC in C',
+            'time_limit' => 60,
+            'tasks_definition' => [],
+            'starter_files' => [
+                [
+                    'name' => 'main.c',
+                    'content' => "#include <stdio.h>\nint main() { return 0; }",
+                    'is_primary' => true,
+                ],
+            ],
+        ]);
+
+        $response = $this->actingAs($student)->get(route('laboratories.starter-files.download', $laboratory->id));
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Disposition', 'attachment; filename="main.c"');
+        $this->assertStringContainsString('#include <stdio.h>', $response->getContent());
+    }
+
+    public function test_student_can_download_multiple_starter_files_as_zip()
+    {
+        $student = User::create([
+            'name' => 'Student Jane',
+            'email' => 'student_zip@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'student',
+        ]);
+
+        $laboratory = Laboratory::create([
+            'title' => 'Multi-file Project Lab',
+            'description' => 'Multi-file project in C',
+            'time_limit' => 60,
+            'tasks_definition' => [],
+            'starter_files' => [
+                [
+                    'name' => 'main.c',
+                    'content' => "#include <stdio.h>\nint main() { return 0; }",
+                    'is_primary' => true,
+                ],
+                [
+                    'name' => 'utils.h',
+                    'content' => "#ifndef UTILS_H\n#define UTILS_H\n#endif",
+                    'is_readonly' => true,
+                ],
+            ],
+        ]);
+
+        $response = $this->actingAs($student)->get(route('laboratories.starter-files.download', $laboratory->id));
+        $response->assertStatus(200);
+        $this->assertStringContainsString('application/zip', $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('.zip', $response->headers->get('Content-Disposition'));
+    }
 }
+

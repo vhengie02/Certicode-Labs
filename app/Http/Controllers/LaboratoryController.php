@@ -357,4 +357,47 @@ class LaboratoryController extends Controller
             }
         }
     }
+
+    /**
+     * Download starter files as a zip archive or single file.
+     */
+    public function downloadStarterFiles(int $id)
+    {
+        $laboratory = Laboratory::findOrFail($id);
+        $files = $laboratory->getStarterFilesList();
+
+        if (empty($files)) {
+            return back()->with('error', 'No starter files found for this laboratory.');
+        }
+
+        // If single file, download directly
+        if (count($files) === 1) {
+            $file = $files[0];
+            $fileName = $file['name'] ?? 'starter_code.txt';
+            $content = $file['content'] ?? '';
+
+            return response($content, 200, [
+                'Content-Type' => 'text/plain',
+                'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
+            ]);
+        }
+
+        // Multiple files: pack into a zip archive
+        $zipName = \Illuminate\Support\Str::slug($laboratory->title) . '-starter-files.zip';
+        $tempPath = tempnam(sys_get_temp_dir(), 'certicode_zip_');
+        $zip = new \ZipArchive();
+
+        if ($zip->open($tempPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
+            foreach ($files as $file) {
+                $name = $file['name'] ?? 'file.txt';
+                $content = $file['content'] ?? '';
+                $zip->addFromString($name, $content);
+            }
+            $zip->close();
+
+            return response()->download($tempPath, $zipName)->deleteFileAfterSend(true);
+        }
+
+        return back()->with('error', 'Failed to generate starter files archive.');
+    }
 }

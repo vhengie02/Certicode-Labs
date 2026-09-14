@@ -72,22 +72,26 @@ class Module extends Model
      */
     public function getStudentProgress(User $user)
     {
-        $labIds = $this->getAllLaboratoryIds();
-        $totalLabs = count($labIds);
-        if ($totalLabs === 0) {
-            return null;
-        }
+        $cacheKey = "user_{$user->id}_module_{$this->id}_progress";
 
-        $completedCount = LabSession::whereIn('lab_id', $labIds)
-            ->where('user_id', $user->id)
-            ->where('status', 'completed')
-            ->count();
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, function () use ($user) {
+            $labIds = $this->getAllLaboratoryIds();
+            $totalLabs = count($labIds);
+            if ($totalLabs === 0) {
+                return null;
+            }
 
-        return [
-            'completed' => $completedCount,
-            'total' => $totalLabs,
-            'percent' => round(($completedCount / $totalLabs) * 100),
-        ];
+            $completedCount = LabSession::whereIn('lab_id', $labIds)
+                ->where('user_id', $user->id)
+                ->where('status', 'completed')
+                ->count();
+
+            return [
+                'completed' => $completedCount,
+                'total' => $totalLabs,
+                'percent' => round(($completedCount / $totalLabs) * 100),
+            ];
+        });
     }
 
     /**

@@ -91,6 +91,7 @@ Route::middleware('auth')->group(function () {
     // Laboratory (Coding Challenge) CRUD & Workspace sessions
     Route::resource('laboratories', LaboratoryController::class)->except(['index', 'create']);
     Route::get('/classes/{class_id}/laboratories/create', [LaboratoryController::class, 'create'])->name('laboratories.create');
+    Route::get('/laboratories/{id}/starter-files/download', [LaboratoryController::class, 'downloadStarterFiles'])->name('laboratories.starter-files.download');
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
     Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
 
@@ -110,24 +111,30 @@ Route::middleware('auth')->group(function () {
         if (!$user) {
             return response()->json(['unreadCount' => 0, 'notifications' => []]);
         }
-        
-        $unreadCount = $user->unreadNotifications->count();
-        $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
+
+        $cacheKey = "user_notifs_{$user->id}";
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 15, function () use ($user) {
+            $unreadCount = $user->unreadNotifications()->count();
+            $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
+                return [
+                    'id' => $notif->id,
+                    'unread' => $notif->unread(),
+                    'url' => $notif->data['url'] ?? '#',
+                    'title' => $notif->data['title'] ?? 'Notification',
+                    'message' => $notif->data['message'] ?? '',
+                    'type' => $notif->data['type'] ?? 'info',
+                    'time' => $notif->created_at->diffForHumans(),
+                ];
+            });
+
             return [
-                'id' => $notif->id,
-                'unread' => $notif->unread(),
-                'url' => $notif->data['url'] ?? '#',
-                'title' => $notif->data['title'] ?? 'Notification',
-                'message' => $notif->data['message'] ?? '',
-                'type' => $notif->data['type'] ?? 'info',
-                'time' => $notif->created_at->diffForHumans(),
+                'unreadCount' => $unreadCount,
+                'notifications' => $notifications,
             ];
         });
 
-        return response()->json([
-            'unreadCount' => $unreadCount,
-            'notifications' => $notifications
-        ]);
+        return response()->json($data)
+            ->header('Cache-Control', 'private, max-age=15');
     })->name('notifications.fetch');
 
     Route::post('/notifications/mark-as-read', function () {
@@ -135,6 +142,7 @@ Route::middleware('auth')->group(function () {
         $user = auth()->user();
         if ($user) {
             $user->unreadNotifications->markAsRead();
+            \Illuminate\Support\Facades\Cache::forget("user_notifs_{$user->id}");
         }
         return response()->json(['status' => 'success']);
     })->name('notifications.mark-as-read');

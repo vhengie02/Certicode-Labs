@@ -3,30 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ $title ?? 'Certicode Labs Alert' }}</title>
+    <title>{{ $title ?? 'Certicode Labs' }}</title>
 </head>
-<body style="margin: 0; padding: 0; width: 100%; background-color: #0d1117; -webkit-text-size-adjust: none; -ms-text-size-adjust: none;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #0d1117; margin: 0; padding: 40px 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<body style="margin: 0; padding: 0; width: 100%; background-color: #0f0f0f; -webkit-text-size-adjust: none; -ms-text-size-adjust: none;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #0f0f0f; margin: 0; padding: 48px 16px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
         <tr>
             <td align="center">
-                <!-- Main Container -->
-                <table width="100%" max-width="580" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);">
+                <!-- Main Container Card (Supabase Surface Console Aesthetic) -->
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 560px; width: 100%; background-color: #171717; border: 1px solid #2e2e2e; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.75);">
                     
                     <!-- Header / Branding -->
                     <tr>
-                        <td style="padding: 32px 32px 24px 32px; border-bottom: 1px solid #30363d; background-color: #161b22;">
+                        <td style="padding: 24px 28px; border-bottom: 1px solid #232323; background-color: #171717;">
                             <table width="100%" cellpadding="0" cellspacing="0" border="0">
                                 <tr>
-                                    <td width="36" style="vertical-align: middle;">
-                                        <!-- Logo Icon Shield -->
-                                        <div style="height: 36px; width: 36px; border-radius: 8px; background-color: #1F6FEB; display: block; text-align: center;">
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 8px; display: inline-block;">
-                                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                                            </svg>
-                                        </div>
+                                    <!-- Logo Icon & Title -->
+                                    <td style="vertical-align: middle;">
+                                        <table cellpadding="0" cellspacing="0" border="0">
+                                            <tr>
+                                                <td width="32" style="vertical-align: middle;">
+                                                    <div style="height: 32px; width: 32px; border-radius: 6px; background-color: #141414; border: 1px solid #2e2e2e; text-align: center; line-height: 32px;">
+                                                        <!-- Supabase Emerald Icon -->
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#3ecf8e" style="vertical-align: middle; display: inline-block;">
+                                                            <path d="M21.362 9.354H12V.396a.396.396 0 0 0-.716-.233L.103 13.916a.396.396 0 0 0 .307.632H9.6v9.056a.396.396 0 0 0 .716.233l11.181-13.753a.396.396 0 0 0-.307-.632z"/>
+                                                        </svg>
+                                                    </div>
+                                                </td>
+                                                <td style="padding-left: 10px; vertical-align: middle;">
+                                                    <span style="font-size: 16px; font-weight: 700; color: #ededed; letter-spacing: -0.4px;">
+                                                        Certicode<span style="color: #3ecf8e;">Labs</span>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </table>
                                     </td>
-                                    <td style="padding-left: 12px; vertical-align: middle;">
-                                        <span style="font-size: 18px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">Certicode Labs</span>
+
+                                    <!-- Security Badge -->
+                                    <td align="right" style="vertical-align: middle;">
+                                        <div style="display: inline-block; padding: 4px 10px; border-radius: 9999px; background-color: #141414; border: 1px solid rgba(62, 207, 142, 0.3); font-family: 'Source Code Pro', 'Courier New', monospace; font-size: 10px; color: #3ecf8e; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: #3ecf8e; margin-right: 4px; vertical-align: middle;"></span>
+                                            Auth Console
+                                        </div>
                                     </td>
                                 </tr>
                             </table>
@@ -35,58 +52,65 @@
 
                     <!-- Body Content -->
                     <tr>
-                        <td style="padding: 40px 32px; background-color: #161b22;">
+                        <td style="padding: 36px 32px; background-color: #171717;">
                             <!-- Subject/Title -->
-                            <h1 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 700; color: #ffffff; line-height: 1.3;">
-                                {{ $title ?? 'Notification Alert' }}
+                            <h1 style="margin: 0 0 14px 0; font-size: 20px; font-weight: 700; color: #ededed; line-height: 1.3; letter-spacing: -0.3px;">
+                                {{ $title ?? 'Google Authentication Code' }}
                             </h1>
 
                             <!-- Greeting -->
-                            <p style="margin: 0 0 20px 0; font-size: 16px; color: #e6edf3; font-weight: 500;">
-                                {{ $greeting ?? 'Hello,' }}
+                            <p style="margin: 0 0 16px 0; font-size: 14px; color: #ededed; font-weight: 600;">
+                                {{ $greeting ?? 'Hello developer,' }}
                             </p>
 
                             <!-- Message Lines -->
                             @isset($messageLines)
                                 @foreach($messageLines as $line)
-                                    <p style="margin: 0 0 20px 0; font-size: 15px; color: #c9d1d9; line-height: 1.6;">
+                                    <p style="margin: 0 0 16px 0; font-size: 14px; color: #a3a3a3; line-height: 1.65;">
                                         {!! $line !!}
                                     </p>
                                 @endforeach
                             @endisset
 
-                            <!-- Action Box: Verification Code (Monospace Editor UI) -->
+                            <!-- Action Box: Verification Code (IDE Terminal Aesthetic) -->
                             @isset($code)
-                                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 32px 0; background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 28px 0; background-color: #141414; border: 1px solid #2e2e2e; border-radius: 8px; overflow: hidden;">
+                                    <!-- Terminal Titlebar -->
                                     <tr>
-                                        <td style="padding: 24px; text-align: center;">
-                                            <!-- Code Header decoration mimicking terminal bar -->
-                                            <div style="text-align: left; margin-bottom: 16px; opacity: 0.7;">
-                                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #ff5f56; margin-right: 4px;"></span>
-                                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #ffbd2e; margin-right: 4px;"></span>
-                                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #27c93f; margin-right: 8px;"></span>
-                                                <span style="font-family: 'Courier New', monospace; font-size: 11px; color: #8b949e; vertical-align: middle;">verification_token.sh</span>
-                                            </div>
-                                            <!-- The Code -->
-                                            <div style="font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 36px; font-weight: 700; color: #58A6FF; letter-spacing: 8px; padding: 12px; background-color: #161b22; border: 1px solid #21262d; border-radius: 6px; display: inline-block; text-shadow: 0 0 10px rgba(88, 166, 255, 0.15);">
+                                        <td style="padding: 10px 16px; border-bottom: 1px solid #232323; background-color: #111111;">
+                                            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                                <tr>
+                                                    <td>
+                                                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; margin-right: 4px;"></span>
+                                                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #eab308; margin-right: 4px;"></span>
+                                                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #3ecf8e; margin-right: 8px;"></span>
+                                                        <span style="font-family: 'Source Code Pro', 'Courier New', monospace; font-size: 11px; color: #666666;">verification_token.sh</span>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <!-- Terminal Code Display -->
+                                    <tr>
+                                        <td style="padding: 28px 16px; text-align: center; background-color: #141414;">
+                                            <div style="font-family: 'Source Code Pro', 'JetBrains Mono', 'Courier New', monospace; font-size: 38px; font-weight: 700; color: #3ecf8e; letter-spacing: 10px; padding: 14px 24px; background-color: #0f0f0f; border: 1px solid rgba(62, 207, 142, 0.35); border-radius: 8px; display: inline-block; text-shadow: 0 0 14px rgba(62, 207, 142, 0.25);">
                                                 {{ $code }}
                                             </div>
-                                            <!-- Instructions -->
-                                            <p style="margin: 16px 0 0 0; font-size: 13px; color: #8b949e;">
-                                                Please enter this verification code in the window to proceed.
+                                            <p style="margin: 16px 0 0 0; font-family: 'Source Code Pro', 'Courier New', monospace; font-size: 11px; color: #737373;">
+                                                Enter this 6-digit code in your active browser window to proceed.
                                             </p>
                                         </td>
                                     </tr>
                                 </table>
                             @endisset
 
-                            <!-- Action Box: CTA Button -->
+                            <!-- Action Box: Pill CTA Button -->
                             @isset($actionUrl)
-                                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 32px 0; text-align: center;">
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 28px 0; text-align: center;">
                                     <tr>
                                         <td>
-                                            <a href="{{ $actionUrl }}" target="_blank" style="background-color: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; display: inline-block; font-size: 15px; font-weight: 600; line-height: 1.5; padding: 12px 28px; text-decoration: none; text-align: center; box-shadow: 0 4px 12px rgba(35, 134, 54, 0.25);">
-                                                {{ $actionText ?? 'View Details' }}
+                                            <a href="{{ $actionUrl }}" target="_blank" style="background-color: #3ecf8e; border-radius: 9999px; color: #0f0f0f; display: inline-block; font-size: 13px; font-weight: 700; line-height: 1.5; padding: 11px 28px; text-decoration: none; text-align: center; font-family: 'Inter', sans-serif;">
+                                                {{ $actionText ?? 'View Details' }} &rarr;
                                             </a>
                                         </td>
                                     </tr>
@@ -94,26 +118,26 @@
                             @endisset
 
                             <!-- Closing Text -->
-                            <p style="margin: 24px 0 0 0; font-size: 15px; color: #c9d1d9; line-height: 1.5;">
+                            <p style="margin: 28px 0 0 0; font-size: 13px; color: #888888; line-height: 1.6;">
                                 Best regards,<br>
-                                <strong style="color: #ffffff;">Certicode Labs Team</strong>
+                                <span style="color: #ededed; font-weight: 600;">Certicode<span style="color: #3ecf8e;">Labs</span> Platform</span>
                             </p>
                         </td>
                     </tr>
 
                     <!-- Footer Section -->
                     <tr>
-                        <td style="padding: 32px; background-color: #0d1117; border-top: 1px solid #30363d; text-align: center;">
-                            <p style="margin: 0 0 8px 0; font-size: 12px; color: #8b949e; line-height: 1.5;">
-                                You received this email because you are registered at Certicode Labs.
+                        <td style="padding: 24px 32px; background-color: #141414; border-top: 1px solid #232323; text-align: center;">
+                            <p style="margin: 0 0 6px 0; font-family: 'Source Code Pro', 'Courier New', monospace; font-size: 11px; color: #666666; line-height: 1.5;">
+                                Automated telemetry authentication dispatch &bull; Do not reply to this email
                             </p>
-                            <p style="margin: 0 0 16px 0; font-size: 12px; color: #8b949e; line-height: 1.5;">
-                                &copy; 2026 Certicode Labs. All rights reserved. Built for secure & verified coding telemetry.
+                            <p style="margin: 0 0 14px 0; font-family: 'Source Code Pro', 'Courier New', monospace; font-size: 10px; color: #525252; line-height: 1.5;">
+                                &copy; {{ date('Y') }} Certicode Labs. Built for secure & verified coding telemetry.
                             </p>
-                            <div style="font-size: 11px;">
-                                <a href="{{ url('/') }}" style="color: #58A6FF; text-decoration: none; margin: 0 8px;">Website</a>
-                                <span style="color: #30363d;">|</span>
-                                <a href="{{ url('/settings') }}" style="color: #58A6FF; text-decoration: none; margin: 0 8px;">Preferences</a>
+                            <div style="font-family: 'Source Code Pro', 'Courier New', monospace; font-size: 10px;">
+                                <a href="{{ url('/') }}" style="color: #3ecf8e; text-decoration: none; margin: 0 8px;">Workspace</a>
+                                <span style="color: #2e2e2e;">|</span>
+                                <a href="{{ url('/settings') }}" style="color: #3ecf8e; text-decoration: none; margin: 0 8px;">Preferences</a>
                             </div>
                         </td>
                     </tr>

@@ -53,7 +53,7 @@
                             @php
                                 $isCompleted = false;
                                 if (auth()->user()->role === 'student') {
-                                    $isCompleted = $lab->labSessions->where('user_id', auth()->id())->where('status', 'completed')->isNotEmpty();
+                                    $isCompleted = isset($completedLabIds[$lab->id]);
                                 }
                             @endphp
                             <a href="{{ route('laboratories.show', $lab->id) }}" class="flex items-center justify-between px-2 py-1 text-xs text-slate-400 hover:text-white rounded hover:bg-slate-800/40 transition">
@@ -101,7 +101,7 @@
                                                 @php
                                                     $subLabCompleted = false;
                                                     if (auth()->user()->role === 'student') {
-                                                        $subLabCompleted = $subLab->labSessions->where('user_id', auth()->id())->where('status', 'completed')->isNotEmpty();
+                                                        $subLabCompleted = isset($completedLabIds[$subLab->id]);
                                                     }
                                                 @endphp
                                                 <a href="{{ route('laboratories.show', $subLab->id) }}" class="flex items-center justify-between px-2 py-0.5 text-xs text-slate-450 hover:text-white rounded hover:bg-slate-800/40 transition">

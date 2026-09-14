@@ -38,14 +38,24 @@
             $starterFiles = $laboratory->getStarterFilesList();
         @endphp
         <div class="border-t border-[#232323] pt-6 mb-8" x-data="{ expandedFile: null }">
-            <div class="flex items-center justify-between mb-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                     <h3 class="text-xs font-mono uppercase font-bold tracking-wider text-[#a3a3a3]">Starter Workspace Files</h3>
-                    <p class="text-[11px] text-[#666666] mt-0.5">Automatically provisioned in the student's VS Code workspace upon session launch.</p>
+                    <p class="text-[11px] text-[#666666] mt-0.5">Automatically provisioned in your VS Code workspace or downloadable directly.</p>
                 </div>
-                <span class="text-[10px] font-mono text-[#3ecf8e] bg-[#141414] border border-[#3ecf8e]/30 px-2 py-0.5 rounded-full">
-                    {{ count($starterFiles) }} {{ count($starterFiles) === 1 ? 'FILE' : 'FILES' }}
-                </span>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-[10px] font-mono text-[#3ecf8e] bg-[#141414] border border-[#3ecf8e]/30 px-2.5 py-1 rounded-full">
+                        {{ count($starterFiles) }} {{ count($starterFiles) === 1 ? 'FILE' : 'FILES' }}
+                    </span>
+                    @if(count($starterFiles) > 0)
+                        <a href="{{ route('laboratories.starter-files.download', $laboratory->id) }}" 
+                           class="inline-flex items-center gap-1.5 px-3 py-1 rounded-[6px] bg-[#1a1a1a] hover:bg-[#262626] border border-[#2e2e2e] hover:border-[#3ecf8e]/50 text-xs font-mono text-[#ededed] transition-colors shadow-sm"
+                           title="Download starter files directly">
+                            <svg class="w-3.5 h-3.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            <span>Download Starter {{ count($starterFiles) > 1 ? 'Files (.zip)' : 'File' }}</span>
+                        </a>
+                    @endif
+                </div>
             </div>
 
             <div class="space-y-3">
@@ -73,6 +83,16 @@
                         </div>
 
                         <div x-show="expandedFile === {{ $idx }}" x-collapse style="display: none;" class="border-t border-[#232323] p-3 bg-[#0d0d0d]">
+                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-[#1f1f1f]">
+                                <span class="text-[11px] font-mono text-[#666666]">{{ $sfile['name'] }}</span>
+                                <button type="button"
+                                        x-data="{ copied: false }"
+                                        @click="navigator.clipboard.writeText({{ json_encode($sfile['content'] ?? '') }}).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+                                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono text-[#a3a3a3] hover:text-[#ededed] bg-[#171717] hover:bg-[#222222] border border-[#2e2e2e] transition-colors">
+                                    <svg class="w-3 h-3 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                    <span x-text="copied ? 'Copied!' : 'Copy Code'"></span>
+                                </button>
+                            </div>
                             <pre class="text-xs font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre"><code>{{ $sfile['content'] }}</code></pre>
                         </div>
                     </div>
@@ -304,8 +324,13 @@
                         </div>
                         <div class="flex items-center space-x-2">
                             <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">2</span>
-                            <span>Launch: Connect automatically via <code class="text-[#3ecf8e]">vscode://</code></span>
+                            <span>Launch: Connect automatically via <code class="text-[#3ecf8e]">vscode://</code> or click extension in sidebar</span>
                         </div>
+                    </div>
+
+                    <div class="mt-3 p-3 rounded-[6px] bg-[#101010] border border-[#262626] text-[11px] font-mono text-[#a3a3a3] flex items-start gap-2.5">
+                        <svg class="w-4 h-4 text-[#3ecf8e] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span><strong class="text-[#ededed]">Workspace Tip:</strong> To persist your code on disk while working in VS Code, open an empty folder (<em class="text-[#ededed]">File &rarr; Open Folder</em>) before launching, or click any starter file in the CertiCode sidebar or use the <strong class="text-[#3ecf8e]">Download Starter File</strong> button above.</span>
                     </div>
 
                     @if($activeSession)

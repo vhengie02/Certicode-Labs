@@ -157,5 +157,8 @@ JAVA;
             'performance_score' => 0.0,
             'completed_tasks' => [],
         ]);
+
+        // 7. Seed full showcase accounts, classes, modules, labs, certificates, and competencies
+        $this->call(ShowcaseAccountSeeder::class);
     }
 }

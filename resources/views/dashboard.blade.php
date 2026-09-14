@@ -167,7 +167,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#232323] bg-transparent text-[#ededed]">
-                    @forelse(\App\Models\Anomaly::latest()->take(5)->get() as $anomaly)
+                    @forelse(\App\Models\Anomaly::with('labSession')->latest()->take(5)->get() as $anomaly)
                         <tr>
                             <td class="px-5 py-3.5 whitespace-nowrap text-xs text-[#888888] font-mono">#AN-{{ $anomaly->id }}</td>
                             <td class="px-5 py-3.5 whitespace-nowrap text-xs text-[#ededed]">Session #{{ $anomaly->lab_session_id }}</td>

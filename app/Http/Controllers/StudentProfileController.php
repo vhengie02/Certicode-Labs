@@ -17,8 +17,11 @@ class StudentProfileController extends Controller
             abort(403, 'Unauthorized.');
         }
 
-        // Show students
-        $students = User::where('role', 'student')->latest()->get();
+        // Show students with aggregated session counts and pagination (N+1 elimination)
+        $students = User::where('role', 'student')
+            ->withCount('labSessions')
+            ->latest()
+            ->paginate(15);
         return view('profiles.index', compact('students'));
     }
 

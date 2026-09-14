@@ -33,6 +33,30 @@ class LabSession extends Model
     ];
 
     /**
+     * Invalidate cached progress upon session completion.
+     */
+    protected static function booted()
+    {
+        static::saved(function (LabSession $session) {
+            if ($session->status === 'completed') {
+                $lab = $session->laboratory ?: Laboratory::find($session->lab_id);
+                if ($lab && $lab->module_id) {
+                    \Illuminate\Support\Facades\Cache::forget("user_{$session->user_id}_module_{$lab->module_id}_progress");
+                    $module = $lab->module ?: Module::find($lab->module_id);
+                    if ($module) {
+                        if ($module->parent_id) {
+                            \Illuminate\Support\Facades\Cache::forget("user_{$session->user_id}_module_{$module->parent_id}_progress");
+                        }
+                        if ($module->class_id) {
+                            \Illuminate\Support\Facades\Cache::forget("user_{$session->user_id}_class_{$module->class_id}_progress");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /**
      * Get the laboratory.
      */
     public function laboratory()

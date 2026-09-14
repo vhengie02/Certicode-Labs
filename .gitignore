@@ -1,24 +1,86 @@
-*.log
-.DS_Store
+# Environment & Local Configuration
 .env
 .env.backup
+.env.local
 .env.production
-.phpactor.json
-.phpunit.result.cache
-/.fleet
-/.idea
-/.nova
-/.phpunit.cache
-/.vscode
-/.zed
+.env.staging
+.env.testing
 /auth.json
-node_modules/
+Homestead.json
+Homestead.yaml
+
+# Dependencies & Lockfiles
+/node_modules/
+/vendor/
+/package-lock.json
+
+# Build & Static Assets
 /public/build
 /public/hot
 /public/storage
+
+# Logs & Debugging
+*.log
+build_out.log
+vite_build_out.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Framework & Testing Caches
+.phpunit.result.cache
+.phpunit.cache/
+.phpactor.json
+.pest/
 /storage/*.key
 /storage/pail
-/vendor
-Homestead.json
-Homestead.yaml
+
+# Database & SQLite files
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+/database/*.sqlite
+/database/*.sqlite-journal
+/database/*.sqlite-shm
+/database/*.sqlite-wal
+
+# VS Code Extension Artifacts
+*.vsix
+!public/downloads/*.vsix
+*.tsbuildinfo
+.vscode-test/
+
+# Local Compilers & Language Artifacts (C, C++, Java, Python)
+*.o
+*.obj
+*.exe
+*.out
+*.class
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# IDEs & Code Editors
+.vscode/
+.idea/
+.fleet/
+.nova/
+.zed/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+

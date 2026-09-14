@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Certicode Labs - Interactive coding challenges, virtual laboratory environments, and automated competency verification.">
+    <meta name="theme-color" content="#0f0f0f">
     <title>@yield('title', 'Certicode Labs') - Certicode Labs</title>
 
     <!-- Immediate Theme Initialization (No-FOUC) -->
@@ -192,6 +194,22 @@
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #404040;
+        }
+
+        /* Loading Skeletons */
+        .skeleton-pulse {
+            background: linear-gradient(90deg, #171717 25%, #222222 50%, #171717 75%);
+            background-size: 200% 100%;
+            animation: skeleton-pulse-anim 1.5s infinite ease-in-out;
+            border-radius: 6px;
+        }
+        @keyframes skeleton-pulse-anim {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        html:not(.dark) .skeleton-pulse {
+            background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+            background-size: 200% 100%;
         }
 
         /* ==========================================================================
@@ -495,10 +513,10 @@
                     <!-- Notification Bell and Dropdown -->
                     <div class="relative" id="notification-bell-container">
                         @php
-                            $unreadCount = auth()->user()->unreadNotifications->count();
+                            $unreadCount = auth()->user()->unreadNotifications()->count();
                             $notifications = auth()->user()->notifications()->take(5)->get();
                         @endphp
-                        <button onclick="toggleNotifications()" class="relative p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none">
+                        <button onclick="toggleNotifications()" aria-label="View notifications" class="relative p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                             @if($unreadCount > 0)
                                 <span class="absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950"></span>
@@ -659,10 +677,19 @@
             });
         }
 
+        let lastNotifState = null;
+        let notifPollTimer = null;
+
         function pollNotifications() {
+            if (document.hidden) return; // Save bandwidth and avoid re-renders when tab is hidden
+
             fetch("{{ route('notifications.fetch') }}")
                 .then(res => res.json())
                 .then(data => {
+                    const stateKey = JSON.stringify({ count: data.unreadCount, ids: data.notifications.map(n => n.id + ':' + n.unread) });
+                    if (stateKey === lastNotifState) return; // Prevent unnecessary DOM re-renders if no notification changes
+                    lastNotifState = stateKey;
+
                     // Update unread count badge
                     const container = document.getElementById('notification-bell-container');
                     if (!container) return;
@@ -724,14 +751,21 @@
                             }).join('');
                         }
                     }
-                });
+                })
+                .catch(() => {});
         }
 
-        // Start polling every 10 seconds
-        setInterval(pollNotifications, 10000);
+        // Start polling every 25 seconds; wake up immediately when tab gains focus
+        notifPollTimer = setInterval(pollNotifications, 25000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                pollNotifications();
+            }
+        });
 
         // --- Global Search Command Palette Logic ---
         let searchTimeout = null;
+        let searchAbortController = null;
 
         function openSearchModal() {
             const modal = document.getElementById('search-modal');
@@ -762,6 +796,9 @@
 
         function performSearch(query) {
             clearTimeout(searchTimeout);
+            if (searchAbortController) {
+                searchAbortController.abort();
+            }
             
             const quickLinks = document.getElementById('search-quick-links');
             const results = document.getElementById('search-results');
@@ -792,7 +829,8 @@
             });
 
             searchTimeout = setTimeout(() => {
-                fetch(`/search?q=${encodeURIComponent(query)}`)
+                searchAbortController = new AbortController();
+                fetch(`/search?q=${encodeURIComponent(query)}`, { signal: searchAbortController.signal })
                     .then(res => res.json())
                     .then(data => {
                         quickLinks.classList.add('hidden');
@@ -843,9 +881,11 @@
                         }
                     })
                     .catch(err => {
-                        console.error('Search failed:', err);
+                        if (err.name !== 'AbortError') {
+                            console.error('Search failed:', err);
+                        }
                     });
-            }, 200);
+            }, 250);
         }
 
         function getIconSvg(type) {

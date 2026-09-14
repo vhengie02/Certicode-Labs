@@ -23,12 +23,13 @@ class ClassController extends Controller
         $invitedClasses = collect();
 
         if ($user->role === 'student') {
-            $classes = $user->classes()->with('instructor')->latest()->get();
-            $invitedClasses = $user->invitedClasses()->with('instructor')->latest()->get();
+            $classes = $user->classes()->with('instructor')->withCount('modules')->latest()->get();
+            $invitedClasses = $user->invitedClasses()->with('instructor')->withCount('modules')->latest()->get();
         } else {
             // Instructor / Admin
             $classes = SchoolClass::where('instructor_id', $user->id)
-                ->withCount('students')
+                ->with('instructor')
+                ->withCount(['students', 'modules'])
                 ->latest()
                 ->get();
         }
@@ -78,7 +79,12 @@ class ClassController extends Controller
      */
     public function show(int $id)
     {
-        $class = SchoolClass::with(['modules.laboratories.labSessions', 'students', 'instructor'])->findOrFail($id);
+        $class = SchoolClass::with([
+            'modules.laboratories',
+            'modules.children.laboratories',
+            'students',
+            'instructor'
+        ])->findOrFail($id);
         $user = Auth::user();
         if (!$user instanceof User) {
             return redirect()->route('login');
@@ -98,7 +104,15 @@ class ClassController extends Controller
             }
         }
 
-        return view('classes.show', compact('class'));
+        $completedLabIds = [];
+        if ($user->role === 'student') {
+            $completedLabIds = \App\Models\LabSession::where('user_id', $user->id)
+                ->where('status', 'completed')
+                ->pluck('lab_id', 'lab_id')
+                ->toArray();
+        }
+
+        return view('classes.show', compact('class', 'completedLabIds'));
     }
 
     /**

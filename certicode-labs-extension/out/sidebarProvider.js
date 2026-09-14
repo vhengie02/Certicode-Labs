@@ -95,6 +95,27 @@ class SidebarProvider {
                     }
                     break;
                 }
+                case 'openFile': {
+                    const workspaceFolders = vscode.workspace.workspaceFolders;
+                    if (workspaceFolders && workspaceFolders.length > 0) {
+                        const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, data.name);
+                        try {
+                            const doc = await vscode.workspace.openTextDocument(fileUri);
+                            await vscode.window.showTextDocument(doc, { preview: false });
+                            break;
+                        }
+                        catch { }
+                    }
+                    const sfile = (this._lastSessionData?.laboratory?.starter_files || []).find((f) => f.name === data.name);
+                    if (sfile) {
+                        const doc = await vscode.workspace.openTextDocument({
+                            content: sfile.content || '',
+                            language: this.detectLanguage(sfile.name)
+                        });
+                        await vscode.window.showTextDocument(doc, { preview: false });
+                    }
+                    break;
+                }
             }
         });
         // Setup FileSystemWatcher and Document change tracking
@@ -209,12 +230,72 @@ class SidebarProvider {
         }
     }
     /**
+     * Helper to detect document language from file extension.
+     */
+    detectLanguage(filename) {
+        const ext = filename.split('.').pop()?.toLowerCase() || '';
+        switch (ext) {
+            case 'c':
+            case 'h':
+                return 'c';
+            case 'cpp':
+            case 'cc':
+            case 'cxx':
+            case 'hpp':
+                return 'cpp';
+            case 'java':
+                return 'java';
+            case 'py':
+                return 'python';
+            case 'js':
+            case 'jsx':
+                return 'javascript';
+            case 'ts':
+            case 'tsx':
+                return 'typescript';
+            case 'sh':
+            case 'bash':
+                return 'shellscript';
+            case 'html':
+                return 'html';
+            case 'css':
+                return 'css';
+            case 'json':
+                return 'json';
+            default:
+                return 'plaintext';
+        }
+    }
+    /**
      * Feature 1: Generate starter files in active workspace and open primary file.
      */
     async provisionStarterFiles(starterFiles) {
+        if (!starterFiles || starterFiles.length === 0) {
+            return;
+        }
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
-            vscode.window.showWarningMessage('CertiCode Labs: Please open a workspace folder to generate exercise files.');
+            // Fallback: Open files directly as active editor documents in VS Code!
+            for (const file of starterFiles) {
+                if (file.is_primary || starterFiles.length === 1) {
+                    const lang = this.detectLanguage(file.name);
+                    try {
+                        const doc = await vscode.workspace.openTextDocument({
+                            content: file.content || '',
+                            language: lang
+                        });
+                        await vscode.window.showTextDocument(doc, { preview: false });
+                    }
+                    catch (e) {
+                        console.error('Failed to open untitled document', e);
+                    }
+                }
+            }
+            vscode.window.showInformationMessage('CertiCode Labs: Starter code opened in editor! Open a workspace folder (File > Open Folder) to save files directly to disk.', 'Open Folder').then(selection => {
+                if (selection === 'Open Folder') {
+                    vscode.commands.executeCommand('vscode.openFolder');
+                }
+            });
             return;
         }
         const rootUri = workspaceFolders[0].uri;
@@ -243,6 +324,10 @@ class SidebarProvider {
             if (file.is_primary) {
                 primaryUri = fileUri;
             }
+        }
+        // Fallback to first file if none marked primary
+        if (!primaryUri && starterFiles.length > 0) {
+            primaryUri = vscode.Uri.joinPath(rootUri, starterFiles[0].name);
         }
         // Auto-open primary starter file
         if (primaryUri) {
@@ -470,6 +555,7 @@ class SidebarProvider {
         // Collect all workspace files for evaluation
         const workspaceFolders = vscode.workspace.workspaceFolders;
         let primaryCode = '';
+        let primaryFileName = '';
         const filesPayload = [];
         if (workspaceFolders && workspaceFolders.length > 0) {
             const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
@@ -483,8 +569,9 @@ class SidebarProvider {
                         content: content,
                         is_primary: !!sfile.is_primary
                     });
-                    if (sfile.is_primary) {
+                    if (sfile.is_primary || !primaryCode) {
                         primaryCode = content;
+                        primaryFileName = sfile.name;
                     }
                 }
                 catch { }
@@ -495,11 +582,19 @@ class SidebarProvider {
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor) {
                 primaryCode = activeEditor.document.getText();
+                primaryFileName = activeEditor.document.fileName;
             }
         }
         if (!primaryCode && filesPayload.length === 0) {
-            vscode.window.showErrorMessage('Please open your Java code file to check progress.');
+            vscode.window.showErrorMessage('Please open your code file to check progress.');
             return;
+        }
+        let detectedLang = 'c';
+        if (primaryFileName) {
+            detectedLang = this.detectLanguage(primaryFileName);
+        }
+        else if (this._lastSessionData?.laboratory?.starter_files?.[0]?.name) {
+            detectedLang = this.detectLanguage(this._lastSessionData.laboratory.starter_files[0].name);
         }
         this._view?.webview.postMessage({ type: 'status', message: 'Analyzing code with AI evaluator...' });
         try {
@@ -507,7 +602,7 @@ class SidebarProvider {
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/check-progress`, {
                 code: primaryCode,
                 files: filesPayload,
-                language: 'java'
+                language: detectedLang
             });
             if (result.status === 200) {
                 const responseData = JSON.parse(result.body);
@@ -544,6 +639,7 @@ class SidebarProvider {
         }
         const workspaceFolders = vscode.workspace.workspaceFolders;
         let primaryCode = '';
+        let primaryFileName = '';
         const filesPayload = [];
         if (workspaceFolders && workspaceFolders.length > 0) {
             const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
@@ -557,8 +653,9 @@ class SidebarProvider {
                         content: content,
                         is_primary: !!sfile.is_primary
                     });
-                    if (sfile.is_primary) {
+                    if (sfile.is_primary || !primaryCode) {
                         primaryCode = content;
+                        primaryFileName = sfile.name;
                     }
                 }
                 catch { }
@@ -568,11 +665,19 @@ class SidebarProvider {
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor) {
                 primaryCode = activeEditor.document.getText();
+                primaryFileName = activeEditor.document.fileName;
             }
         }
         if (!primaryCode && filesPayload.length === 0) {
             vscode.window.showErrorMessage('Please open or generate your solution files before submitting.');
             return;
+        }
+        let detectedLang = 'c';
+        if (primaryFileName) {
+            detectedLang = this.detectLanguage(primaryFileName);
+        }
+        else if (this._lastSessionData?.laboratory?.starter_files?.[0]?.name) {
+            detectedLang = this.detectLanguage(this._lastSessionData.laboratory.starter_files[0].name);
         }
         const confirm = await vscode.window.showWarningMessage('Submit Lab Solution: Are you sure you want to finalize your submission? This compiles, runs test cases, evaluates competencies, and completes your session.', { modal: true }, 'Yes, Submit');
         if (confirm !== 'Yes, Submit') {
@@ -584,7 +689,7 @@ class SidebarProvider {
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/submit`, {
                 code: primaryCode,
                 files: filesPayload,
-                language: 'java'
+                language: detectedLang
             });
             if (result.status === 200) {
                 const responseData = JSON.parse(result.body);
@@ -971,12 +1076,22 @@ class SidebarProvider {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 5px 8px;
-            border-radius: 3px;
+            padding: 6px 10px;
+            border-radius: 4px;
             background: var(--vscode-sideBar-background);
             border: 1px solid var(--vscode-panel-border);
             font-family: var(--vscode-editor-font-family, monospace);
             font-size: 0.85em;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        .file-item:hover {
+            background-color: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+            border-color: #3ecf8e;
+        }
+        .file-item:active {
+            opacity: 0.8;
         }
         .file-badge {
             font-size: 0.75em;
@@ -1516,8 +1631,15 @@ class SidebarProvider {
                     starterFiles.forEach(f => {
                         const row = document.createElement('div');
                         row.className = 'file-item';
+                        row.title = 'Click to open ' + f.name;
+                        row.onclick = () => {
+                            vscode.postMessage({ type: 'openFile', name: f.name });
+                        };
                         row.innerHTML = \`
-                            <span>\${f.name}</span>
+                            <span style="display:flex; align-items:center; gap:6px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                                <span>\${f.name}</span>
+                            </span>
                             <span>
                                 \${f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : ''}
                                 \${f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : ''}
