@@ -3,10 +3,11 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "node node_modules/vite/bin/vite.js build",
-        "dev": "node node_modules/vite/bin/vite.js"
+        "build": "vite build",
+        "dev": "vite"
     },
     "devDependencies": {
+        "@tailwindcss/typography": "^0.5.20",
         "@tailwindcss/vite": "^4.0.0",
         "axios": "^1.11.0",
         "concurrently": "^9.0.1",

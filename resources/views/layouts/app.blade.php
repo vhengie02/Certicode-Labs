@@ -27,80 +27,12 @@
         })();
     </script>
 
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <!-- Vite Compiled Assets -->
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
     <!-- Google Fonts: Inter (Circular-like geometric sans) & Source Code Pro -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
-    
-    <!-- Design System Theme Overrides (Supabase Palette) -->
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            DEFAULT: '#3ecf8e',
-                            hover: '#00c573',
-                            border: 'rgba(62, 207, 142, 0.3)',
-                        },
-                        green: {
-                            50: '#f0fdf4',
-                            100: '#dcfce7',
-                            200: '#bbf7d0',
-                            300: '#86efac',
-                            400: '#3ecf8e',
-                            500: '#3ecf8e', // Supabase Emerald
-                            600: '#00c573', // Supabase Hover Emerald
-                            700: '#15803d',
-                        },
-                        emerald: {
-                            400: '#3ecf8e',
-                            500: '#3ecf8e',
-                            600: '#00c573',
-                            700: '#00a862',
-                        },
-                        indigo: {
-                            400: '#3ecf8e',
-                            500: '#3ecf8e',
-                            600: '#00c573',
-                            700: '#00a862',
-                            800: '#1c1c1c',
-                            900: '#171717',
-                            950: '#0f0f0f',
-                        },
-                        blue: {
-                            400: '#3ecf8e',
-                            500: '#3ecf8e',
-                            600: '#00c573',
-                            700: '#00a862',
-                        },
-                        slate: {
-                            50: '#fafafa',
-                            100: '#f5f5f5',
-                            200: '#e5e5e5',
-                            300: '#d4d4d4',
-                            400: '#a3a3a3', // Text Muted
-                            500: '#737373',
-                            600: '#525252',
-                            700: '#404040',
-                            800: '#2e2e2e', // 1px Hairline Border
-                            850: '#1c1c1c', // Elevated Card
-                            900: '#171717', // Surface Card
-                            950: '#0f0f0f', // Near-black Canvas
-                        }
-                    },
-                    fontFamily: {
-                        sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
-                        mono: ['"Source Code Pro"', '"JetBrains Mono"', 'monospace'],
-                        brick: ['"Brick Sans"', 'sans-serif']
-                    }
-                }
-            }
-        }
-    </script>
     <style>
         @font-face {
             font-family: 'Brick Sans';

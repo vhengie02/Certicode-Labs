@@ -1,9 +1,13 @@
 @import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';
 @source '../**/*.js';
+@source '../../app/**/*.php';
 
 @font-face {
     font-family: 'Brick Sans';
@@ -15,24 +19,72 @@
 
 @theme {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'Source Code Pro', 'JetBrains Mono', Menlo, monospace;
+    --font-mono: 'Source Code Pro', 'JetBrains Mono', ui-monospace, Menlo, monospace;
     --font-brick: 'Brick Sans', sans-serif;
 
-    /* Supabase Dark Palette */
+    /* Supabase Canvas & Surface */
     --color-canvas: #0f0f0f;
     --color-surface: #171717;
     --color-surface-card: #171717;
     --color-surface-elevated: #1c1c1c;
     --color-surface-hover: #222222;
+    --color-elevated: #1c1c1c;
 
     /* Signature Supabase Emerald Accent */
     --color-brand: #3ecf8e;
     --color-brand-hover: #00c573;
     --color-brand-border: rgba(62, 207, 142, 0.3);
+    --color-brand-muted: rgba(62, 207, 142, 0.15);
 
     /* 1px Hairline Borders */
     --color-border-hairline: #2e2e2e;
     --color-border-subtle: #232323;
+    --color-border-elevated: #383838;
+
+    /* Green Overrides */
+    --color-green-50: #f0fdf4;
+    --color-green-100: #dcfce7;
+    --color-green-200: #bbf7d0;
+    --color-green-300: #86efac;
+    --color-green-400: #3ecf8e;
+    --color-green-500: #3ecf8e;
+    --color-green-600: #00c573;
+    --color-green-700: #15803d;
+
+    /* Emerald Overrides */
+    --color-emerald-400: #3ecf8e;
+    --color-emerald-500: #3ecf8e;
+    --color-emerald-600: #00c573;
+    --color-emerald-700: #00a862;
+
+    /* Indigo Overrides (mapped to Supabase dark surfaces & emeralds) */
+    --color-indigo-400: #3ecf8e;
+    --color-indigo-500: #3ecf8e;
+    --color-indigo-600: #00c573;
+    --color-indigo-700: #00a862;
+    --color-indigo-800: #1c1c1c;
+    --color-indigo-900: #171717;
+    --color-indigo-950: #0f0f0f;
+
+    /* Blue Overrides */
+    --color-blue-400: #3ecf8e;
+    --color-blue-500: #3ecf8e;
+    --color-blue-600: #00c573;
+    --color-blue-700: #00a862;
+
+    /* Slate Overrides */
+    --color-slate-50: #fafafa;
+    --color-slate-100: #f5f5f5;
+    --color-slate-200: #e5e5e5;
+    --color-slate-300: #d4d4d4;
+    --color-slate-400: #a3a3a3;
+    --color-slate-500: #737373;
+    --color-slate-600: #525252;
+    --color-slate-700: #404040;
+    --color-slate-800: #2e2e2e;
+    --color-slate-850: #1c1c1c;
+    --color-slate-900: #171717;
+    --color-slate-950: #0f0f0f;
 
     /* Semantic Colors */
     --color-semantic-success: #16a34a;
@@ -134,6 +186,22 @@ body {
     background-color: var(--color-brand-hover);
 }
 
+.btn-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background-color: #3ecf8e;
+    color: #0f0f0f;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    padding: 0.5rem 1.25rem;
+    transition: background-color 150ms ease;
+}
+.btn-pill:hover {
+    background-color: #00c573;
+}
+
 /* Secondary 6px Radius Button */
 .btn-secondary {
     display: inline-flex;
@@ -157,6 +225,44 @@ body {
 .tech-tag {
     font-family: var(--font-mono);
     text-transform: uppercase;
-    letter-spacing: 0.075em;
+    letter-spacing: 0.08em;
     font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+/* Custom sidebar active state style matching Supabase */
+.sidebar-active-item {
+    background-color: #1c1c1c !important;
+    border-left: 3px solid #3ecf8e !important;
+    border-top-left-radius: 0px !important;
+    border-bottom-left-radius: 0px !important;
+    color: #ffffff !important;
+}
+
+/* Custom scrollbar matching Supabase Dark */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #0f0f0f;
+}
+::-webkit-scrollbar-thumb {
+    background: #2e2e2e;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #404040;
+}
+
+/* Loading Skeletons */
+.skeleton-pulse {
+    background: linear-gradient(90deg, #171717 25%, #222222 50%, #171717 75%);
+    background-size: 200% 100%;
+    animation: skeleton-pulse-anim 1.5s infinite ease-in-out;
+    border-radius: 6px;
+}
+@keyframes skeleton-pulse-anim {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }

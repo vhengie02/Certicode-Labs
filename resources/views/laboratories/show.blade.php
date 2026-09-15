@@ -6,11 +6,8 @@
 @section('content')
 @php
     $backUrl = route('classes.index');
-    if ($laboratory->module_id) {
-        $module = \App\Models\Module::find($laboratory->module_id);
-        if ($module) {
-            $backUrl = route('modules.show', ['class_id' => $module->class_id, 'module_id' => $module->id]);
-        }
+    if ($laboratory->module) {
+        $backUrl = route('modules.show', ['class_id' => $laboratory->module->class_id, 'module_id' => $laboratory->module->id]);
     }
 @endphp
 <div class="max-w-4xl mx-auto space-y-6">

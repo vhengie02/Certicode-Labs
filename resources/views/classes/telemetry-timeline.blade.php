@@ -8,13 +8,7 @@
     <!-- Back to Dashboard -->
     <div>
         @php
-            $classId = null;
-            if ($session->laboratory->module_id) {
-                $module = \App\Models\Module::find($session->laboratory->module_id);
-                if ($module) {
-                    $classId = $module->class_id;
-                }
-            }
+            $classId = $session->laboratory->module ? $session->laboratory->module->class_id : null;
         @endphp
         @if($classId)
             <a href="{{ route('classes.telemetry', $classId) }}" class="inline-flex items-center text-xs font-semibold text-slate-450 hover:text-white transition-colors">

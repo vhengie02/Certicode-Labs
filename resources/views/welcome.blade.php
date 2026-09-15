@@ -8,35 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-                        mono: ['"Source Code Pro"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
-                    },
-                    colors: {
-                        canvas: '#0f0f0f',
-                        surface: '#171717',
-                        elevated: '#1c1c1c',
-                        brand: {
-                            DEFAULT: '#3ecf8e',
-                            hover: '#00c573',
-                            muted: 'rgba(62, 207, 142, 0.15)',
-                        },
-                        border: {
-                            hairline: '#2e2e2e',
-                            subtle: '#232323',
-                            elevated: '#383838',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- Vite Compiled Assets -->
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
         body {
             font-family: 'Inter', sans-serif;

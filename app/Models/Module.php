@@ -99,9 +99,15 @@ class Module extends Model
      */
     public function getAllLaboratoryIds(): array
     {
-        $ids = $this->laboratories()->pluck('id')->toArray();
+        $ids = $this->relationLoaded('laboratories')
+            ? $this->laboratories->pluck('id')->toArray()
+            : $this->laboratories()->pluck('id')->toArray();
 
-        foreach ($this->children as $child) {
+        $children = $this->relationLoaded('children')
+            ? $this->children
+            : $this->children()->with('laboratories')->get();
+
+        foreach ($children as $child) {
             $ids = array_merge($ids, $child->getAllLaboratoryIds());
         }
 

@@ -85,8 +85,8 @@ class ClassController extends Controller
     public function show(int $id)
     {
         $class = SchoolClass::with([
-            'modules.laboratories',
-            'modules.children.laboratories',
+            'modules.laboratories.labSessions',
+            'modules.children.laboratories.labSessions',
             'students',
             'instructor'
         ])->findOrFail($id);
@@ -332,7 +332,10 @@ class ClassController extends Controller
      */
     public function showModule(int $class_id, int $module_id)
     {
-        $class = SchoolClass::with('modules')->findOrFail($class_id);
+        $class = SchoolClass::with([
+            'modules.children.laboratories',
+            'modules.laboratories'
+        ])->findOrFail($class_id);
         $module = Module::with(['laboratories', 'attachments'])->findOrFail($module_id);
         $user = Auth::user();
         if (!$user instanceof User) {
@@ -520,7 +523,7 @@ class ClassController extends Controller
     public function telemetryTimeline(int $id)
     {
         $this->authorizeInstructor();
-        $session = \App\Models\LabSession::with(['user', 'laboratory'])->findOrFail($id);
+        $session = \App\Models\LabSession::with(['user', 'laboratory.module.schoolClass'])->findOrFail($id);
 
         $logs = \App\Models\TelemetryLog::where('lab_session_id', $session->id)
             ->latest()

@@ -121,6 +121,7 @@ class LaboratoryController extends Controller
     public function show(Laboratory $laboratory)
     {
         $this->recordUniqueView($laboratory);
+        $laboratory->load(['module.schoolClass']);
 
         // Check if student already has a session
         $activeSession = $laboratory->labSessions()
