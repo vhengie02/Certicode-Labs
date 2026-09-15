@@ -21,15 +21,25 @@ class LabSession extends Model
         'completed_tasks',
         'diff_stats',
         'code_contributions',
+        'wpm',
+        'keystroke_count',
+        'focus_lost_count',
+        'paste_anomaly_count',
+        'closed_at',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
+        'closed_at' => 'datetime',
         'performance_score' => 'float',
         'completed_tasks' => 'array',
         'diff_stats' => 'array',
         'code_contributions' => 'array',
+        'wpm' => 'integer',
+        'keystroke_count' => 'integer',
+        'focus_lost_count' => 'integer',
+        'paste_anomaly_count' => 'integer',
     ];
 
     /**

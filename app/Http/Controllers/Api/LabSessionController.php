@@ -85,21 +85,60 @@ class LabSessionController extends Controller
         ]);
 
         // Smart anomaly checks
-        if ($request->event_type === 'tab_switch') {
-            // Count recent tab switches in last 2 minutes
+        if ($request->event_type === 'tab_switch' || $request->event_type === 'focus_lost') {
+            if ($request->event_type === 'focus_lost') {
+                $session->increment('focus_lost_count');
+            }
+
+            // Count recent switches / focus losses in last 2 minutes
             $recentSwitches = TelemetryLog::where('lab_session_id', $session->id)
-                ->where('event_type', 'tab_switch')
+                ->whereIn('event_type', ['tab_switch', 'focus_lost'])
                 ->where('created_at', '>=', now()->subMinutes(2))
                 ->count();
 
-            if ($recentSwitches > 5) {
+            if ($recentSwitches >= 3) {
                 Anomaly::create([
                     'lab_session_id' => $session->id,
-                    'type' => 'excessive_tab_switch',
-                    'severity' => 'medium',
-                    'description' => "Student switched browser tabs {$recentSwitches} times within the last 2 minutes.",
+                    'type' => $request->event_type === 'focus_lost' ? 'excessive_focus_loss' : 'excessive_tab_switch',
+                    'severity' => $recentSwitches >= 6 ? 'high' : 'medium',
+                    'description' => "Student switched window/focus {$recentSwitches} times within the last 2 minutes.",
+                    'metadata' => $request->payload,
                 ]);
             }
+        }
+
+        if ($request->event_type === 'wpm_update') {
+            $wpm = (int) ($request->payload['wpm'] ?? 0);
+            $keystrokes = (int) ($request->payload['keystroke_count'] ?? 0);
+            $session->update([
+                'wpm' => $wpm,
+                'keystroke_count' => $keystrokes > 0 ? $keystrokes : $session->keystroke_count,
+            ]);
+        }
+
+        if ($request->event_type === 'paste_anomaly') {
+            $session->increment('paste_anomaly_count');
+            $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
+            $snippet = (string) ($request->payload['snippet'] ?? '');
+
+            Anomaly::create([
+                'lab_session_id' => $session->id,
+                'type' => 'paste_anomaly',
+                'severity' => $pastedLen > 100 ? 'high' : 'medium',
+                'description' => 'Unusual external code paste detected (' . $pastedLen . ' chars): ' . \Illuminate\Support\Str::limit($snippet, 70),
+                'metadata' => $request->payload,
+            ]);
+        }
+
+        if ($request->event_type === 'camera_absence') {
+            Anomaly::create([
+                'lab_session_id' => $session->id,
+                'type' => 'no_face',
+                'severity' => 'high',
+                'description' => 'Camera presence check failed during active lab session.',
+                'image_path' => $request->payload['image_path'] ?? null,
+                'metadata' => $request->payload,
+            ]);
         }
 
         if ($request->event_type === 'webcam_check') {
@@ -111,6 +150,7 @@ class LabSessionController extends Controller
                     'type' => 'no_face',
                     'severity' => 'high',
                     'description' => 'No face detected in front of the camera during webcam check.',
+                    'metadata' => $request->payload,
                 ]);
             } elseif ($faceCount > 1) {
                 Anomaly::create([
@@ -118,6 +158,7 @@ class LabSessionController extends Controller
                     'type' => 'multiple_faces',
                     'severity' => 'medium',
                     'description' => 'Multiple faces detected in front of the camera.',
+                    'metadata' => $request->payload,
                 ]);
             }
         }
@@ -742,6 +783,106 @@ class LabSessionController extends Controller
             'competency_id' => $competency->id,
         ], [
             'score_achieved' => max($score, 0.0),
+        ]);
+    }
+
+    /**
+     * Retrieve live leaderboard rankings for the laboratory session.
+     */
+    public function getLeaderboard(int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+
+        $sessions = LabSession::with(['user', 'group'])
+            ->where('lab_id', $session->lab_id)
+            ->get()
+            ->map(function ($s) {
+                $tasksCount = is_array($s->completed_tasks) ? count($s->completed_tasks) : 0;
+                $duration = 0;
+                if ($s->started_at) {
+                    $end = $s->ended_at ?: now();
+                    $duration = $end->diffInSeconds($s->started_at);
+                }
+
+                $name = $s->user->name ?? 'Student';
+                $nameParts = explode(' ', $name);
+                $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+
+                return [
+                    'id' => $s->id,
+                    'user_id' => $s->user_id,
+                    'name' => $name,
+                    'initials' => $initials ?: 'ST',
+                    'is_team' => (bool) $s->group_id,
+                    'group_name' => $s->group->name ?? null,
+                    'tasks_completed' => $tasksCount,
+                    'status' => $s->status,
+                    'elapsed_seconds' => $duration,
+                    'elapsed_time' => sprintf('%02d:%02d', floor($duration / 60), $duration % 60),
+                    'wpm' => $s->wpm ?? 0,
+                    'focus_lost_count' => $s->focus_lost_count ?? 0,
+                    'paste_anomaly_count' => $s->paste_anomaly_count ?? 0,
+                    'is_current' => (auth()->id() && auth()->id() === $s->user_id),
+                ];
+            })
+            ->sort(function ($a, $b) {
+                // Priority 1: Tasks completed desc
+                if ($a['tasks_completed'] !== $b['tasks_completed']) {
+                    return $b['tasks_completed'] <=> $a['tasks_completed'];
+                }
+                // Priority 2: Elapsed time asc
+                return $a['elapsed_seconds'] <=> $b['elapsed_seconds'];
+            })
+            ->values()
+            ->map(function ($item, $index) {
+                $item['rank'] = $index + 1;
+                return $item;
+            });
+
+        return response()->json([
+            'status' => 'success',
+            'leaderboard' => $sessions,
+        ]);
+    }
+
+    /**
+     * End session and purge ephemeral records.
+     */
+    public function endSession(int $sessionId)
+    {
+        $session = LabSession::findOrFail($sessionId);
+        $session->update([
+            'status' => 'completed',
+            'ended_at' => $session->ended_at ?: now(),
+            'closed_at' => now(),
+        ]);
+
+        // Purge ephemeral chat
+        LabSessionChat::where('lab_session_id', $session->id)->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Lab session completed and ephemeral records purged.',
+            'session' => $session,
+        ]);
+    }
+
+    /**
+     * Reopen an individual lab session.
+     */
+    public function reopenSession(int $sessionId)
+    {
+        $session = LabSession::findOrFail($sessionId);
+        $session->update([
+            'status' => 'in_progress',
+            'ended_at' => null,
+            'closed_at' => null,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Lab session reopened.',
+            'session' => $session,
         ]);
     }
 }

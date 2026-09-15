@@ -366,13 +366,19 @@
             </div>
         @else
             <!-- Instructor edit action -->
-            <div class="border-t border-[#232323] pt-6 flex justify-between items-center">
+            <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-3">
                 <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
                     &larr; Back to Course
                 </a>
-                <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="inline-flex items-center px-5 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
-                    Edit Specifications &rarr;
-                </a>
+                <div class="flex items-center gap-3">
+                    <a href="{{ route('instructor.monitoring.show', $laboratory->id) }}" class="inline-flex items-center px-5 py-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-2"></span>
+                        Live Student Monitoring &rarr;
+                    </a>
+                    <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="inline-flex items-center px-5 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
+                        Edit Specifications &rarr;
+                    </a>
+                </div>
             </div>
         @endif
     </div>

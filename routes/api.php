@@ -27,9 +27,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
     Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);
     Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions']);
-    Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
+    Route::get('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
     Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
     Route::post('/sessions/{sessionId}/chat', [LabSessionController::class, 'sendChat']);
+    Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
+    Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
+    Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
 });
 
 // Public Prototyping routes (v1 prefix) for early-stage frontend testing without tokens
@@ -44,4 +47,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
     Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
     Route::post('/sessions/{sessionId}/chat', [LabSessionController::class, 'sendChat']);
+    Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
+    Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
+    Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
 });

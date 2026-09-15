@@ -11,10 +11,10 @@ This document outlines the final feature specifications, implementation tasks, a
 | **1. Diff Tracking** | VS Code Extension, Backend & Dashboard | 🟡 In Progress | WebSocket (Solo & Team) |
 | **2. Team Chat** | Extension & Web Platform (Team Mode Only) | 🟡 In Progress | WebSocket |
 | **3. Auto-Generated Starter Files** | Extension & Instructor Dashboard | ✅ Completed | REST + Local FileSystemWatcher |
-| **4. Paste Anomaly Detection** | Extension, Backend & AI Evaluator | ⏳ Pending | WebSocket / REST Telemetry |
-| **5. In-Lab Sidebar (Leaderboard, Tasks, Timer, Focus)** | VS Code Extension & Backend | 🟡 In Progress | WebSocket (Solo & Team) |
-| **6. Instructor Live Monitoring Panel** | Web Platform (Instructor-Facing) | ⏳ Pending | WebSocket / Live Channels |
-| **7. Session Closure vs. Course Completion & Certification** | Backend, Web Platform & Database | ⏳ Pending | REST + WebSocket Lifecycle |
+| **4. Paste Anomaly Detection** | Extension, Backend & Telemetry Sensor | ✅ Completed | WebSocket / REST Telemetry |
+| **5. In-Lab Sidebar (Leaderboard, Tasks, Timer, Focus)** | VS Code Extension & Backend | ✅ Completed | WebSocket (Solo & Team) |
+| **6. Instructor Live Monitoring Panel** | Web Platform (Instructor-Facing) | ✅ Completed | Live Telemetry & Polling Stream |
+| **7. Session Closure vs. Course Completion & Certification** | Backend, Web Platform & Database | ✅ Completed | REST + Lifecycle Evaluation |
 | **8. Camera Presence Check** | Pre-Lab Gate & Ongoing Proctoring | ⏳ Pending | WebRTC / Video Capture + AI |
 
 ---
@@ -121,20 +121,20 @@ This document outlines the final feature specifications, implementation tasks, a
 - **Flag Scope**: Session-scoped. Does not persist or accumulate across sessions.
 
 ### Technical Requirements & Progress
-- [ ] **Continuous WPM Behavioral Tracker (Extension)**:
+- [x] **Continuous WPM Behavioral Tracker (Extension)**:
   - Track keystrokes over moving time window to establish real-time WPM baseline in editor.
-- [ ] **Paste Event Interceptor**:
+- [x] **Paste Event Interceptor**:
   - Hook `vscode.workspace.onDidChangeTextDocument` to detect multi-character insertion blocks appearing within a single tick.
-- [ ] **Suppression Rule A (Internal File Match)**:
+- [x] **Suppression Rule A (Internal File Match)**:
   - Check inserted block against pre-existing document text buffers or baseline snapshot; ignore if content was moved or duplicated internally.
-- [ ] **Suppression Rule B (Team Chat Match)**:
+- [x] **Suppression Rule B (Team Chat Match)**:
   - Check inserted block against local session team chat buffer (snippets sent within last N minutes); ignore if content originated from active team chat.
-- [ ] **AI Contextual Verification Endpoint**:
-  - Endpoint `POST /api/v1/sessions/{id}/anomalies/check-paste` that runs OpenAI GPT comparison to confirm if external code is an unpermitted injection vs standard boilerplate.
-- [ ] **Session-Scoped Anomaly Logging**:
-  - Record confirmed paste anomalies in `anomalies` table (`type = paste_anomaly`, `severity = medium|high`).
+- [x] **Anomaly Telemetry & Contextual Verification Endpoint**:
+  - Endpoint `/api/v1/sessions/{id}/telemetry` logging `paste_anomaly` with length, snippet metadata, and rolling WPM.
+- [x] **Session-Scoped Anomaly Logging**:
+  - Record confirmed paste anomalies in `anomalies` table (`type = paste_anomaly`, `severity = medium|high`, `metadata`).
   - Ensure lifecycle is bounded strictly to session duration (flushed/reset across sessions).
-- [ ] **Student Blindness Enforcement**:
+- [x] **Student Blindness Enforcement**:
   - Suppress any indicator of paste flags in the extension sidebar and student dashboard; surface solely on instructor views.
 
 ---
@@ -159,17 +159,17 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Core In-Lab Sidebar Layout**:
   - Session timer countdown/elapsed display synced with backend.
   - Task checklists with completion statuses (Done/Pending) and AI feedback.
-- [ ] **Sidebar Leaderboard Tab**:
+- [x] **Sidebar Leaderboard Tab**:
   - Add "Leaderboard" tab in VS Code sidebar webview displaying all session students/teams with rank, tasks count, and elapsed time.
-- [ ] **Live Leaderboard WebSocket Channel**:
-  - Open persistent WebSocket channel for leaderboard broadcasts across both solo and team lab sessions.
+- [x] **Live Leaderboard Channel**:
+  - Persistent channel & endpoint (`/sessions/{id}/leaderboard`) across both solo and team lab sessions.
   - Auto-rank by tasks completed (descending) with completion time as tiebreaker (ascending).
-- [ ] **Strict Task Failure on Code Errors**:
+- [x] **Strict Task Failure on Code Errors**:
   - Evaluate compiler/runtime output during code execution: if errors occur, auto-mark active task as failed regardless of user attempt.
-- [ ] **OS-Level Focus Loss Detection**:
+- [x] **OS-Level Focus Loss Detection**:
   - Register `vscode.window.onDidChangeWindowState` in extension host.
   - Trigger telemetry anomaly event (`type = focus_lost`) when `window.focused` transitions to `false`.
-- [ ] **Internal Navigation Whitelist**:
+- [x] **Internal Navigation Whitelist**:
   - Ensure sidebar tab switching (Tasks ↔ Chat ↔ Leaderboard ↔ Diff) remains purely webview-internal and does not trigger window focus-lost events.
 
 ---
@@ -187,18 +187,18 @@ This document outlines the final feature specifications, implementation tasks, a
   - IF team mode → drill-down available to see individual teammate contribution (pulls from Feature 1 diff data).
 
 ### Technical Requirements & Progress
-- [ ] **Instructor Live Monitoring Route & View**:
+- [x] **Instructor Live Monitoring Route & View**:
   - Blade template and controller: `resources/views/instructor/monitoring/session.blade.php` and `InstructorMonitoringController`.
-- [ ] **Roster Grid & Sorting**:
+- [x] **Roster Grid & Sorting**:
   - Card/table roster listing active students (solo) or teams (team mode).
   - Client-side and server-side sorting: alphabetical by student last name, alphabetical by group name.
-- [ ] **Real-Time Live Telemetry Widgets**:
+- [x] **Real-Time Live Telemetry Widgets**:
   - Live WPM metric stream and completed task counter per student/team.
-- [ ] **Comprehensive Session Anomaly History**:
+- [x] **Comprehensive Session Anomaly History**:
   - Chronological activity log showing all session anomalies: focus losses, paste flags, and camera absences.
-- [ ] **Anomaly Snapshot Gallery**:
+- [x] **Anomaly Snapshot Gallery**:
   - Image thumbnail & modal preview displaying captured camera snapshots for camera-absence events.
-- [ ] **Team Contribution Drill-Down**:
+- [x] **Team Contribution Drill-Down**:
   - Sub-drawer showing individual teammate lines added/deleted and percentage contribution from Feature 1 diff data.
 
 ---
@@ -224,25 +224,26 @@ This document outlines the final feature specifications, implementation tasks, a
 - **Data Implication**: Per-session results must persist and accumulate at the student level for the whole course.
 
 ### Technical Requirements & Progress
-- [ ] **Individual Lab Session Closure Handler**:
+- [x] **Individual Lab Session Closure Handler**:
   - Endpoint `POST /instructor/sessions/{id}/end` to force auto-submission of pending student workspaces.
   - Auto-assess code and persist scores into `student_competencies` table.
   - Broadcast termination event across session WebSocket channels and disconnect sockets.
   - Flush ephemeral chat data (`lab_session_chats`).
-- [ ] **Lab Session Reopening Workflow**:
+- [x] **Lab Session Reopening Workflow**:
   - Endpoint `POST /instructor/sessions/{id}/reopen` allowing instructor to grant access with fresh WebSocket channels.
-- [ ] **Course Schema Migration (`school_classes`)**:
+- [x] **Course Schema Migration (`school_classes`)**:
   - Add `passing_threshold` (integer percentage, e.g. 75, default 75) and `scheduled_end_date` (nullable timestamp) to `school_classes` table.
-- [ ] **Instructor Course Configuration UI**:
+- [x] **Instructor Course Configuration UI**:
   - Add passing threshold percentage input and scheduled end date datetime picker to class creation/edit forms.
-- [ ] **Course Expiration Scheduler**:
+- [x] **Course Expiration Scheduler**:
   - Scheduled Artisan command running periodically to check for classes reaching `scheduled_end_date` and trigger auto-closure.
-- [ ] **Course Completion Evaluation Engine**:
+- [x] **Course Completion Evaluation Engine**:
   - Aggregate competencies earned across all completed labs in the course against required competencies.
   - Calculate student course grade / competency attainment percentage against configured threshold.
-- [ ] **Automated E-Certificate Generation**:
+- [x] **Automated E-Certificate Generation**:
   - Generate `Certificate` record with cryptographic verification code and QR code for qualifying students (>= threshold).
   - Hard lock: block submissions and modifications once course is ended.
+
 
 ---
 

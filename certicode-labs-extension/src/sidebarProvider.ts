@@ -31,6 +31,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     // Feature 3: Team Chat
     private _unreadChatCount: number = 0;
     private _isChatTabActive: boolean = false;
+    private _recentChatSnippets: string[] = [];
+
+    // Feature 4: WPM Baseline & Paste Anomaly Interceptor
+    private _keystrokeTimestamps: number[] = [];
+    private _totalKeystrokes: number = 0;
+    private _currentWpm: number = 0;
+    private _wpmSyncTimer?: NodeJS.Timeout;
+
+    // Feature 5: Focus Tracking & Live Leaderboard
+    private _windowStateListener?: vscode.Disposable;
+    private _leaderboardInterval?: any;
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
@@ -108,6 +119,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 }
+                case 'getLeaderboard': {
+                    await this.fetchLeaderboard();
+                    break;
+                }
             }
         });
 
@@ -178,12 +193,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (this._chatPollInterval) {
             clearInterval(this._chatPollInterval);
         }
+        if (this._leaderboardInterval) {
+            clearInterval(this._leaderboardInterval);
+        }
 
         this._filesGenerated = false;
         this._unreadChatCount = 0;
+        this._keystrokeTimestamps = [];
+        this._totalKeystrokes = 0;
+        this._currentWpm = 0;
+
+        // Setup window focus tracking (Feature 5)
+        this.setupFocusTracking();
 
         // Run sync immediately
         this.syncSessionState();
+        this.fetchLeaderboard();
 
         // Run sync every 15 seconds to detect dropped connections / keepalive
         this._pingInterval = setInterval(() => {
@@ -194,6 +219,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._chatPollInterval = setInterval(() => {
             this.fetchChatMessages();
         }, 4000);
+
+        // Run leaderboard sync every 10 seconds (Feature 5)
+        this._leaderboardInterval = setInterval(() => {
+            this.fetchLeaderboard();
+        }, 10000);
     }
 
     private async syncSessionState() {
@@ -405,15 +435,53 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._fileWatcher.onDidCreate(() => this.verifyWorkspaceFileIntegrity());
         this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity());
 
-        // Watch document changes for live diff tracking
+        // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
         vscode.workspace.onDidChangeTextDocument((event) => {
             if (!this._sessionId || !this._lastSessionData) { return; }
             
-            // Check if document belongs to workspace starter files
             const fileName = event.document.fileName;
             const isTracked = this._lastSessionData.laboratory?.starter_files?.some((f: any) => 
                 fileName.endsWith(f.name)
             );
+
+            // Feature 4: Keystroke velocity & Paste anomaly interceptor
+            for (const change of event.contentChanges) {
+                if (change.text.length === 1) {
+                    this.recordKeystroke(1);
+                } else if (change.text.length > 1 && change.text.length < 25) {
+                    this.recordKeystroke(change.text.length);
+                } else if (change.text.length >= 25 && (change.text.includes('\n') || change.text.split(/\s+/).length > 3)) {
+                    // Bulk code insertion detected!
+                    const trimmedPaste = change.text.trim();
+
+                    // Suppression Rule A: Internal Move/Restructure check
+                    let isSuppressedA = false;
+                    for (const [, snapshotContent] of this._starterFileSnapshots.entries()) {
+                        if (snapshotContent.includes(trimmedPaste)) {
+                            isSuppressedA = true;
+                            break;
+                        }
+                    }
+
+                    // Suppression Rule B: Permitted Collaboration / Team Chat match
+                    let isSuppressedB = false;
+                    if (!isSuppressedA && this._recentChatSnippets.length > 0) {
+                        isSuppressedB = this._recentChatSnippets.some(snippet =>
+                            snippet.includes(trimmedPaste) || trimmedPaste.includes(snippet)
+                        );
+                    }
+
+                    // Flagging Rule: External paste without internal/chat justification
+                    if (!isSuppressedA && !isSuppressedB) {
+                        this.sendTelemetry('paste_anomaly', {
+                            pasted_length: change.text.length,
+                            snippet: change.text.slice(0, 100),
+                            file: fileName,
+                            wpm: this._currentWpm
+                        });
+                    }
+                }
+            }
 
             if (isTracked) {
                 if (this._diffDebounceTimer) {
@@ -430,6 +498,92 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 this.computeAndSyncDiffs();
             }
         });
+    }
+
+    /**
+     * Feature 5: OS-Level Focus Loss Sensor
+     */
+    private setupFocusTracking() {
+        if (this._windowStateListener) {
+            this._windowStateListener.dispose();
+        }
+
+        this._windowStateListener = vscode.window.onDidChangeWindowState((state) => {
+            if (!this._sessionId) { return; }
+            if (!state.focused) {
+                // OS Focus lost (switched away from VS Code)
+                this.sendTelemetry('focus_lost', {
+                    timestamp: new Date().toISOString()
+                });
+            }
+        });
+    }
+
+    /**
+     * Feature 4: Record typing keystrokes and calculate rolling WPM
+     */
+    private recordKeystroke(charsCount: number = 1) {
+        const now = Date.now();
+        for (let i = 0; i < charsCount; i++) {
+            this._keystrokeTimestamps.push(now);
+            this._totalKeystrokes++;
+        }
+
+        // Keep timestamps within 60s moving window
+        const cutoff = now - 60000;
+        this._keystrokeTimestamps = this._keystrokeTimestamps.filter(t => t >= cutoff);
+
+        // Approximate WPM (5 chars = 1 word)
+        const windowMinutes = Math.max((now - (this._keystrokeTimestamps[0] || now)) / 60000, 1 / 6);
+        const words = this._keystrokeTimestamps.length / 5;
+        this._currentWpm = Math.round(words / windowMinutes);
+
+        // Debounced telemetry sync to backend
+        if (!this._wpmSyncTimer) {
+            this._wpmSyncTimer = setTimeout(() => {
+                this._wpmSyncTimer = undefined;
+                this.sendTelemetry('wpm_update', {
+                    wpm: this._currentWpm,
+                    keystroke_count: this._totalKeystrokes
+                });
+            }, 10000);
+        }
+    }
+
+    /**
+     * Helper to dispatch telemetry logs & anomalies to backend
+     */
+    private async sendTelemetry(eventType: string, payload: any) {
+        if (!this._sessionId) { return; }
+        try {
+            const prefix = this._apiToken ? '/api' : '/api/v1';
+            await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/telemetry`, {
+                event_type: eventType,
+                payload: payload
+            });
+        } catch (e) {
+            console.error('Failed to send telemetry', e);
+        }
+    }
+
+    /**
+     * Feature 5: Fetch live session leaderboard
+     */
+    private async fetchLeaderboard() {
+        if (!this._sessionId) { return; }
+        try {
+            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/leaderboard`);
+            if (res.status === 200) {
+                const data = JSON.parse(res.body);
+                this._view?.webview.postMessage({
+                    type: 'leaderboardData',
+                    leaderboard: data.leaderboard || []
+                });
+            }
+        } catch (e) {
+            console.error('Failed to fetch leaderboard', e);
+        }
     }
 
     /**
@@ -543,6 +697,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 const data = JSON.parse(res.body);
                 const chats = data.chats || [];
                 
+                // Cache recent chat snippets for paste suppression rule B
+                this._recentChatSnippets = [];
+                for (const c of chats) {
+                    if (c.message && typeof c.message === 'string') {
+                        this._recentChatSnippets.push(c.message.trim());
+                    }
+                    if (c.code_snippet && typeof c.code_snippet === 'string') {
+                        this._recentChatSnippets.push(c.code_snippet.trim());
+                    }
+                }
+
                 if (!this._isChatTabActive && chats.length > 0) {
                     this._unreadChatCount = chats.length;
                 }
@@ -777,12 +942,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         if (this._pingInterval) { clearInterval(this._pingInterval); }
         if (this._chatPollInterval) { clearInterval(this._chatPollInterval); }
+        if (this._leaderboardInterval) { clearInterval(this._leaderboardInterval); }
+        if (this._wpmSyncTimer) { clearTimeout(this._wpmSyncTimer); }
+        if (this._windowStateListener) { this._windowStateListener.dispose(); }
 
         this._sessionId = undefined;
         this._lastSessionData = null;
         this._filesGenerated = false;
         this._starterFileSnapshots.clear();
         this._missingFiles = [];
+        this._keystrokeTimestamps = [];
+        this._totalKeystrokes = 0;
+        this._currentWpm = 0;
+        this._recentChatSnippets = [];
         this._view?.webview.postMessage({ type: 'disconnected' });
         vscode.window.showInformationMessage('Exited CertiCode Labs session.');
     }
@@ -1061,6 +1233,37 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             border-radius: 4px;
             padding: 8px 10px;
         }
+        .leaderboard-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 9px;
+            border-radius: 4px;
+            background: var(--vscode-sideBar-background);
+            border: 1px solid var(--vscode-panel-border);
+            font-size: 0.85em;
+            gap: 6px;
+        }
+        .leaderboard-row.current-user {
+            border-color: #3ecf8e;
+            background: rgba(62, 207, 142, 0.08);
+        }
+        .rank-badge {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.75em;
+            background: var(--vscode-panel-border);
+            color: var(--vscode-foreground);
+            flex-shrink: 0;
+        }
+        .rank-1 { background: #f59e0b; color: #000; }
+        .rank-2 { background: #94a3b8; color: #000; }
+        .rank-3 { background: #b45309; color: #fff; }
         .task-list {
             display: flex;
             flex-direction: column;
@@ -1301,6 +1504,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         <div class="tabs-nav">
             <button class="tab-btn active" data-tab="tab-instructions">Instructions</button>
             <button class="tab-btn" data-tab="tab-tasks">Tasks</button>
+            <button class="tab-btn" data-tab="tab-leaderboard" id="tab-leaderboard-btn">Leaderboard</button>
             <button class="tab-btn" data-tab="tab-diff">Diff View</button>
             <button class="tab-btn" data-tab="tab-chat" id="tab-chat-btn">
                 Team Chat
@@ -1337,6 +1541,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             <div id="console-output-section" style="display: none;">
                 <label style="margin-bottom: 4px; display: block;">Console Output</label>
                 <div class="console-output" id="console-output-text"></div>
+            </div>
+        </div>
+
+        <!-- TAB: Live Leaderboard (Feature 5) -->
+        <div id="tab-leaderboard" class="tab-content">
+            <div class="card">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 0.75em; font-weight: bold; text-transform: uppercase; color: var(--vscode-descriptionForeground);">Live Leaderboard</span>
+                    <button id="leaderboard-refresh-btn" style="background: none; border: 1px solid var(--vscode-panel-border); padding: 2px 8px; border-radius: 4px; color: #3ecf8e; cursor: pointer; font-size: 0.75em;">
+                        Refresh
+                    </button>
+                </div>
+                <div style="font-size: 0.72em; color: var(--vscode-descriptionForeground); margin-top: 4px;">
+                    Ranked by tasks completed, with elapsed time tiebreaker.
+                </div>
+            </div>
+
+            <div id="leaderboard-container" style="display: flex; flex-direction: column; gap: 5px;">
+                <div style="text-align: center; color: var(--vscode-descriptionForeground); padding: 16px; font-size: 0.85em;">
+                    Loading session standings...
+                </div>
             </div>
         </div>
 
@@ -1484,8 +1709,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     chatBadge.style.display = 'none';
                     chatBadge.innerText = '0';
                 }
+
+                // Fetch leaderboard on tab focus
+                if (targetId === 'tab-leaderboard') {
+                    vscode.postMessage({ type: 'getLeaderboard' });
+                }
             });
         });
+
+        const leaderboardRefreshBtn = document.getElementById('leaderboard-refresh-btn');
+        if (leaderboardRefreshBtn) {
+            leaderboardRefreshBtn.addEventListener('click', () => {
+                vscode.postMessage({ type: 'getLeaderboard' });
+            });
+        }
 
         regenerateFilesLink.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1650,11 +1887,42 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     }
                     break;
 
-                case 'unreadReset':
-                    chatBadge.style.display = 'none';
-                    chatBadge.innerText = '0';
+                case 'leaderboardData':
+                    const list = message.leaderboard || [];
+                    const leaderboardContainer = document.getElementById('leaderboard-container');
+                    if (leaderboardContainer) {
+                        if (list.length === 0) {
+                            leaderboardContainer.innerHTML = '<div style="text-align: center; color: var(--vscode-descriptionForeground); padding: 16px; font-size: 0.85em;">No active competitors or teams ranked yet.</div>';
+                        } else {
+                            leaderboardContainer.innerHTML = '';
+                            list.forEach(item => {
+                                const row = document.createElement('div');
+                                row.className = 'leaderboard-row' + (item.is_current ? ' current-user' : '');
+                                const rankClass = item.rank <= 3 ? (' rank-' + item.rank) : '';
+                                row.innerHTML = \`
+                                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                                        <span class="rank-badge\${rankClass}">#\${item.rank}</span>
+                                        <div style="min-width: 0;">
+                                            <div style="font-weight: 600; color: var(--vscode-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                                \${item.name}\${item.is_current ? ' (You)' : ''}
+                                            </div>
+                                            <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">
+                                                \${item.is_team && item.group_name ? item.group_name + ' • ' : ''}\${item.elapsed_time}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right; flex-shrink: 0;">
+                                        <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; font-weight: bold; background: rgba(62, 207, 142, 0.15); color: #3ecf8e;">
+                                            \${item.tasks_completed} done
+                                        </span>
+                                    </div>
+                                \`;
+                                leaderboardContainer.appendChild(row);
+                            });
+                        }
+                    }
                     break;
-                    
+
                 case 'reconnecting':
                     statusBanner.className = 'connection-status status-reconnecting';
                     statusText.innerText = 'Reconnecting...';

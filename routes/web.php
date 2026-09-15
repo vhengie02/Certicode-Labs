@@ -10,6 +10,7 @@ use App\Http\Controllers\StudentProfileController;
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\InstructorMonitoringController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -94,6 +95,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/starter-files/download', [LaboratoryController::class, 'downloadStarterFiles'])->name('laboratories.starter-files.download');
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
     Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
+
+    // Instructor Live Monitoring & Lifecycle Controls (Features 6 & 7)
+    Route::post('/classes/{id}/end', [ClassController::class, 'endClass'])->name('classes.end');
+    Route::post('/instructor/sessions/{id}/end', [ClassController::class, 'endSession'])->name('instructor.sessions.end');
+    Route::post('/instructor/sessions/{id}/reopen', [ClassController::class, 'reopenSession'])->name('instructor.sessions.reopen');
+    Route::get('/laboratories/{id}/monitoring', [InstructorMonitoringController::class, 'show'])->name('instructor.monitoring.show');
+    Route::get('/laboratories/{id}/monitoring/data', [InstructorMonitoringController::class, 'streamData'])->name('instructor.monitoring.data');
 
     // Student Profiles & Directory CRUD
     Route::get('/students', [StudentProfileController::class, 'index'])->name('students.index');

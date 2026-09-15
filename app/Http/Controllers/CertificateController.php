@@ -24,10 +24,11 @@ class CertificateController extends Controller
             abort(403, 'You are not enrolled in this class.');
         }
 
-        // Verify progress is 100%
+        // Verify progress meets passing threshold
+        $threshold = $class->passing_threshold ?? 75;
         $progress = $class->getStudentProgress($user);
-        if ($progress['percent'] < 100 || $progress['total'] === 0) {
-            return redirect()->back()->with('error', 'You must complete all laboratories in this class before claiming a certificate.');
+        if ($progress['percent'] < $threshold || $progress['total'] === 0) {
+            return redirect()->back()->with('error', "You must meet the course passing threshold ({$threshold}%) to claim a certificate. Current: {$progress['percent']}%.");
         }
 
         // Check if certificate already exists

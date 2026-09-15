@@ -56,6 +56,8 @@ class ClassController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'passing_threshold' => 'nullable|integer|min:1|max:100',
+            'scheduled_end_date' => 'nullable|date',
         ]);
 
         // Generate unique 8-character code: CLASS-XXXX
@@ -69,6 +71,9 @@ class ClassController extends Controller
             'description' => $validated['description'] ?? null,
             'code' => $code,
             'instructor_id' => (int) Auth::id(),
+            'passing_threshold' => $validated['passing_threshold'] ?? 75,
+            'scheduled_end_date' => $validated['scheduled_end_date'] ?? null,
+            'status' => 'active',
         ]);
 
         return redirect()->route('classes.index')->with('success', 'Class created successfully with join code: ' . $code);
@@ -136,6 +141,9 @@ class ClassController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'passing_threshold' => 'nullable|integer|min:1|max:100',
+            'scheduled_end_date' => 'nullable|date',
+            'status' => 'nullable|string|in:active,completed,closed',
         ]);
 
         $class->update($validated);
@@ -535,6 +543,111 @@ class ClassController extends Controller
         $anomaly->update(['resolved' => true]);
 
         return back()->with('success', 'Anomaly marked as resolved.');
+    }
+
+    /**
+     * Conclude the class course and issue certificates to students meeting passing threshold.
+     */
+    public function endClass(Request $request, int $id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::with(['students', 'modules.laboratories'])->findOrFail($id);
+
+        $class->update([
+            'status' => 'completed',
+        ]);
+
+        $threshold = $class->passing_threshold ?? 75;
+        $certifiedCount = 0;
+
+        foreach ($class->students as $student) {
+            $progress = $class->getStudentProgress($student);
+            if ($progress['percent'] >= $threshold && $progress['total'] > 0) {
+                $existing = \App\Models\Certificate::where('user_id', $student->id)
+                    ->where('class_id', $class->id)
+                    ->first();
+
+                if (!$existing) {
+                    $code = 'CERT-' . strtoupper(Str::random(12));
+                    while (\App\Models\Certificate::where('verification_code', $code)->exists()) {
+                        $code = 'CERT-' . strtoupper(Str::random(12));
+                    }
+
+                    $cert = \App\Models\Certificate::create([
+                        'user_id' => $student->id,
+                        'class_id' => $class->id,
+                        'verification_code' => $code,
+                        'qr_code_path' => 'certificates/qr-' . $code . '.svg',
+                        'issued_at' => now(),
+                    ]);
+
+                    $student->notify(new \App\Notifications\ClassActivityNotification(
+                        "Course Completed: {$class->name}",
+                        "Congratulations! You completed '{$class->name}' with {$progress['percent']}% (threshold: {$threshold}%) and earned your official certificate.",
+                        route('certificates.show', $cert->id),
+                        'certificate'
+                    ));
+
+                    $certifiedCount++;
+                }
+            }
+        }
+
+        return redirect()->route('classes.show', $class->id)
+            ->with('success', "Course has been successfully concluded. {$certifiedCount} qualifying student(s) awarded certificates!");
+    }
+
+    /**
+     * End an individual lab session and clear ephemeral state.
+     */
+    public function endSession(Request $request, int $id)
+    {
+        $this->authorizeInstructor();
+        $session = \App\Models\LabSession::findOrFail($id);
+
+        $session->update([
+            'status' => 'completed',
+            'ended_at' => $session->ended_at ?: now(),
+            'closed_at' => now(),
+        ]);
+
+        // Clean ephemeral chat records
+        \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Lab session ended and ephemeral state cleared.',
+                'session' => $session,
+            ]);
+        }
+
+        return back()->with('success', 'Lab session ended and ephemeral chat cleared.');
+    }
+
+    /**
+     * Reopen an individual lab session.
+     */
+    public function reopenSession(Request $request, int $id)
+    {
+        $this->authorizeInstructor();
+        $session = \App\Models\LabSession::findOrFail($id);
+
+        $session->update([
+            'status' => 'in_progress',
+            'ended_at' => null,
+            'closed_at' => null,
+        ]);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Lab session reopened.',
+                'session' => $session,
+            ]);
+        }
+
+        return back()->with('success', 'Lab session reopened.');
     }
 
     /**

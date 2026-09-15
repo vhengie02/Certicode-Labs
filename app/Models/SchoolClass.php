@@ -16,7 +16,29 @@ class SchoolClass extends Model
         'code',
         'instructor_id',
         'description',
+        'passing_threshold',
+        'scheduled_end_date',
+        'status',
     ];
+
+    protected $casts = [
+        'passing_threshold' => 'integer',
+        'scheduled_end_date' => 'datetime',
+    ];
+
+    /**
+     * Check if the class is concluded/ended.
+     */
+    public function isEnded(): bool
+    {
+        if (in_array($this->status, ['completed', 'closed'], true)) {
+            return true;
+        }
+        if ($this->scheduled_end_date && now()->gte($this->scheduled_end_date)) {
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Get the instructor of this class.

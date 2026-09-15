@@ -15,10 +15,13 @@ class Anomaly extends Model
         'severity',
         'description',
         'resolved',
+        'metadata',
+        'image_path',
     ];
 
     protected $casts = [
         'resolved' => 'boolean',
+        'metadata' => 'array',
     ];
 
     /**

@@ -156,11 +156,24 @@
                 </span>
                 <div class="flex items-center space-x-3">
                     @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                        <a href="{{ route('classes.telemetry', $class->id) }}" class="inline-flex items-center px-3 py-1 border border-slate-800 text-xs font-bold rounded-lg text-rose-450 bg-rose-500/5 hover:bg-rose-500/10 transition-colors shadow shadow-rose-500/5">
+                        <a href="{{ route('classes.telemetry', $class->id) }}" class="inline-flex items-center px-3 py-1 border border-slate-800 text-xs font-bold rounded-lg text-rose-400 bg-rose-500/5 hover:bg-rose-500/10 transition-colors shadow shadow-rose-500/5">
                             <span class="w-1.5 h-1.5 bg-rose-500 rounded-full mr-2 animate-pulse"></span>
                             Telemetry Monitoring
                         </a>
+                        @if($class->status !== 'completed')
+                            <form action="{{ route('classes.end', $class->id) }}" method="POST" onsubmit="return confirm('Conclude this course? All enrolled students at or above the passing threshold ({{ $class->passing_threshold ?? 75 }}%) will be automatically awarded their completion certificates.');" class="inline">
+                                @csrf
+                                <button type="submit" class="inline-flex items-center px-3 py-1 border border-emerald-500/30 text-xs font-bold rounded-lg text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
+                                    Conclude Course & Issue Certificates
+                                </button>
+                            </form>
+                        @else
+                            <span class="px-2.5 py-1 text-xs font-bold rounded-lg text-slate-400 bg-slate-800 border border-slate-700">
+                                Course Completed
+                            </span>
+                        @endif
                     @endif
+                    <span class="text-xs text-slate-500">Passing: <strong class="text-white">{{ $class->passing_threshold ?? 75 }}%</strong></span>
                     <span class="text-xs text-slate-500">Created: {{ $class->created_at->format('M d, Y') }}</span>
                 </div>
             </div>
@@ -174,12 +187,13 @@
             @php
                 $overallProgress = $class->getStudentProgress(auth()->user());
                 $existingCertificate = auth()->user()->certificates()->where('class_id', $class->id)->first();
+                $passThreshold = $class->passing_threshold ?? 75;
             @endphp
             <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
                 <div class="flex items-center justify-between">
                     <div>
                         <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Your Academic Progress</span>
-                        <h3 class="text-sm font-bold text-white mt-0.5">Competency Accomplishments</h3>
+                        <h3 class="text-sm font-bold text-white mt-0.5">Competency Accomplishments (Passing Goal: {{ $passThreshold }}%)</h3>
                     </div>
                     <span class="text-sm font-mono font-bold text-white">{{ $overallProgress['percent'] }}%</span>
                 </div>
@@ -192,7 +206,7 @@
                     <span class="text-xs text-slate-400">
                         Completed {{ $overallProgress['completed'] }} of {{ $overallProgress['total'] }} laboratory tasks.
                     </span>
-                    @if($overallProgress['percent'] == 100 && $overallProgress['total'] > 0)
+                    @if($overallProgress['percent'] >= $passThreshold && $overallProgress['total'] > 0)
                         @if($existingCertificate)
                             <a href="{{ route('certificates.show', $existingCertificate->id) }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20">
                                 <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
@@ -207,9 +221,9 @@
                                 </button>
                             </form>
                         @endif
-                    @elseif($overallProgress['percent'] < 100)
+                    @elseif($overallProgress['percent'] < $passThreshold)
                         <button disabled class="inline-flex items-center px-4 py-2 border border-slate-800 text-xs font-semibold rounded-lg text-slate-500 bg-slate-900 cursor-not-allowed">
-                            Certificate Locked (Complete 100% Labs)
+                            Certificate Locked (Requires {{ $passThreshold }}% Labs)
                         </button>
                     @endif
                 </div>

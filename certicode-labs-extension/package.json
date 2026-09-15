@@ -48,8 +48,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "distribute": "vsce package -o ../public/downloads/certicode-labs.vsix",
+    "package": "@vscode/vsce package",
+    "distribute": "@vscode/vsce package -o ../public/downloads/certicode-labs.vsix",
     "pretest": "npm run compile",
     "test": "node ./out/test/runTest.js"
   },
