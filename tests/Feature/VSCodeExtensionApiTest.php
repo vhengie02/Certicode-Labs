@@ -112,6 +112,58 @@ class VSCodeExtensionApiTest extends TestCase
     }
 
     /**
+     * Test check progress with empty code returns 0% score and no completed tasks.
+     */
+    public function test_check_progress_with_empty_code_returns_zero_score(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/check-progress", [
+                'code' => '   ',
+                'language' => 'java',
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertEmpty($response->json('completed_tasks'));
+        $this->assertEquals(0, $response->json('evaluation.correctness_score'));
+    }
+
+    /**
+     * Test check progress with markdown/documentation returns 0% score and no completed tasks.
+     */
+    public function test_check_progress_with_markdown_document_returns_zero_score(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $markdownContent = <<<MD
+# TODO List
+- [ ] Implement pipe IPC
+- [ ] Fork child process
+MD;
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/check-progress", [
+                'code' => $markdownContent,
+                'language' => 'markdown',
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertEmpty($response->json('completed_tasks'));
+        $this->assertEquals(0, $response->json('evaluation.correctness_score'));
+    }
+
+    /**
      * Test check progress (AI task evaluation) with valid code.
      */
     public function test_check_progress_with_valid_code(): void

@@ -729,16 +729,61 @@ class SidebarProvider {
                 catch { }
             }
         }
-        // Fallback to active editor text if filesPayload empty
+        const isNonCodeDoc = (name) => {
+            return /\.(md|txt|json|env|log|lock|ya?ml)$/i.test(name) || name.includes('.git');
+        };
+        // Fallback to active editor text only if it is an actual code file
         if (!primaryCode) {
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor) {
-                primaryCode = activeEditor.document.getText();
-                primaryFileName = activeEditor.document.fileName;
+                const fname = activeEditor.document.fileName;
+                if (!isNonCodeDoc(fname)) {
+                    primaryCode = activeEditor.document.getText();
+                    primaryFileName = fname;
+                }
             }
         }
+        // Also search workspace for actual source code files if primaryCode still not found
+        if (!primaryCode && workspaceFolders && workspaceFolders.length > 0) {
+            try {
+                const codeFiles = await vscode.workspace.findFiles('**/*.{c,cpp,h,java,py,js,ts,go,rs,cs,php}', '**/{node_modules,vendor,.git,build,out,dist}/**', 10);
+                for (const uri of codeFiles) {
+                    const data = await vscode.workspace.fs.readFile(uri);
+                    const content = new TextDecoder().decode(data);
+                    const relPath = vscode.workspace.asRelativePath(uri);
+                    filesPayload.push({
+                        name: relPath,
+                        content: content,
+                        is_primary: !primaryCode
+                    });
+                    if (!primaryCode) {
+                        primaryCode = content;
+                        primaryFileName = relPath;
+                    }
+                }
+            }
+            catch { }
+        }
         if (!primaryCode && filesPayload.length === 0) {
-            vscode.window.showErrorMessage('Please open your code file to check progress.');
+            vscode.window.showErrorMessage('No code files found in workspace. Please open or create your solution file (e.g. main.c, Solution.java) to check progress.');
+            this._view?.webview.postMessage({
+                type: 'checkResult',
+                data: {
+                    status: 'empty',
+                    completed_tasks: [],
+                    performance_score: 0,
+                    evaluation: {
+                        tasks: (this._lastSessionData?.laboratory?.tasks_definition || []).map((t) => ({
+                            id: t.id,
+                            completed: false,
+                            feedback: 'No solution code file detected in workspace.'
+                        })),
+                        correctness_score: 0,
+                        overall_feedback: 'No solution code detected in workspace. Create your code file and check progress again.',
+                        code_quality_feedback: 'Workspace has no code to evaluate.'
+                    }
+                }
+            });
             return;
         }
         let detectedLang = 'c';
@@ -813,15 +858,41 @@ class SidebarProvider {
                 catch { }
             }
         }
+        const isNonCodeDoc = (name) => {
+            return /\.(md|txt|json|env|log|lock|ya?ml)$/i.test(name) || name.includes('.git');
+        };
         if (!primaryCode) {
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor) {
-                primaryCode = activeEditor.document.getText();
-                primaryFileName = activeEditor.document.fileName;
+                const fname = activeEditor.document.fileName;
+                if (!isNonCodeDoc(fname)) {
+                    primaryCode = activeEditor.document.getText();
+                    primaryFileName = fname;
+                }
             }
         }
+        if (!primaryCode && workspaceFolders && workspaceFolders.length > 0) {
+            try {
+                const codeFiles = await vscode.workspace.findFiles('**/*.{c,cpp,h,java,py,js,ts,go,rs,cs,php}', '**/{node_modules,vendor,.git,build,out,dist}/**', 10);
+                for (const uri of codeFiles) {
+                    const data = await vscode.workspace.fs.readFile(uri);
+                    const content = new TextDecoder().decode(data);
+                    const relPath = vscode.workspace.asRelativePath(uri);
+                    filesPayload.push({
+                        name: relPath,
+                        content: content,
+                        is_primary: !primaryCode
+                    });
+                    if (!primaryCode) {
+                        primaryCode = content;
+                        primaryFileName = relPath;
+                    }
+                }
+            }
+            catch { }
+        }
         if (!primaryCode && filesPayload.length === 0) {
-            vscode.window.showErrorMessage('Please open or generate your solution files before submitting.');
+            vscode.window.showErrorMessage('No runnable code files found in workspace. Please create or open your solution file before submitting.');
             return;
         }
         let detectedLang = 'c';

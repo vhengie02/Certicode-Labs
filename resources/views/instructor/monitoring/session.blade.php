@@ -137,76 +137,76 @@
                     <div class="p-5 hover:bg-slate-900/40 transition-colors" 
                          x-show="matchesSearch('{{ strtolower($user->name ?? '') }}', '{{ strtolower($group->name ?? '') }}')">
                         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                            <!-- Student / Team Identity -->
-                            <div class="flex items-start gap-3 min-w-[240px]">
-                                <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-sm text-slate-200 uppercase flex-shrink-0">
+                            <!-- Student / Team Identity (Fixed Width for Perfect Alignment) -->
+                            <div class="flex items-center gap-3 w-full lg:w-64 xl:w-72 shrink-0 min-w-0">
+                                <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-sm text-slate-200 uppercase shrink-0">
                                     {{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}
                                 </div>
-                                <div>
+                                <div class="min-w-0 flex-1">
                                     <div class="flex items-center gap-2">
-                                        <span class="font-bold text-white text-sm">{{ $user->name ?? 'Unknown Student' }}</span>
+                                        <span class="font-bold text-white text-sm truncate" title="{{ $user->name ?? 'Unknown Student' }}">{{ $user->name ?? 'Unknown Student' }}</span>
                                         @if($session->status === 'in_progress')
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shrink-0">
                                                 Active
                                             </span>
                                         @else
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
                                                 Completed
                                             </span>
                                         @endif
                                     </div>
-                                    <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
-                                        <span>{{ $user->email ?? 'No email' }}</span>
+                                    <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 truncate">
+                                        <span class="truncate" title="{{ $user->email ?? 'No email' }}">{{ $user->email ?? 'No email' }}</span>
                                         @if($group)
-                                            <span class="text-slate-600">•</span>
-                                            <span class="text-[#3ecf8e] font-semibold flex items-center gap-1">
-                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                                                {{ $group->name }}
+                                            <span class="text-slate-600 shrink-0">•</span>
+                                            <span class="text-[#3ecf8e] font-semibold flex items-center gap-1 shrink-0 truncate" title="{{ $group->name }}">
+                                                <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                                                <span class="truncate">{{ $group->name }}</span>
                                             </span>
                                         @endif
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Live Telemetry Stats (WPM, Tasks, Focus, Paste) -->
-                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-6 text-xs">
+                            <!-- Live Telemetry Stats (Fixed Grid & Width for Vertical Alignment) -->
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 text-xs w-full lg:w-[440px] xl:w-[480px] shrink-0">
                                 <!-- WPM Widget -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block">Live WPM</span>
-                                    <span class="text-base font-mono font-bold text-sky-400">{{ $session->wpm ?? 0 }}</span>
-                                    <span class="text-[10px] text-slate-500 block">words/min</span>
+                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
+                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Live WPM</span>
+                                    <span class="text-base font-mono font-bold text-sky-400 my-0.5">{{ $session->wpm ?? 0 }}</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">words/min</span>
                                 </div>
 
                                 <!-- Tasks Completed -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block">Tasks Done</span>
-                                    <span class="text-base font-mono font-bold text-emerald-400">{{ $tasksCount }}</span>
-                                    <span class="text-[10px] text-slate-500 block">completed</span>
+                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
+                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Tasks Done</span>
+                                    <span class="text-base font-mono font-bold text-emerald-400 my-0.5">{{ $tasksCount }}</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">completed</span>
                                 </div>
 
                                 <!-- Focus Losses -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block">Focus Lost</span>
-                                    <span class="text-base font-mono font-bold {{ ($session->focus_lost_count ?? 0) > 2 ? 'text-amber-400' : 'text-slate-300' }}">
+                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
+                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Focus Lost</span>
+                                    <span class="text-base font-mono font-bold my-0.5 {{ ($session->focus_lost_count ?? 0) > 2 ? 'text-amber-400' : 'text-slate-300' }}">
                                         {{ $session->focus_lost_count ?? 0 }}
                                     </span>
-                                    <span class="text-[10px] text-slate-500 block">window switches</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">window switches</span>
                                 </div>
 
                                 <!-- Paste Anomalies -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block">Paste Flags</span>
-                                    <span class="text-base font-mono font-bold {{ ($session->paste_anomaly_count ?? 0) > 0 ? 'text-rose-400 font-semibold' : 'text-slate-300' }}">
+                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
+                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Paste Flags</span>
+                                    <span class="text-base font-mono font-bold my-0.5 {{ ($session->paste_anomaly_count ?? 0) > 0 ? 'text-rose-400 font-semibold' : 'text-slate-300' }}">
                                         {{ $session->paste_anomaly_count ?? 0 }}
                                     </span>
-                                    <span class="text-[10px] text-slate-500 block">injections</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">injections</span>
                                 </div>
                             </div>
 
-                            <!-- Diff Tracking Pill & Action Buttons -->
-                            <div class="flex items-center gap-3 self-end lg:self-center">
+                            <!-- Diff Tracking Pill & Action Buttons (Aligned to End) -->
+                            <div class="flex items-center gap-2.5 justify-start lg:justify-end shrink-0">
                                 <!-- Diff Stats Pill -->
-                                <div class="text-[11px] font-mono bg-slate-950 px-2.5 py-1 rounded border border-slate-800 flex items-center gap-1.5" title="Line Diff Breakdown">
+                                <div class="text-[11px] font-mono bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 flex items-center gap-1.5 shrink-0" title="Line Diff Breakdown">
                                     <span class="text-[#3ecf8e] font-semibold">+{{ $diffStats['added'] ?? 0 }}</span>
                                     <span class="text-slate-600">/</span>
                                     <span class="text-rose-400 font-semibold">-{{ $diffStats['deleted'] ?? 0 }}</span>
@@ -214,23 +214,23 @@
 
                                 <!-- Anomaly History Modal Toggle -->
                                 <button @click="openAnomalyModal({{ $session->id }}, '{{ addslashes($user->name ?? 'Student') }}', {{ json_encode($anomaliesList) }})"
-                                        class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors flex items-center gap-1.5">
+                                        class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors flex items-center gap-1.5 shrink-0">
                                     <svg class="w-3.5 h-3.5 {{ $anomaliesList->count() > 0 ? 'text-amber-400' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                     <span>Anomalies ({{ $anomaliesList->count() }})</span>
                                 </button>
 
-                                <!-- End / Reopen Session Form -->
+                                <!-- End / Reopen Session Form with consistent button width -->
                                 @if($session->status === 'in_progress')
-                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student session? Their code will be auto-submitted and evaluated.');">
+                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student session? Their code will be auto-submitted and evaluated.');" class="shrink-0">
                                         @csrf
-                                        <button type="submit" class="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-colors">
+                                        <button type="submit" class="w-24 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-colors text-center">
                                             End Session
                                         </button>
                                     </form>
                                 @else
-                                    <form action="{{ route('instructor.sessions.reopen', $session->id) }}" method="POST">
+                                    <form action="{{ route('instructor.sessions.reopen', $session->id) }}" method="POST" class="shrink-0">
                                         @csrf
-                                        <button type="submit" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-colors">
+                                        <button type="submit" class="w-24 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-colors text-center">
                                             Reopen
                                         </button>
                                     </form>
