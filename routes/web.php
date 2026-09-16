@@ -96,6 +96,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
     Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
 
+    // Live Lab Lifecycle Controls (Feature 9)
+    Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');
+    Route::post('/laboratories/{id}/end-live', [LaboratoryController::class, 'endLive'])->name('laboratories.end-live');
+    Route::post('/laboratories/{id}/reopen-live', [LaboratoryController::class, 'reopenLive'])->name('laboratories.reopen-live');
+
     // Instructor Live Monitoring & Lifecycle Controls (Features 6 & 7)
     Route::post('/classes/{id}/end', [ClassController::class, 'endClass'])->name('classes.end');
     Route::post('/instructor/sessions/{id}/end', [ClassController::class, 'endSession'])->name('instructor.sessions.end');

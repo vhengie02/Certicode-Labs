@@ -16,6 +16,7 @@ This document outlines the final feature specifications, implementation tasks, a
 | **6. Instructor Live Monitoring Panel** | Web Platform (Instructor-Facing) | ✅ Completed | Live Telemetry & Polling Stream |
 | **7. Session Closure vs. Course Completion & Certification** | Backend, Web Platform & Database | ✅ Completed | REST + Lifecycle Evaluation |
 | **8. Camera Presence Check** | Pre-Lab Gate & Ongoing Proctoring | ⏳ Pending | WebRTC / Video Capture + AI |
+| **9. Lab Availability Modes (Live Lab vs. Open Lab)** | Backend, Web Platform & VS Code Extension | ✅ Completed | REST + Shared Live Window & Scheduled Cron |
 
 ---
 
@@ -272,6 +273,74 @@ This document outlines the final feature specifications, implementation tasks, a
 - [ ] **Instructor Notification & Anomaly Image Attachment**:
   - On presence failure, persist anomaly image snapshot to storage (`storage/app/anomalies/{session_id}/...`).
   - Broadcast real-time alert to instructor monitoring panel with captured evidence image attached.
+
+---
+
+## Feature 9: Lab Availability Modes — Live Lab vs. Open Lab
+
+### Specification
+When creating a lab exercise, the instructor selects one of two availability modes: **Live Lab** or **Open Lab**. This setting is completely orthogonal to the solo vs. team participation mode (Feature 2) — instructors can combine either availability mode with either participation mode.
+
+#### 1. Live Lab
+- **Manual Open Trigger**: The lab is inaccessible to students until the instructor manually opens it — there is no scheduled auto-start. Before manual open, students see the lab locked/not yet started.
+- **Fixed Duration Window**: When opening, the instructor sets a total duration (e.g., 60 minutes). This starts a synchronous countdown from the exact moment of instructor activation — not when individual students join.
+- **Shared Countdown Across All Students**: Every student shares the identical end time. If opened at 2:00 PM for 60 minutes, the lab closes for everyone at 3:00 PM regardless of when individual students join.
+  - *Example*: In a 60-minute Live Lab, Student A joins at minute 0 and gets 60 minutes. Student B joins 20 minutes late and gets 40 minutes.
+- **Automatic Auto-Close & Auto-Submit**: When the shared timer reaches zero:
+  - The lab automatically closes for all students simultaneously.
+  - All active, in-progress sessions are auto-submitted immediately as-is, following the Feature 7A closure evaluation sequence.
+- **Late Joiner Rules**:
+  - While the live countdown is running, late joiners can join and receive whatever remaining time is left.
+  - Once the countdown reaches zero, the lab is closed and late joiners are completely blocked from starting (`live_expired` status).
+- **Reopening Rules**:
+  - If the instructor reopens a closed Live Lab, students do NOT get a fresh duration.
+  - The countdown resumes with only the leftover remaining time from the original window.
+  - If reopened after full expiration (`remaining <= 0`), the instructor must explicitly provide additional minutes (`extend_minutes` / `add_minutes`).
+
+#### 2. Open Lab
+- **Self-Paced Availability**: Open by default upon creation. Students can access and complete the lab at their convenience anytime during the active course.
+- **Independent Per-Student Timer**: The timer (if set) is per-student and begins individually when that student clicks "Start Lab".
+  - *Example*: In a 60-minute Open Lab, Student A starts at 10:00 AM and has until 11:00 AM. Student B starts days later and gets their own full 60 minutes.
+- **Closure Rules**: Not tied to a shared countdown. An Open Lab closes only when:
+  1. The instructor manually closes an individual student's session (Feature 7A), or
+  2. The instructor concludes the entire course / course end date passes (Feature 7B).
+
+### Technical Requirements & Progress
+- [x] **Database Schema & Migration ([`2026_09_17_010000_add_availability_mode_to_laboratories_table.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/database/migrations/2026_09_17_010000_add_availability_mode_to_laboratories_table.php))**:
+  - Added `availability_mode` (`enum('open', 'live')`, default `'open'`).
+  - Added `live_duration_minutes` (`integer`, nullable).
+  - Added `live_status` (`enum('not_started', 'active', 'closed')`, default `'active'`).
+  - Added `live_started_at` (`timestamp`, nullable).
+  - Added `live_elapsed_seconds` (`integer`, default 0).
+- [x] **Laboratory Model State Machine ([`app/Models/Laboratory.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Models/Laboratory.php))**:
+  - Helpers: `isLiveLab()`, `isOpenLab()`, `isLiveActive()`, `isLiveNotStarted()`, `isLiveClosed()`.
+  - Timer computations: `getLiveTotalDurationSeconds()`, `getLiveElapsedSeconds()`, and `getRemainingLiveSeconds()`.
+  - Lifecycle actions: `openLive(?int $durationMinutes)`, `closeLive()`, `reopenLive(?int $extendMinutes)`, and proactive auto-close checker `checkAndAutoCloseLive()`.
+- [x] **Controller Endpoints & Authorization**:
+  - [`LaboratoryController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/LaboratoryController.php):
+    - `store()` & `update()` validation and persistence of availability mode and live duration.
+    - `startSession()` gates students from starting locked or expired Live Labs.
+    - Added `openLive()`, `endLive()`, and `reopenLive()` with instructor/admin authorization.
+  - [`Api/LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php):
+    - `startSession()` returns 403 `live_not_started` or `live_expired` blocks.
+    - `getSession()` returns shared countdown metrics (`time_remaining_seconds`, `is_live_expired`, `shared_countdown`, `live_status`).
+    - `getLeaderboard()` includes shared live countdown for all participants.
+    - Exposed authenticated API endpoints for `open-live`, `end-live`, and `reopen-live`.
+- [x] **Artisan Background Scheduled Worker ([`routes/console.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/routes/console.php))**:
+  - Command `certicode:close-expired-live-labs` scheduled to run `everyMinute()` to proactively close expired Live Labs and auto-submit student sessions.
+- [x] **Instructor Web Dashboard & Student Views**:
+  - [`create.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/create.blade.php) & [`edit.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/edit.blade.php): Interactive availability mode selector cards with configurable live duration input.
+  - [`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php): Visual badges (Live Lab vs Open Lab, status pill), student locked/expired notices, and instructor lifecycle buttons (`Open Live Lab`, `End Live Lab`, `Reopen Live Lab`).
+  - [`resources/views/instructor/monitoring/session.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/instructor/monitoring/session.blade.php): Real-time shared countdown banner with status badge and inline lifecycle controls.
+- [x] **VS Code Extension Integration ([`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
+  - Handled 403 `live_not_started` and `live_expired` gating on session connect.
+  - Added `#live-lab-alert` box rendering locked/expired notifications.
+  - Shared countdown synchronization across active students, freezing submission buttons when expired.
+  - Live Lab shared clock badge in leaderboard view.
+  - Compiled and packaged extension to `public/downloads/certicode-labs.vsix`.
+- [x] **Automated Feature Verification ([`tests/Feature/LiveLabAvailabilityTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/LiveLabAvailabilityTest.php))**:
+  - 12 comprehensive unit and integration tests covering: Open Lab default behavior, Live Lab creation, student gating before open, instructor manual start, late joiners receiving shared countdown, auto-close on timer expiry, late joiners blocked when expired, early close by instructor, and leftover-only reopening.
+  - Full suite verification: 118 passing tests with 483 assertions.
 
 ---
 

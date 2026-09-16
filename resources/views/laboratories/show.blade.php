@@ -12,14 +12,39 @@
 @endphp
 <div class="max-w-4xl mx-auto space-y-6">
     <div class="p-8 rounded-xl bg-[#171717] border border-[#2e2e2e]">
-        <div class="flex items-center justify-between mb-6">
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider {{ $laboratory->is_group_lab ? 'bg-[#141414] text-[#ededed] border border-[#2e2e2e]' : 'bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30' }}">
-                {{ $laboratory->is_group_lab ? 'Group Laboratory' : 'Individual Laboratory' }}
-            </span>
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider {{ $laboratory->is_group_lab ? 'bg-[#141414] text-[#ededed] border border-[#2e2e2e]' : 'bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30' }}">
+                    {{ $laboratory->is_group_lab ? 'Group Laboratory' : 'Individual Laboratory' }}
+                </span>
+
+                @if($laboratory->isLiveLab())
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-[#3ecf8e]/10 text-[#3ecf8e] border border-[#3ecf8e]/30">
+                        Live Lab (Shared Countdown)
+                    </span>
+                    @if($laboratory->isLiveNotStarted())
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                            🔒 Locked / Not Started
+                        </span>
+                    @elseif($laboratory->isLiveActive())
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                            🔴 Countdown Active ({{ max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60)) }}m remaining)
+                        </span>
+                    @else
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/30">
+                            ⏹️ Closed / Expired
+                        </span>
+                    @endif
+                @else
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-[#141414] text-[#a3a3a3] border border-[#2e2e2e]">
+                        Open Lab (Self-Paced)
+                    </span>
+                @endif
+            </div>
             
             <div class="flex items-center text-[#888888] text-xs font-mono">
                 <svg class="w-4 h-4 mr-1.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                TIME LIMIT: {{ $laboratory->time_limit }} MIN
+                {{ $laboratory->isLiveLab() ? 'DURATION WINDOW' : 'TIME LIMIT' }}: {{ $laboratory->isLiveLab() ? ($laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60) : $laboratory->time_limit }} MIN
             </div>
         </div>
 
@@ -340,34 +365,89 @@
                 </div>
             </div>
 
-            <div class="border-t border-[#232323] pt-6 flex justify-between items-center">
+            <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-4">
                 <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
                     &larr; Back to Module
                 </a>
 
-                @if($activeSession)
+                @if($laboratory->isLiveLab() && $laboratory->isLiveNotStarted())
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-mono text-amber-400">🔒 Waiting for instructor to open session</span>
+                        <button type="button" disabled class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#262626] text-xs font-semibold text-[#666666] cursor-not-allowed border border-[#333]">
+                            Lab Locked &rarr;
+                        </button>
+                    </div>
+                @elseif($laboratory->isLiveLab() && $laboratory->isLiveClosed())
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-mono text-red-400">⏱️ Live Countdown Expired</span>
+                        <button type="button" disabled class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#262626] text-xs font-semibold text-[#666666] cursor-not-allowed border border-[#333]">
+                            Session Closed &rarr;
+                        </button>
+                    </div>
+                @elseif($activeSession)
                     <form action="{{ route('laboratories.start', $laboratory->id) }}" method="POST">
                         @csrf
-                        <button type="submit" class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
+                        <button type="submit" class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
                             Resume Lab in VS Code &rarr;
                         </button>
                     </form>
                 @else
                     <form action="{{ route('laboratories.start', $laboratory->id) }}" method="POST">
                         @csrf
-                        <button type="submit" class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
+                        <button type="submit" class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
                             Start Lab in VS Code &rarr;
                         </button>
                     </form>
                 @endif
             </div>
         @else
-            <!-- Instructor edit action -->
+            <!-- Instructor actions & Live Lab lifecycle controls (Feature 9) -->
             <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-3">
                 <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
                     &larr; Back to Course
                 </a>
-                <div class="flex items-center gap-3">
+
+                <div class="flex items-center gap-3 flex-wrap">
+                    @if($laboratory->isLiveLab())
+                        @if($laboratory->isLiveNotStarted())
+                            <form action="{{ route('laboratories.open-live', $laboratory->id) }}" method="POST" class="inline-flex items-center gap-2">
+                                @csrf
+                                <div class="flex items-center gap-1.5 bg-[#141414] border border-[#2e2e2e] rounded-full px-3 py-1.5">
+                                    <span class="text-[11px] font-mono text-[#888]">Window:</span>
+                                    <input type="number" name="duration_minutes" value="{{ $laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60 }}" min="1" max="600" class="w-14 bg-transparent text-xs font-mono text-[#ededed] focus:outline-none" title="Duration in minutes">
+                                    <span class="text-[11px] font-mono text-[#888]">min</span>
+                                </div>
+                                <button type="submit" class="inline-flex items-center px-5 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
+                                    ▶️ Open Live Lab &rarr;
+                                </button>
+                            </form>
+                        @elseif($laboratory->isLiveActive())
+                            <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? All in-progress student workspaces will be auto-submitted and assessed.');">
+                                @csrf
+                                <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-full bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-xs font-semibold transition">
+                                    ⏹️ End Live Lab (Auto-Submit All)
+                                </button>
+                            </form>
+                        @else
+                            @if($laboratory->getRemainingLiveSeconds() > 0)
+                                <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST">
+                                    @csrf
+                                    <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition" title="Carries forward remaining time only">
+                                        🔄 Reopen Live Lab ({{ max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60)) }}m left)
+                                    </button>
+                                </form>
+                            @else
+                                <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST" class="inline-flex items-center gap-2">
+                                    @csrf
+                                    <input type="number" name="extend_minutes" value="15" min="1" max="180" class="w-16 px-2.5 py-1.5 bg-[#141414] border border-[#2e2e2e] text-xs font-mono rounded text-[#ededed]" title="Extend duration in minutes">
+                                    <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-full bg-[#1e1e1e] hover:bg-[#282828] text-xs text-[#ededed] border border-[#333] transition">
+                                        🔄 Extend & Reopen (+min)
+                                    </button>
+                                </form>
+                            @endif
+                        @endif
+                    @endif
+
                     <a href="{{ route('instructor.monitoring.show', $laboratory->id) }}" class="inline-flex items-center px-5 py-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition">
                         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-2"></span>
                         Live Student Monitoring &rarr;

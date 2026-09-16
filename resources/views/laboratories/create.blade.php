@@ -13,6 +13,7 @@
 
         <form action="{{ route('laboratories.store') }}" method="POST" class="space-y-6" 
               x-data="{ 
+                  availabilityMode: '{{ old('availability_mode', 'open') }}',
                   tasks: [{ task: '', command: '' }],
                   starterFiles: [
                       { name: 'TaskManager.java', content: '// Main entry point\npublic class TaskManager {\n    public static void main(String[] args) {\n        System.out.println(&quot;Hello, CertiCode!&quot;);\n    }\n}', is_primary: true, is_readonly: false }
@@ -84,6 +85,52 @@
                     <input type="text" name="github_repo_template" id="github_repo_template" placeholder="owner/repository" value="{{ old('github_repo_template') }}" 
                         class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors">
                     @error('github_repo_template') <p class="text-red-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
+            <!-- Availability Mode Selection (Feature 9: Live Lab vs. Open Lab) -->
+            <div class="col-span-1 md:col-span-2">
+                <label class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Lab Availability Mode</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label class="relative flex flex-col p-4 rounded-[6px] border cursor-pointer transition-all"
+                           :class="availabilityMode === 'open' ? 'border-[#3ecf8e] bg-[#3ecf8e]/5' : 'border-[#2e2e2e] bg-[#141414] hover:border-[#383838]'">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <div class="flex items-center gap-2">
+                                <input type="radio" name="availability_mode" value="open" x-model="availabilityMode" class="text-[#3ecf8e] focus:ring-[#3ecf8e]">
+                                <span class="text-sm font-bold text-[#ededed]">Open Lab</span>
+                            </div>
+                            <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-[#2e2e2e] text-[#a3a3a3]">Self-Paced</span>
+                        </div>
+                        <p class="text-xs text-[#888888] leading-relaxed">
+                            No time gating. Students can start whenever they choose with independent session timers. Closes only when manually ended or when course completes.
+                        </p>
+                    </label>
+
+                    <label class="relative flex flex-col p-4 rounded-[6px] border cursor-pointer transition-all"
+                           :class="availabilityMode === 'live' ? 'border-[#3ecf8e] bg-[#3ecf8e]/5' : 'border-[#2e2e2e] bg-[#141414] hover:border-[#383838]'">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <div class="flex items-center gap-2">
+                                <input type="radio" name="availability_mode" value="live" x-model="availabilityMode" class="text-[#3ecf8e] focus:ring-[#3ecf8e]">
+                                <span class="text-sm font-bold text-[#ededed]">Live Lab</span>
+                            </div>
+                            <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-[#3ecf8e]/20 text-[#3ecf8e]">Shared Countdown</span>
+                        </div>
+                        <p class="text-xs text-[#888888] leading-relaxed">
+                            Manual start trigger. Lab remains locked until instructor opens it. All students share the same countdown clock. Auto-closes when duration reaches zero.
+                        </p>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Live Lab Duration Window Configuration -->
+            <div x-show="availabilityMode === 'live'" x-cloak class="p-4 rounded-[6px] bg-[#141414] border border-[#2e2e2e]">
+                <label for="live_duration_minutes" class="block text-xs font-mono uppercase tracking-wider text-[#3ecf8e] mb-2">
+                    Live Lab Window Duration (Minutes)
+                </label>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <input type="number" name="live_duration_minutes" id="live_duration_minutes" min="1" max="600" value="{{ old('live_duration_minutes', 60) }}"
+                           class="w-full sm:w-48 px-3.5 py-2.5 bg-[#0d0d0d] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] focus:outline-none focus:border-[#3ecf8e] font-mono">
+                    <span class="text-xs text-[#888888]">Fixed duration window shared across all students upon manual launch.</span>
                 </div>
             </div>
 

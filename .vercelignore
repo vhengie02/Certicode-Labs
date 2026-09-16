@@ -1,0 +1,12 @@
+/vendor
+/node_modules
+/certicode-labs-extension/node_modules
+/certicode-labs-extension/src
+/certicode-labs-extension/out
+/storage/*.key
+/storage/logs/*
+/tests
+.env
+.env.example
+.git
+.github

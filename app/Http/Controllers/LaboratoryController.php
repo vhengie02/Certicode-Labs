@@ -43,6 +43,8 @@ class LaboratoryController extends Controller
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
             'is_group_lab' => 'boolean',
+            'availability_mode' => 'nullable|in:open,live',
+            'live_duration_minutes' => 'nullable|integer|min:1|max:600',
             'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
@@ -89,12 +91,18 @@ class LaboratoryController extends Controller
 
         $module = \App\Models\Module::findOrFail($validated['module_id']);
 
+        $availabilityMode = $validated['availability_mode'] ?? 'open';
+        $liveDuration = $validated['live_duration_minutes'] ?? $validated['time_limit'];
+
         $lab = Laboratory::create([
             'title' => $validated['title'],
             'description' => $validated['description'],
             'github_repo_template' => $validated['github_repo_template'] ?? null,
             'time_limit' => $validated['time_limit'],
             'is_group_lab' => $request->has('is_group_lab'),
+            'availability_mode' => $availabilityMode,
+            'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
+            'live_status' => $availabilityMode === 'live' ? 'not_started' : 'active',
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
             'starter_files' => !empty($starterFiles) ? $starterFiles : null,
@@ -158,6 +166,8 @@ class LaboratoryController extends Controller
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
             'is_group_lab' => 'boolean',
+            'availability_mode' => 'nullable|in:open,live',
+            'live_duration_minutes' => 'nullable|integer|min:1|max:600',
             'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
@@ -203,16 +213,27 @@ class LaboratoryController extends Controller
 
         $module = \App\Models\Module::findOrFail($validated['module_id']);
 
-        $laboratory->update([
+        $availabilityMode = $validated['availability_mode'] ?? $laboratory->availability_mode ?? 'open';
+        $liveDuration = $validated['live_duration_minutes'] ?? $laboratory->live_duration_minutes ?? $validated['time_limit'];
+
+        $updateData = [
             'title' => $validated['title'],
             'description' => $validated['description'],
             'github_repo_template' => $validated['github_repo_template'],
             'time_limit' => $validated['time_limit'],
             'is_group_lab' => $request->has('is_group_lab'),
+            'availability_mode' => $availabilityMode,
+            'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
             'starter_files' => !empty($starterFiles) ? $starterFiles : null,
-        ]);
+        ];
+
+        if ($availabilityMode === 'live' && empty($laboratory->live_status)) {
+            $updateData['live_status'] = 'not_started';
+        }
+
+        $laboratory->update($updateData);
 
         return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.');
     }
@@ -251,6 +272,19 @@ class LaboratoryController extends Controller
         $user = auth()->user();
 
         $this->recordUniqueView($laboratory);
+
+        // Feature 9: Live Lab availability gating
+        if ($laboratory->isLiveLab()) {
+            $laboratory->checkAndAutoCloseLive();
+
+            if ($laboratory->isLiveNotStarted()) {
+                return back()->with('error', 'This Live Lab has not been started yet. Please wait for the instructor to manually open the session.');
+            }
+
+            if ($laboratory->isLiveClosed() || $laboratory->getRemainingLiveSeconds() <= 0) {
+                return back()->with('error', 'The countdown for this Live Lab has expired. Late joiners are not permitted to start.');
+            }
+        }
 
         // Find existing in-progress session
         $session = \App\Models\LabSession::where('lab_id', $laboratory->id)
@@ -401,4 +435,53 @@ class LaboratoryController extends Controller
 
         return back()->with('error', 'Failed to generate starter files archive.');
     }
+
+    /**
+     * Manually trigger and open a Live Lab with a fixed duration window (Feature 9).
+     */
+    public function openLive(Request $request, int $id)
+    {
+        $this->authorizeAdminOrInstructor();
+        $laboratory = Laboratory::findOrFail($id);
+
+        $duration = $request->input('duration_minutes') ? (int) $request->input('duration_minutes') : null;
+        $laboratory->openLive($duration);
+
+        $mins = (int) ($laboratory->getLiveTotalDurationSeconds() / 60);
+        return back()->with('success', "Live Lab opened! The {$mins}-minute countdown has started for all students.");
+    }
+
+    /**
+     * Manually end a Live Lab immediately, auto-submitting all active sessions (Feature 9 & 7A).
+     */
+    public function endLive(Request $request, int $id)
+    {
+        $this->authorizeAdminOrInstructor();
+        $laboratory = Laboratory::findOrFail($id);
+
+        $laboratory->closeLive();
+
+        return back()->with('success', 'Live Lab ended. All active student sessions have been auto-submitted and closed.');
+    }
+
+    /**
+     * Reopen a closed Live Lab, carrying forward only the remaining time from the original countdown (Feature 9).
+     */
+    public function reopenLive(Request $request, int $id)
+    {
+        $this->authorizeAdminOrInstructor();
+        $laboratory = Laboratory::findOrFail($id);
+
+        $extendMinutes = $request->input('extend_minutes') ?? $request->input('add_minutes');
+        $extendMinutes = $extendMinutes ? (int) $extendMinutes : null;
+        $success = $laboratory->reopenLive($extendMinutes);
+
+        if (!$success) {
+            return back()->with('error', 'Cannot reopen Live Lab: The countdown duration has already fully expired. Live Labs do not grant a fresh duration.');
+        }
+
+        $remainingMin = max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60));
+        return back()->with('success', "Live Lab reopened! Countdown resumed with {$remainingMin} minute(s) remaining.");
+    }
 }
+

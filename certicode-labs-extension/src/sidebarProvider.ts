@@ -255,6 +255,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
                 // Fetch chats if group lab
                 this.fetchChatMessages();
+            } else if (result.status === 403) {
+                this._isReconnecting = false;
+                try {
+                    const errData = JSON.parse(result.body);
+                    this._view?.webview.postMessage({
+                        type: 'liveLabBlocked',
+                        error: errData.error || 'live_blocked',
+                        message: errData.message || 'Access blocked for this Live Lab.'
+                    });
+                } catch {
+                    this._view?.webview.postMessage({
+                        type: 'liveLabBlocked',
+                        error: 'live_blocked',
+                        message: 'Access blocked for this Live Lab.'
+                    });
+                }
             } else {
                 throw new Error(`Server returned status code: ${result.status}`);
             }
@@ -578,7 +594,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 const data = JSON.parse(res.body);
                 this._view?.webview.postMessage({
                     type: 'leaderboardData',
-                    leaderboard: data.leaderboard || []
+                    leaderboard: data.leaderboard || [],
+                    availability_mode: data.availability_mode || 'open',
+                    shared_time_remaining_formatted: data.shared_time_remaining_formatted,
+                    live_status: data.live_status
                 });
             }
         } catch (e) {
@@ -1575,6 +1594,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             </div>
         </div>
 
+        <!-- Feature 9 Live Lab State Alert -->
+        <div id="live-lab-alert" class="integrity-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #fca5a5;">
+            <span>⏱️</span>
+            <div class="flex-1">
+                <span id="live-lab-alert-text" style="font-weight: bold;">Live Lab Alert</span>
+            </div>
+        </div>
+
         <!-- Timer -->
         <div class="timer-box">
             <span id="timer-display">00:00</span>
@@ -1735,6 +1762,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const integrityAlert = document.getElementById('integrity-alert');
         const integrityText = document.getElementById('integrity-text');
         const regenerateFilesLink = document.getElementById('regenerate-files-link');
+
+        // Feature 9 Live Lab Alert
+        const liveLabAlert = document.getElementById('live-lab-alert');
+        const liveLabAlertText = document.getElementById('live-lab-alert-text');
 
         // Feature 2 Diff UI
         const pillAdded = document.getElementById('pill-added');
@@ -1972,10 +2003,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     const list = message.leaderboard || [];
                     const leaderboardContainer = document.getElementById('leaderboard-container');
                     if (leaderboardContainer) {
+                        leaderboardContainer.innerHTML = '';
+
+                        // Feature 9: Live Lab shared clock indicator on leaderboard
+                        if (message.availability_mode === 'live') {
+                            const clockBanner = document.createElement('div');
+                            clockBanner.style.cssText = 'padding: 6px 10px; background: rgba(62, 207, 142, 0.1); border: 1px solid rgba(62, 207, 142, 0.3); border-radius: 6px; font-size: 0.78em; color: #3ecf8e; font-weight: bold; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;';
+                            clockBanner.innerHTML = \`
+                                <span>⏱️ Live Lab Shared Clock</span>
+                                <span style="font-family: monospace; font-size: 1.1em;">\${message.shared_time_remaining_formatted || '00:00'} remaining</span>
+                            \`;
+                            leaderboardContainer.appendChild(clockBanner);
+                        }
+
                         if (list.length === 0) {
-                            leaderboardContainer.innerHTML = '<div style="text-align: center; color: var(--vscode-descriptionForeground); padding: 16px; font-size: 0.85em;">No active competitors or teams ranked yet.</div>';
+                            const emptyEl = document.createElement('div');
+                            emptyEl.style.cssText = 'text-align: center; color: var(--vscode-descriptionForeground); padding: 16px; font-size: 0.85em;';
+                            emptyEl.innerText = 'No active competitors or teams ranked yet.';
+                            leaderboardContainer.appendChild(emptyEl);
                         } else {
-                            leaderboardContainer.innerHTML = '';
                             list.forEach(item => {
                                 const row = document.createElement('div');
                                 row.className = 'leaderboard-row' + (item.is_current ? ' current-user' : '');
@@ -2002,6 +2048,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                             });
                         }
                     }
+                    break;
+
+                case 'liveLabBlocked':
+                    if (liveLabAlert && liveLabAlertText) {
+                        liveLabAlert.style.display = 'flex';
+                        liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                        liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                        liveLabAlert.style.color = '#fca5a5';
+                        liveLabAlertText.innerText = message.message || 'Access blocked for this Live Lab.';
+                    }
+                    if (checkProgressBtn) checkProgressBtn.disabled = true;
+                    if (submitBtn) submitBtn.disabled = true;
+                    if (timerInterval) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                    }
+                    timerLabel.innerText = message.error === 'live_not_started' ? 'Live Lab Locked' : 'Live Lab Expired';
                     break;
 
                 case 'reconnecting':
@@ -2098,30 +2161,67 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         tasksContainer.appendChild(taskItem);
                     });
                     
+                    // Feature 9: Live Lab state evaluation & alerts
+                    const isLive = session.availability_mode === 'live';
+                    const isLiveExpired = session.is_live_expired || (isLive && session.live_status === 'closed');
+                    const isLiveNotStarted = isLive && session.live_status === 'not_started';
+
+                    if (liveLabAlert && liveLabAlertText) {
+                        if (isLiveExpired) {
+                            liveLabAlert.style.display = 'flex';
+                            liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                            liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                            liveLabAlert.style.color = '#fca5a5';
+                            liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                            checkProgressBtn.disabled = true;
+                            submitBtn.disabled = true;
+                        } else if (isLiveNotStarted) {
+                            liveLabAlert.style.display = 'flex';
+                            liveLabAlert.style.background = 'rgba(245, 158, 11, 0.15)';
+                            liveLabAlert.style.borderColor = 'rgba(245, 158, 11, 0.35)';
+                            liveLabAlert.style.color = '#fcd34d';
+                            liveLabAlertText.innerText = '🔒 Live Lab Locked: Waiting for instructor to manually open the session window.';
+                            checkProgressBtn.disabled = true;
+                            submitBtn.disabled = true;
+                        } else {
+                            liveLabAlert.style.display = 'none';
+                        }
+                    }
+
                     // Setup timer
-                    if (session.status === 'completed') {
+                    if (session.status === 'completed' || isLiveExpired) {
                         if (timerInterval) {
                             clearInterval(timerInterval);
                             timerInterval = null;
                         }
-                        if (session.time_limit_minutes > 0) {
+                        if (session.time_limit_minutes > 0 || isLive) {
                             timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
                         } else {
                             timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
                         }
                         updateTimerDisplay();
-                        timerLabel.innerText = 'Session Completed';
+                        timerLabel.innerText = isLiveExpired ? 'Live Lab Expired' : 'Session Completed';
+                    } else if (isLiveNotStarted) {
+                        if (timerInterval) {
+                            clearInterval(timerInterval);
+                            timerInterval = null;
+                        }
+                        timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || (session.live_duration_minutes * 60) || 0));
+                        updateTimerDisplay();
+                        timerLabel.innerText = 'Live Lab Locked';
                     } else {
-                        if (session.time_limit_minutes > 0) {
+                        if (isLive || session.time_limit_minutes > 0) {
                             timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
                             isCountDown = true;
-                            timerLabel.innerText = timerVal > 0 ? 'Time Remaining' : 'Time Expired';
+                            timerLabel.innerText = isLive
+                                ? (timerVal > 0 ? 'Live Lab Countdown (Shared)' : 'Live Lab Expired')
+                                : (timerVal > 0 ? 'Time Remaining' : 'Time Expired');
                         } else {
                             timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
                             isCountDown = false;
                             timerLabel.innerText = 'Session Elapsed';
                         }
-                        startLocalTimer();
+                        startLocalTimer(isLive);
                     }
                     break;
                     
@@ -2179,7 +2279,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
         });
         
-        function startLocalTimer() {
+        function startLocalTimer(isLive = false) {
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
@@ -2188,7 +2288,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             updateTimerDisplay();
             
             if (isCountDown && timerVal <= 0) {
-                timerLabel.innerText = 'Time Expired';
+                timerLabel.innerText = isLive ? 'Live Lab Expired' : 'Time Expired';
+                if (isLive) {
+                    if (liveLabAlert && liveLabAlertText) {
+                        liveLabAlert.style.display = 'flex';
+                        liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                        liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                        liveLabAlert.style.color = '#fca5a5';
+                        liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                    }
+                    if (checkProgressBtn) checkProgressBtn.disabled = true;
+                    if (submitBtn) submitBtn.disabled = true;
+                }
                 return;
             }
             
@@ -2199,7 +2310,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     } else {
                         clearInterval(timerInterval);
                         timerInterval = null;
-                        timerLabel.innerText = 'Time Expired';
+                        timerLabel.innerText = isLive ? 'Live Lab Expired' : 'Time Expired';
+                        if (isLive) {
+                            if (liveLabAlert && liveLabAlertText) {
+                                liveLabAlert.style.display = 'flex';
+                                liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                                liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                                liveLabAlert.style.color = '#fca5a5';
+                                liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                            }
+                            if (checkProgressBtn) checkProgressBtn.disabled = true;
+                            if (submitBtn) submitBtn.disabled = true;
+                        }
                     }
                 } else {
                     timerVal++;

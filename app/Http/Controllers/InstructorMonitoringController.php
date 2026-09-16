@@ -20,6 +20,7 @@ class InstructorMonitoringController extends Controller
         $this->authorizeInstructor();
 
         $laboratory = Laboratory::with(['module.schoolClass.instructor', 'module.schoolClass.students'])->findOrFail($labId);
+        $laboratory->checkAndAutoCloseLive();
         $schoolClass = $laboratory->module ? $laboratory->module->schoolClass : null;
 
         $sortBy = $request->query('sort', 'name'); // 'name' or 'group'
@@ -71,6 +72,18 @@ class InstructorMonitoringController extends Controller
         $this->authorizeInstructor();
 
         $laboratory = Laboratory::findOrFail($labId);
+        $laboratory->checkAndAutoCloseLive();
+
+        $sharedCountdown = null;
+        if ($laboratory->isLiveLab()) {
+            $remaining = $laboratory->getRemainingLiveSeconds();
+            $sharedCountdown = [
+                'remaining_seconds' => $remaining,
+                'remaining_formatted' => sprintf('%02d:%02d', floor($remaining / 60), $remaining % 60),
+                'live_status' => $laboratory->live_status,
+                'is_expired' => $laboratory->isLiveClosed(),
+            ];
+        }
 
         $sessions = LabSession::with(['user', 'group', 'anomalies'])
             ->where('lab_id', $laboratory->id)
@@ -114,6 +127,8 @@ class InstructorMonitoringController extends Controller
 
         return response()->json([
             'status' => 'success',
+            'availability_mode' => $laboratory->availability_mode ?? 'open',
+            'shared_countdown' => $sharedCountdown,
             'sessions' => $sessions,
         ]);
     }

@@ -30,6 +30,25 @@ class LabSessionController extends Controller
         $lab = Laboratory::findOrFail($labId);
         $user = $request->user();
 
+        // Feature 9: Live Lab availability gating
+        if ($lab->isLiveLab()) {
+            $lab->checkAndAutoCloseLive();
+
+            if ($lab->isLiveNotStarted()) {
+                return response()->json([
+                    'error' => 'live_not_started',
+                    'message' => 'This Live Lab has not been opened by the instructor yet. Please wait for the instructor to manually start the session.',
+                ], 403);
+            }
+
+            if ($lab->isLiveClosed() || $lab->getRemainingLiveSeconds() <= 0) {
+                return response()->json([
+                    'error' => 'live_expired',
+                    'message' => 'The countdown for this Live Lab has expired. Late joiners are not permitted to start.',
+                ], 403);
+            }
+        }
+
         // Find or create session
         $session = LabSession::where('lab_id', $lab->id)
             ->where('user_id', $user->id)
@@ -393,12 +412,31 @@ class LabSessionController extends Controller
         $session = LabSession::with(['laboratory', 'user', 'group.members'])->findOrFail($sessionId);
         $lab = $session->laboratory;
 
-        $timeLimitSeconds = ($lab->time_limit ?? 0) * 60;
-        $endTime = $session->ended_at ?? now();
-        $elapsedSeconds = ($session->started_at && $endTime->gte($session->started_at))
-            ? (int) $session->started_at->diffInSeconds($endTime, true)
-            : 0;
-        $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
+        $isLiveExpired = false;
+        if ($lab && $lab->isLiveLab()) {
+            $lab->checkAndAutoCloseLive();
+            $remaining = $lab->getRemainingLiveSeconds();
+            $isLiveExpired = ($lab->live_status === 'closed' || $remaining <= 0);
+
+            if ($isLiveExpired && $session->status === 'in_progress') {
+                $session->update([
+                    'status' => 'completed',
+                    'ended_at' => $session->ended_at ?: now(),
+                    'closed_at' => now(),
+                ]);
+            }
+
+            $timeRemainingSeconds = $remaining;
+            $elapsedSeconds = $lab->getLiveElapsedSeconds();
+            $timeLimitSeconds = $lab->getLiveTotalDurationSeconds();
+        } else {
+            $timeLimitSeconds = ($lab->time_limit ?? 0) * 60;
+            $endTime = $session->ended_at ?? now();
+            $elapsedSeconds = ($session->started_at && $endTime->gte($session->started_at))
+                ? (int) $session->started_at->diffInSeconds($endTime, true)
+                : 0;
+            $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
+        }
 
         $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $currentUser = $request->user() ?? $session->user;
@@ -428,7 +466,13 @@ class LabSessionController extends Controller
             'started_at' => $session->started_at,
             'elapsed_seconds' => $elapsedSeconds,
             'time_remaining_seconds' => $timeRemainingSeconds,
-            'time_limit_minutes' => $lab->time_limit ?? 0,
+            'time_limit_minutes' => $lab->isLiveLab() ? (int) ($lab->getLiveTotalDurationSeconds() / 60) : ($lab->time_limit ?? 0),
+            'availability_mode' => $lab->availability_mode ?? 'open',
+            'live_status' => $lab->live_status ?? 'not_started',
+            'is_live_expired' => $isLiveExpired,
+            'shared_countdown' => (bool) $lab->isLiveLab(),
+            'live_started_at' => $lab->live_started_at,
+            'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
             'performance_score' => $session->performance_score,
             'completed_tasks' => $session->completed_tasks ?? [],
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
@@ -446,6 +490,9 @@ class LabSessionController extends Controller
                 'title' => $lab->title,
                 'description' => $lab->description,
                 'is_group_lab' => (bool) $lab->is_group_lab,
+                'availability_mode' => $lab->availability_mode ?? 'open',
+                'live_status' => $lab->live_status ?? 'not_started',
+                'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
                 'tasks_definition' => $lab->tasks_definition ?? [],
                 'starter_files' => $lab->getStarterFilesList(),
             ]
@@ -839,8 +886,21 @@ class LabSessionController extends Controller
                 return $item;
             });
 
+        $lab = $session->laboratory;
+        $sharedRemaining = null;
+        $sharedRemainingFormatted = null;
+        if ($lab && $lab->isLiveLab()) {
+            $lab->checkAndAutoCloseLive();
+            $sharedRemaining = $lab->getRemainingLiveSeconds();
+            $sharedRemainingFormatted = sprintf('%02d:%02d', floor($sharedRemaining / 60), $sharedRemaining % 60);
+        }
+
         return response()->json([
             'status' => 'success',
+            'availability_mode' => $lab ? ($lab->availability_mode ?? 'open') : 'open',
+            'live_status' => $lab ? $lab->live_status : null,
+            'shared_time_remaining' => $sharedRemaining,
+            'shared_time_remaining_formatted' => $sharedRemainingFormatted,
             'leaderboard' => $sessions,
         ]);
     }
@@ -883,6 +943,84 @@ class LabSessionController extends Controller
             'status' => 'success',
             'message' => 'Lab session reopened.',
             'session' => $session,
+        ]);
+    }
+
+    /**
+     * Manually trigger open Live Lab via API (Feature 9).
+     */
+    public function openLive(Request $request, int $labId)
+    {
+        $user = $request->user();
+        if (!$user || !in_array($user->role, ['admin', 'instructor'])) {
+            return response()->json([
+                'error' => 'Unauthorized action. Only instructors or admins can manage Live Labs.',
+            ], 403);
+        }
+
+        $lab = Laboratory::findOrFail($labId);
+        $duration = $request->input('duration_minutes') ? (int) $request->input('duration_minutes') : null;
+        $lab->openLive($duration);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Live Lab opened and shared countdown started.',
+            'laboratory' => $lab,
+            'remaining_seconds' => $lab->getRemainingLiveSeconds(),
+        ]);
+    }
+
+    /**
+     * Manually end Live Lab via API, auto-submitting student work (Feature 9 & 7A).
+     */
+    public function endLive(Request $request, int $labId)
+    {
+        $user = $request->user();
+        if (!$user || !in_array($user->role, ['admin', 'instructor'])) {
+            return response()->json([
+                'error' => 'Unauthorized action. Only instructors or admins can manage Live Labs.',
+            ], 403);
+        }
+
+        $lab = Laboratory::findOrFail($labId);
+        $lab->closeLive();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Live Lab ended and all active student sessions auto-submitted.',
+            'laboratory' => $lab,
+        ]);
+    }
+
+    /**
+     * Reopen Live Lab via API with leftover remaining duration (Feature 9).
+     */
+    public function reopenLive(Request $request, int $labId)
+    {
+        $user = $request->user();
+        if (!$user || !in_array($user->role, ['admin', 'instructor'])) {
+            return response()->json([
+                'error' => 'Unauthorized action. Only instructors or admins can manage Live Labs.',
+            ], 403);
+        }
+
+        $lab = Laboratory::findOrFail($labId);
+        $extendMinutes = $request->input('extend_minutes') ?? $request->input('add_minutes');
+        $extendMinutes = $extendMinutes ? (int) $extendMinutes : null;
+        $success = $lab->reopenLive($extendMinutes);
+
+        if (!$success) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot reopen Live Lab: countdown duration has already fully expired. Live Labs do not grant a fresh duration.',
+            ], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Live Lab reopened with remaining leftover countdown.',
+            'laboratory' => $lab,
+            'remaining_seconds' => $lab->getRemainingLiveSeconds(),
         ]);
     }
 }

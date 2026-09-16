@@ -33,6 +33,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
     Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
     Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+    Route::post('/labs/{labId}/open-live', [LabSessionController::class, 'openLive']);
+    Route::post('/labs/{labId}/end-live', [LabSessionController::class, 'endLive']);
+    Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
 });
 
 // Public Prototyping routes (v1 prefix) for early-stage frontend testing without tokens
@@ -50,4 +53,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
     Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
     Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+    Route::post('/labs/{labId}/open-live', [LabSessionController::class, 'openLive']);
+    Route::post('/labs/{labId}/end-live', [LabSessionController::class, 'endLive']);
+    Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
 });
