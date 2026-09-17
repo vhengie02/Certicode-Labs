@@ -444,5 +444,13 @@ function instructorMonitor() {
         }
     };
 }
+window.instructorMonitor = instructorMonitor;
+if (window.Alpine) {
+    window.Alpine.data('instructorMonitor', instructorMonitor);
+} else {
+    document.addEventListener('alpine:init', () => {
+        window.Alpine.data('instructorMonitor', instructorMonitor);
+    });
+}
 </script>
 @endsection

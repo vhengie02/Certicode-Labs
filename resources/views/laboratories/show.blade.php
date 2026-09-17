@@ -391,7 +391,8 @@
                         <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
                         <button type="button" 
                                 @click="handleStartClick()"
-                                class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
+                                onclick="if(!window.Alpine){ document.getElementById('start-lab-form').submit(); }"
+                                class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm cursor-pointer">
                             <span>{{ $activeSession ? 'Resume Lab in VS Code' : 'Start Lab in VS Code' }} &rarr;</span>
                         </button>
                     </form>
@@ -468,6 +469,13 @@
                                             @click="requestCamera()" 
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
                                         Retry Camera Check
+                                    </button>
+
+                                    <button x-show="status === 'denied' || status === 'failed'" 
+                                            type="button" 
+                                            @click="launchLab()" 
+                                            class="px-3 py-2 rounded-lg bg-[#262626] border border-[#333] hover:bg-[#333] text-xs font-medium text-[#a3a3a3] hover:text-white transition">
+                                        Proceed to VS Code Anyway &rarr;
                                     </button>
 
                                     <button x-show="status === 'verified'"
@@ -664,6 +672,14 @@ function preLabCameraGate(labId, activeSessionId) {
             this.showModal = false;
         }
     };
+}
+window.preLabCameraGate = preLabCameraGate;
+if (window.Alpine) {
+    window.Alpine.data('preLabCameraGate', preLabCameraGate);
+} else {
+    document.addEventListener('alpine:init', () => {
+        window.Alpine.data('preLabCameraGate', preLabCameraGate);
+    });
 }
 </script>
 @endsection
