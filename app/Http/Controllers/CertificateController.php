@@ -53,12 +53,16 @@ class CertificateController extends Controller
             ]);
 
             // Notify user
-            $user->notify(new \App\Notifications\ClassActivityNotification(
-                "Certificate Earned: {$class->name}",
-                "Congratulations! You have completed all laboratories in '{$class->name}' and earned your verified competency certificate.",
-                route('certificates.show', $certificate->id),
-                'certificate'
-            ));
+            try {
+                $user->notify(new \App\Notifications\ClassActivityNotification(
+                    "Certificate Earned: {$class->name}",
+                    "Congratulations! You have completed all laboratories in '{$class->name}' and earned your verified competency certificate.",
+                    route('certificates.show', $certificate->id),
+                    'certificate'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Certificate claim notification failed: " . $e->getMessage());
+            }
         }
 
         return redirect()->route('certificates.show', $certificate->id)

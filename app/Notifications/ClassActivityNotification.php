@@ -53,7 +53,16 @@ class ClassActivityNotification extends Notification
             }
 
             if ($shouldSend) {
-                $channels[] = 'mail';
+                $defaultMailer = config('mail.default');
+                if ($defaultMailer === 'smtp') {
+                    $host = config('mail.mailers.smtp.host');
+                    $user = config('mail.mailers.smtp.username');
+                    if (!empty($host) && !in_array($host, ['127.0.0.1', 'localhost']) && !empty($user)) {
+                        $channels[] = 'mail';
+                    }
+                } elseif (!empty($defaultMailer) && $defaultMailer !== 'array') {
+                    $channels[] = 'mail';
+                }
             }
         }
 

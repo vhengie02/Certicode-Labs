@@ -45,6 +45,7 @@
     "SESSION_SECURE_COOKIE": "true",
     "BCRYPT_ROUNDS": "12",
     "QUEUE_CONNECTION": "sync",
+    "MAIL_MAILER": "log",
     "LOG_CHANNEL": "stderr",
     "DB_CONNECTION": "pgsql",
     "APP_MAINTENANCE_DRIVER": "file"

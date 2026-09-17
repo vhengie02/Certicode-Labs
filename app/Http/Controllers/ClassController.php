@@ -216,12 +216,16 @@ class ClassController extends Controller
         ]);
 
         // Send invite notification
-        $student->notify(new \App\Notifications\ClassActivityNotification(
-            "Invited to Class: {$class->name}",
-            "You have been invited to join the class '{$class->name}' by {$class->instructor->name}.",
-            route('classes.index'),
-            'class'
-        ));
+        try {
+            $student->notify(new \App\Notifications\ClassActivityNotification(
+                "Invited to Class: {$class->name}",
+                "You have been invited to join the class '{$class->name}' by {$class->instructor->name}.",
+                route('classes.index'),
+                'class'
+            ));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Student invite notification failed: " . $e->getMessage());
+        }
 
         return redirect()->back()->with('success', 'Invitation successfully sent. The class will automatically appear in ' . $student->name . '\'s Classes tab.');
     }
@@ -243,12 +247,16 @@ class ClassController extends Controller
 
         // Notify the instructor
         if ($class->instructor) {
-            $class->instructor->notify(new \App\Notifications\ClassActivityNotification(
-                "Student Joined Class: {$class->name}",
-                "{$student->name} has accepted your invitation and joined the class '{$class->name}'.",
-                route('classes.show', $class->id),
-                'class'
-            ));
+            try {
+                $class->instructor->notify(new \App\Notifications\ClassActivityNotification(
+                    "Student Joined Class: {$class->name}",
+                    "{$student->name} has accepted your invitation and joined the class '{$class->name}'.",
+                    route('classes.show', $class->id),
+                    'class'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Instructor join notification failed: " . $e->getMessage());
+            }
         }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Invitation accepted. Welcome to ' . $class->name . '!');
@@ -316,12 +324,16 @@ class ClassController extends Controller
         // Notify enrolled students
         $students = $class->students()->wherePivot('status', 'enrolled')->get();
         foreach ($students as $student) {
-            $student->notify(new \App\Notifications\ClassActivityNotification(
-                "New Module: {$module->title}",
-                "A new module '{$module->title}' has been uploaded in {$class->name}.",
-                route('modules.show', [$class->id, $module->id]),
-                'module'
-            ));
+            try {
+                $student->notify(new \App\Notifications\ClassActivityNotification(
+                    "New Module: {$module->title}",
+                    "A new module '{$module->title}' has been uploaded in {$class->name}.",
+                    route('modules.show', [$class->id, $module->id]),
+                    'module'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Module notification failed: " . $e->getMessage());
+            }
         }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Module created successfully.');
@@ -584,12 +596,16 @@ class ClassController extends Controller
                         'issued_at' => now(),
                     ]);
 
-                    $student->notify(new \App\Notifications\ClassActivityNotification(
-                        "Course Completed: {$class->name}",
-                        "Congratulations! You completed '{$class->name}' with {$progress['percent']}% (threshold: {$threshold}%) and earned your official certificate.",
-                        route('certificates.show', $cert->id),
-                        'certificate'
-                    ));
+                    try {
+                        $student->notify(new \App\Notifications\ClassActivityNotification(
+                            "Course Completed: {$class->name}",
+                            "Congratulations! You completed '{$class->name}' with {$progress['percent']}% (threshold: {$threshold}%) and earned your official certificate.",
+                            route('certificates.show', $cert->id),
+                            'certificate'
+                        ));
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning("Certificate notification failed: " . $e->getMessage());
+                    }
 
                     $certifiedCount++;
                 }

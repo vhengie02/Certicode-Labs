@@ -112,12 +112,16 @@ class LaboratoryController extends Controller
         $class = \App\Models\SchoolClass::findOrFail($module->class_id);
         $students = $class->students()->wherePivot('status', 'enrolled')->get();
         foreach ($students as $student) {
-            $student->notify(new \App\Notifications\ClassActivityNotification(
-                "New Lab Challenge: {$lab->title}",
-                "A new laboratory exercise '{$lab->title}' has been added to module '{$module->title}' in {$class->name}.",
-                route('modules.show', [$class->id, $module->id]),
-                'lab'
-            ));
+            try {
+                $student->notify(new \App\Notifications\ClassActivityNotification(
+                    "New Lab Challenge: {$lab->title}",
+                    "A new laboratory exercise '{$lab->title}' has been added to module '{$module->title}' in {$class->name}.",
+                    route('modules.show', [$class->id, $module->id]),
+                    'lab'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Failed to deliver lab notification to student {$student->id}: " . $e->getMessage());
+            }
         }
 
         return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory created successfully.');
