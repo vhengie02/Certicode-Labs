@@ -16,41 +16,51 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // 1. Seed Instructor
-        $instructor = User::create([
-            'name' => 'Dr. Jane Smith',
-            'email' => 'instructor@example.com',
-            'password' => bcrypt('password'),
-            'role' => 'instructor',
-        ]);
+        $instructor = User::firstOrCreate(
+            ['email' => 'instructor@example.com'],
+            [
+                'name' => 'Dr. Jane Smith',
+                'password' => bcrypt('password'),
+                'role' => 'instructor',
+            ]
+        );
 
         // 2. Seed Student
-        $student = User::create([
-            'name' => 'John Doe',
-            'email' => 'student@example.com',
-            'password' => bcrypt('password'),
-            'role' => 'student',
-            'github_username' => 'johndoe',
-        ]);
+        $student = User::firstOrCreate(
+            ['email' => 'student@example.com'],
+            [
+                'name' => 'John Doe',
+                'password' => bcrypt('password'),
+                'role' => 'student',
+                'github_username' => 'johndoe',
+            ]
+        );
 
         // 3. Seed Class
-        $class = \App\Models\SchoolClass::create([
-            'name' => 'Java Programming Essentials',
-            'code' => 'JAVA101',
-            'instructor_id' => $instructor->id,
-            'description' => 'Introduction to Object-Oriented Programming and Exception Handling in Java.',
-        ]);
+        $class = \App\Models\SchoolClass::firstOrCreate(
+            ['code' => 'JAVA101'],
+            [
+                'name' => 'Java Programming Essentials',
+                'instructor_id' => $instructor->id,
+                'description' => 'Introduction to Object-Oriented Programming and Exception Handling in Java.',
+            ]
+        );
 
         // Enroll Student
-        $class->students()->attach($student->id, ['status' => 'enrolled']);
+        $class->students()->syncWithoutDetaching([$student->id => ['status' => 'enrolled']]);
 
         // 4. Seed Module
-        $module = \App\Models\Module::create([
-            'class_id' => $class->id,
-            'title' => 'OOP, Encapsulation & Exceptions',
-            'description' => 'Learn how to create custom exceptions and encapsulate class state in Java.',
-            'content' => 'This module covers Java exceptions hierarchy, custom exceptions, and fields encapsulation.',
-            'order_index' => 1,
-        ]);
+        $module = \App\Models\Module::firstOrCreate(
+            [
+                'class_id' => $class->id,
+                'title' => 'OOP, Encapsulation & Exceptions',
+            ],
+            [
+                'description' => 'Learn how to create custom exceptions and encapsulate class state in Java.',
+                'content' => 'This module covers Java exceptions hierarchy, custom exceptions, and fields encapsulation.',
+                'order_index' => 1,
+            ]
+        );
 
         // 5. Seed Java Laboratory
         $javaReferenceCode = <<<'JAVA'
@@ -136,28 +146,36 @@ JAVA;
             ],
         ];
 
-        $laboratory = \App\Models\Laboratory::create([
-            'module_id' => $module->id,
-            'title' => 'Java OOP: Custom Exceptions & Encapsulation',
-            'description' => 'In this lab, you will implement a custom exception named `InvalidAgeException` and enforce encapsulation in a `Student` class.\n\nInstructions:\n1. Implement `InvalidAgeException` extending `Exception`.\n2. Implement `Student` with private fields `name` and `age`.\n3. Validate age in constructor, throwing `InvalidAgeException` if out of bounds (0-150).\n4. Try instantiating Student with invalid age in `Main`, catch it, and print the exception message.',
-            'tasks_definition' => $tasks,
-            'reference_solution' => $javaReferenceCode,
-            'rubric' => $rubric,
-            'test_cases' => $testCases,
-            'time_limit' => 30,
-            'is_group_lab' => false,
-            'availability_mode' => 'open',
-        ]);
+        $laboratory = \App\Models\Laboratory::updateOrCreate(
+            [
+                'module_id' => $module->id,
+                'title' => 'Java OOP: Custom Exceptions & Encapsulation',
+            ],
+            [
+                'description' => 'In this lab, you will implement a custom exception named `InvalidAgeException` and enforce encapsulation in a `Student` class.\n\nInstructions:\n1. Implement `InvalidAgeException` extending `Exception`.\n2. Implement `Student` with private fields `name` and `age`.\n3. Validate age in constructor, throwing `InvalidAgeException` if out of bounds (0-150).\n4. Try instantiating Student with invalid age in `Main`, catch it, and print the exception message.',
+                'tasks_definition' => $tasks,
+                'reference_solution' => $javaReferenceCode,
+                'rubric' => $rubric,
+                'test_cases' => $testCases,
+                'time_limit' => 30,
+                'is_group_lab' => false,
+                'availability_mode' => 'open',
+            ]
+        );
 
         // 6. Seed initial in-progress lab session for testing
-        \App\Models\LabSession::create([
-            'lab_id' => $laboratory->id,
-            'user_id' => $student->id,
-            'status' => 'in_progress',
-            'started_at' => now(),
-            'performance_score' => 0.0,
-            'completed_tasks' => [],
-        ]);
+        \App\Models\LabSession::firstOrCreate(
+            [
+                'lab_id' => $laboratory->id,
+                'user_id' => $student->id,
+            ],
+            [
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'performance_score' => 0.0,
+                'completed_tasks' => [],
+            ]
+        );
 
         // 7. Seed full showcase accounts, classes, modules, labs, certificates, and competencies
         $this->call(ShowcaseAccountSeeder::class);
