@@ -54,10 +54,13 @@ putenv('APP_NAME=Certicode Labs');
 putenv('SESSION_COOKIE=certicode_labs_session');
 putenv('SESSION_LIFETIME=120');
 putenv('SESSION_EXPIRE_ON_CLOSE=false');
+putenv('BCRYPT_ROUNDS=12');
 $_ENV['SESSION_LIFETIME'] = '120';
 $_ENV['SESSION_EXPIRE_ON_CLOSE'] = 'false';
+$_ENV['BCRYPT_ROUNDS'] = '12';
 $_SERVER['SESSION_LIFETIME'] = '120';
 $_SERVER['SESSION_EXPIRE_ON_CLOSE'] = 'false';
+$_SERVER['BCRYPT_ROUNDS'] = '12';
 
 try {
     // Autoload Composer dependencies

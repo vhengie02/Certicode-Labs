@@ -43,6 +43,7 @@
     "SESSION_LIFETIME": "120",
     "SESSION_EXPIRE_ON_CLOSE": "false",
     "SESSION_SECURE_COOKIE": "true",
+    "BCRYPT_ROUNDS": "12",
     "QUEUE_CONNECTION": "sync",
     "LOG_CHANNEL": "stderr",
     "DB_CONNECTION": "pgsql",

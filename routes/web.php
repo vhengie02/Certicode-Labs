@@ -50,6 +50,23 @@ Route::get('/health-check', function () {
         ],
         'env_session_lifetime' => env('SESSION_LIFETIME'),
         'env_session_expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE'),
+        'bcrypt_test' => (function () {
+            try {
+                $hash = password_hash('test', PASSWORD_BCRYPT, ['cost' => 10]);
+                return ['ok' => true, 'hash' => substr($hash, 0, 10)];
+            } catch (\Throwable $e) {
+                return ['ok' => false, 'error' => $e->getMessage(), 'type' => get_class($e)];
+            }
+        })(),
+        'laravel_hash_test' => (function () {
+            try {
+                $hash = \Illuminate\Support\Facades\Hash::make('test');
+                return ['ok' => true, 'hash' => substr($hash, 0, 10)];
+            } catch (\Throwable $e) {
+                return ['ok' => false, 'error' => $e->getMessage(), 'type' => get_class($e)];
+            }
+        })(),
+        'hashing_config' => config('hashing'),
     ]);
 })->withoutMiddleware([
     \Illuminate\Cookie\Middleware\EncryptCookies::class,
