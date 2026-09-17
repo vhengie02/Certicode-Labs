@@ -149,7 +149,7 @@
                 <!-- Email Input -->
                 <div>
                     <label for="email" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-1.5">Email Address</label>
-                    <input id="email" name="email" type="email" value="{{ old('email') }}" required autofocus
+                    <input id="email" name="email" type="email" value="{{ old('email') }}" required autofocus tabindex="1"
                            class="w-full px-3 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors" 
                            placeholder="developer@example.com">
                 </div>
@@ -158,13 +158,13 @@
                 <div>
                     <div class="flex justify-between items-center mb-1.5">
                         <label for="password" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3]">Password</label>
-                        <a href="{{ route('password.request') }}" class="text-xs text-[#888888] hover:text-[#3ecf8e] transition-colors">Forgot Password?</a>
+                        <a href="{{ route('password.request') }}" tabindex="5" class="text-xs text-[#888888] hover:text-[#3ecf8e] transition-colors">Forgot Password?</a>
                     </div>
                     <div class="relative">
-                        <input id="password" name="password" type="password" required 
+                        <input id="password" name="password" type="password" required tabindex="2"
                                class="w-full pl-3 pr-10 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e] transition-colors" 
                                placeholder="••••••••">
-                        <button type="button" onclick="togglePasswordVisibility('password', 'password-eye-icon')" class="absolute inset-y-0 right-0 pr-3 flex items-center text-[#666666] hover:text-[#ededed] transition-colors">
+                        <button type="button" tabindex="-1" onclick="togglePasswordVisibility('password', 'password-eye-icon')" class="absolute inset-y-0 right-0 pr-3 flex items-center text-[#666666] hover:text-[#ededed] transition-colors">
                             <svg id="password-eye-icon" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -176,14 +176,14 @@
                 <!-- Remember Me checkbox -->
                 <div class="flex items-center justify-between pt-1">
                     <label class="flex items-center text-xs text-[#888888] cursor-pointer select-none">
-                        <input id="remember" name="remember" type="checkbox" class="h-4 w-4 rounded-[4px] bg-[#141414] border-[#2e2e2e] text-[#3ecf8e] focus:ring-[#3ecf8e] focus:ring-offset-0">
+                        <input id="remember" name="remember" type="checkbox" tabindex="3" class="h-4 w-4 rounded-[4px] bg-[#141414] border-[#2e2e2e] text-[#3ecf8e] focus:ring-[#3ecf8e] focus:ring-offset-0">
                         <span class="ml-2">Keep me signed in</span>
                     </label>
                 </div>
 
                 <!-- Action Button: Pill CTA -->
                 <div class="pt-2">
-                    <button type="submit" class="w-full py-2.5 px-4 rounded-full bg-[#3ecf8e] text-sm font-semibold text-[#0f0f0f] hover:bg-[#00c573] focus:outline-none transition-colors">
+                    <button type="submit" tabindex="4" class="w-full py-2.5 px-4 rounded-full bg-[#3ecf8e] text-sm font-semibold text-[#0f0f0f] hover:bg-[#00c573] focus:outline-none transition-colors">
                         Sign In
                     </button>
                 </div>
