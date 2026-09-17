@@ -56,15 +56,16 @@ try {
 
     // Capture and handle the incoming HTTP request
     $request = Request::capture();
-    $response = $app->handleRequest($request);
-    $response->send();
+    $app->handleRequest($request);
 } catch (\Throwable $e) {
     error_log("Vercel Serverless Fatal Exception: " . $e->getMessage() . "\n" . $e->getTraceAsString());
 
-    $showDebug = (isset($_GET['debug']) || env('APP_DEBUG', false));
-    if (!headers_sent()) {
-        http_response_code(500);
+    if (headers_sent()) {
+        exit;
     }
+
+    $showDebug = (isset($_GET['debug']) || env('APP_DEBUG', false));
+    http_response_code(500);
 
     if ($showDebug) {
         header('Content-Type: text/plain');
