@@ -42,6 +42,9 @@ putenv('APP_ROUTES_CACHE=/tmp/bootstrap/cache/routes.php');
 putenv('APP_SERVICES_CACHE=/tmp/bootstrap/cache/services.php');
 putenv('VIEW_COMPILED_PATH=/tmp/storage/framework/views');
 putenv('APP_MAINTENANCE_DRIVER=file');
+putenv('SESSION_DRIVER=database');
+putenv('APP_NAME=Certicode Labs');
+putenv('SESSION_COOKIE=certicode_labs_session');
 
 try {
     // Autoload Composer dependencies
