@@ -40,6 +40,7 @@
     "SESSION_DRIVER": "cookie",
     "QUEUE_CONNECTION": "sync",
     "LOG_CHANNEL": "stderr",
-    "DB_CONNECTION": "pgsql"
+    "DB_CONNECTION": "pgsql",
+    "APP_MAINTENANCE_DRIVER": "file"
   }
 }

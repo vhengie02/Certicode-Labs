@@ -41,6 +41,7 @@ putenv('APP_PACKAGES_CACHE=/tmp/bootstrap/cache/packages.php');
 putenv('APP_ROUTES_CACHE=/tmp/bootstrap/cache/routes.php');
 putenv('APP_SERVICES_CACHE=/tmp/bootstrap/cache/services.php');
 putenv('VIEW_COMPILED_PATH=/tmp/storage/framework/views');
+putenv('APP_MAINTENANCE_DRIVER=file');
 
 try {
     // Autoload Composer dependencies
@@ -61,7 +62,9 @@ try {
     error_log("Vercel Serverless Fatal Exception: " . $e->getMessage() . "\n" . $e->getTraceAsString());
 
     $showDebug = (isset($_GET['debug']) || env('APP_DEBUG', false));
-    http_response_code(500);
+    if (!headers_sent()) {
+        http_response_code(500);
+    }
 
     if ($showDebug) {
         header('Content-Type: text/plain');
