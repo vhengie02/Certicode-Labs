@@ -28,18 +28,18 @@
   ],
   "env": {
     "APP_ENV": "production",
-    "APP_DEBUG": "false",
+    "APP_KEY": "base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=",
     "APP_CONFIG_CACHE": "/tmp/bootstrap/cache/config.php",
     "APP_EVENTS_CACHE": "/tmp/bootstrap/cache/events.php",
     "APP_PACKAGES_CACHE": "/tmp/bootstrap/cache/packages.php",
     "APP_ROUTES_CACHE": "/tmp/bootstrap/cache/routes.php",
     "APP_SERVICES_CACHE": "/tmp/bootstrap/cache/services.php",
-    "VIEW_COMPILED_PATH": "/tmp/views",
+    "VIEW_COMPILED_PATH": "/tmp/storage/framework/views",
     "CACHE_STORE": "array",
     "CACHE_DRIVER": "array",
     "SESSION_DRIVER": "cookie",
+    "QUEUE_CONNECTION": "sync",
     "LOG_CHANNEL": "stderr",
-    "DB_CONNECTION": "sqlite",
-    "DB_DATABASE": "/tmp/database.sqlite"
+    "DB_CONNECTION": "pgsql"
   }
 }

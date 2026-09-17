@@ -12,6 +12,40 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\InstructorMonitoringController;
 
+// Diagnostic Health Check for Serverless & Monitoring (bypasses session/cookie middleware)
+Route::get('/health-check', function () {
+    $dbOk = false;
+    $dbError = null;
+    $sampleTables = [];
+    try {
+        \Illuminate\Support\Facades\DB::connection()->getPdo();
+        $dbOk = true;
+        if (config('database.default') === 'pgsql') {
+            $tables = \Illuminate\Support\Facades\DB::select("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' LIMIT 5");
+            $sampleTables = array_column($tables, 'table_name');
+        }
+    } catch (\Throwable $e) {
+        $dbError = $e->getMessage();
+    }
+
+    return response()->json([
+        'status' => $dbOk ? 'healthy' : 'degraded',
+        'php_version' => PHP_VERSION,
+        'app_key_configured' => !empty(config('app.key')),
+        'db_connection' => config('database.default'),
+        'db_connected' => $dbOk,
+        'db_error' => $dbError,
+        'sample_tables' => $sampleTables,
+        'storage_writable' => is_writable(storage_path()),
+        'storage_path' => storage_path(),
+    ]);
+})->withoutMiddleware([
+    \Illuminate\Cookie\Middleware\EncryptCookies::class,
+    \Illuminate\Session\Middleware\StartSession::class,
+    \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+    \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+]);
+
 Route::get('/', function () {
     return view('welcome');
 });
