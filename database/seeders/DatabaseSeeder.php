@@ -146,6 +146,7 @@ JAVA;
             'test_cases' => $testCases,
             'time_limit' => 30,
             'is_group_lab' => false,
+            'availability_mode' => 'open',
         ]);
 
         // 6. Seed initial in-progress lab session for testing

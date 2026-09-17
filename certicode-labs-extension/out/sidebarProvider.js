@@ -125,6 +125,11 @@ class SidebarProvider {
                     await this.fetchLeaderboard();
                     break;
                 }
+                case 'telemetry':
+                case 'cameraTelemetry': {
+                    await this.sendTelemetry(data.eventType, data.payload);
+                    break;
+                }
             }
         });
         // Setup FileSystemWatcher and Document change tracking
@@ -1503,11 +1508,38 @@ class SidebarProvider {
             <div class="status-left">
                 <div class="status-dot"></div>
                 <span id="status-text">Connected</span>
+                <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 5px; border-radius: 4px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);">📷 Camera Gate</span>
             </div>
             <div class="diff-pill" id="diff-counter-pill">
                 <span class="diff-added" id="pill-added">+0</span> / <span class="diff-deleted" id="pill-deleted">-0</span>
             </div>
         </div>
+
+        <!-- Feature 8 Pre-Lab Camera Permission Gate -->
+        <div id="camera-gate-alert" class="integrity-alert" style="display: none; background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.3); color: #93c5fd; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 6px; font-weight: bold;">
+                    <span>📷</span>
+                    <span>Pre-Lab Camera Presence Gate</span>
+                </div>
+                <span style="font-size: 0.75em; background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 1px 5px; border-radius: 3px; font-weight: bold;">HARD BLOCK</span>
+            </div>
+            <div style="font-size: 0.85em; line-height: 1.35; color: #bfdbfe;" id="camera-gate-msg">
+                Active lab exercises require continuous camera proctoring. Please grant webcam access to unlock your workspace.
+            </div>
+            <div id="camera-preview-box" style="display: none; border-radius: 4px; overflow: hidden; border: 1px solid var(--vscode-panel-border);">
+                <video id="proctor-video-preview" autoplay playsinline muted style="width: 100%; height: 110px; object-fit: cover; background: #000; display: block;"></video>
+            </div>
+            <div style="display: flex; gap: 6px;">
+                <button id="grant-camera-btn" style="background: #3ecf8e; color: #0f0f0f; font-weight: bold; padding: 5px 10px; font-size: 0.85em; border-radius: 3px; border: none; cursor: pointer;">
+                    Enable Webcam & Verify Presence
+                </button>
+            </div>
+        </div>
+
+        <!-- Hidden elements for background proctor capture -->
+        <video id="proctor-bg-video" autoplay playsinline muted style="display: none; width: 320px; height: 240px;"></video>
+        <canvas id="proctor-canvas" width="320" height="240" style="display: none;"></canvas>
 
         <!-- Feature 1 Client-Side Integrity Warning -->
         <div id="integrity-alert" class="integrity-alert" style="display: none;">
@@ -1729,6 +1761,207 @@ class SidebarProvider {
         let isCountDown = true;
         let isIntegrityValid = true;
 
+        // Feature 8 Camera Presence Check & Pre-Lab Gate
+        const cameraGateAlert = document.getElementById('camera-gate-alert');
+        const cameraGateMsg = document.getElementById('camera-gate-msg');
+        const cameraPreviewBox = document.getElementById('camera-preview-box');
+        const proctorVideoPreview = document.getElementById('proctor-video-preview');
+        const grantCameraBtn = document.getElementById('grant-camera-btn');
+        const proctorBadge = document.getElementById('proctor-badge');
+        const proctorBgVideo = document.getElementById('proctor-bg-video');
+        const proctorCanvas = document.getElementById('proctor-canvas');
+
+        let isCameraVerified = false;
+        let cameraMediaStream = null;
+        let proctorCheckTimer = null;
+
+        function updateProctorUIState() {
+            if (!isCameraVerified) {
+                if (cameraGateAlert) cameraGateAlert.style.display = 'flex';
+                if (proctorBadge) {
+                    proctorBadge.innerText = '📷 Gate: Permission Required';
+                    proctorBadge.style.color = '#f59e0b';
+                    proctorBadge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+                    proctorBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+                }
+                if (checkProgressBtn) checkProgressBtn.disabled = true;
+                if (submitBtn) submitBtn.disabled = true;
+            } else {
+                if (cameraGateAlert) cameraGateAlert.style.display = 'none';
+                if (proctorBadge) {
+                    proctorBadge.innerText = '📷 Proctor Active';
+                    proctorBadge.style.color = '#3ecf8e';
+                    proctorBadge.style.borderColor = 'rgba(62, 207, 142, 0.3)';
+                    proctorBadge.style.background = 'rgba(62, 207, 142, 0.15)';
+                }
+            }
+        }
+
+        if (grantCameraBtn) {
+            grantCameraBtn.addEventListener('click', async () => {
+                try {
+                    grantCameraBtn.disabled = true;
+                    grantCameraBtn.innerText = 'Initializing Camera...';
+
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        throw new Error('Webcam media API not supported in this environment.');
+                    }
+
+                    cameraMediaStream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: 320, height: 240, facingMode: 'user' }
+                    });
+
+                    if (proctorVideoPreview) {
+                        proctorVideoPreview.srcObject = cameraMediaStream;
+                        try { await proctorVideoPreview.play(); } catch(e) {}
+                    }
+                    if (proctorBgVideo) {
+                        proctorBgVideo.srcObject = cameraMediaStream;
+                        try { await proctorBgVideo.play(); } catch(e) {}
+                    }
+                    if (cameraPreviewBox) cameraPreviewBox.style.display = 'block';
+
+                    // Capture initial reference frame
+                    setTimeout(async () => {
+                        let detectedFaces = 1;
+                        if ('FaceDetector' in window) {
+                            try {
+                                const detector = new window.FaceDetector({ fastMode: true });
+                                const faces = await detector.detect(proctorVideoPreview);
+                                detectedFaces = faces.length;
+                            } catch (e) {
+                                detectedFaces = 1;
+                            }
+                        }
+
+                        if (proctorCanvas && proctorBgVideo) {
+                            const ctx = proctorCanvas.getContext('2d');
+                            ctx.drawImage(proctorBgVideo, 0, 0, 320, 240);
+                            const imageBase64 = proctorCanvas.toDataURL('image/jpeg', 0.6);
+
+                            vscode.postMessage({
+                                type: 'cameraTelemetry',
+                                eventType: 'webcam_prelab_verification',
+                                payload: {
+                                    verified: true,
+                                    face_count: detectedFaces,
+                                    image_base64: imageBase64,
+                                    timestamp: new Date().toISOString()
+                                }
+                            });
+                        }
+
+                        isCameraVerified = true;
+                        updateProctorUIState();
+                        if (checkProgressBtn) checkProgressBtn.disabled = false;
+                        if (submitBtn) submitBtn.disabled = !isIntegrityValid;
+
+                        startContinuousProctoring();
+                    }, 800);
+
+                } catch (err) {
+                    grantCameraBtn.disabled = false;
+                    grantCameraBtn.innerText = 'Retry Camera Permission';
+                    if (cameraGateMsg) {
+                        cameraGateMsg.innerText = '❌ Camera Permission Denied: You cannot proceed without webcam verification. Workspace remains locked.';
+                    }
+                    if (cameraGateAlert) {
+                        cameraGateAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                        cameraGateAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                        cameraGateAlert.style.color = '#fca5a5';
+                    }
+                    if (proctorBadge) {
+                        proctorBadge.innerText = '📷 Access Denied';
+                        proctorBadge.style.color = '#ef4444';
+                    }
+                    vscode.postMessage({
+                        type: 'cameraTelemetry',
+                        eventType: 'webcam_permission_denied',
+                        payload: {
+                            reason: err.message || 'Permission denied',
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                }
+            });
+        }
+
+        function startContinuousProctoring() {
+            if (proctorCheckTimer) {
+                clearInterval(proctorCheckTimer);
+            }
+
+            proctorCheckTimer = setInterval(async () => {
+                if (!cameraMediaStream || !isCameraVerified || !proctorBgVideo || !proctorCanvas) return;
+
+                try {
+                    const ctx = proctorCanvas.getContext('2d');
+                    ctx.drawImage(proctorBgVideo, 0, 0, 320, 240);
+
+                    let faceCount = 1;
+                    if ('FaceDetector' in window) {
+                        try {
+                            const detector = new window.FaceDetector({ fastMode: true });
+                            const faces = await detector.detect(proctorBgVideo);
+                            faceCount = faces.length;
+                        } catch (e) {
+                            faceCount = 1;
+                        }
+                    }
+
+                    const snapshotBase64 = proctorCanvas.toDataURL('image/jpeg', 0.5);
+
+                    if (faceCount === 0) {
+                        // Camera absence event (Non-interruptive: does NOT block student mid-session)
+                        if (proctorBadge) {
+                            proctorBadge.innerText = '📷 Absence Flagged';
+                            proctorBadge.style.color = '#f59e0b';
+                        }
+                        vscode.postMessage({
+                            type: 'cameraTelemetry',
+                            eventType: 'camera_absence',
+                            payload: {
+                                face_count: 0,
+                                image_base64: snapshotBase64,
+                                timestamp: new Date().toISOString()
+                            }
+                        });
+                    } else if (faceCount > 1) {
+                        // Multiple faces detected
+                        if (proctorBadge) {
+                            proctorBadge.innerText = '📷 Multiple Faces';
+                            proctorBadge.style.color = '#f59e0b';
+                        }
+                        vscode.postMessage({
+                            type: 'cameraTelemetry',
+                            eventType: 'webcam_check',
+                            payload: {
+                                face_count: faceCount,
+                                image_base64: snapshotBase64,
+                                timestamp: new Date().toISOString()
+                            }
+                        });
+                    } else {
+                        // Verified normal
+                        if (proctorBadge) {
+                            proctorBadge.innerText = '📷 Proctor Active';
+                            proctorBadge.style.color = '#3ecf8e';
+                        }
+                        vscode.postMessage({
+                            type: 'cameraTelemetry',
+                            eventType: 'webcam_check',
+                            payload: {
+                                face_count: 1,
+                                timestamp: new Date().toISOString()
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error('Proctor background error', e);
+                }
+            }, 25000);
+        }
+
         // Tabs Logic
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1805,6 +2038,15 @@ class SidebarProvider {
         });
 
         exitBtn.addEventListener('click', () => {
+            if (cameraMediaStream) {
+                cameraMediaStream.getTracks().forEach(t => t.stop());
+                cameraMediaStream = null;
+            }
+            if (proctorCheckTimer) {
+                clearInterval(proctorCheckTimer);
+                proctorCheckTimer = null;
+            }
+            isCameraVerified = false;
             vscode.postMessage({ type: 'exit' });
         });
 
@@ -2113,6 +2355,9 @@ class SidebarProvider {
                             liveLabAlert.style.display = 'none';
                         }
                     }
+
+                    // Feature 8: Evaluate Camera Proctor Gate
+                    updateProctorUIState();
 
                     // Setup timer
                     if (session.status === 'completed' || isLiveExpired) {

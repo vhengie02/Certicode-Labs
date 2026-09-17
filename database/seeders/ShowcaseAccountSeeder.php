@@ -259,6 +259,7 @@ class ShowcaseAccountSeeder extends Seeder
                 'starter_files' => $lab1_1Starter,
                 'time_limit' => 45,
                 'is_group_lab' => false,
+                'availability_mode' => 'open',
                 'views_count' => 88,
             ]
         );
@@ -307,6 +308,7 @@ class ShowcaseAccountSeeder extends Seeder
                 'starter_files' => $lab1_2Starter,
                 'time_limit' => 60,
                 'is_group_lab' => false,
+                'availability_mode' => 'open',
                 'views_count' => 74,
             ]
         );
@@ -341,6 +343,11 @@ class ShowcaseAccountSeeder extends Seeder
                 ],
                 'time_limit' => 50,
                 'is_group_lab' => false,
+                'availability_mode' => 'live',
+                'live_duration_minutes' => 50,
+                'live_status' => 'not_started',
+                'live_started_at' => null,
+                'live_elapsed_seconds' => 0,
                 'views_count' => 59,
             ]
         );
@@ -477,6 +484,7 @@ class ShowcaseAccountSeeder extends Seeder
                 ],
                 'time_limit' => 60,
                 'is_group_lab' => false,
+                'availability_mode' => 'open',
                 'views_count' => 67,
             ]
         );
@@ -510,6 +518,11 @@ class ShowcaseAccountSeeder extends Seeder
                 ],
                 'time_limit' => 60,
                 'is_group_lab' => false,
+                'availability_mode' => 'live',
+                'live_duration_minutes' => 60,
+                'live_status' => 'active',
+                'live_started_at' => now()->subMinutes(15),
+                'live_elapsed_seconds' => 0,
                 'views_count' => 52,
             ]
         );
@@ -598,6 +611,7 @@ class ShowcaseAccountSeeder extends Seeder
                 ],
                 'time_limit' => 45,
                 'is_group_lab' => false,
+                'availability_mode' => 'open',
                 'views_count' => 70,
             ]
         );
@@ -633,6 +647,11 @@ class ShowcaseAccountSeeder extends Seeder
                 ],
                 'time_limit' => 90,
                 'is_group_lab' => true,
+                'availability_mode' => 'live',
+                'live_duration_minutes' => 90,
+                'live_status' => 'active',
+                'live_started_at' => now()->subMinutes(25),
+                'live_elapsed_seconds' => 0,
                 'views_count' => 102,
             ]
         );
@@ -720,13 +739,40 @@ class ShowcaseAccountSeeder extends Seeder
         }
 
         // Add 1 module for Class 4
-        Module::updateOrCreate(
+        $mod4_1 = Module::updateOrCreate(
             ['class_id' => $class4->id, 'order_index' => 1],
             [
                 'title' => 'REST API Architecture & JWT Contracts',
                 'description' => 'Stateless authentication, Bearer tokens, and HTTP status protocol design.',
                 'content' => "# REST Architecture\n\nResource-oriented URL hierarchies and stateless token verification.",
                 'views_count' => 40,
+            ]
+        );
+
+        $lab4_1 = Laboratory::updateOrCreate(
+            ['module_id' => $mod4_1->id, 'title' => 'JWT Authentication & Bearer Tokens'],
+            [
+                'description' => 'Implement signature verification and stateless token claims validation.',
+                'tasks_definition' => [
+                    ['id' => 1, 'task' => 'Validate Authorization Header format', 'command' => 'regex:Bearer\s+'],
+                    ['id' => 2, 'task' => 'Verify HMAC-SHA256 signature', 'command' => 'regex:hash_hmac|verifyToken'],
+                ],
+                'reference_solution' => "// JWT Token Verification",
+                'rubric' => "1. Secure secret key parsing.\n2. Expiration and signature checks.",
+                'test_cases' => [
+                    ['input' => '', 'expected' => 'JWT Verification Success: 200 OK'],
+                ],
+                'starter_files' => [
+                    ['name' => 'auth.js', 'content' => "// Implement JWT validation\nfunction verifyToken(token) {}\n", 'is_primary' => true, 'is_readonly' => false]
+                ],
+                'time_limit' => 45,
+                'is_group_lab' => false,
+                'availability_mode' => 'live',
+                'live_duration_minutes' => 45,
+                'live_status' => 'closed',
+                'live_started_at' => now()->subHours(2),
+                'live_elapsed_seconds' => 2700,
+                'views_count' => 64,
             ]
         );
 
@@ -775,6 +821,7 @@ class ShowcaseAccountSeeder extends Seeder
                 ],
                 'time_limit' => 45,
                 'is_group_lab' => false,
+                'availability_mode' => 'open',
                 'views_count' => 48,
             ]
         );

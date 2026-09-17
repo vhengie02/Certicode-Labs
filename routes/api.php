@@ -33,6 +33,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
     Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
     Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+    Route::post('/labs/{labId}/verify-camera', [LabSessionController::class, 'verifyCameraLab']);
+    Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
     Route::post('/labs/{labId}/open-live', [LabSessionController::class, 'openLive']);
     Route::post('/labs/{labId}/end-live', [LabSessionController::class, 'endLive']);
     Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
@@ -43,6 +45,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/labs/{labId}/start', [LabSessionController::class, 'startSession']);
     Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
     Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
+    Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
+    Route::post('/labs/{labId}/verify-camera', [LabSessionController::class, 'verifyCameraLab']);
     Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
     Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
     Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);

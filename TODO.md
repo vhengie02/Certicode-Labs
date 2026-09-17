@@ -15,7 +15,7 @@ This document outlines the final feature specifications, implementation tasks, a
 | **5. In-Lab Sidebar (Leaderboard, Tasks, Timer, Focus)** | VS Code Extension & Backend | ✅ Completed | WebSocket (Solo & Team) |
 | **6. Instructor Live Monitoring Panel** | Web Platform (Instructor-Facing) | ✅ Completed | Live Telemetry & Polling Stream |
 | **7. Session Closure vs. Course Completion & Certification** | Backend, Web Platform & Database | ✅ Completed | REST + Lifecycle Evaluation |
-| **8. Camera Presence Check** | Pre-Lab Gate & Ongoing Proctoring | ⏳ Pending | WebRTC / Video Capture + AI |
+| **8. Camera Presence Check** | Pre-Lab Gate & Ongoing Proctoring | ✅ Completed | WebRTC / Video Capture + AI |
 | **9. Lab Availability Modes (Live Lab vs. Open Lab)** | Backend, Web Platform & VS Code Extension | ✅ Completed | REST + Shared Live Window & Scheduled Cron |
 
 ---
@@ -261,18 +261,18 @@ This document outlines the final feature specifications, implementation tasks, a
   - Action taken: Notify instructor + attach captured image of the anomaly to the notification.
 
 ### Technical Requirements & Progress
-- [ ] **Pre-Lab Camera Permission Gate**:
+- [x] **Pre-Lab Camera Permission Gate ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php) & [`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
   - Web platform / extension launch barrier demanding camera access before lab initiation.
-  - Hard block: prevent session start and keep workspace locked if camera permission is denied or missing.
-- [ ] **Pre-Lab AI Presence Validation**:
-  - Capture initial reference frame and verify facial presence before unlocking extension workspace.
-- [ ] **Continuous Background Presence Verification**:
-  - Periodic background camera snapshots analyzed for face presence/count (no face / multiple faces).
-- [ ] **Non-Interruptive Student Experience**:
-  - Guarantee mid-session presence check failures never disrupt, pause, or block student coding activity.
-- [ ] **Instructor Notification & Anomaly Image Attachment**:
-  - On presence failure, persist anomaly image snapshot to storage (`storage/app/anomalies/{session_id}/...`).
-  - Broadcast real-time alert to instructor monitoring panel with captured evidence image attached.
+  - Hard block: prevent session start and keep workspace locked (`checkProgressBtn` & `submitBtn` disabled) if camera permission is denied or missing.
+- [x] **Pre-Lab AI Presence Validation ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
+  - Capture initial reference frame and verify facial presence via browser native `FaceDetector` and `/api/v1/sessions/{id}/verify-camera` before unlocking extension workspace.
+- [x] **Continuous Background Presence Verification ([`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
+  - Periodic background camera snapshots analyzed for face presence/count (`no_face` / `multiple_faces`) every 25s via hidden off-screen canvas.
+- [x] **Non-Interruptive Student Experience**:
+  - Guarantee mid-session presence check failures never disrupt, pause, or block student coding activity. Failures quietly dispatch telemetry anomaly logs while workspace remains fully operational.
+- [x] **Instructor Notification & Anomaly Image Attachment ([`session.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/instructor/monitoring/session.blade.php))**:
+  - On presence failure, persist anomaly image snapshot to storage (`storage/app/public/anomalies/{session_id}/...`).
+  - Broadcast real-time alert and anomaly stream to instructor monitoring panel with captured evidence image attached and modal zoom preview.
 
 ---
 

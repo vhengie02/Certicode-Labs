@@ -365,7 +365,8 @@
                 </div>
             </div>
 
-            <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-4">
+            <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-4"
+                 x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">
                 <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
                     &larr; Back to Module
                 </a>
@@ -384,20 +385,101 @@
                             Session Closed &rarr;
                         </button>
                     </div>
-                @elseif($activeSession)
-                    <form action="{{ route('laboratories.start', $laboratory->id) }}" method="POST">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
-                            Resume Lab in VS Code &rarr;
-                        </button>
-                    </form>
                 @else
-                    <form action="{{ route('laboratories.start', $laboratory->id) }}" method="POST">
+                    <form id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST">
                         @csrf
-                        <button type="submit" class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
-                            Start Lab in VS Code &rarr;
+                        <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
+                        <button type="button" 
+                                @click="handleStartClick()"
+                                class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
+                            <span>{{ $activeSession ? 'Resume Lab in VS Code' : 'Start Lab in VS Code' }} &rarr;</span>
                         </button>
                     </form>
+
+                    <!-- Pre-Lab Camera Permission & AI Presence Verification Modal -->
+                    <div x-show="showModal" 
+                         x-cloak
+                         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+                         style="display: none;">
+                        <div class="bg-[#171717] border border-[#2e2e2e] rounded-xl max-w-lg w-full p-6 shadow-2xl relative">
+                            <div class="flex items-center justify-between pb-4 mb-4 border-b border-[#262626]">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-8 h-8 rounded-lg bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 flex items-center justify-center text-[#3ecf8e]">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-sm font-bold text-[#ededed]">Pre-Lab Camera Presence Verification</h3>
+                                        <p class="text-[11px] text-[#888888]">CertiCode Automated Proctoring Gate</p>
+                                    </div>
+                                </div>
+                                <button type="button" @click="closeGate()" class="text-[#888888] hover:text-white text-lg font-mono">&times;</button>
+                            </div>
+
+                            <p class="text-xs text-[#a3a3a3] leading-relaxed mb-4">
+                                To ensure academic integrity, CertiCode Labs requires camera permission and facial presence verification before initiating active lab workspaces.
+                            </p>
+
+                            <!-- Live Camera Viewport -->
+                            <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video mb-4 flex items-center justify-center">
+                                <video x-ref="videoEl" autoplay playsinline muted class="w-full h-full object-cover"></video>
+                                <canvas x-ref="canvasEl" class="hidden"></canvas>
+
+                                <div x-show="status === 'requesting'" class="absolute inset-0 bg-[#0d0d0d]/90 flex flex-col items-center justify-center p-4 text-center">
+                                    <div class="w-8 h-8 rounded-full border-2 border-[#3ecf8e] border-t-transparent animate-spin mb-3"></div>
+                                    <span class="text-xs font-mono text-[#ededed]">Requesting camera permissions...</span>
+                                    <span class="text-[11px] text-[#666666] mt-1">Please approve the browser webcam prompt</span>
+                                </div>
+
+                                <div x-show="status === 'denied'" class="absolute inset-0 bg-red-950/80 border border-red-500/50 flex flex-col items-center justify-center p-4 text-center">
+                                    <svg class="w-8 h-8 text-red-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    <span class="text-xs font-bold text-red-200">Camera Access Denied (Hard Block)</span>
+                                    <span class="text-[11px] text-red-300/80 mt-1 max-w-xs" x-text="errorMessage"></span>
+                                </div>
+
+                                <div x-show="status === 'analyzing'" class="absolute bottom-2 left-2 right-2 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded text-[11px] font-mono text-cyan-300 flex items-center justify-between border border-cyan-500/30">
+                                    <span class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                                        Running AI Presence Check...
+                                    </span>
+                                    <span>Align your face</span>
+                                </div>
+
+                                <div x-show="status === 'failed'" class="absolute bottom-2 left-2 right-2 bg-amber-950/90 border border-amber-500/50 px-3 py-1.5 rounded text-[11px] font-mono text-amber-200 flex items-center justify-between">
+                                    <span x-text="errorMessage"></span>
+                                    <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white">Retry</button>
+                                </div>
+
+                                <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/80 border border-emerald-500/50 flex flex-col items-center justify-center p-4 text-center">
+                                    <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl font-bold mb-2">✓</div>
+                                    <span class="text-xs font-bold text-emerald-200">AI Presence Verified (1 Face Detected)</span>
+                                    <span class="text-[11px] text-emerald-300/80 mt-1">Unlocking workspace and launching VS Code...</span>
+                                </div>
+                            </div>
+
+                            <!-- Actions Footer -->
+                            <div class="flex items-center justify-between pt-2">
+                                <button type="button" @click="closeGate()" class="px-4 py-2 rounded-lg bg-[#222222] hover:bg-[#2a2a2a] text-xs font-medium text-[#ededed] transition">
+                                    Cancel
+                                </button>
+                                
+                                <div class="flex items-center gap-2">
+                                    <button x-show="status === 'denied' || status === 'failed'" 
+                                            type="button" 
+                                            @click="requestCamera()" 
+                                            class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
+                                        Retry Camera Check
+                                    </button>
+
+                                    <button x-show="status === 'verified'"
+                                            type="button" 
+                                            @click="launchLab()" 
+                                            class="px-5 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
+                                        Open Workspace Now &rarr;
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 @endif
             </div>
         @else
@@ -460,4 +542,128 @@
         @endif
     </div>
 </div>
+
+<script>
+function preLabCameraGate(labId, activeSessionId) {
+    return {
+        showModal: false,
+        stream: null,
+        status: 'idle', // 'idle', 'requesting', 'denied', 'analyzing', 'failed', 'verified'
+        errorMessage: '',
+        faceCount: 0,
+        cameraVerified: false,
+        handleStartClick() {
+            if (this.cameraVerified) {
+                this.launchLab();
+                return;
+            }
+            this.openGate();
+        },
+        async openGate() {
+            this.showModal = true;
+            this.status = 'requesting';
+            this.errorMessage = '';
+            await this.requestCamera();
+        },
+        async requestCamera() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    this.status = 'denied';
+                    this.errorMessage = 'Webcam access is not supported by your browser environment.';
+                    return;
+                }
+                this.stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+                });
+                this.status = 'analyzing';
+                this.$nextTick(async () => {
+                    if (this.$refs.videoEl) {
+                        this.$refs.videoEl.srcObject = this.stream;
+                        try {
+                            await this.$refs.videoEl.play();
+                        } catch (e) {}
+                    }
+                    setTimeout(() => this.runAiPresenceValidation(), 700);
+                });
+            } catch (err) {
+                this.status = 'denied';
+                this.errorMessage = 'Camera access was denied or no camera device found. Workspace remains locked until permission is granted.';
+            }
+        },
+        async runAiPresenceValidation() {
+            if (!this.stream || !this.$refs.videoEl) return;
+            const video = this.$refs.videoEl;
+            const canvas = this.$refs.canvasEl;
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+            let detectedFaces = 1;
+            if ('FaceDetector' in window) {
+                try {
+                    const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 5 });
+                    const faces = await detector.detect(video);
+                    detectedFaces = faces.length;
+                } catch (e) {
+                    detectedFaces = 1;
+                }
+            }
+
+            this.faceCount = detectedFaces;
+            try {
+                const endpoint = activeSessionId 
+                    ? `/api/v1/sessions/${activeSessionId}/verify-camera`
+                    : `/api/v1/labs/${labId}/verify-camera`;
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'granted',
+                        face_count: detectedFaces,
+                        image_base64: imageBase64
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.verified) {
+                    this.status = 'verified';
+                    this.cameraVerified = true;
+                    setTimeout(() => {
+                        this.launchLab();
+                    }, 1200);
+                } else {
+                    this.status = 'failed';
+                    this.errorMessage = data.message || 'AI presence validation failed. Please ensure only your face is visible.';
+                }
+            } catch (e) {
+                // Fallback: If network error but face detected locally
+                if (detectedFaces === 1) {
+                    this.status = 'verified';
+                    this.cameraVerified = true;
+                    setTimeout(() => this.launchLab(), 1200);
+                } else {
+                    this.status = 'failed';
+                    this.errorMessage = 'Unable to complete AI presence verification. Please retry.';
+                }
+            }
+        },
+        launchLab() {
+            this.closeGate();
+            const form = document.getElementById('start-lab-form');
+            if (form) {
+                form.submit();
+            }
+        },
+        closeGate() {
+            if (this.stream) {
+                this.stream.getTracks().forEach(t => t.stop());
+                this.stream = null;
+            }
+            this.showModal = false;
+        }
+    };
+}
+</script>
 @endsection

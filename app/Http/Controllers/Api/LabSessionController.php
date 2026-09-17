@@ -150,18 +150,29 @@ class LabSessionController extends Controller
         }
 
         if ($request->event_type === 'camera_absence') {
+            $imagePath = $this->storeSnapshotImage(
+                $session->id,
+                $request->payload['image_base64'] ?? null,
+                $request->payload['image_path'] ?? null
+            );
+
             Anomaly::create([
                 'lab_session_id' => $session->id,
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Camera presence check failed during active lab session.',
-                'image_path' => $request->payload['image_path'] ?? null,
+                'image_path' => $imagePath,
                 'metadata' => $request->payload,
             ]);
         }
 
         if ($request->event_type === 'webcam_check') {
             $faceCount = $request->payload['face_count'] ?? 1;
+            $imagePath = $this->storeSnapshotImage(
+                $session->id,
+                $request->payload['image_base64'] ?? null,
+                $request->payload['image_path'] ?? null
+            );
 
             if ($faceCount === 0) {
                 Anomaly::create([
@@ -169,6 +180,7 @@ class LabSessionController extends Controller
                     'type' => 'no_face',
                     'severity' => 'high',
                     'description' => 'No face detected in front of the camera during webcam check.',
+                    'image_path' => $imagePath,
                     'metadata' => $request->payload,
                 ]);
             } elseif ($faceCount > 1) {
@@ -177,6 +189,7 @@ class LabSessionController extends Controller
                     'type' => 'multiple_faces',
                     'severity' => 'medium',
                     'description' => 'Multiple faces detected in front of the camera.',
+                    'image_path' => $imagePath,
                     'metadata' => $request->payload,
                 ]);
             }
@@ -1022,5 +1035,179 @@ class LabSessionController extends Controller
             'laboratory' => $lab,
             'remaining_seconds' => $lab->getRemainingLiveSeconds(),
         ]);
+    }
+
+    /**
+     * Feature 8: Pre-Lab Camera Permission & AI Presence Verification Gate (Session Level)
+     */
+    public function verifyCamera(Request $request, int $sessionId)
+    {
+        $session = LabSession::findOrFail($sessionId);
+
+        $status = $request->input('status', 'granted'); // granted, denied, blocked
+        $faceCount = (int) $request->input('face_count', 1);
+        $imageBase64 = $request->input('image_base64');
+
+        if ($status === 'denied' || $status === 'blocked') {
+            TelemetryLog::create([
+                'lab_session_id' => $session->id,
+                'event_type' => 'webcam_permission_denied',
+                'payload' => [
+                    'reason' => $request->input('reason', 'Camera access was denied by the user.'),
+                    'timestamp' => now()->toISOString(),
+                ],
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'permission_denied',
+                'message' => 'Camera permission is required to access and unlock this laboratory workspace.',
+            ], 403);
+        }
+
+        if ($faceCount === 0) {
+            $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
+
+            Anomaly::create([
+                'lab_session_id' => $session->id,
+                'type' => 'no_face',
+                'severity' => 'high',
+                'description' => 'Pre-lab facial verification failed: No face detected in frame.',
+                'image_path' => $imagePath,
+                'metadata' => ['pre_lab' => true],
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'no_face_detected',
+                'message' => 'No face detected in camera reference frame. Please look directly at the webcam.',
+            ], 422);
+        }
+
+        if ($faceCount > 1) {
+            $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
+
+            Anomaly::create([
+                'lab_session_id' => $session->id,
+                'type' => 'multiple_faces',
+                'severity' => 'medium',
+                'description' => 'Pre-lab facial verification failed: Multiple faces detected.',
+                'image_path' => $imagePath,
+                'metadata' => ['pre_lab' => true, 'face_count' => $faceCount],
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'multiple_faces',
+                'message' => 'Multiple faces detected in frame. Only the enrolled student may be present.',
+            ], 422);
+        }
+
+        // Successfully verified
+        $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
+
+        TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'webcam_prelab_verification',
+            'payload' => [
+                'verified' => true,
+                'face_count' => $faceCount,
+                'reference_image_path' => $imagePath,
+                'verified_at' => now()->toISOString(),
+            ],
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'verified' => true,
+            'reference_image' => $imagePath,
+            'message' => 'Camera permission and AI presence verified successfully. Workspace unlocked.',
+        ]);
+    }
+
+    /**
+     * Feature 8: Pre-Lab Camera Permission & AI Presence Verification Gate (Lab Level)
+     */
+    public function verifyCameraLab(Request $request, int $labId)
+    {
+        $lab = Laboratory::findOrFail($labId);
+
+        $status = $request->input('status', 'granted'); // granted, denied, blocked
+        $faceCount = (int) $request->input('face_count', 1);
+
+        if ($status === 'denied' || $status === 'blocked') {
+            return response()->json([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'permission_denied',
+                'message' => 'Camera permission is required to start this laboratory exercise.',
+            ], 403);
+        }
+
+        if ($faceCount === 0) {
+            return response()->json([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'no_face_detected',
+                'message' => 'No face detected in camera reference frame. Please face the webcam directly.',
+            ], 422);
+        }
+
+        if ($faceCount > 1) {
+            return response()->json([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'multiple_faces',
+                'message' => 'Multiple faces detected in frame. Only one student is permitted.',
+            ], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'verified' => true,
+            'message' => 'Camera permission and AI presence verified. Workspace unlocked.',
+        ]);
+    }
+
+    /**
+     * Store anomaly snapshot image if base64 data is provided.
+     */
+    protected function storeSnapshotImage(int $sessionId, ?string $imageBase64, ?string $defaultPath = null): ?string
+    {
+        if (empty($imageBase64)) {
+            return $defaultPath;
+        }
+
+        try {
+            $type = 'jpg';
+            if (preg_match('/^data:image\/(\w+);base64,/', $imageBase64, $matches)) {
+                $imageBase64 = substr($imageBase64, strpos($imageBase64, ',') + 1);
+                $type = strtolower($matches[1]);
+            }
+
+            $decoded = base64_decode($imageBase64);
+            if ($decoded === false) {
+                return $defaultPath;
+            }
+
+            $extension = in_array($type, ['png', 'webp', 'jpeg']) ? ($type === 'jpeg' ? 'jpg' : $type) : 'jpg';
+            $filename = 'snapshot_' . time() . '_' . \Illuminate\Support\Str::random(6) . '.' . $extension;
+
+            $relativeDir = "anomalies/{$sessionId}";
+            $storageDir = storage_path("app/public/{$relativeDir}");
+
+            if (!file_exists($storageDir)) {
+                mkdir($storageDir, 0755, true);
+            }
+
+            file_put_contents("{$storageDir}/{$filename}", $decoded);
+
+            return "storage/{$relativeDir}/{$filename}";
+        } catch (\Throwable $e) {
+            return $defaultPath;
+        }
     }
 }

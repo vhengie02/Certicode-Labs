@@ -258,4 +258,187 @@ class TelemetryAndProctoringTest extends TestCase
                 ],
             ]);
     }
+
+    public function test_prelab_camera_verification_denied_returns_forbidden_and_logs_telemetry()
+    {
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+            'status' => 'denied',
+            'reason' => 'User blocked webcam permission.',
+        ]);
+
+        $response->assertStatus(403)
+            ->assertJson([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'permission_denied',
+            ]);
+
+        $this->assertDatabaseHas('telemetry_logs', [
+            'lab_session_id' => $this->session1->id,
+            'event_type' => 'webcam_permission_denied',
+        ]);
+    }
+
+    public function test_prelab_camera_verification_fails_when_no_face_detected()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('fake-image-bytes');
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+            'status' => 'granted',
+            'face_count' => 0,
+            'image_base64' => $dummyBase64,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'no_face_detected',
+            ]);
+
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'no_face',
+            'severity' => 'high',
+        ]);
+    }
+
+    public function test_prelab_camera_verification_fails_when_multiple_faces_detected()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('fake-multi-face-image');
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+            'status' => 'granted',
+            'face_count' => 2,
+            'image_base64' => $dummyBase64,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'status' => 'error',
+                'verified' => false,
+                'error' => 'multiple_faces',
+            ]);
+
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'multiple_faces',
+            'severity' => 'medium',
+        ]);
+    }
+
+    public function test_prelab_camera_verification_succeeds_with_single_face_and_stores_reference_image()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('valid-face-snapshot-data');
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+            'status' => 'granted',
+            'face_count' => 1,
+            'image_base64' => $dummyBase64,
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'status' => 'success',
+                'verified' => true,
+            ]);
+
+        $refImage = $response->json('reference_image');
+        $this->assertNotNull($refImage);
+        $this->assertStringContainsString('storage/anomalies/', $refImage);
+
+        // Verify disk file actually written
+        $storageRelative = str_replace('storage/', '', $refImage);
+        $this->assertFileExists(storage_path('app/public/' . $storageRelative));
+
+        $this->assertDatabaseHas('telemetry_logs', [
+            'lab_session_id' => $this->session1->id,
+            'event_type' => 'webcam_prelab_verification',
+        ]);
+    }
+
+    public function test_camera_absence_telemetry_creates_high_severity_anomaly_with_snapshot_file()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('absence-snapshot-proof');
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => [
+                'face_count' => 0,
+                'image_base64' => $dummyBase64,
+                'timestamp' => now()->toISOString(),
+            ],
+        ]);
+
+        $response->assertStatus(200);
+
+        // Student work must NOT be interrupted: session remains in_progress
+        $this->session1->refresh();
+        $this->assertEquals('in_progress', $this->session1->status);
+
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)
+            ->where('type', 'no_face')
+            ->latest()
+            ->first();
+
+        $this->assertNotNull($anomaly);
+        $this->assertEquals('high', $anomaly->severity);
+        $this->assertNotNull($anomaly->image_path);
+        $this->assertStringContainsString('storage/anomalies/', $anomaly->image_path);
+
+        $storageRelative = str_replace('storage/', '', $anomaly->image_path);
+        $this->assertFileExists(storage_path('app/public/' . $storageRelative));
+    }
+
+    public function test_continuous_webcam_check_with_multiple_faces_creates_anomaly_and_preserves_student_session()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('two-faces-captured');
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'webcam_check',
+            'payload' => [
+                'face_count' => 3,
+                'image_base64' => $dummyBase64,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+
+        // Session not blocked
+        $this->session1->refresh();
+        $this->assertEquals('in_progress', $this->session1->status);
+
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'multiple_faces',
+            'severity' => 'medium',
+        ]);
+    }
+
+    public function test_instructor_monitoring_streams_camera_absence_anomaly_with_image_path()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('instructor-alert-image');
+
+        $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => [
+                'face_count' => 0,
+                'image_base64' => $dummyBase64,
+            ],
+        ]);
+
+        $this->actingAs($this->instructor);
+        $response = $this->getJson("/laboratories/{$this->laboratory->id}/monitoring/data");
+        $response->assertStatus(200);
+
+        $sessionData = collect($response->json('sessions'))->firstWhere('id', $this->session1->id);
+        $this->assertNotNull($sessionData);
+
+        $anomalies = collect($sessionData['anomalies']);
+        $noFaceAnomaly = $anomalies->firstWhere('type', 'no_face');
+
+        $this->assertNotNull($noFaceAnomaly);
+        $this->assertNotNull($noFaceAnomaly['image_path']);
+        $this->assertStringContainsString('storage/anomalies/', $noFaceAnomaly['image_path']);
+    }
 }
