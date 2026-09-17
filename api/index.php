@@ -34,6 +34,13 @@ foreach ($tmpDirs as $dir) {
     }
 }
 
+// Fallback APP_KEY if not in environment
+if (!getenv('APP_KEY')) {
+    putenv('APP_KEY=base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=');
+    $_ENV['APP_KEY'] = 'base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=';
+    $_SERVER['APP_KEY'] = 'base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=';
+}
+
 // Point compiled views and caches to writable /tmp
 putenv('APP_CONFIG_CACHE=/tmp/bootstrap/cache/config.php');
 putenv('APP_EVENTS_CACHE=/tmp/bootstrap/cache/events.php');
@@ -45,6 +52,12 @@ putenv('APP_MAINTENANCE_DRIVER=file');
 putenv('SESSION_DRIVER=database');
 putenv('APP_NAME=Certicode Labs');
 putenv('SESSION_COOKIE=certicode_labs_session');
+putenv('SESSION_LIFETIME=120');
+putenv('SESSION_EXPIRE_ON_CLOSE=false');
+$_ENV['SESSION_LIFETIME'] = '120';
+$_ENV['SESSION_EXPIRE_ON_CLOSE'] = 'false';
+$_SERVER['SESSION_LIFETIME'] = '120';
+$_SERVER['SESSION_EXPIRE_ON_CLOSE'] = 'false';
 
 try {
     // Autoload Composer dependencies

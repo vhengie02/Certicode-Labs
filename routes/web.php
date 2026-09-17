@@ -38,6 +38,18 @@ Route::get('/health-check', function () {
         'sample_tables' => $sampleTables,
         'storage_writable' => is_writable(storage_path()),
         'storage_path' => storage_path(),
+        'session_config' => [
+            'driver' => config('session.driver'),
+            'lifetime' => config('session.lifetime'),
+            'expire_on_close' => config('session.expire_on_close'),
+            'cookie' => config('session.cookie'),
+            'domain' => config('session.domain'),
+            'secure' => config('session.secure'),
+            'http_only' => config('session.http_only'),
+            'same_site' => config('session.same_site'),
+        ],
+        'env_session_lifetime' => env('SESSION_LIFETIME'),
+        'env_session_expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE'),
     ]);
 })->withoutMiddleware([
     \Illuminate\Cookie\Middleware\EncryptCookies::class,
