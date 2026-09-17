@@ -162,9 +162,21 @@
                     <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg flex flex-col justify-between hover:border-slate-750 transition-colors">
                         <div>
                             <div class="flex items-center justify-between mb-2">
-                                <span class="px-2 py-0.5 rounded text-[10px] font-semibold {{ $lab->is_group_lab ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20' }}">
-                                    {{ $lab->is_group_lab ? 'Group Lab' : 'Individual Lab' }}
-                                </span>
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold {{ $lab->is_group_lab ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20' }}">
+                                        {{ $lab->is_group_lab ? 'Group Lab' : 'Individual Lab' }}
+                                    </span>
+                                    @if($lab->isLiveLab())
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-red-500/10 text-red-400 border border-red-500/20 uppercase font-semibold flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                                            Live
+                                        </span>
+                                    @else
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase font-semibold">
+                                            Open
+                                        </span>
+                                    @endif
+                                </div>
                                 <span class="text-slate-500 text-xs font-mono">{{ $lab->time_limit }} min</span>
                             </div>
                             <h4 class="font-bold text-white text-sm">{{ $lab->title }}</h4>

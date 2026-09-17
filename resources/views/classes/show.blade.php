@@ -58,8 +58,18 @@
                             @endphp
                             <a href="{{ route('laboratories.show', $lab->id) }}" class="flex items-center justify-between px-2 py-1 text-xs text-slate-400 hover:text-white rounded hover:bg-slate-800/40 transition">
                                 <span class="flex items-center truncate">
-                                    <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                    Lab: {{ $lab->title }}
+                                    <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                                    <span class="truncate">Lab: {{ $lab->title }}</span>
+                                    @if($lab->isLiveLab())
+                                        <span class="ml-1.5 px-1.5 py-0.5 text-[9px] font-mono rounded bg-red-500/10 text-red-400 border border-red-500/20 uppercase shrink-0 font-semibold flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                                            Live
+                                        </span>
+                                    @else
+                                        <span class="ml-1.5 px-1.5 py-0.5 text-[9px] font-mono rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase shrink-0 font-semibold">
+                                            Open
+                                        </span>
+                                    @endif
                                 </span>
                                 @if(auth()->user()->role === 'student')
                                     @if($isCompleted)
@@ -106,8 +116,13 @@
                                                 @endphp
                                                 <a href="{{ route('laboratories.show', $subLab->id) }}" class="flex items-center justify-between px-2 py-0.5 text-xs text-slate-450 hover:text-white rounded hover:bg-slate-800/40 transition">
                                                     <span class="flex items-center truncate">
-                                                        <svg class="w-3 h-3 mr-1 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                                        Lab: {{ $subLab->title }}
+                                                        <svg class="w-3 h-3 mr-1 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                                                        <span class="truncate">Lab: {{ $subLab->title }}</span>
+                                                        @if($subLab->isLiveLab())
+                                                            <span class="ml-1 px-1 py-0.2 text-[8px] font-mono rounded bg-red-500/10 text-red-400 border border-red-500/20 uppercase shrink-0 font-semibold">Live</span>
+                                                        @else
+                                                            <span class="ml-1 px-1 py-0.2 text-[8px] font-mono rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase shrink-0 font-semibold">Open</span>
+                                                        @endif
                                                     </span>
                                                     @if(auth()->user()->role === 'student')
                                                         @if($subLabCompleted)
