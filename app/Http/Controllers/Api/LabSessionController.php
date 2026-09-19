@@ -116,8 +116,7 @@ class LabSessionController extends Controller
                 ->count();
 
             if ($recentSwitches >= 3) {
-                Anomaly::create([
-                    'lab_session_id' => $session->id,
+                $this->recordAndBroadcastAnomaly($session, [
                     'type' => $request->event_type === 'focus_lost' ? 'excessive_focus_loss' : 'excessive_tab_switch',
                     'severity' => $recentSwitches >= 6 ? 'high' : 'medium',
                     'description' => "Student switched window/focus {$recentSwitches} times within the last 2 minutes.",
@@ -140,8 +139,7 @@ class LabSessionController extends Controller
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
             $snippet = (string) ($request->payload['snippet'] ?? '');
 
-            Anomaly::create([
-                'lab_session_id' => $session->id,
+            $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
                 'severity' => $pastedLen > 100 ? 'high' : 'medium',
                 'description' => 'Unusual external code paste detected (' . $pastedLen . ' chars): ' . \Illuminate\Support\Str::limit($snippet, 70),
@@ -156,8 +154,7 @@ class LabSessionController extends Controller
                 $request->payload['image_path'] ?? null
             );
 
-            Anomaly::create([
-                'lab_session_id' => $session->id,
+            $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Camera presence check failed during active lab session.',
@@ -175,8 +172,7 @@ class LabSessionController extends Controller
             );
 
             if ($faceCount === 0) {
-                Anomaly::create([
-                    'lab_session_id' => $session->id,
+                $this->recordAndBroadcastAnomaly($session, [
                     'type' => 'no_face',
                     'severity' => 'high',
                     'description' => 'No face detected in front of the camera during webcam check.',
@@ -184,8 +180,7 @@ class LabSessionController extends Controller
                     'metadata' => $request->payload,
                 ]);
             } elseif ($faceCount > 1) {
-                Anomaly::create([
-                    'lab_session_id' => $session->id,
+                $this->recordAndBroadcastAnomaly($session, [
                     'type' => 'multiple_faces',
                     'severity' => 'medium',
                     'description' => 'Multiple faces detected in front of the camera.',
@@ -199,6 +194,29 @@ class LabSessionController extends Controller
             'status' => 'success',
             'log' => $log,
         ]);
+    }
+
+    /**
+     * Record an anomaly and broadcast it in real time to instructor monitoring.
+     */
+    protected function recordAndBroadcastAnomaly(LabSession $session, array $attributes): Anomaly
+    {
+        $anomaly = Anomaly::create(array_merge(['lab_session_id' => $session->id], $attributes));
+        try {
+            event(new \App\Events\AnomalyDetected($session->id, [
+                'id' => $anomaly->id,
+                'type' => $anomaly->type,
+                'severity' => $anomaly->severity,
+                'description' => $anomaly->description,
+                'image_path' => $anomaly->image_path ? asset('storage/' . $anomaly->image_path) : null,
+                'created_at' => $anomaly->created_at ? $anomaly->created_at->toIso8601String() : now()->toIso8601String(),
+                'user_id' => $session->user_id,
+                'student_name' => $session->user->name ?? 'Student',
+            ]));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
+        }
+        return $anomaly;
     }
 
     /**
@@ -566,6 +584,9 @@ class LabSessionController extends Controller
             ],
         ]);
 
+        // Broadcast live leaderboard update
+        $this->broadcastLeaderboardUpdate($session);
+
         return response()->json([
             'status' => 'success',
             'completed_tasks' => $completedTasks,
@@ -638,6 +659,9 @@ class LabSessionController extends Controller
                 'execution_status' => $executionResult['status'] ?? 'unknown',
             ],
         ]);
+
+        // Broadcast live leaderboard update
+        $this->broadcastLeaderboardUpdate($session);
 
         return response()->json([
             'status' => 'success',
@@ -735,6 +759,13 @@ class LabSessionController extends Controller
                 ->update(['contribution_score' => $userPercent]);
         }
 
+        // Broadcast real-time line diff update
+        try {
+            event(new \App\Events\DiffUpdated($session->id, $diffStats, $contributions));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to broadcast DiffUpdated: " . $e->getMessage());
+        }
+
         return response()->json([
             'status' => 'success',
             'diff_stats' => $diffStats,
@@ -805,19 +836,28 @@ class LabSessionController extends Controller
         $nameParts = explode(' ', $chat->user_name);
         $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
 
+        $chatPayload = [
+            'id' => $chat->id,
+            'user_id' => $chat->user_id,
+            'user_name' => $chat->user_name,
+            'initials' => $initials ?: 'ST',
+            'avatar_color' => $chat->avatar_color,
+            'message' => $chat->message,
+            'code_snippet' => $chat->code_snippet,
+            'time' => $chat->created_at ? $chat->created_at->format('H:i') : now()->format('H:i'),
+            'created_at' => $chat->created_at,
+        ];
+
+        // Broadcast real-time ephemeral chat to team channel
+        try {
+            event(new \App\Events\ChatMessageSent($session->id, $chatPayload));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to broadcast ChatMessageSent: " . $e->getMessage());
+        }
+
         return response()->json([
             'status' => 'success',
-            'chat' => [
-                'id' => $chat->id,
-                'user_id' => $chat->user_id,
-                'user_name' => $chat->user_name,
-                'initials' => $initials ?: 'ST',
-                'avatar_color' => $chat->avatar_color,
-                'message' => $chat->message,
-                'code_snippet' => $chat->code_snippet,
-                'time' => $chat->created_at ? $chat->created_at->format('H:i') : now()->format('H:i'),
-                'created_at' => $chat->created_at,
-            ],
+            'chat' => $chatPayload,
         ]);
     }
 
@@ -916,6 +956,20 @@ class LabSessionController extends Controller
             'shared_time_remaining_formatted' => $sharedRemainingFormatted,
             'leaderboard' => $sessions,
         ]);
+    }
+
+    /**
+     * Broadcast live leaderboard data over WebSocket.
+     */
+    protected function broadcastLeaderboardUpdate(LabSession $session)
+    {
+        try {
+            $lbResponse = $this->getLeaderboard($session->id);
+            $lbData = $lbResponse->getData(true);
+            event(new \App\Events\LeaderboardUpdated($session->id, $lbData));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to broadcast LeaderboardUpdated: " . $e->getMessage());
+        }
     }
 
     /**

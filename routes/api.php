@@ -61,3 +61,25 @@ Route::prefix('v1')->group(function () {
     Route::post('/labs/{labId}/end-live', [LabSessionController::class, 'endLive']);
     Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
 });
+
+// Vercel / Cloud Scheduled Cron Trigger Endpoint
+Route::get('/cron/tick', function (Request $request) {
+    if (env('CRON_SECRET') && $request->header('Authorization') !== 'Bearer ' . env('CRON_SECRET')) {
+        return response()->json(['error' => 'unauthorized'], 401);
+    }
+
+    \Illuminate\Support\Facades\Artisan::call('certicode:close-expired-live-labs');
+    $liveLabsOutput = trim(\Illuminate\Support\Facades\Artisan::output());
+
+    \Illuminate\Support\Facades\Artisan::call('certicode:auto-conclude-expired-classes');
+    $classesOutput = trim(\Illuminate\Support\Facades\Artisan::output());
+
+    return response()->json([
+        'status' => 'success',
+        'timestamp' => now()->toIso8601String(),
+        'results' => [
+            'live_labs' => $liveLabsOutput,
+            'classes' => $classesOutput,
+        ],
+    ]);
+});

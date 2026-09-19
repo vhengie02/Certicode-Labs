@@ -54,6 +54,17 @@
         </div>
     </div>
 
+    <!-- Live WebSocket Telemetry Alert Banner -->
+    <div x-show="hasLiveUpdate" x-cloak class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-emerald-400 text-sm font-medium transition-all shadow-sm">
+        <div class="flex items-center gap-2.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+            <span x-text="liveUpdateMessage"></span>
+        </div>
+        <button @click="refreshData()" class="text-xs px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold transition-colors">
+            Refresh Panel &rarr;
+        </button>
+    </div>
+
     @if($laboratory->isLiveLab())
         <!-- Live Lab Shared Countdown Banner (Feature 9) -->
         <div class="p-5 rounded-xl border {{ $laboratory->isLiveActive() ? 'bg-emerald-950/20 border-emerald-500/30' : ($laboratory->isLiveNotStarted() ? 'bg-amber-950/20 border-amber-500/30' : 'bg-red-950/20 border-red-500/30') }} flex flex-col md:flex-row items-center justify-between gap-4">
@@ -417,8 +428,59 @@ function instructorMonitor() {
         searchQuery: '',
         isRefreshing: false,
         isModalOpen: false,
+        hasLiveUpdate: false,
+        liveUpdateMessage: '',
         selectedStudentName: '',
         selectedAnomalies: [],
+        ws: null,
+        wsConnected: false,
+
+        init() {
+            this.initWebSocket();
+        },
+
+        initWebSocket() {
+            try {
+                if (typeof window.WebSocket === 'undefined') return;
+                const isSecure = window.location.protocol === 'https:';
+                const wsProtocol = isSecure ? 'wss:' : 'ws:';
+                const wsHost = window.location.hostname;
+                const wsPort = window.location.port ? window.location.port : (isSecure ? '443' : '80');
+                const wsEndpoint = `${wsProtocol}//${wsHost}:${wsPort}/app/certicode-key?protocol=7&client=js&version=8.4.0`;
+
+                this.ws = new WebSocket(wsEndpoint);
+                this.ws.onopen = () => {
+                    this.wsConnected = true;
+                    try {
+                        this.ws.send(JSON.stringify({
+                            event: 'pusher:subscribe',
+                            data: { channel: 'private-instructor.monitoring.{{ $laboratory->id }}' }
+                        }));
+                    } catch {}
+                };
+                this.ws.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        if (payload.event === 'anomaly.detected' || payload.event === 'diff.updated' || payload.event === 'leaderboard.updated') {
+                            this.showLiveAlert(payload.event);
+                        }
+                    } catch {}
+                };
+                this.ws.onclose = () => {
+                    this.wsConnected = false;
+                };
+            } catch {
+                this.wsConnected = false;
+            }
+        },
+
+        showLiveAlert(eventType) {
+            this.hasLiveUpdate = true;
+            this.liveUpdateMessage = eventType === 'anomaly.detected'
+                ? '⚠️ New proctoring anomaly detected!'
+                : '⚡ Live student code diff / activity updated!';
+        },
+
         matchesSearch(name, group) {
             if (!this.searchQuery.trim()) return true;
             const q = this.searchQuery.toLowerCase();

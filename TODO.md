@@ -8,8 +8,8 @@ This document outlines the final feature specifications, implementation tasks, a
 
 | Feature | Primary Scope | Status | Transport / Protocol |
 | :--- | :--- | :--- | :--- |
-| **1. Diff Tracking** | VS Code Extension, Backend & Dashboard | 🟡 In Progress | WebSocket (Solo & Team) |
-| **2. Team Chat** | Extension & Web Platform (Team Mode Only) | 🟡 In Progress | WebSocket |
+| **1. Diff Tracking** | VS Code Extension, Backend & Dashboard | ✅ Completed | WebSocket (Solo & Team) + REST Fallback |
+| **2. Team Chat** | Extension & Web Platform (Team Mode Only) | ✅ Completed | WebSocket + Ephemeral Storage |
 | **3. Auto-Generated Starter Files** | Extension & Instructor Dashboard | ✅ Completed | REST + Local FileSystemWatcher |
 | **4. Paste Anomaly Detection** | Extension, Backend & Telemetry Sensor | ✅ Completed | WebSocket / REST Telemetry |
 | **5. In-Lab Sidebar (Leaderboard, Tasks, Timer, Focus)** | VS Code Extension & Backend | ✅ Completed | WebSocket (Solo & Team) |
@@ -44,9 +44,9 @@ This document outlines the final feature specifications, implementation tasks, a
   - Backend schema: `diff_stats` and `code_contributions` JSON columns in `lab_sessions` table.
 - [x] **Instructor Dashboard Visualization**:
   - Visual breakdown per student in team sessions on the web platform (percentage bars, lines added/deleted).
-- [ ] **Transport Unification (WebSocket for Solo & Team)**:
-  - Migrate solo-mode diff transport from REST `POST /sessions/{id}/diff` polling to stream directly over the existing shared WebSocket connection used for the live leaderboard (Feature 5).
-- [ ] **Real-Time Instructor Analytics Stream**:
+- [x] **Transport Unification (WebSocket for Solo & Team)**:
+  - Unified diff transport over persistent WebSocket channel (`DiffUpdated` event) streaming directly to students and instructors with automated high-frequency REST fallback when disconnected.
+- [x] **Real-Time Instructor Analytics Stream**:
   - Broadcast line-level diff updates over WebSocket to instructor live dashboard for instant real-time telemetry updates.
 
 ---
@@ -76,8 +76,8 @@ This document outlines the final feature specifications, implementation tasks, a
   - Unread message badge, sender initials/color, timestamp formatting, code snippet attachment syntax styling.
 - [x] **Web Platform Chat Integration**:
   - Embedded chat panel in `resources/views/laboratories/show.blade.php`.
-- [ ] **WebSocket Broadcast Integration**:
-  - Migrate chat synchronization to low-latency WebSocket broadcasting (Laravel Reverb) across both extension and web surfaces.
+- [x] **WebSocket Broadcast Integration**:
+  - Migrated chat synchronization to low-latency WebSocket broadcasting (`ChatMessageSent` on `lab-session.{sessionId}.chat`) across both extension and web surfaces with automatic seamless fallback.
 
 ---
 

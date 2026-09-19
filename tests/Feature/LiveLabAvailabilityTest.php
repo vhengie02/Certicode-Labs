@@ -463,5 +463,20 @@ class LiveLabAvailabilityTest extends TestCase
         $this->assertTrue($lab->isLiveClosed());
         $this->assertEquals('completed', $session->status);
     }
+
+    /**
+     * Test /api/cron/tick endpoint executes scheduled commands and returns status.
+     */
+    public function test_cron_tick_endpoint_triggers_closers(): void
+    {
+        $response = $this->getJson('/api/cron/tick');
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'success')
+            ->assertJsonStructure([
+                'status',
+                'timestamp',
+                'results' => ['live_labs', 'classes'],
+            ]);
+    }
 }
 

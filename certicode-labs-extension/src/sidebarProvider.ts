@@ -43,6 +43,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _windowStateListener?: vscode.Disposable;
     private _leaderboardInterval?: any;
 
+    // WebSocket Real-time Unified Stream (Features 1, 2, 5)
+    private _ws?: any;
+    private _wsConnected: boolean = false;
+    private _wsReconnectTimer?: any;
+
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
     public resolveWebviewView(
@@ -211,6 +216,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         // Setup window focus tracking (Feature 5)
         this.setupFocusTracking();
 
+        // Connect WebSocket real-time transport (Features 1, 2, 5)
+        this.connectWebSocket();
+
         // Run sync immediately
         this.syncSessionState();
         this.fetchLeaderboard();
@@ -220,15 +228,144 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             this.syncSessionState();
         }, 15000);
 
-        // Run chat sync every 4 seconds
+        // Run chat sync every 4 seconds (seamless fallback if WS is not connected)
         this._chatPollInterval = setInterval(() => {
-            this.fetchChatMessages();
+            if (!this._wsConnected) {
+                this.fetchChatMessages();
+            }
         }, 4000);
 
-        // Run leaderboard sync every 10 seconds (Feature 5)
+        // Run leaderboard sync every 10 seconds (seamless fallback if WS is not connected)
         this._leaderboardInterval = setInterval(() => {
-            this.fetchLeaderboard();
+            if (!this._wsConnected) {
+                this.fetchLeaderboard();
+            }
         }, 10000);
+    }
+
+    /**
+     * Connect real-time WebSocket for Diff, Chat, and Leaderboard streaming
+     */
+    private connectWebSocket() {
+        this.disconnectWebSocket();
+
+        const WSClass = (globalThis as any).WebSocket || (global as any).WebSocket;
+        if (!WSClass || !this._sessionId) {
+            return;
+        }
+
+        try {
+            const urlObj = new URL(this._backendUrl);
+            const isSecure = urlObj.protocol === 'https:';
+            const wsProtocol = isSecure ? 'wss:' : 'ws:';
+            const wsHost = urlObj.hostname;
+            const wsPort = isSecure ? '443' : (urlObj.port || '80');
+            const wsEndpoint = `${wsProtocol}//${wsHost}:${wsPort}/app/certicode-key?protocol=7&client=js&version=8.4.0`;
+
+            this._ws = new WSClass(wsEndpoint);
+
+            this._ws.onopen = () => {
+                this._wsConnected = true;
+                this.sendWsPayload({
+                    event: 'pusher:subscribe',
+                    data: { channel: `private-lab-session.${this._sessionId}` }
+                });
+                this.sendWsPayload({
+                    event: 'pusher:subscribe',
+                    data: { channel: `private-lab-session.${this._sessionId}.chat` }
+                });
+            };
+
+            this._ws.onmessage = (event: any) => {
+                try {
+                    const rawData = typeof event.data === 'string' ? event.data : event.data.toString();
+                    const payload = JSON.parse(rawData);
+
+                    if (payload.event === 'chat.message' || payload.event === 'App\\Events\\ChatMessageSent') {
+                        const chatData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
+                        if (chatData?.chat) {
+                            this.handleIncomingWsChat(chatData.chat);
+                        }
+                    } else if (payload.event === 'diff.updated' || payload.event === 'App\\Events\\DiffUpdated') {
+                        const diffData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
+                        if (diffData?.diff_stats) {
+                            this._lastDiffStats = diffData.diff_stats;
+                            this._view?.webview.postMessage({
+                                type: 'diffUpdate',
+                                diffStats: this._lastDiffStats
+                            });
+                        }
+                    } else if (payload.event === 'leaderboard.updated' || payload.event === 'App\\Events\\LeaderboardUpdated') {
+                        const lbData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
+                        if (lbData?.leaderboard) {
+                            this._view?.webview.postMessage({
+                                type: 'leaderboardData',
+                                leaderboard: lbData.leaderboard.leaderboard || [],
+                                availability_mode: lbData.leaderboard.availability_mode || 'open',
+                                shared_time_remaining_formatted: lbData.leaderboard.shared_time_remaining_formatted,
+                                live_status: lbData.leaderboard.live_status
+                            });
+                        }
+                    }
+                } catch {
+                    // Ignore frame parsing errors
+                }
+            };
+
+            this._ws.onerror = () => {
+                this._wsConnected = false;
+            };
+
+            this._ws.onclose = () => {
+                this._wsConnected = false;
+                if (this._sessionId && !this._wsReconnectTimer) {
+                    this._wsReconnectTimer = setTimeout(() => {
+                        this._wsReconnectTimer = undefined;
+                        this.connectWebSocket();
+                    }, 10000);
+                }
+            };
+        } catch {
+            this._wsConnected = false;
+        }
+    }
+
+    private sendWsPayload(payload: any) {
+        if (this._ws && this._wsConnected && typeof this._ws.send === 'function') {
+            try {
+                this._ws.send(JSON.stringify(payload));
+            } catch {}
+        }
+    }
+
+    private disconnectWebSocket() {
+        if (this._wsReconnectTimer) {
+            clearTimeout(this._wsReconnectTimer);
+            this._wsReconnectTimer = undefined;
+        }
+        if (this._ws) {
+            try { this._ws.close(); } catch {}
+            this._ws = undefined;
+        }
+        this._wsConnected = false;
+    }
+
+    private handleIncomingWsChat(chat: any) {
+        if (!chat) { return; }
+        if (chat.message && typeof chat.message === 'string') {
+            this._recentChatSnippets.push(chat.message.trim());
+        }
+        if (chat.code_snippet && typeof chat.code_snippet === 'string') {
+            this._recentChatSnippets.push(chat.code_snippet.trim());
+        }
+        if (!this._isChatTabActive) {
+            this._unreadChatCount++;
+        }
+        this._view?.webview.postMessage({
+            type: 'chatAppend',
+            chat: chat,
+            unreadCount: this._unreadChatCount
+        });
     }
 
     private async syncSessionState() {
@@ -1050,6 +1187,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (this._leaderboardInterval) { clearInterval(this._leaderboardInterval); }
         if (this._wpmSyncTimer) { clearTimeout(this._wpmSyncTimer); }
         if (this._windowStateListener) { this._windowStateListener.dispose(); }
+        this.disconnectWebSocket();
 
         this._sessionId = undefined;
         this._lastSessionData = null;
@@ -2235,6 +2373,31 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
                     }
 
+                    if (message.unreadCount > 0) {
+                        chatBadge.innerText = message.unreadCount;
+                        chatBadge.style.display = 'inline-block';
+                    }
+                    break;
+
+                case 'chatAppend':
+                    const singleMsg = message.chat;
+                    if (singleMsg) {
+                        const el = document.createElement('div');
+                        el.className = 'chat-msg';
+                        el.innerHTML = \`
+                            <div class="chat-header">
+                                <div class="chat-author">
+                                    <span class="chat-avatar" style="background-color: \${singleMsg.avatar_color || '#3ecf8e'};"></span>
+                                    <span>\${singleMsg.user_name}</span>
+                                </div>
+                                <span class="chat-time">\${singleMsg.time || ''}</span>
+                            </div>
+                            <div class="chat-text">\${singleMsg.message}</div>
+                            \${singleMsg.code_snippet ? \`<pre class="chat-snippet">\${singleMsg.code_snippet}</pre>\` : ''}
+                        \`;
+                        chatMessagesContainer.appendChild(el);
+                        chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                    }
                     if (message.unreadCount > 0) {
                         chatBadge.innerText = message.unreadCount;
                         chatBadge.style.display = 'inline-block';
