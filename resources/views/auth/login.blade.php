@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="alternate icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
     <title>Sign In - Certicode Labs</title>
     <!-- Google Fonts: Inter & Source Code Pro -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

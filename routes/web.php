@@ -13,6 +13,21 @@ use App\Http\Controllers\SearchController;
 use App\Http\Controllers\InstructorMonitoringController;
 use App\Http\Controllers\Api\LabSessionController;
 
+// High-performance cached favicon routes
+Route::get('/favicon.ico', function () {
+    return response()->file(public_path('favicon.ico'), [
+        'Content-Type' => 'image/x-icon',
+        'Cache-Control' => 'public, max-age=31536000, immutable',
+    ]);
+})->withoutMiddleware([\Illuminate\Session\Middleware\StartSession::class, \Illuminate\View\Middleware\ShareErrorsFromSession::class]);
+
+Route::get('/favicon.svg', function () {
+    return response()->file(public_path('favicon.svg'), [
+        'Content-Type' => 'image/svg+xml',
+        'Cache-Control' => 'public, max-age=31536000, immutable',
+    ]);
+})->withoutMiddleware([\Illuminate\Session\Middleware\StartSession::class, \Illuminate\View\Middleware\ShareErrorsFromSession::class]);
+
 // Diagnostic Health Check for Serverless & Monitoring (bypasses session/cookie middleware)
 Route::get('/health-check', function () {
     $dbOk = false;
@@ -91,7 +106,29 @@ Route::post('/logout', LogoutController::class)->name('logout')->middleware('aut
 // Protected Routes
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', function () {
-        return view('dashboard');
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+        $cacheKey = "user_dashboard_data_{$user->id}_{$user->role}";
+
+        $dashboardData = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
+            if ($user->role === 'student') {
+                return [
+                    'activeLabSessionsCount' => $user->labSessions()->count(),
+                    'certificates' => $user->certificates()->with('schoolClass')->get(),
+                    'laboratoryCount' => 0,
+                    'recentAnomalies' => collect(),
+                ];
+            } else {
+                return [
+                    'activeLabSessionsCount' => 0,
+                    'certificates' => collect(),
+                    'laboratoryCount' => \App\Models\Laboratory::count(),
+                    'recentAnomalies' => \App\Models\Anomaly::with('labSession')->latest()->take(5)->get(),
+                ];
+            }
+        });
+
+        return view('dashboard', $dashboardData);
     })->name('dashboard');
 
     // Settings & Account preferences
@@ -195,6 +232,7 @@ Route::middleware('auth')->group(function () {
         if ($user) {
             $user->unreadNotifications->markAsRead();
             \Illuminate\Support\Facades\Cache::forget("user_notifs_{$user->id}");
+            \Illuminate\Support\Facades\Cache::store('file')->forget("user_notifs_summary_{$user->id}");
         }
         return response()->json(['status' => 'success']);
     })->name('notifications.mark-as-read');

@@ -3,6 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="alternate icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
     <title>Certicode Labs - Telemetry-Powered Coding Education & Verification</title>
     <!-- Google Fonts: Inter & Source Code Pro -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

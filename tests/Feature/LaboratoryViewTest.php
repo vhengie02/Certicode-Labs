@@ -119,8 +119,8 @@ class LaboratoryViewTest extends TestCase
 
         $this->assertEquals(0, $laboratory->views_count);
 
-        // Start workspace session
-        $response = $this->actingAs($student)->post(route('laboratories.start', $laboratory->id));
+        // Start workspace session with camera verified
+        $response = $this->actingAs($student)->withSession(["camera_verified_lab_{$laboratory->id}" => true])->post(route('laboratories.start', $laboratory->id));
         $response->assertRedirect();
         $this->assertStringContainsString('vscode://', $response->headers->get('Location'));
 

@@ -6,6 +6,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="description" content="Certicode Labs - Interactive coding challenges, virtual laboratory environments, and automated competency verification.">
     <meta name="theme-color" content="#0f0f0f">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; script-src 'self' https: 'unsafe-inline' 'unsafe-eval' blob: data:; style-src 'self' https: 'unsafe-inline'; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https: ws: wss:;">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="alternate icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
     <title>@yield('title', 'Certicode Labs') - Certicode Labs</title>
 
     <!-- Immediate Theme Initialization (No-FOUC) -->
@@ -425,7 +428,7 @@
 
                 <!-- Center Search Input (GitHub Style) -->
                 <div class="hidden lg:block w-80 relative mx-4">
-                    <input type="text" placeholder="Search..." onclick="openSearchModal()" readonly class="w-full h-8 pl-8 pr-12 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 placeholder-slate-500 cursor-pointer hover:border-slate-700 transition-colors">
+                    <input type="text" id="global-search-bar-input" name="global_search_header" placeholder="Search..." onclick="openSearchModal()" readonly class="w-full h-8 pl-8 pr-12 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 placeholder-slate-500 cursor-pointer hover:border-slate-700 transition-colors">
                     <div class="absolute left-2.5 top-2 text-slate-500 pointer-events-none">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
@@ -451,8 +454,17 @@
                     <!-- Notification Bell and Dropdown -->
                     <div class="relative" id="notification-bell-container">
                         @php
-                            $unreadCount = auth()->user()->unreadNotifications()->count();
-                            $notifications = auth()->user()->notifications()->take(5)->get();
+                            $currentUserId = auth()->id();
+                            $cachedNotificationsData = \Illuminate\Support\Facades\Cache::store('file')->remember("user_notifs_summary_{$currentUserId}", 30, function () {
+                                /** @var \App\Models\User|null $u */
+                                $u = auth()->user();
+                                return [
+                                    'count' => $u ? $u->unreadNotifications()->count() : 0,
+                                    'items' => $u ? $u->notifications()->take(5)->get() : collect(),
+                                ];
+                            });
+                            $unreadCount = $cachedNotificationsData['count'] ?? 0;
+                            $notifications = $cachedNotificationsData['items'] ?? collect();
                         @endphp
                         <button onclick="toggleNotifications()" aria-label="View notifications" class="relative p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
@@ -977,7 +989,7 @@
                 <div class="pointer-events-none absolute left-4 top-3.5 text-slate-400">
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-                <input type="text" id="search-modal-input" oninput="performSearch(this.value)" placeholder="Search classes, modules, challenges..."
+                <input type="text" id="search-modal-input" name="search_modal_query" oninput="performSearch(this.value)" placeholder="Search classes, modules, challenges..."
                        class="h-12 w-full border-0 bg-transparent pl-11 pr-4 text-sm text-slate-200 placeholder-slate-500 focus:ring-0 focus:outline-none" role="combobox" aria-expanded="false" aria-controls="options">
             </div>
 

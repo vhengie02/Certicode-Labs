@@ -20,21 +20,40 @@ class ClassController extends Controller
         if (!$user instanceof User) {
             return redirect()->route('login');
         }
-        $invitedClasses = collect();
 
-        if ($user->role === 'student') {
-            $classes = $user->classes()->with('instructor')->withCount('modules')->latest()->get();
-            $invitedClasses = $user->invitedClasses()->with('instructor')->withCount('modules')->latest()->get();
-        } else {
-            // Instructor / Admin
-            $classes = SchoolClass::where('instructor_id', $user->id)
-                ->with('instructor')
-                ->withCount(['students', 'modules'])
-                ->latest()
-                ->get();
-        }
+        $cacheKey = "user_classes_index_{$user->id}_{$user->role}";
+
+        [$classes, $invitedClasses] = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
+            $invitedClasses = collect();
+
+            if ($user->role === 'student') {
+                $classes = $user->classes()->with('instructor')->withCount('modules')->latest()->get();
+                $invitedClasses = $user->invitedClasses()->with('instructor')->withCount('modules')->latest()->get();
+            } else {
+                // Instructor / Admin
+                $classes = SchoolClass::where('instructor_id', $user->id)
+                    ->with('instructor')
+                    ->withCount(['students', 'modules'])
+                    ->latest()
+                    ->get();
+            }
+
+            return [$classes, $invitedClasses];
+        });
 
         return view('classes.index', compact('classes', 'invitedClasses'));
+    }
+
+    /**
+     * Clear cached classes index for a user.
+     */
+    public static function clearClassesCache(?int $userId = null): void
+    {
+        if ($userId) {
+            \Illuminate\Support\Facades\Cache::store('file')->forget("user_classes_index_{$userId}_student");
+            \Illuminate\Support\Facades\Cache::store('file')->forget("user_classes_index_{$userId}_instructor");
+            \Illuminate\Support\Facades\Cache::store('file')->forget("user_classes_index_{$userId}_admin");
+        }
     }
 
     /**
@@ -75,6 +94,8 @@ class ClassController extends Controller
             'scheduled_end_date' => $validated['scheduled_end_date'] ?? null,
             'status' => 'active',
         ]);
+
+        self::clearClassesCache((int) Auth::id());
 
         return redirect()->route('classes.index')->with('success', 'Class created successfully with join code: ' . $code);
     }
@@ -147,6 +168,7 @@ class ClassController extends Controller
         ]);
 
         $class->update($validated);
+        self::clearClassesCache((int) Auth::id());
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Class updated successfully.');
     }
@@ -159,6 +181,7 @@ class ClassController extends Controller
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
         $class->delete();
+        self::clearClassesCache((int) Auth::id());
 
         return redirect()->route('classes.index')->with('success', 'Class deleted successfully.');
     }
@@ -187,6 +210,7 @@ class ClassController extends Controller
 
             // If they had an invitation, make sure it is updated to enrolled
             $class->students()->updateExistingPivot($userId, ['status' => 'enrolled']);
+            self::clearClassesCache($userId);
         }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Successfully enrolled in ' . $class->name);
@@ -214,20 +238,21 @@ class ClassController extends Controller
         $class->students()->syncWithoutDetaching([
             $student->id => ['status' => 'invited']
         ]);
+        self::clearClassesCache($student->id);
 
         // Send invite notification
         try {
             $student->notify(new \App\Notifications\ClassActivityNotification(
                 "Invited to Class: {$class->name}",
-                "You have been invited to join the class '{$class->name}' by {$class->instructor->name}.",
+                "Instructor {$class->instructor->name} has invited you to join the class '{$class->name}'.",
                 route('classes.index'),
                 'class'
             ));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Student invite notification failed: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::warning("Class invitation notification failed: " . $e->getMessage());
         }
 
-        return redirect()->back()->with('success', 'Invitation successfully sent. The class will automatically appear in ' . $student->name . '\'s Classes tab.');
+        return redirect()->route('classes.show', $class->id)->with('success', 'Student invitation sent successfully to ' . $student->email);
     }
 
     /**
@@ -244,6 +269,7 @@ class ClassController extends Controller
         $class->students()->updateExistingPivot($student->id, [
             'status' => 'enrolled'
         ]);
+        self::clearClassesCache($student->id);
 
         // Notify the instructor
         if ($class->instructor) {

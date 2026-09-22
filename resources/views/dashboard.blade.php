@@ -82,9 +82,9 @@
                     <p class="text-[11px] font-mono uppercase tracking-wider text-[#888888]">Lab Sessions</p>
                     <h3 class="text-lg font-bold text-[#ededed] mt-1.5 font-mono">
                         @if(auth()->user()->role === 'student')
-                            {{ auth()->user()->labSessions()->count() }} Active
+                            {{ $activeLabSessionsCount ?? auth()->user()->labSessions()->count() }} Active
                         @else
-                            {{ \App\Models\Laboratory::count() }} Exercises
+                            {{ $laboratoryCount ?? \App\Models\Laboratory::count() }} Exercises
                         @endif
                     </h3>
                 </div>
@@ -125,7 +125,7 @@
         <div class="p-6 rounded-xl bg-[#171717] border border-[#2e2e2e]">
             <h3 class="text-xs uppercase font-mono font-bold tracking-wider text-[#a3a3a3] mb-4">Earned Competency Credentials</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                @forelse(auth()->user()->certificates()->with('schoolClass')->get() as $cert)
+                @forelse($certificates ?? auth()->user()->certificates()->with('schoolClass')->get() as $cert)
                     <div class="p-4 rounded-[6px] bg-[#141414] border border-[#2e2e2e] flex items-center justify-between hover:border-[#3ecf8e]/35 transition-colors">
                         <div class="flex items-center space-x-3.5">
                             <div class="h-9 w-9 rounded-[6px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e] shrink-0">
@@ -167,7 +167,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#232323] bg-transparent text-[#ededed]">
-                    @forelse(\App\Models\Anomaly::with('labSession')->latest()->take(5)->get() as $anomaly)
+                    @forelse($recentAnomalies ?? \App\Models\Anomaly::with('labSession')->latest()->take(5)->get() as $anomaly)
                         <tr>
                             <td class="px-5 py-3.5 whitespace-nowrap text-xs text-[#888888] font-mono">#AN-{{ $anomaly->id }}</td>
                             <td class="px-5 py-3.5 whitespace-nowrap text-xs text-[#ededed]">Session #{{ $anomaly->lab_session_id }}</td>

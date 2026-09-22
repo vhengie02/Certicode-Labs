@@ -15,7 +15,7 @@
             <!-- Student: Join Class by Code -->
             <form action="{{ route('classes.join') }}" method="POST" class="flex space-x-2 shrink-0">
                 @csrf
-                <input type="text" name="code" required placeholder="CLASS CODE (e.g. CLASS-XYZ)" 
+                <input type="text" id="join_class_code" name="code" required placeholder="CLASS CODE (e.g. CLASS-XYZ)" 
                        class="px-3.5 py-2 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-xs font-mono text-[#ededed] placeholder-[#666666] uppercase focus:outline-none focus:border-[#3ecf8e]">
                 <button type="submit" class="px-5 py-2 text-xs font-semibold rounded-full text-[#0f0f0f] bg-[#3ecf8e] hover:bg-[#00c573] transition-colors shadow-none">
                     Join Class &rarr;

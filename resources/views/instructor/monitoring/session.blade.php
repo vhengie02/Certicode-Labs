@@ -228,7 +228,7 @@
                 <h3 class="font-bold text-white text-sm">Active Student / Team Workspaces</h3>
                 <p class="text-xs text-slate-400 mt-0.5">Real-time status, WPM tracking, task progress, and anomaly audit trails.</p>
             </div>
-            <input type="text" x-model="searchQuery" placeholder="Filter by student or team..." 
+            <input type="text" id="monitoring-search-query" name="search_query" x-model="searchQuery" placeholder="Filter by student or team..." 
                    class="bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#3ecf8e] w-full sm:w-64">
         </div>
 
@@ -792,13 +792,13 @@
                 <form @submit.prevent="submitGradeOverride()" class="space-y-3">
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div class="space-y-1">
-                            <label class="text-[11px] font-semibold text-slate-400 uppercase">Override Score (0–100)</label>
-                            <input type="number" step="0.1" min="0" max="100" x-model="overrideScoreInput" required
+                            <label for="override-score-input" class="text-[11px] font-semibold text-slate-400 uppercase">Override Score (0–100)</label>
+                            <input type="number" id="override-score-input" name="override_score" step="0.1" min="0" max="100" x-model="overrideScoreInput" required
                                    class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm font-mono text-white focus:outline-none focus:border-[#3ecf8e]">
                         </div>
                         <div class="sm:col-span-2 space-y-1">
-                            <label class="text-[11px] font-semibold text-slate-400 uppercase">Audit Note / Reason</label>
-                            <input type="text" x-model="overrideReasonInput" placeholder="e.g. Awarded partial credit for custom error handling logic..."
+                            <label for="override-reason-input" class="text-[11px] font-semibold text-slate-400 uppercase">Audit Note / Reason</label>
+                            <input type="text" id="override-reason-input" name="override_reason" x-model="overrideReasonInput" placeholder="e.g. Awarded partial credit for custom error handling logic..."
                                    class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-[#3ecf8e]">
                         </div>
                     </div>

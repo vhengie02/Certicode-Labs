@@ -249,7 +249,7 @@
 
                     <form @submit.prevent="sendMessage()" class="mt-3 pt-3 border-t border-[#232323] space-y-2">
                         <template x-if="showSnippetInput">
-                            <textarea x-model="codeSnippet" placeholder="// Paste code snippet here..." rows="3"
+                            <textarea id="chat-code-snippet" name="code_snippet" x-model="codeSnippet" placeholder="// Paste code snippet here..." rows="3"
                                 class="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#2e2e2e] rounded text-xs font-mono text-[#ededed] focus:outline-none focus:border-[#3ecf8e]"></textarea>
                         </template>
                         <div class="flex items-center space-x-2">
@@ -257,7 +257,7 @@
                                 class="p-2 rounded bg-[#171717] border border-[#2e2e2e] text-[#888888] hover:text-[#3ecf8e] text-xs font-mono" title="Attach Code Snippet">
                                 &lt;/&gt;
                             </button>
-                            <input type="text" x-model="newMessage" placeholder="Type a message to teammates..." 
+                            <input type="text" id="chat-new-message" name="chat_message" x-model="newMessage" placeholder="Type a message to teammates..." 
                                 class="flex-1 px-3 py-2 bg-[#171717] border border-[#2e2e2e] rounded text-xs text-[#ededed] focus:outline-none focus:border-[#3ecf8e]">
                             <button type="submit" class="px-4 py-2 bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold rounded hover:bg-[#00c573] transition-colors">
                                 Send

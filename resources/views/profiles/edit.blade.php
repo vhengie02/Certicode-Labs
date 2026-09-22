@@ -85,7 +85,7 @@
                         <option value="admin" {{ $user->role === 'admin' ? 'selected' : '' }} class="bg-[#141414] text-[#ededed]">Administrator</option>
                     </select>
                 @else
-                    <input type="text" disabled value="{{ ucfirst($user->role) }}"
+                    <input type="text" id="user_role_display" name="role_display" disabled value="{{ ucfirst($user->role) }}"
                         class="w-full px-3.5 py-2.5 bg-[#141414]/50 border border-[#2e2e2e] rounded-[6px] text-xs text-[#666666] font-mono focus:outline-none cursor-not-allowed">
                     <input type="hidden" name="role" value="{{ $user->role }}">
                 @endif
