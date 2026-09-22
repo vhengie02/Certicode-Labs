@@ -441,4 +441,55 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertNotNull($noFaceAnomaly['image_path']);
         $this->assertStringContainsString('storage/anomalies/', $noFaceAnomaly['image_path']);
     }
+
+    public function test_prelab_verification_failed_after_three_attempts_records_high_severity_anomaly_with_snapshot()
+    {
+        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('prelab-failure-proof');
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'prelab_verification_failed',
+            'payload' => [
+                'attempts' => 3,
+                'face_count' => 0,
+                'image_base64' => $dummyBase64,
+                'timestamp' => now()->toISOString(),
+            ],
+        ]);
+
+        $response->assertStatus(200);
+
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)
+            ->where('type', 'no_face')
+            ->latest()
+            ->first();
+
+        $this->assertNotNull($anomaly);
+        $this->assertEquals('high', $anomaly->severity);
+        $this->assertStringContainsString('Pre-lab camera presence verification failed after 3 attempts', $anomaly->description);
+        $this->assertNotNull($anomaly->image_path);
+
+        $storageRelative = str_replace('storage/', '', $anomaly->image_path);
+        $this->assertFileExists(storage_path('app/public/' . $storageRelative));
+    }
+
+    public function test_get_session_reflects_camera_verified_state()
+    {
+        // Initially not camera verified
+        $resBefore = $this->getJson("/api/v1/sessions/{$this->session1->id}");
+        $resBefore->assertStatus(200);
+        $this->assertFalse($resBefore->json('camera_verified'));
+
+        // Log prelab verification success
+        TelemetryLog::create([
+            'lab_session_id' => $this->session1->id,
+            'event_type' => 'webcam_prelab_verification',
+            'payload' => ['verified' => true, 'face_count' => 1],
+        ]);
+
+        // After verification
+        $resAfter = $this->getJson("/api/v1/sessions/{$this->session1->id}");
+        $resAfter->assertStatus(200);
+        $this->assertTrue($resAfter->json('camera_verified'));
+    }
 }
+

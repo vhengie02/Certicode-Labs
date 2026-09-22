@@ -17,6 +17,7 @@ This document outlines the final feature specifications, implementation tasks, a
 | **7. Session Closure vs. Course Completion & Certification** | Backend, Web Platform & Database | ✅ Completed | REST + Lifecycle Evaluation |
 | **8. Camera Presence Check** | Pre-Lab Gate & Ongoing Proctoring | ✅ Completed | WebRTC / Video Capture + AI |
 | **9. Lab Availability Modes (Live Lab vs. Open Lab)** | Backend, Web Platform & VS Code Extension | ✅ Completed | REST + Shared Live Window & Scheduled Cron |
+| **10. AI Grade Summary & Explanation (with Instructor Overrides)** | Backend, Instructor Web Platform & LLM Service | ✅ Completed | REST + Same-Call AI Response + Side-by-Side Audit Trail |
 
 ---
 
@@ -248,31 +249,42 @@ This document outlines the final feature specifications, implementation tasks, a
 
 ---
 
-## Feature 8: Camera Presence Check
+## Feature 8: Camera Presence Check (face-api.js)
 
 ### Specification
-- **Pre-Lab Gate**:
-  - Requires camera permission grant.
-  - IF permission denied → student CANNOT start the lab. Hard block.
-  - IF permission granted → run AI presence check before unlocking lab environment.
-- **Ongoing Check**:
-  - Re-verifies presence continuously throughout the session (not one-time).
-  - IF presence check fails mid-session → do NOT block or interrupt the student's work.
-  - Action taken: Notify instructor + attach captured image of the anomaly to the notification.
+- **Checkpoint 1: Pre-Lab Gate Check (One-Time)**:
+  - Requires camera permission via browser `getUserMedia()`.
+  - IF permission denied or missing camera → student CANNOT start the lab. Hard block with clear requirement notice.
+  - IF permission granted → captures single frame and runs client-side face detection using `SsdMobilenetv1` (accurate, heavier, run once).
+  - IF face detected → Gate passes, unlocks workspace, initiates normal start flow.
+  - IF no face detected → Do not unlock. Prompt student to reposition in front of webcam with 3-attempt retry limit.
+  - IF all 3 attempts fail → Hard-block student from lab, display contact instructor alert, and log failure attempt with static JPEG snapshot to backend proctoring telemetry endpoint (`prelab_verification_failed`).
+- **Checkpoint 2: Continuous Re-Verification (Active Session)**:
+  - Fixed interval (every 25 seconds) running lightweight `TinyFaceDetector` against background video stream.
+  - IF face detected → Take NO action. Zero network traffic, zero backend logging, zero student disruption.
+  - IF no face detected (`camera_absence`) → Capture that specific frame as a static JPEG image and send telemetry event to `POST /api/v1/sessions/{id}/telemetry`.
+  - Critical constraint: Detection failure must be completely silent on student's end — NEVER interrupt, pause, warn, or block student's work mid-session.
+- **Constraints & Edge Cases**:
+  - Zero external CDN dependencies: self-hosted `face-api.js` (`public/js/` & extension `media/js/`) and local models (`public/models/` & extension `media/models/`).
+  - Minimal model footprint: load only `SsdMobilenetv1` and `TinyFaceDetector`. No landmarks, expressions, age/gender, or recognition descriptors.
+  - Privacy first: client-side inference in browser/webview sandbox; only flagged failure snapshots are sent to backend.
 
 ### Technical Requirements & Progress
-- [x] **Pre-Lab Camera Permission Gate ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php) & [`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
-  - Web platform / extension launch barrier demanding camera access before lab initiation.
-  - Hard block: prevent session start and keep workspace locked (`checkProgressBtn` & `submitBtn` disabled) if camera permission is denied or missing.
-- [x] **Pre-Lab AI Presence Validation ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
-  - Capture initial reference frame and verify facial presence via browser native `FaceDetector` and `/api/v1/sessions/{id}/verify-camera` before unlocking extension workspace.
+- [x] **Self-Hosted Library & Model Weights ([`public/js/face-api.min.js`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/public/js/face-api.min.js), [`public/models/`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/public/models/))**:
+  - Installed `face-api.js` locally with zero CDN dependencies.
+  - Deployed `SsdMobilenetv1` and `TinyFaceDetector` manifests and binary weights to `public/models/` and `certicode-labs-extension/media/models/`.
+- [x] **Pre-Lab Camera Permission & Presence Gate ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php) & [`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
+  - Web dashboard & VS Code sidebar hard-blocks students until camera permission is granted.
+  - One-time AI presence verification runs `SsdMobilenetv1` against live camera capture with 3-attempt retry limit before permanent block and telemetry alert.
 - [x] **Continuous Background Presence Verification ([`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
-  - Periodic background camera snapshots analyzed for face presence/count (`no_face` / `multiple_faces`) every 25s via hidden off-screen canvas.
-- [x] **Non-Interruptive Student Experience**:
-  - Guarantee mid-session presence check failures never disrupt, pause, or block student coding activity. Failures quietly dispatch telemetry anomaly logs while workspace remains fully operational.
-- [x] **Instructor Notification & Anomaly Image Attachment ([`session.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/instructor/monitoring/session.blade.php))**:
-  - On presence failure, persist anomaly image snapshot to storage (`storage/app/public/anomalies/{session_id}/...`).
-  - Broadcast real-time alert and anomaly stream to instructor monitoring panel with captured evidence image attached and modal zoom preview.
+  - Runs `TinyFaceDetector` every 25 seconds against silent off-screen camera video.
+  - Zero network traffic when face is present.
+  - Dispatches compressed static JPEG snapshot with `camera_absence` event on face absence.
+- [x] **Silent Student Proctoring & Instructor Telemetry ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
+  - Mid-session checks never disrupt or block student coding activity.
+  - Persists flagged snapshot images to `storage/app/public/anomalies/{session_id}/...` and real-time broadcasts `AnomalyDetected` event to instructor live monitoring.
+- [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
+  - Automated tests for permission denial, absence anomaly recording, multi-face detection, pre-lab 3-attempt failure reporting, and camera verification status persistence.
 
 ---
 
@@ -341,6 +353,54 @@ When creating a lab exercise, the instructor selects one of two availability mod
 - [x] **Automated Feature Verification ([`tests/Feature/LiveLabAvailabilityTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/LiveLabAvailabilityTest.php))**:
   - 12 comprehensive unit and integration tests covering: Open Lab default behavior, Live Lab creation, student gating before open, instructor manual start, late joiners receiving shared countdown, auto-close on timer expiry, late joiners blocked when expired, early close by instructor, and leftover-only reopening.
   - Full suite verification: 118 passing tests with 483 assertions.
+
+---
+
+## Feature 10: AI Grade Summary & Explanation (with Instructor Grade Overrides)
+
+### Specification
+- **Trigger & Coupling**: Generated at student (or team) submission time inside the *same single AI call* in [`LlmEvaluationService.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Services/LlmEvaluationService.php) that computes the pass/fail score (no redundant follow-up calls).
+- **Target Output Shape**:
+  ```json
+  {
+    "competencies": {
+      "oop_inheritance": { "passed": true, "reason": "..." },
+      "exception_handling": { "passed": false, "reason": "..." }
+    },
+    "test_cases_passed": 7,
+    "test_cases_total": 10,
+    "code_quality_notes": "...",
+    "summary": "Full plain-language explanation..."
+  }
+  ```
+- **Visibility**: Instructor-only. Students never see the AI summary — it's a grading and review aid for the instructor, not student-facing feedback. Stripped from all student-facing endpoints.
+- **Team Labs**: Evaluates and explains the team's combined final submission as a single unit without breaking down individual teammate contributions (diff tracking and grading are separate concerns).
+- **Grade Override Audit Trail**: Instructors can review the submission and override the grade with an optional reason note. Preserves both records side-by-side:
+  1. Original AI score (`performance_score`) + `ai_grade_summary` (untouched).
+  2. Override fields: `instructor_grade_override`, `instructor_override_reason`, `instructor_overridden_at`, `overridden_by`.
+- **Where Displayed**: In the Instructor Live Monitoring Panel ([`session.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/instructor/monitoring/session.blade.php)), accessible via a dedicated "Grade Review & AI Summary" button in each student/team row with a side-by-side audit modal and inline manual override form.
+
+### Technical Requirements & Progress
+- [x] **Database Schema Migration ([`2026_09_22_122120_add_ai_grade_summary_and_overrides_to_lab_sessions_table.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/database/migrations/2026_09_22_122120_add_ai_grade_summary_and_overrides_to_lab_sessions_table.php))**:
+  - Added `ai_grade_summary` (JSON), `instructor_grade_override` (numeric), `instructor_override_reason` (text), `instructor_overridden_at` (timestamp), and `overridden_by` (foreign key) to `lab_sessions`.
+- [x] **Eloquent Model Upgrades ([`LabSession.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Models/LabSession.php))**:
+  - Added fields to `$fillable` and `$casts`.
+  - Added relationship `overriddenByUser()` to [`User`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Models/User.php).
+  - Added helper accessors: `getEffectiveScoreAttribute()` and `isGradeOverridden()`.
+- [x] **Single-Call AI Prompt & Normalization ([`LlmEvaluationService.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Services/LlmEvaluationService.php))**:
+  - Structured OpenAI prompt to return competencies dictionary, test counts, code quality notes, and plain-language summary in the same execution.
+  - Upgraded fallback heuristic evaluator (`evaluateMock()`) and zero-state evaluator (`evaluateEmptySubmission()`) to produce the identical structured schema.
+- [x] **Student Data Privacy ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
+  - Persisted `ai_grade_summary` in `submitSession()`.
+  - Sanitized student JSON responses in `submitSession()` and `checkProgress()` to strictly omit `ai_grade_summary`, `competencies`, `code_quality_notes`, and `summary`.
+- [x] **Instructor Override Endpoint & Data Streaming ([`InstructorMonitoringController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/InstructorMonitoringController.php))**:
+  - Implemented `overrideGrade()` (`POST /instructor/sessions/{id}/override-grade`) with validation, authorization, audit logging, and `StudentCompetency` synchronization.
+  - Streamed effective scores, override flags, audit notes, and AI grade summaries via `streamData()` and `show()`.
+- [x] **Instructor UI & Audit Modal ([`session.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/instructor/monitoring/session.blade.php))**:
+  - Added live grade pill showing effective/overridden grade badge.
+  - Added Alpine.js modal displaying AI vs. Effective scores side-by-side, full plain-language AI explanation, test results, competency checklist with reasons, and inline override form.
+- [x] **Automated Test Verification ([`AiGradeSummaryAndOverrideTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/AiGradeSummaryAndOverrideTest.php))**:
+  - Comprehensive feature tests covering persistence, student privacy, side-by-side audit preservation, authorization, and team submission unit evaluation (6 tests, 53 assertions).
 
 ---
 

@@ -19,6 +19,8 @@
         "vite": "^7.0.7"
     },
     "dependencies": {
-        "alpinejs": "^3.17.3"
+        "@vladmandic/face-api": "^1.7.15",
+        "alpinejs": "^3.17.3",
+        "face-api.js": "^0.22.2"
     }
 }

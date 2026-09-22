@@ -25,7 +25,7 @@ class InstructorMonitoringController extends Controller
 
         $sortBy = $request->query('sort', 'name'); // 'name' or 'group'
 
-        $sessionsQuery = LabSession::with(['user', 'group', 'anomalies'])
+        $sessionsQuery = LabSession::with(['user', 'group', 'anomalies', 'overriddenByUser'])
             ->where('lab_id', $laboratory->id);
 
         $sessions = $sessionsQuery->get();
@@ -108,7 +108,7 @@ class InstructorMonitoringController extends Controller
             ];
         }
 
-        $sessions = LabSession::with(['user', 'group', 'anomalies'])
+        $sessions = LabSession::with(['user', 'group', 'anomalies', 'overriddenByUser'])
             ->where('lab_id', $laboratory->id)
             ->get()
             ->map(function ($s) {
@@ -134,6 +134,14 @@ class InstructorMonitoringController extends Controller
                     'elapsed_time' => sprintf('%02d:%02d', floor($duration / 60), $duration % 60),
                     'diff_stats' => $s->diff_stats ?? ['added' => 0, 'deleted' => 0],
                     'code_contributions' => $s->code_contributions ?? [],
+                    'performance_score' => $s->performance_score,
+                    'instructor_grade_override' => $s->instructor_grade_override,
+                    'effective_score' => $s->effective_score,
+                    'is_overridden' => $s->isGradeOverridden(),
+                    'ai_grade_summary' => $s->ai_grade_summary,
+                    'override_reason' => $s->instructor_override_reason,
+                    'overridden_at' => $s->instructor_overridden_at ? $s->instructor_overridden_at->diffForHumans() : null,
+                    'overridden_by_name' => $s->overriddenByUser->name ?? null,
                     'anomalies' => $s->anomalies->map(function ($a) {
                         return [
                             'id' => $a->id,
@@ -154,6 +162,79 @@ class InstructorMonitoringController extends Controller
             'shared_countdown' => $sharedCountdown,
             'sessions' => $sessions,
         ]);
+    }
+
+    /**
+     * Override grade for a student/team lab session.
+     */
+    public function overrideGrade(Request $request, int $id)
+    {
+        $this->authorizeInstructor();
+
+        $session = LabSession::with(['user', 'laboratory'])->findOrFail($id);
+
+        $request->validate([
+            'override_score' => 'required|numeric|min:0|max:100',
+            'override_reason' => 'nullable|string|max:1000',
+        ]);
+
+        $overrideScore = round((float) $request->input('override_score'), 2);
+        $reason = $request->input('override_reason');
+
+        $session->update([
+            'instructor_grade_override' => $overrideScore,
+            'instructor_override_reason' => $reason,
+            'instructor_overridden_at' => now(),
+            'overridden_by' => Auth::id(),
+        ]);
+
+        // Update StudentCompetency to reflect overridden effective grade
+        if ($session->user) {
+            $competency = \App\Models\Competency::firstOrCreate([
+                'code' => 'COMP-JAVA-01',
+            ], [
+                'name' => 'Java OOP and Custom Exceptions Mastery',
+            ]);
+
+            \App\Models\StudentCompetency::updateOrCreate([
+                'user_id' => $session->user->id,
+                'competency_id' => $competency->id,
+            ], [
+                'score_achieved' => max($overrideScore, 0.0),
+            ]);
+        }
+
+        TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'instructor_grade_override',
+            'payload' => [
+                'instructor_id' => Auth::id(),
+                'instructor_name' => Auth::user()->name ?? 'Instructor',
+                'original_score' => $session->performance_score,
+                'override_score' => $overrideScore,
+                'reason' => $reason,
+                'timestamp' => now()->toIso8601String(),
+            ],
+        ]);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Grade successfully overridden.',
+                'session' => [
+                    'id' => $session->id,
+                    'performance_score' => $session->performance_score,
+                    'instructor_grade_override' => $session->instructor_grade_override,
+                    'effective_score' => $session->effective_score,
+                    'is_overridden' => $session->isGradeOverridden(),
+                    'override_reason' => $session->instructor_override_reason,
+                    'overridden_at' => $session->instructor_overridden_at ? $session->instructor_overridden_at->diffForHumans() : null,
+                    'overridden_by_name' => Auth::user()->name ?? 'Instructor',
+                ],
+            ]);
+        }
+
+        return back()->with('success', 'Grade successfully overridden.');
     }
 
     /**

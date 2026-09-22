@@ -34,7 +34,7 @@ class LlmEvaluationService
             return $this->evaluateEmptySubmission($tasks, 'The submitted file is documentation/markdown, not runnable solution code.');
         }
 
-        $apiKey = env('OPENAI_API_KEY');
+        $apiKey = env('OPENAI_API_KEY') ?: env('AI_API_KEY');
 
         if (!empty($apiKey) && $apiKey !== 'mock') {
             try {
@@ -54,19 +54,43 @@ class LlmEvaluationService
     protected function evaluateEmptySubmission(array $tasks, ?string $customMessage = null): array
     {
         $evaluatedTasks = [];
+        $competencies = [];
         foreach ($tasks as $task) {
             $evaluatedTasks[] = [
                 'id' => $task['id'],
                 'completed' => false,
                 'feedback' => $customMessage ?? 'No solution code submitted for this requirement.',
             ];
+            $key = \Illuminate\Support\Str::slug($task['task'] ?? 'task_' . $task['id'], '_');
+            $competencies[$key] = [
+                'passed' => false,
+                'reason' => 'Requirement unattempted: no runnable code provided.',
+            ];
         }
+
+        $summaryText = $customMessage ?? 'No runnable solution code detected in submission workspace. All checklist requirements and competencies marked unfulfilled with 0% score.';
+
+        $gradeSummary = [
+            'competencies' => !empty($competencies) ? $competencies : [
+                'core_implementation' => ['passed' => false, 'reason' => 'No solution code submitted.']
+            ],
+            'test_cases_passed' => 0,
+            'test_cases_total' => count($tasks) ?: 1,
+            'code_quality_notes' => 'No runnable code files available to analyze.',
+            'summary' => $summaryText,
+        ];
 
         return [
             'tasks' => $evaluatedTasks,
             'correctness_score' => 0,
-            'overall_feedback' => $customMessage ?? 'No solution code detected in workspace. Create your code file and check progress again.',
+            'overall_feedback' => $summaryText,
             'code_quality_feedback' => 'No runnable code files available to analyze.',
+            'ai_grade_summary' => $gradeSummary,
+            'competencies' => $gradeSummary['competencies'],
+            'test_cases_passed' => 0,
+            'test_cases_total' => $gradeSummary['test_cases_total'],
+            'code_quality_notes' => $gradeSummary['code_quality_notes'],
+            'summary' => $summaryText,
         ];
     }
 
@@ -95,11 +119,12 @@ class LlmEvaluationService
     protected function evaluateWithOpenAi(string $apiKey, string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language): array
     {
         $prompt = $this->buildPrompt($title, $description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language);
+        $baseUrl = rtrim(env('OPENAI_BASE_URL', env('AI_BASE_URL', 'https://api.openai.com/v1')), '/');
 
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $apiKey,
             'Content-Type' => 'application/json',
-        ])->post('https://api.openai.com/v1/chat/completions', [
+        ])->timeout(30)->post($baseUrl . '/chat/completions', [
             'model' => 'gpt-4o-mini',
             'messages' => [
                 [
@@ -126,6 +151,22 @@ class LlmEvaluationService
         if (!$decoded || !isset($decoded['tasks'])) {
             throw new \Exception('Failed to parse OpenAI JSON response: ' . $contentText);
         }
+
+        $completedCount = count(array_filter($decoded['tasks'] ?? [], fn($t) => !empty($t['completed'])));
+        $gradeSummary = [
+            'competencies' => $decoded['competencies'] ?? [],
+            'test_cases_passed' => (int) ($decoded['test_cases_passed'] ?? $completedCount),
+            'test_cases_total' => (int) ($decoded['test_cases_total'] ?? max(count($tasks), 1)),
+            'code_quality_notes' => $decoded['code_quality_notes'] ?? ($decoded['code_quality_feedback'] ?? 'Standard conventions verified.'),
+            'summary' => $decoded['summary'] ?? ($decoded['overall_feedback'] ?? 'Evaluation complete.'),
+        ];
+
+        $decoded['ai_grade_summary'] = $gradeSummary;
+        $decoded['competencies'] = $gradeSummary['competencies'];
+        $decoded['test_cases_passed'] = $gradeSummary['test_cases_passed'];
+        $decoded['test_cases_total'] = $gradeSummary['test_cases_total'];
+        $decoded['code_quality_notes'] = $gradeSummary['code_quality_notes'];
+        $decoded['summary'] = $gradeSummary['summary'];
 
         return $decoded;
     }
@@ -165,7 +206,10 @@ Perform the following:
 1. For each task in the Checklist, determine if it has been correctly implemented in the student code. Set the "completed" status (true or false).
 2. Provide a short, constructive feedback message for each task ("feedback").
 3. Determine an overall correctness score (0 to 100) based on how well the code aligns with the tasks, test cases, and rubric.
-4. Provide a general feedback message ("overall_feedback") and specific code quality review ("code_quality_feedback").
+4. Evaluate pass/fail result per competency (e.g. oop_inheritance, exception_handling, algorithm_efficiency) with concise reason.
+5. Provide test cases passed count and total count.
+6. Provide specific code quality notes ("code_quality_notes").
+7. Provide a comprehensive plain-language explanation of that grade ("summary") intended as an instructor review aid.
 
 You must reply with a JSON object in this exact format:
 {
@@ -174,12 +218,17 @@ You must reply with a JSON object in this exact format:
       "id": 1,
       "completed": true,
       "feedback": "Custom exception class InvalidAgeException is implemented correctly."
-    },
-    ...
+    }
   ],
   "correctness_score": 85,
-  "overall_feedback": "A short summary of what was done well and what needs improvement.",
-  "code_quality_feedback": "Specific feedback on variables, naming, exception handling, and encapsulation."
+  "competencies": {
+    "oop_inheritance": { "passed": true, "reason": "Custom exception extends Exception correctly." },
+    "exception_handling": { "passed": false, "reason": "Missing try-catch block in main method." }
+  },
+  "test_cases_passed": 7,
+  "test_cases_total": 10,
+  "code_quality_notes": "Well-structured encapsulation, but missing catch block in main.",
+  "summary": "The student demonstrated strong competency in custom exceptions and encapsulation. However, error handling was incomplete because the catch block was omitted in the driver execution, leading to a score of 85%."
 }
 TEXT;
     }
@@ -326,11 +375,48 @@ TEXT;
             $codeQualityFeedback = 'Code structure follows standard conventions for ' . strtoupper($language) . '.';
         }
 
+        $competencies = [];
+        foreach ($evaluatedTasks as $index => $et) {
+            $originalTask = $tasks[$index] ?? null;
+            $taskName = $originalTask['task'] ?? ('task_' . $et['id']);
+            $compKey = \Illuminate\Support\Str::slug($taskName, '_');
+            if (empty($compKey)) {
+                $compKey = 'task_' . $et['id'];
+            }
+            $competencies[$compKey] = [
+                'passed' => (bool) $et['completed'],
+                'reason' => $et['feedback'] ?? ($et['completed'] ? 'Requirement satisfied.' : 'Requirement not satisfied.')
+            ];
+        }
+
+        if (empty($competencies)) {
+            $competencies['core_implementation'] = [
+                'passed' => $score >= 70,
+                'reason' => $score >= 70 ? 'Overall implementation meets passing threshold.' : 'Implementation fell below passing threshold.'
+            ];
+        }
+
+        $summary = "The submission scored {$score}% by completing {$completedCount} of {$totalTasks} verified requirements. {$codeQualityFeedback}";
+
+        $gradeSummary = [
+            'competencies' => $competencies,
+            'test_cases_passed' => $completedCount,
+            'test_cases_total' => max($totalTasks, 1),
+            'code_quality_notes' => $codeQualityFeedback,
+            'summary' => $summary,
+        ];
+
         return [
             'tasks' => $evaluatedTasks,
             'correctness_score' => $score,
             'overall_feedback' => "Evaluation: Student code meets {$completedCount} out of {$totalTasks} requirements.",
-            'code_quality_feedback' => $codeQualityFeedback
+            'code_quality_feedback' => $codeQualityFeedback,
+            'ai_grade_summary' => $gradeSummary,
+            'competencies' => $competencies,
+            'test_cases_passed' => $completedCount,
+            'test_cases_total' => max($totalTasks, 1),
+            'code_quality_notes' => $codeQualityFeedback,
+            'summary' => $summary,
         ];
     }
 }

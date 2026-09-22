@@ -163,6 +163,22 @@ class LabSessionController extends Controller
             ]);
         }
 
+        if ($request->event_type === 'prelab_verification_failed') {
+            $imagePath = $this->storeSnapshotImage(
+                $session->id,
+                $request->payload['image_base64'] ?? null,
+                $request->payload['image_path'] ?? null
+            );
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'no_face',
+                'severity' => 'high',
+                'description' => 'Pre-lab camera presence verification failed after 3 attempts: No face detected.',
+                'image_path' => $imagePath,
+                'metadata' => array_merge($request->payload ?? [], ['pre_lab' => true]),
+            ]);
+        }
+
         if ($request->event_type === 'webcam_check') {
             $faceCount = $request->payload['face_count'] ?? 1;
             $imagePath = $this->storeSnapshotImage(
@@ -491,9 +507,14 @@ class LabSessionController extends Controller
             }
         }
 
+        $isCameraVerified = TelemetryLog::where('lab_session_id', $session->id)
+            ->where('event_type', 'webcam_prelab_verification')
+            ->exists();
+
         return response()->json([
             'session_id' => $session->id,
             'status' => $session->status,
+            'camera_verified' => $isCameraVerified,
             'started_at' => $session->started_at,
             'elapsed_seconds' => $elapsedSeconds,
             'time_remaining_seconds' => $timeRemainingSeconds,
@@ -589,11 +610,18 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
+            'ai_grade_summary',
+            'competencies',
+            'code_quality_notes',
+            'summary',
+        ]);
+
         return response()->json([
             'status' => 'success',
             'completed_tasks' => $completedTasks,
             'performance_score' => $session->performance_score,
-            'evaluation' => $evaluation,
+            'evaluation' => $studentEvaluation,
         ]);
     }
 
@@ -646,6 +674,7 @@ class LabSessionController extends Controller
             'ended_at' => now(),
             'completed_tasks' => $completedTasks,
             'performance_score' => $finalScore,
+            'ai_grade_summary' => $evaluation['ai_grade_summary'] ?? null,
             'submitted_code' => $code,
             'submitted_files' => $request->input('files'),
         ]);
@@ -667,12 +696,19 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
+            'ai_grade_summary',
+            'competencies',
+            'code_quality_notes',
+            'summary',
+        ]);
+
         return response()->json([
             'status' => 'success',
             'completed_tasks' => $completedTasks,
             'performance_score' => $session->performance_score,
             'execution' => $executionResult,
-            'evaluation' => $evaluation,
+            'evaluation' => $studentEvaluation,
         ]);
     }
 

@@ -68,8 +68,8 @@
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                     </div>
                     <div>
-                        <span class="font-semibold text-[#ededed] block">Cryptographic Credentials</span>
-                        <span class="text-[#888888]">Earn public SHA-256 verified digital certificates upon course completion.</span>
+                        <span class="font-semibold text-[#ededed] block">Verifiable Competency Certificates</span>
+                        <span class="text-[#888888]">Earn certificates with verifiable IDs upon meeting required course competencies.</span>
                     </div>
                 </li>
             </ul>
@@ -98,13 +98,17 @@
 
             <!-- Header Titles -->
             <div>
+                <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full border border-[#2e2e2e] bg-[#141414] mb-3">
+                    <span class="w-1.5 h-1.5 rounded-full bg-[#3ecf8e]"></span>
+                    <span class="text-[10px] font-mono uppercase tracking-wider text-[#a3a3a3]">Student & Instructor Portal</span>
+                </div>
                 <h2 class="text-2xl font-bold text-[#ededed] tracking-tight">
                     Sign in to your account
                 </h2>
                 <p class="text-xs text-[#888888] mt-1.5">
-                    Don't have an account yet?
+                    Accounts are provisioned by your instructor. Enrolling with a code?
                     <a href="{{ route('register.show') }}" class="font-medium text-[#3ecf8e] hover:text-[#00c573] transition-colors">
-                        Create an account
+                        Join with Invite Code
                     </a>
                 </p>
             </div>
@@ -127,14 +131,14 @@
 
                 <!-- Errors Handler Alert -->
                 @if ($errors->any())
-                    <div class="rounded-[6px] bg-[#171717] border border-red-500/30 p-3.5">
-                        <div class="flex">
+                    <div class="rounded-[6px] bg-[#171717] border border-red-500/40 p-3.5 space-y-2">
+                        <div class="flex items-start">
                             <svg class="h-4 w-4 text-red-400 mr-2 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                             </svg>
                             <div>
                                 <h3 class="text-xs font-mono font-bold text-red-400 uppercase tracking-wider">
-                                    Authentication Error
+                                    Sign In Unsuccessful
                                 </h3>
                                 <ul class="mt-1 list-disc list-inside text-xs text-red-300 space-y-0.5">
                                     @foreach ($errors->all() as $error)
@@ -143,6 +147,11 @@
                                 </ul>
                             </div>
                         </div>
+                        @if ($errors->has('email'))
+                            <p class="text-[11px] text-[#888888] pl-6 border-t border-[#232323] pt-2">
+                                <span class="text-[#f59e0b]">Student Tip:</span> If you are enrolled in a course, please ensure you use your school email address or contact your instructor to verify roster provisioning.
+                            </p>
+                        @endif
                     </div>
                 @endif
 
@@ -196,22 +205,16 @@
                 <div class="flex-grow border-t border-[#232323]"></div>
             </div>
 
-            <!-- Social Providers: 6px controls -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <a href="{{ route('auth.provider.redirect', 'google') }}" class="flex items-center justify-center py-2 px-4 rounded-[6px] border border-[#2e2e2e] bg-[#171717] text-xs font-semibold text-[#ededed] hover:bg-[#222222] hover:border-[#383838] transition">
+            <!-- Social Providers: School Google Account -->
+            <div>
+                <a href="{{ route('auth.provider.redirect', 'google') }}" class="w-full flex items-center justify-center py-2.5 px-4 rounded-[6px] border border-[#2e2e2e] bg-[#171717] text-xs font-semibold text-[#ededed] hover:bg-[#222222] hover:border-[#383838] transition">
                     <svg class="h-4 w-4 mr-2" viewBox="0 0 24 24">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                         <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                         <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                     </svg>
-                    Google
-                </a>
-                <a href="{{ route('auth.provider.redirect', 'github') }}" class="flex items-center justify-center py-2 px-4 rounded-[6px] border border-[#2e2e2e] bg-[#171717] text-xs font-semibold text-[#ededed] hover:bg-[#222222] hover:border-[#383838] transition">
-                    <svg class="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                        <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
-                    </svg>
-                    GitHub
+                    Continue with School Google Account
                 </a>
             </div>
 

@@ -144,6 +144,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/monitoring', [InstructorMonitoringController::class, 'show'])->name('instructor.monitoring.show');
     Route::get('/laboratories/{id}/monitoring/data', [InstructorMonitoringController::class, 'streamData'])->name('instructor.monitoring.data');
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
+    Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
 
     // Student Profiles & Directory CRUD
     Route::get('/students', [StudentProfileController::class, 'index'])->name('students.index');

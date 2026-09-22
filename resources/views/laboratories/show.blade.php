@@ -410,14 +410,14 @@
                                     </div>
                                     <div>
                                         <h3 class="text-sm font-bold text-[#ededed]">Pre-Lab Camera Presence Verification</h3>
-                                        <p class="text-[11px] text-[#888888]">CertiCode Automated Proctoring Gate</p>
+                                        <p class="text-[11px] text-[#888888]">CertiCode Automated Proctoring Gate (Checkpoint 1)</p>
                                     </div>
                                 </div>
                                 <button type="button" @click="closeGate()" class="text-[#888888] hover:text-white text-lg font-mono">&times;</button>
                             </div>
 
                             <p class="text-xs text-[#a3a3a3] leading-relaxed mb-4">
-                                To ensure academic integrity, CertiCode Labs requires camera permission and facial presence verification before initiating active lab workspaces.
+                                To ensure academic integrity, CertiCode Labs requires camera permission and facial presence verification using SsdMobilenetv1 before unlocking your workspace.
                             </p>
 
                             <!-- Live Camera Viewport -->
@@ -431,26 +431,39 @@
                                     <span class="text-[11px] text-[#666666] mt-1">Please approve the browser webcam prompt</span>
                                 </div>
 
-                                <div x-show="status === 'denied'" class="absolute inset-0 bg-red-950/80 border border-red-500/50 flex flex-col items-center justify-center p-4 text-center">
-                                    <svg class="w-8 h-8 text-red-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                    <span class="text-xs font-bold text-red-200">Camera Access Denied (Hard Block)</span>
-                                    <span class="text-[11px] text-red-300/80 mt-1 max-w-xs" x-text="errorMessage"></span>
+                                <div x-show="status === 'loading_model'" class="absolute inset-0 bg-[#0d0d0d]/90 flex flex-col items-center justify-center p-4 text-center">
+                                    <div class="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin mb-3"></div>
+                                    <span class="text-xs font-mono text-cyan-300">Loading SsdMobilenetv1 Model...</span>
+                                    <span class="text-[11px] text-[#666666] mt-1">Self-hosted client-side verification</span>
                                 </div>
 
-                                <div x-show="status === 'analyzing'" class="absolute bottom-2 left-2 right-2 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded text-[11px] font-mono text-cyan-300 flex items-center justify-between border border-cyan-500/30">
+                                <div x-show="status === 'denied'" class="absolute inset-0 bg-red-950/90 border border-red-500/50 flex flex-col items-center justify-center p-4 text-center">
+                                    <svg class="w-8 h-8 text-red-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    <span class="text-xs font-bold text-red-200 uppercase tracking-wide">Camera Access Denied (Hard Block)</span>
+                                    <span class="text-[11px] text-red-300/90 mt-1 max-w-xs leading-relaxed" x-text="errorMessage"></span>
+                                </div>
+
+                                <div x-show="status === 'analyzing'" class="absolute bottom-2 left-2 right-2 bg-black/80 backdrop-blur-sm px-3 py-2 rounded text-[11px] font-mono text-cyan-300 flex items-center justify-between border border-cyan-500/30">
                                     <span class="flex items-center gap-2">
                                         <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                                        Running AI Presence Check...
+                                        Running SsdMobilenetv1 Face Detection...
                                     </span>
-                                    <span>Align your face</span>
+                                    <span class="text-xs text-[#a3a3a3]" x-text="`Attempt ${attempts + 1} of ${maxAttempts}`"></span>
                                 </div>
 
-                                <div x-show="status === 'failed'" class="absolute bottom-2 left-2 right-2 bg-amber-950/90 border border-amber-500/50 px-3 py-1.5 rounded text-[11px] font-mono text-amber-200 flex items-center justify-between">
+                                <div x-show="status === 'failed'" class="absolute bottom-2 left-2 right-2 bg-amber-950/95 border border-amber-500/60 px-3 py-2 rounded text-[11px] font-mono text-amber-200 flex items-center justify-between">
                                     <span x-text="errorMessage"></span>
-                                    <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white">Retry</button>
+                                    <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white ml-2">Retry</button>
                                 </div>
 
-                                <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/80 border border-emerald-500/50 flex flex-col items-center justify-center p-4 text-center">
+                                <div x-show="status === 'hard_blocked'" class="absolute inset-0 bg-red-950/95 border border-red-500/80 flex flex-col items-center justify-center p-4 text-center">
+                                    <svg class="w-10 h-10 text-red-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                                    <span class="text-xs font-bold text-red-200 uppercase tracking-wide">Verification Failed (Hard Block)</span>
+                                    <span class="text-[11px] text-red-300/90 mt-1.5 max-w-sm leading-relaxed" x-text="errorMessage"></span>
+                                    <span class="text-[10px] font-mono text-red-400 mt-2">Incident logged to instructor integrity logs.</span>
+                                </div>
+
+                                <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/90 border border-emerald-500/60 flex flex-col items-center justify-center p-4 text-center">
                                     <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl font-bold mb-2">✓</div>
                                     <span class="text-xs font-bold text-emerald-200">AI Presence Verified (1 Face Detected)</span>
                                     <span class="text-[11px] text-emerald-300/80 mt-1">Unlocking workspace and launching VS Code...</span>
@@ -464,18 +477,18 @@
                                 </button>
                                 
                                 <div class="flex items-center gap-2">
-                                    <button x-show="status === 'denied' || status === 'failed'" 
+                                    <button x-show="status === 'denied'" 
                                             type="button" 
                                             @click="requestCamera()" 
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
-                                        Retry Camera Check
+                                        Grant Camera Permission
                                     </button>
 
-                                    <button x-show="status === 'denied' || status === 'failed'" 
+                                    <button x-show="status === 'failed'" 
                                             type="button" 
-                                            @click="launchLab()" 
-                                            class="px-3 py-2 rounded-lg bg-[#262626] border border-[#333] hover:bg-[#333] text-xs font-medium text-[#a3a3a3] hover:text-white transition">
-                                        Proceed to VS Code Anyway &rarr;
+                                            @click="runAiPresenceValidation()" 
+                                            class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
+                                        <span x-text="`Retry Face Check (${attempts + 1}/${maxAttempts})`"></span>
                                     </button>
 
                                     <button x-show="status === 'verified'"
@@ -551,15 +564,20 @@
     </div>
 </div>
 
+<script src="{{ asset('js/face-api.min.js') }}"></script>
 <script>
 function preLabCameraGate(labId, activeSessionId) {
     return {
         showModal: false,
         stream: null,
-        status: 'idle', // 'idle', 'requesting', 'denied', 'analyzing', 'failed', 'verified'
+        status: 'idle', // 'idle', 'requesting', 'loading_model', 'denied', 'analyzing', 'failed', 'hard_blocked', 'verified'
         errorMessage: '',
         faceCount: 0,
         cameraVerified: false,
+        attempts: 0,
+        maxAttempts: 3,
+        modelLoaded: false,
+        modelLoading: false,
         handleStartClick() {
             if (this.cameraVerified) {
                 this.launchLab();
@@ -573,16 +591,43 @@ function preLabCameraGate(labId, activeSessionId) {
             this.errorMessage = '';
             await this.requestCamera();
         },
+        async ensureSsdModel() {
+            if (this.modelLoaded) return true;
+            if (this.modelLoading) {
+                while (this.modelLoading) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                return this.modelLoaded;
+            }
+            this.modelLoading = true;
+            try {
+                if (window.faceapi && window.faceapi.nets && window.faceapi.nets.ssdMobilenetv1) {
+                    await window.faceapi.nets.ssdMobilenetv1.loadFromUri('/models');
+                    this.modelLoaded = true;
+                }
+            } catch (err) {
+                console.error('Failed to load SsdMobilenetv1 model from /models:', err);
+            } finally {
+                this.modelLoading = false;
+            }
+            return this.modelLoaded;
+        },
         async requestCamera() {
             try {
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     this.status = 'denied';
-                    this.errorMessage = 'Webcam access is not supported by your browser environment.';
+                    this.errorMessage = 'Webcam media API is not supported by your browser environment. Please use an updated modern browser.';
                     return;
                 }
+                this.status = 'requesting';
                 this.stream = await navigator.mediaDevices.getUserMedia({
                     video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
                 });
+
+                // Pre-load model while stream starts
+                this.status = 'loading_model';
+                await this.ensureSsdModel();
+
                 this.status = 'analyzing';
                 this.$nextTick(async () => {
                     if (this.$refs.videoEl) {
@@ -591,7 +636,7 @@ function preLabCameraGate(labId, activeSessionId) {
                             await this.$refs.videoEl.play();
                         } catch (e) {}
                     }
-                    setTimeout(() => this.runAiPresenceValidation(), 700);
+                    setTimeout(() => this.runAiPresenceValidation(), 600);
                 });
             } catch (err) {
                 this.status = 'denied';
@@ -608,52 +653,112 @@ function preLabCameraGate(labId, activeSessionId) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
-            let detectedFaces = 1;
-            if ('FaceDetector' in window) {
+            this.status = 'analyzing';
+
+            let detectedFaces = 0;
+            if (window.faceapi && this.modelLoaded) {
                 try {
-                    const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 5 });
+                    const detections = await window.faceapi.detectAllFaces(
+                        video,
+                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+                    );
+                    detectedFaces = detections.length;
+                } catch (e) {
+                    console.error('face-api SsdMobilenetv1 detection error:', e);
+                    if ('FaceDetector' in window) {
+                        try {
+                            const detector = new window.FaceDetector({ fastMode: false });
+                            const faces = await detector.detect(video);
+                            detectedFaces = faces.length;
+                        } catch (err) {
+                            detectedFaces = 0;
+                        }
+                    }
+                }
+            } else if ('FaceDetector' in window) {
+                try {
+                    const detector = new window.FaceDetector({ fastMode: false });
                     const faces = await detector.detect(video);
                     detectedFaces = faces.length;
                 } catch (e) {
-                    detectedFaces = 1;
+                    detectedFaces = 0;
                 }
             }
 
             this.faceCount = detectedFaces;
-            try {
-                const endpoint = activeSessionId 
-                    ? `/api/v1/sessions/${activeSessionId}/verify-camera`
-                    : `/api/v1/labs/${labId}/verify-camera`;
 
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({
-                        status: 'granted',
-                        face_count: detectedFaces,
-                        image_base64: imageBase64
-                    })
-                });
-                const data = await res.json();
-                if (res.ok && data.verified) {
-                    this.status = 'verified';
-                    this.cameraVerified = true;
-                    setTimeout(() => {
-                        this.launchLab();
-                    }, 1200);
-                } else {
-                    this.status = 'failed';
-                    this.errorMessage = data.message || 'AI presence validation failed. Please ensure only your face is visible.';
+            if (detectedFaces === 1) {
+                try {
+                    const endpoint = activeSessionId 
+                        ? `/api/v1/sessions/${activeSessionId}/verify-camera`
+                        : `/api/v1/labs/${labId}/verify-camera`;
+
+                    await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({
+                            status: 'granted',
+                            face_count: 1,
+                            image_base64: imageBase64
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Backend verify endpoint failed, proceeding with verified local gate', e);
                 }
-            } catch (e) {
-                // Fallback: If network error but face detected locally
-                if (detectedFaces === 1) {
-                    this.status = 'verified';
-                    this.cameraVerified = true;
-                    setTimeout(() => this.launchLab(), 1200);
+
+                this.status = 'verified';
+                this.cameraVerified = true;
+                setTimeout(() => {
+                    this.launchLab();
+                }, 1200);
+            } else {
+                this.attempts++;
+                if (detectedFaces > 1) {
+                    this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted.`;
+                } else {
+                    this.errorMessage = `No face detected. Please reposition yourself directly in front of the camera with adequate lighting.`;
+                }
+
+                if (this.attempts >= this.maxAttempts) {
+                    this.status = 'hard_blocked';
+                    this.errorMessage = `Pre-lab facial verification failed (3 of 3 attempts). No face was detected. Please contact your instructor. Workspace remains locked.`;
+
+                    // Report failure snapshot to backend
+                    try {
+                        if (activeSessionId) {
+                            await fetch(`/api/v1/sessions/${activeSessionId}/telemetry`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                                body: JSON.stringify({
+                                    event_type: 'prelab_verification_failed',
+                                    payload: {
+                                        attempts: this.attempts,
+                                        face_count: detectedFaces,
+                                        image_base64: imageBase64,
+                                        timestamp: new Date().toISOString()
+                                    }
+                                })
+                            });
+                        }
+
+                        const endpoint = activeSessionId 
+                            ? `/api/v1/sessions/${activeSessionId}/verify-camera`
+                            : `/api/v1/labs/${labId}/verify-camera`;
+
+                        await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                            body: JSON.stringify({
+                                status: 'failed',
+                                face_count: detectedFaces,
+                                image_base64: imageBase64
+                            })
+                        });
+                    } catch (e) {
+                        console.error('Failed to log pre-lab verification failure', e);
+                    }
                 } else {
                     this.status = 'failed';
-                    this.errorMessage = 'Unable to complete AI presence verification. Please retry.';
                 }
             }
         },

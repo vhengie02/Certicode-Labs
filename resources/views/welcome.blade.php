@@ -89,12 +89,12 @@
 
             <!-- Tight 72px Headline -->
             <h1 class="text-4xl sm:text-6xl lg:text-[72px] font-extrabold text-[#ededed] tracking-tight leading-[1.02]">
-                Verify Real Coding Skills with <span class="text-[#3ecf8e]">Instant Telemetry.</span>
+                See how your students actually code &mdash; <span class="text-[#3ecf8e]">not just what they turn in.</span>
             </h1>
 
             <!-- Subtitle -->
             <p class="text-base sm:text-xl text-[#a3a3a3] font-normal max-w-2xl mx-auto leading-relaxed">
-                Connect live IDE sandboxes, evaluate genuine code construction with AI rubrics, and issue cryptographically verifiable credentials for modern software engineers.
+                Students write Java in a live coding environment connected straight to your rubric. The AI grades against the criteria you set, and once they&rsquo;ve met every requirement, they get a certificate that holds up on its own.
             </p>
 
             <!-- CTA Buttons -->
@@ -129,8 +129,11 @@
                 <div>
                     <span class="mono-tag text-xs text-[#3ecf8e]">Architecture</span>
                     <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-[#ededed] mt-1">
-                        Engineered for Developer Rigor.
+                        How it actually runs.
                     </h2>
+                    <p class="text-xs text-[#888888] font-mono mt-1">
+                        Every submission runs and compiles in a real environment &mdash; nothing is simulated.
+                    </p>
                 </div>
                 <p class="text-xs text-[#888888] font-mono mt-2 md:mt-0">
                     STATUS: REAL-TIME RUNTIME VERIFIED
@@ -164,9 +167,9 @@
 
     <span class="code-syntax-comment"># Real-time integrity assertion</span>
     <span class="code-syntax-keyword">assert</span> telemetry.tab_switches == <span class="code-syntax-string">0</span>
-    <span class="code-syntax-keyword">assert</span> telemetry.face_presence_score >= <span class="code-syntax-string">0.98</span>
+    <span class="code-syntax-keyword">assert</span> telemetry.camera_presence_verified == <span class="code-syntax-keyword">True</span>
 
-    <span class="code-syntax-keyword">return</span> <span class="code-syntax-brand">VerifiedCredential</span>(status=<span class="code-syntax-string">"PASSED"</span>, grade=<span class="code-syntax-string">"A+"</span>)</code></pre>
+    <span class="code-syntax-keyword">return</span> <span class="code-syntax-brand">VerifiedCredential</span>(status=<span class="code-syntax-string">"PASSED"</span>, grade=<span class="code-syntax-string">"A"</span>)</code></pre>
                     </div>
 
                     <!-- Editor Bottom Execution Tray -->
@@ -191,7 +194,7 @@
                         </div>
                         <h3 class="text-lg font-bold text-[#ededed] mb-1">Integrity Shield</h3>
                         <p class="text-xs text-[#888888] leading-relaxed mb-4">
-                            Continuous biometric confidence and tab-switch telemetry prevent ghostwriting.
+                            While a student works, the system checks that they&rsquo;re actually there &mdash; camera presence, whether they&rsquo;ve switched away from the editor, and whether a block of code just appeared out of nowhere. If something looks off, the instructor sees it. The student never does.
                         </p>
 
                         <!-- Log feed -->
@@ -201,16 +204,16 @@
                                 <span class="text-[#666666]">0.00s</span>
                             </div>
                             <div class="flex items-center justify-between text-[#d1d1d1]">
-                                <span>FACE_DETECT</span>
-                                <span class="text-[#888888]">CONF 99.4%</span>
+                                <span>CAMERA_PRESENCE</span>
+                                <span class="text-[#3ecf8e]">VERIFIED</span>
                             </div>
                             <div class="flex items-center justify-between text-[#d1d1d1]">
                                 <span>TAB_SWITCH</span>
                                 <span class="text-[#3ecf8e]">0 DETECTED</span>
                             </div>
                             <div class="flex items-center justify-between text-[#a3a3a3]">
-                                <span>ANOMALY_INDEX</span>
-                                <span class="text-[#3ecf8e]">0.00 (CLEAN)</span>
+                                <span>UNUSUAL_DIFF</span>
+                                <span class="text-[#3ecf8e]">NONE (CLEAN)</span>
                             </div>
                         </div>
                     </div>
@@ -230,14 +233,14 @@
                         </div>
                         <h3 class="text-lg font-bold text-[#ededed] mb-1">AI Rubric Engine</h3>
                         <p class="text-xs text-[#888888] leading-relaxed mb-4">
-                            Instant rubric evaluation grades logic, safety, edge cases, and code cleanliness.
+                            Every submission gets checked against your rubric automatically &mdash; does the logic work, does it handle edge cases, is the code readable. You still make the final call; the AI just gets there first.
                         </p>
 
                         <!-- Metric bars -->
                         <div class="space-y-3 font-mono text-xs">
                             <div>
                                 <div class="flex justify-between text-[11px] text-[#a3a3a3] mb-1">
-                                    <span>Algorithmic Rigor</span>
+                                    <span>Logic & Correctness</span>
                                     <span class="text-[#ededed]">98%</span>
                                 </div>
                                 <div class="w-full h-1.5 bg-[#232323] rounded-full overflow-hidden">
@@ -246,7 +249,7 @@
                             </div>
                             <div>
                                 <div class="flex justify-between text-[11px] text-[#a3a3a3] mb-1">
-                                    <span>Defensive Programming</span>
+                                    <span>Edge Case Handling</span>
                                     <span class="text-[#ededed]">100%</span>
                                 </div>
                                 <div class="w-full h-1.5 bg-[#232323] rounded-full overflow-hidden">
@@ -255,7 +258,7 @@
                             </div>
                             <div>
                                 <div class="flex justify-between text-[11px] text-[#a3a3a3] mb-1">
-                                    <span>Code Hygiene & Types</span>
+                                    <span>Code Quality & Readability</span>
                                     <span class="text-[#ededed]">95%</span>
                                 </div>
                                 <div class="w-full h-1.5 bg-[#232323] rounded-full overflow-hidden">
@@ -271,26 +274,26 @@
                     </div>
                 </div>
 
-                <!-- Bento Tile 4: Cryptographic Credentials (2 Cols) -->
+                <!-- Bento Tile 4: Verifiable Credentials (2 Cols) -->
                 <div class="md:col-span-2 bento-card rounded-xl p-6 flex flex-col justify-between">
                     <div>
                         <div class="flex items-center justify-between mb-4">
                             <span class="mono-tag text-[11px] text-[#a3a3a3]">Credential Authority</span>
                             <span class="px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#2e2e2e] text-[10px] font-mono text-[#3ecf8e]">
-                                SIGNED & VERIFIED
+                                VERIFIED RECORD
                             </span>
                         </div>
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                                 <h3 class="text-lg font-bold text-[#ededed]">Verifiable Competency Certificates</h3>
-                                <p class="text-xs text-[#888888] mt-1 max-w-md">
-                                    Upon 100% curriculum completion and verified lab telemetry, students receive cryptographically signed credentials sharable with employers.
+                                <p class="text-xs text-[#888888] mt-1 max-w-md leading-relaxed">
+                                    Once a student meets the required competency threshold, they get a certificate tied to a verifiable ID &mdash; something they can actually show an employer, not just a PDF that says &lsquo;trust me.&rsquo;
                                 </p>
                             </div>
                             <div class="p-4 rounded-[6px] bg-[#121212] border border-[#2e2e2e] font-mono text-xs text-left shrink-0">
                                 <div class="text-[#888888] text-[10px] uppercase">Certificate Code</div>
                                 <div class="text-[#3ecf8e] font-bold text-sm tracking-wider mt-0.5">CERT-9481-KD82</div>
-                                <div class="text-[10px] text-[#666666] mt-1">SHA-256: 0x9f2a...88c1</div>
+                                <div class="text-[10px] text-[#666666] mt-1">ID: cert_9481kd82</div>
                             </div>
                         </div>
                     </div>
@@ -302,7 +305,7 @@
                             </svg>
                             <span class="text-[#d1d1d1]">Public verification endpoint included</span>
                         </div>
-                        <span class="text-[#3ecf8e]">Supabase PostgreSQL Backed</span>
+                        <span class="text-[#3ecf8e]">Institutional Registry Backed</span>
                     </div>
                 </div>
 
@@ -317,7 +320,7 @@
                 </div>
                 <h4 class="text-sm font-semibold text-[#ededed]">Live Sandboxes</h4>
                 <p class="text-xs text-[#888888] leading-relaxed">
-                    Interactive isolated environments with zero local configuration required.
+                    Students start coding right away. No setup, no environment to configure.
                 </p>
             </div>
 
@@ -325,9 +328,9 @@
                 <div class="w-7 h-7 rounded-[4px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
                 </div>
-                <h4 class="text-sm font-semibold text-[#ededed]">NetAcad Trees</h4>
+                <h4 class="text-sm font-semibold text-[#ededed]">Curriculum Pathways</h4>
                 <p class="text-xs text-[#888888] leading-relaxed">
-                    Modular course hierarchy organizes lessons and hands-on challenges sequentially.
+                    Instructors build out lessons as modules and can see where students are likely to get stuck.
                 </p>
             </div>
 
@@ -337,7 +340,7 @@
                 </div>
                 <h4 class="text-sm font-semibold text-[#ededed]">Instructor Monitor</h4>
                 <p class="text-xs text-[#888888] leading-relaxed">
-                    Live timeline streams track student completion progress and flag integrity issues.
+                    Watch a session unfold in real time &mdash; who&rsquo;s finished what, and who&rsquo;s triggered a flag worth a second look.
                 </p>
             </div>
 
@@ -347,7 +350,7 @@
                 </div>
                 <h4 class="text-sm font-semibold text-[#ededed]">VS Code Integration</h4>
                 <p class="text-xs text-[#888888] leading-relaxed">
-                    Direct extension connection with automatic timer sync and automated evaluation.
+                    Students code in VS Code, not a browser tab. Every keystroke and submission syncs straight through, so grading is based on what they actually wrote.
                 </p>
             </div>
         </section>

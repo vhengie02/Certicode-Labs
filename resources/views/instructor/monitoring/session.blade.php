@@ -247,6 +247,21 @@
                         $tasksCount = is_array($session->completed_tasks) ? count($session->completed_tasks) : 0;
                         $anomaliesList = $session->anomalies;
                         $diffStats = $session->diff_stats ?? ['added' => 0, 'deleted' => 0];
+                        $gradeSessionPayload = [
+                            'id' => $session->id,
+                            'student_name' => $user->name ?? 'Unknown Student',
+                            'is_team' => (bool) $session->group_id,
+                            'team_name' => $group->name ?? null,
+                            'status' => $session->status,
+                            'performance_score' => (float) ($session->performance_score ?? 0),
+                            'instructor_grade_override' => $session->instructor_grade_override,
+                            'effective_score' => (float) ($session->effective_score ?? 0),
+                            'is_overridden' => $session->isGradeOverridden(),
+                            'instructor_override_reason' => $session->instructor_override_reason,
+                            'instructor_overridden_at' => $session->instructor_overridden_at ? $session->instructor_overridden_at->diffForHumans() : null,
+                            'overridden_by_name' => $session->overriddenByUser->name ?? null,
+                            'ai_grade_summary' => $session->ai_grade_summary,
+                        ];
                     @endphp
                     <div class="p-5 hover:bg-slate-900/40 transition-colors" 
                          x-show="matchesSearch('{{ strtolower($user->name ?? '') }}', '{{ strtolower($group->name ?? '') }}')">
@@ -325,6 +340,20 @@
                                     <span class="text-slate-600">/</span>
                                     <span class="text-rose-400 font-semibold">-{{ $diffStats['deleted'] ?? 0 }}</span>
                                 </div>
+
+                                <!-- Grade & AI Summary Button (Feature 10) -->
+                                <button @click="openGradeModal({{ json_encode($gradeSessionPayload) }})"
+                                        class="px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 {{ $session->isGradeOverridden() ? 'border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200' }}"
+                                        title="View AI Grade Explanation & Manual Override">
+                                    <svg class="w-3.5 h-3.5 {{ $session->isGradeOverridden() ? 'text-purple-400' : 'text-[#3ecf8e]' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>
+                                    <span>
+                                        @if($session->isGradeOverridden())
+                                            Grade: {{ $session->effective_score }}% (Overridden)
+                                        @else
+                                            Grade: {{ $session->performance_score ?? 0 }}%
+                                        @endif
+                                    </span>
+                                </button>
 
                                 <!-- Anomaly History Modal Toggle -->
                                 <button @click="openAnomalyModal({{ $session->id }}, '{{ addslashes($user->name ?? 'Student') }}', {{ json_encode($anomaliesList) }})"
@@ -639,6 +668,158 @@
             </div>
         </div>
     </div>
+
+    <!-- AI Grade Summary & Instructor Override Modal (Feature 10) -->
+    <div x-show="isGradeModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style="display: none;">
+        <div class="glass-panel rounded-2xl border border-slate-700 max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto" @click.away="isGradeModalOpen = false">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="space-y-0.5">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full" :class="selectedGradeSession?.is_overridden ? 'bg-purple-400 animate-pulse' : 'bg-[#3ecf8e]'"></span>
+                        <h3 class="text-base font-bold text-white">
+                            AI Grade Assessment &amp; Explanation
+                        </h3>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                        <span class="font-medium text-slate-200" x-text="selectedGradeSession?.student_name"></span>
+                        <template x-if="selectedGradeSession?.is_team">
+                            <span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px]" x-text="'Team: ' + selectedGradeSession.team_name"></span>
+                        </template>
+                        <template x-if="selectedGradeSession?.is_team">
+                            <span class="text-[11px] text-slate-500 italic">(Evaluating combined submission as single unit)</span>
+                        </template>
+                    </div>
+                </div>
+                <button @click="isGradeModalOpen = false" class="text-slate-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <!-- Side-by-side Score Banner -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">AI Assessed Grade</span>
+                    <span class="text-xl font-mono font-bold text-[#3ecf8e] my-0.5 block" x-text="(selectedGradeSession?.performance_score ?? 0) + '%'"></span>
+                    <span class="text-[10px] text-slate-500">From submission model</span>
+                </div>
+
+                <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Effective Grade</span>
+                    <span class="text-xl font-mono font-bold text-white my-0.5 block" x-text="(selectedGradeSession?.effective_score ?? 0) + '%'"></span>
+                    <span class="text-[10px] font-semibold" :class="selectedGradeSession?.is_overridden ? 'text-purple-400' : 'text-emerald-400'"
+                          x-text="selectedGradeSession?.is_overridden ? 'Instructor Overridden' : 'AI Score Applied'"></span>
+                </div>
+
+                <div class="col-span-2 sm:col-span-1 bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-center flex flex-col justify-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Test Verification</span>
+                    <template x-if="selectedGradeSession?.ai_grade_summary?.test_cases_total">
+                        <span class="text-xl font-mono font-bold text-sky-400 my-0.5 block">
+                            <span x-text="selectedGradeSession.ai_grade_summary.test_cases_passed"></span> / <span x-text="selectedGradeSession.ai_grade_summary.test_cases_total"></span>
+                        </span>
+                    </template>
+                    <template x-if="!selectedGradeSession?.ai_grade_summary?.test_cases_total">
+                        <span class="text-xs font-mono text-slate-500 my-1 block">N/A</span>
+                    </template>
+                    <span class="text-[10px] text-slate-500">Verified checklist tests</span>
+                </div>
+            </div>
+
+            <!-- Plain-Language AI Grade Summary -->
+            <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        Plain-Language AI Grade Explanation
+                    </span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">Instructor Only</span>
+                </div>
+                <p class="text-xs text-slate-200 leading-relaxed font-sans" x-text="selectedGradeSession?.ai_grade_summary?.summary || 'No AI grade summary recorded for this session yet.'"></p>
+
+                <template x-if="selectedGradeSession?.ai_grade_summary?.code_quality_notes">
+                    <div class="mt-2 pt-2 border-t border-slate-800/80 text-xs flex items-start gap-2">
+                        <span class="text-slate-400 font-semibold shrink-0">Code Quality:</span>
+                        <span class="text-slate-300" x-text="selectedGradeSession.ai_grade_summary.code_quality_notes"></span>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Competency Breakdown List -->
+            <template x-if="selectedGradeSession?.ai_grade_summary?.competencies && Object.keys(selectedGradeSession.ai_grade_summary.competencies).length > 0">
+                <div class="space-y-2">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Assessed Competencies</h4>
+                    <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        <template x-for="(comp, compKey) in selectedGradeSession.ai_grade_summary.competencies" :key="compKey">
+                            <div class="p-3 rounded-lg bg-slate-950/80 border border-slate-800 flex items-start justify-between gap-3">
+                                <div class="space-y-0.5 min-w-0 flex-1">
+                                    <span class="text-xs font-mono font-bold text-white uppercase tracking-wider" x-text="compKey.replace(/_/g, ' ')"></span>
+                                    <p class="text-xs text-slate-400 leading-relaxed" x-text="comp.reason"></p>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0"
+                                      :class="comp.passed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'"
+                                      x-text="comp.passed ? 'Passed' : 'Failed'"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Instructor Grade Override Box -->
+            <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-700/80 space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-200">Manual Grade Override &amp; Audit Record</h4>
+                    </div>
+                    <template x-if="selectedGradeSession?.is_overridden">
+                        <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-semibold">
+                            Override in effect
+                        </span>
+                    </template>
+                </div>
+
+                <template x-if="selectedGradeSession?.is_overridden">
+                    <div class="text-xs bg-purple-950/40 border border-purple-800/40 p-3 rounded-lg text-purple-200 space-y-1">
+                        <div class="flex items-center justify-between font-medium">
+                            <span>Active Override: <strong class="text-white" x-text="selectedGradeSession.instructor_grade_override + '%'"></strong> (Original AI: <span x-text="selectedGradeSession.performance_score + '%'"></span>)</span>
+                            <span class="text-[10px] text-purple-300" x-text="selectedGradeSession.overridden_by_name ? 'By ' + selectedGradeSession.overridden_by_name + ' • ' + (selectedGradeSession.instructor_overridden_at || '') : ''"></span>
+                        </div>
+                        <template x-if="selectedGradeSession.instructor_override_reason">
+                            <p class="text-[11px] text-purple-300/80 italic" x-text="'&ldquo;' + selectedGradeSession.instructor_override_reason + '&rdquo;'"></p>
+                        </template>
+                    </div>
+                </template>
+
+                <form @submit.prevent="submitGradeOverride()" class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="space-y-1">
+                            <label class="text-[11px] font-semibold text-slate-400 uppercase">Override Score (0–100)</label>
+                            <input type="number" step="0.1" min="0" max="100" x-model="overrideScoreInput" required
+                                   class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm font-mono text-white focus:outline-none focus:border-[#3ecf8e]">
+                        </div>
+                        <div class="sm:col-span-2 space-y-1">
+                            <label class="text-[11px] font-semibold text-slate-400 uppercase">Audit Note / Reason</label>
+                            <input type="text" x-model="overrideReasonInput" placeholder="e.g. Awarded partial credit for custom error handling logic..."
+                                   class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-[#3ecf8e]">
+                        </div>
+                    </div>
+
+                    <template x-if="overrideFeedbackMessage">
+                        <div class="p-2.5 rounded-lg text-xs" :class="overrideFeedbackSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'" x-text="overrideFeedbackMessage"></div>
+                    </template>
+
+                    <div class="flex items-center justify-end gap-2 pt-1">
+                        <button type="button" @click="isGradeModalOpen = false" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">
+                            Close
+                        </button>
+                        <button type="submit" :disabled="isSavingOverride" class="px-4 py-1.5 rounded-lg bg-[#3ecf8e] text-slate-950 font-bold text-xs hover:bg-[#00c573] transition disabled:opacity-50 flex items-center gap-1.5">
+                            <span x-show="!isSavingOverride">Save Grade Override</span>
+                            <span x-show="isSavingOverride">Saving...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -653,6 +834,74 @@ function instructorMonitor() {
         selectedAnomalies: [],
         ws: null,
         wsConnected: false,
+
+        // Feature 10: AI Grade Summary & Manual Override State
+        isGradeModalOpen: false,
+        selectedGradeSession: null,
+        overrideScoreInput: '',
+        overrideReasonInput: '',
+        isSavingOverride: false,
+        overrideFeedbackMessage: '',
+        overrideFeedbackSuccess: false,
+
+        openGradeModal(sessionData) {
+            this.selectedGradeSession = sessionData;
+            this.overrideScoreInput = (sessionData.instructor_grade_override !== null && sessionData.instructor_grade_override !== undefined)
+                ? sessionData.instructor_grade_override
+                : sessionData.performance_score;
+            this.overrideReasonInput = sessionData.instructor_override_reason || '';
+            this.overrideFeedbackMessage = '';
+            this.isGradeModalOpen = true;
+        },
+
+        submitGradeOverride() {
+            if (!this.selectedGradeSession) return;
+            this.isSavingOverride = true;
+            this.overrideFeedbackMessage = '';
+
+            const url = `/instructor/sessions/${this.selectedGradeSession.id}/override-grade`;
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': token,
+                },
+                body: JSON.stringify({
+                    override_score: parseFloat(this.overrideScoreInput),
+                    override_reason: this.overrideReasonInput,
+                })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    return res.json().then(err => { throw new Error(err.message || 'Failed to save grade override.'); });
+                }
+                return res.json();
+            })
+            .then(data => {
+                this.isSavingOverride = false;
+                this.overrideFeedbackSuccess = true;
+                this.overrideFeedbackMessage = 'Grade override saved successfully!';
+                if (data && data.session) {
+                    this.selectedGradeSession.instructor_grade_override = data.session.instructor_grade_override;
+                    this.selectedGradeSession.effective_score = data.session.effective_score;
+                    this.selectedGradeSession.is_overridden = data.session.is_overridden;
+                    this.selectedGradeSession.instructor_override_reason = data.session.override_reason;
+                    this.selectedGradeSession.instructor_overridden_at = data.session.overridden_at;
+                    this.selectedGradeSession.overridden_by_name = data.session.overridden_by_name;
+                }
+                setTimeout(() => {
+                    window.location.reload();
+                }, 800);
+            })
+            .catch(err => {
+                this.isSavingOverride = false;
+                this.overrideFeedbackSuccess = false;
+                this.overrideFeedbackMessage = err.message || 'Error saving grade override.';
+            });
+        },
 
         // Cohort Plagiarism State
         showSimilarityMatrix: false,

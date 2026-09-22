@@ -60,7 +60,7 @@ class SidebarProvider {
             enableScripts: true,
             localResourceRoots: [this._extensionUri]
         };
-        webviewView.webview.html = this._getHtmlForWebview();
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
         // Listen for postMessages from Webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
@@ -154,18 +154,13 @@ class SidebarProvider {
         if (!session) {
             return;
         }
-        const token = await vscode.window.showInputBox({
-            prompt: 'Enter API Token (Optional, leave blank for local prototyping)',
-            value: ''
-        });
         this._backendUrl = url.replace(/\/$/, '');
         this._sessionId = parseInt(session);
-        this._apiToken = token || undefined;
+        this._apiToken = undefined;
         this._view?.webview.postMessage({
             type: 'prefill',
             backendUrl: this._backendUrl,
-            sessionId: this._sessionId,
-            apiToken: this._apiToken
+            sessionId: this._sessionId
         });
         this.startMonitoring();
     }
@@ -1180,13 +1175,16 @@ class SidebarProvider {
             }
         });
     }
-    _getHtmlForWebview() {
+    _getHtmlForWebview(webview) {
+        const faceApiScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'js', 'face-api.min.js'));
+        const modelsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'models'));
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CertiCode Labs IDE</title>
+    <script src="${faceApiScriptUri}"></script>
     <style>
         body {
             font-family: var(--vscode-font-family, sans-serif);
@@ -1625,11 +1623,6 @@ class SidebarProvider {
             <input type="text" id="session-id" placeholder="e.g. 1" value="1">
         </div>
         
-        <div class="form-group">
-            <label for="api-token">API Token (Optional)</label>
-            <input type="password" id="api-token" placeholder="Optional token">
-        </div>
-        
         <button id="connect-btn">Connect Session</button>
     </div>
 
@@ -1826,6 +1819,7 @@ class SidebarProvider {
 
     <script>
         const vscode = acquireVsCodeApi();
+        const MODELS_BASE_PATH = "${modelsUri}";
         
         const connectionScreen = document.getElementById('connection-screen');
         const sessionScreen = document.getElementById('session-screen');
@@ -1833,7 +1827,6 @@ class SidebarProvider {
         // Form fields
         const backendUrlInput = document.getElementById('backend-url');
         const sessionIdInput = document.getElementById('session-id');
-        const apiTokenInput = document.getElementById('api-token');
         const connectBtn = document.getElementById('connect-btn');
         
         // Session status & timer
@@ -1892,7 +1885,7 @@ class SidebarProvider {
         let isCountDown = true;
         let isIntegrityValid = true;
 
-        // Feature 8 Camera Presence Check & Pre-Lab Gate
+        // Feature 8 Camera Presence Check & Pre-Lab Gate (face-api.js)
         const cameraGateAlert = document.getElementById('camera-gate-alert');
         const cameraGateMsg = document.getElementById('camera-gate-msg');
         const cameraPreviewBox = document.getElementById('camera-preview-box');
@@ -1905,6 +1898,38 @@ class SidebarProvider {
         let isCameraVerified = false;
         let cameraMediaStream = null;
         let proctorCheckTimer = null;
+        let preLabAttempts = 0;
+        const MAX_PRELAB_ATTEMPTS = 3;
+        let ssdMobilenetLoaded = false;
+        let tinyFaceDetectorLoaded = false;
+
+        async function loadSsdMobilenetModel() {
+            if (ssdMobilenetLoaded) return true;
+            try {
+                if (window.faceapi && window.faceapi.nets && window.faceapi.nets.ssdMobilenetv1) {
+                    await window.faceapi.nets.ssdMobilenetv1.loadFromUri(MODELS_BASE_PATH);
+                    ssdMobilenetLoaded = true;
+                    return true;
+                }
+            } catch (e) {
+                console.error('Failed to load SsdMobilenetv1 model from', MODELS_BASE_PATH, e);
+            }
+            return false;
+        }
+
+        async function loadTinyFaceDetectorModel() {
+            if (tinyFaceDetectorLoaded) return true;
+            try {
+                if (window.faceapi && window.faceapi.nets && window.faceapi.nets.tinyFaceDetector) {
+                    await window.faceapi.nets.tinyFaceDetector.loadFromUri(MODELS_BASE_PATH);
+                    tinyFaceDetectorLoaded = true;
+                    return true;
+                }
+            } catch (e) {
+                console.error('Failed to load TinyFaceDetector model from', MODELS_BASE_PATH, e);
+            }
+            return false;
+        }
 
         function updateProctorUIState() {
             if (!isCameraVerified) {
@@ -1928,19 +1953,22 @@ class SidebarProvider {
             }
         }
 
+        // Checkpoint 1: Pre-Lab Gate Check (One-Time)
         if (grantCameraBtn) {
             grantCameraBtn.addEventListener('click', async () => {
                 try {
                     grantCameraBtn.disabled = true;
-                    grantCameraBtn.innerText = 'Initializing Camera...';
+                    grantCameraBtn.innerText = 'Requesting Camera...';
 
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                         throw new Error('Webcam media API not supported in this environment.');
                     }
 
-                    cameraMediaStream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: 320, height: 240, facingMode: 'user' }
-                    });
+                    if (!cameraMediaStream) {
+                        cameraMediaStream = await navigator.mediaDevices.getUserMedia({
+                            video: { width: 320, height: 240, facingMode: 'user' }
+                        });
+                    }
 
                     if (proctorVideoPreview) {
                         proctorVideoPreview.srcObject = cameraMediaStream;
@@ -1952,23 +1980,56 @@ class SidebarProvider {
                     }
                     if (cameraPreviewBox) cameraPreviewBox.style.display = 'block';
 
-                    // Capture initial reference frame
+                    grantCameraBtn.innerText = 'Loading SsdMobilenetv1...';
+                    await loadSsdMobilenetModel();
+
+                    grantCameraBtn.innerText = 'Analyzing Face (' + (preLabAttempts + 1) + '/' + MAX_PRELAB_ATTEMPTS + ')...';
+
+                    // Single frame capture and detection
                     setTimeout(async () => {
-                        let detectedFaces = 1;
-                        if ('FaceDetector' in window) {
+                        let detectedFaces = 0;
+                        if (window.faceapi && ssdMobilenetLoaded && proctorVideoPreview) {
                             try {
-                                const detector = new window.FaceDetector({ fastMode: true });
-                                const faces = await detector.detect(proctorVideoPreview);
+                                const detections = await window.faceapi.detectAllFaces(
+                                    proctorVideoPreview,
+                                    new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+                                );
+                                detectedFaces = detections.length;
+                            } catch (e) {
+                                console.error('SsdMobilenetv1 detection error:', e);
+                                if ('FaceDetector' in window) {
+                                    try {
+                                        const fd = new window.FaceDetector({ fastMode: false });
+                                        const faces = await fd.detect(proctorVideoPreview);
+                                        detectedFaces = faces.length;
+                                    } catch (err) {
+                                        detectedFaces = 0;
+                                    }
+                                }
+                            }
+                        } else if ('FaceDetector' in window && proctorVideoPreview) {
+                            try {
+                                const fd = new window.FaceDetector({ fastMode: false });
+                                const faces = await fd.detect(proctorVideoPreview);
                                 detectedFaces = faces.length;
                             } catch (e) {
-                                detectedFaces = 1;
+                                detectedFaces = 0;
                             }
                         }
 
-                        if (proctorCanvas && proctorBgVideo) {
+                        let imageBase64 = null;
+                        if (proctorCanvas && proctorVideoPreview) {
                             const ctx = proctorCanvas.getContext('2d');
-                            ctx.drawImage(proctorBgVideo, 0, 0, 320, 240);
-                            const imageBase64 = proctorCanvas.toDataURL('image/jpeg', 0.6);
+                            ctx.drawImage(proctorVideoPreview, 0, 0, 320, 240);
+                            imageBase64 = proctorCanvas.toDataURL('image/jpeg', 0.6);
+                        }
+
+                        if (detectedFaces >= 1) {
+                            // Gate passes: unlock workspace
+                            isCameraVerified = true;
+                            updateProctorUIState();
+                            if (checkProgressBtn) checkProgressBtn.disabled = false;
+                            if (submitBtn) submitBtn.disabled = !isIntegrityValid;
 
                             vscode.postMessage({
                                 type: 'cameraTelemetry',
@@ -1980,21 +2041,52 @@ class SidebarProvider {
                                     timestamp: new Date().toISOString()
                                 }
                             });
+
+                            // Preload lightweight TinyFaceDetector for Checkpoint 2
+                            loadTinyFaceDetectorModel();
+                            startContinuousProctoring();
+                        } else {
+                            // No face detected: prompt to reposition, up to 3 attempts
+                            preLabAttempts++;
+
+                            if (preLabAttempts < MAX_PRELAB_ATTEMPTS) {
+                                grantCameraBtn.disabled = false;
+                                grantCameraBtn.innerText = 'Retry Face Check (Attempt ' + (preLabAttempts + 1) + ' of ' + MAX_PRELAB_ATTEMPTS + ')';
+                                if (cameraGateMsg) {
+                                    cameraGateMsg.innerHTML = '<span style="color:#fcd34d;">⚠️ Attempt ' + preLabAttempts + ' of ' + MAX_PRELAB_ATTEMPTS + ':</span> No face detected. Please reposition yourself directly in front of the camera and retry.';
+                                }
+                            } else {
+                                // 3/3 failed: hard block and report failure snapshot to instructor telemetry
+                                grantCameraBtn.disabled = true;
+                                grantCameraBtn.innerText = 'Verification Blocked - Contact Instructor';
+                                if (cameraGateMsg) {
+                                    cameraGateMsg.innerHTML = '<span style="color:#fca5a5; font-weight:bold;">❌ Pre-Lab Verification Failed (3/3 attempts):</span> No face was detected. Please contact your instructor. Your workspace remains locked.';
+                                }
+                                if (cameraGateAlert) {
+                                    cameraGateAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                                    cameraGateAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                                    cameraGateAlert.style.color = '#fca5a5';
+                                }
+
+                                vscode.postMessage({
+                                    type: 'cameraTelemetry',
+                                    eventType: 'prelab_verification_failed',
+                                    payload: {
+                                        attempts: preLabAttempts,
+                                        face_count: 0,
+                                        image_base64: imageBase64,
+                                        timestamp: new Date().toISOString()
+                                    }
+                                });
+                            }
                         }
-
-                        isCameraVerified = true;
-                        updateProctorUIState();
-                        if (checkProgressBtn) checkProgressBtn.disabled = false;
-                        if (submitBtn) submitBtn.disabled = !isIntegrityValid;
-
-                        startContinuousProctoring();
-                    }, 800);
+                    }, 600);
 
                 } catch (err) {
                     grantCameraBtn.disabled = false;
-                    grantCameraBtn.innerText = 'Retry Camera Permission';
+                    grantCameraBtn.innerText = 'Grant Camera Permission';
                     if (cameraGateMsg) {
-                        cameraGateMsg.innerText = '❌ Camera Permission Denied: You cannot proceed without webcam verification. Workspace remains locked.';
+                        cameraGateMsg.innerHTML = '<span style="color:#fca5a5; font-weight:bold;">❌ Camera Permission Required:</span> Camera access is mandatory to unlock and complete this laboratory. Workspace remains locked.';
                     }
                     if (cameraGateAlert) {
                         cameraGateAlert.style.background = 'rgba(239, 68, 68, 0.15)';
@@ -2017,78 +2109,72 @@ class SidebarProvider {
             });
         }
 
+        // Checkpoint 2: Continuous Re-Verification (Active Session)
         function startContinuousProctoring() {
             if (proctorCheckTimer) {
                 clearInterval(proctorCheckTimer);
             }
 
+            // Ensure TinyFaceDetector is loaded
+            loadTinyFaceDetectorModel();
+
             proctorCheckTimer = setInterval(async () => {
                 if (!cameraMediaStream || !isCameraVerified || !proctorBgVideo || !proctorCanvas) return;
 
                 try {
-                    const ctx = proctorCanvas.getContext('2d');
-                    ctx.drawImage(proctorBgVideo, 0, 0, 320, 240);
-
                     let faceCount = 1;
-                    if ('FaceDetector' in window) {
+                    if (window.faceapi && tinyFaceDetectorLoaded) {
                         try {
-                            const detector = new window.FaceDetector({ fastMode: true });
-                            const faces = await detector.detect(proctorBgVideo);
+                            const detections = await window.faceapi.detectAllFaces(
+                                proctorBgVideo,
+                                new window.faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
+                            );
+                            faceCount = detections.length;
+                        } catch (e) {
+                            console.error('TinyFaceDetector error:', e);
+                            if ('FaceDetector' in window) {
+                                try {
+                                    const fd = new window.FaceDetector({ fastMode: true });
+                                    const faces = await fd.detect(proctorBgVideo);
+                                    faceCount = faces.length;
+                                } catch (err) {
+                                    faceCount = 1;
+                                }
+                            }
+                        }
+                    } else if ('FaceDetector' in window) {
+                        try {
+                            const fd = new window.FaceDetector({ fastMode: true });
+                            const faces = await fd.detect(proctorBgVideo);
                             faceCount = faces.length;
                         } catch (e) {
                             faceCount = 1;
                         }
                     }
 
+                    // If face is detected: Take NO action. Zero network traffic, zero logging, zero notification.
+                    if (faceCount >= 1) {
+                        return;
+                    }
+
+                    // If no face detected (student stepped away or blocked camera):
+                    // Capture that specific frame as static JPEG image
+                    const ctx = proctorCanvas.getContext('2d');
+                    ctx.drawImage(proctorBgVideo, 0, 0, 320, 240);
                     const snapshotBase64 = proctorCanvas.toDataURL('image/jpeg', 0.5);
 
-                    if (faceCount === 0) {
-                        // Camera absence event (Non-interruptive: does NOT block student mid-session)
-                        if (proctorBadge) {
-                            proctorBadge.innerText = '📷 Absence Flagged';
-                            proctorBadge.style.color = '#f59e0b';
+                    // Critical constraint: Completely silent on student end (do NOT pause, warn, or block student)
+                    vscode.postMessage({
+                        type: 'cameraTelemetry',
+                        eventType: 'camera_absence',
+                        payload: {
+                            face_count: 0,
+                            image_base64: snapshotBase64,
+                            timestamp: new Date().toISOString()
                         }
-                        vscode.postMessage({
-                            type: 'cameraTelemetry',
-                            eventType: 'camera_absence',
-                            payload: {
-                                face_count: 0,
-                                image_base64: snapshotBase64,
-                                timestamp: new Date().toISOString()
-                            }
-                        });
-                    } else if (faceCount > 1) {
-                        // Multiple faces detected
-                        if (proctorBadge) {
-                            proctorBadge.innerText = '📷 Multiple Faces';
-                            proctorBadge.style.color = '#f59e0b';
-                        }
-                        vscode.postMessage({
-                            type: 'cameraTelemetry',
-                            eventType: 'webcam_check',
-                            payload: {
-                                face_count: faceCount,
-                                image_base64: snapshotBase64,
-                                timestamp: new Date().toISOString()
-                            }
-                        });
-                    } else {
-                        // Verified normal
-                        if (proctorBadge) {
-                            proctorBadge.innerText = '📷 Proctor Active';
-                            proctorBadge.style.color = '#3ecf8e';
-                        }
-                        vscode.postMessage({
-                            type: 'cameraTelemetry',
-                            eventType: 'webcam_check',
-                            payload: {
-                                face_count: 1,
-                                timestamp: new Date().toISOString()
-                            }
-                        });
-                    }
+                    });
                 } catch (e) {
-                    console.error('Proctor background error', e);
+                    console.error('Silent proctor check error:', e);
                 }
             }, 25000);
         }
@@ -2138,7 +2224,6 @@ class SidebarProvider {
         connectBtn.addEventListener('click', () => {
             const backendUrl = backendUrlInput.value.trim();
             const sessionId = sessionIdInput.value.trim();
-            const apiToken = apiTokenInput.value.trim();
             
             if (!backendUrl || !sessionId) {
                 alert('Please enter both Backend URL and Session ID.');
@@ -2152,7 +2237,7 @@ class SidebarProvider {
                 type: 'connect',
                 backendUrl,
                 sessionId,
-                apiToken: apiToken || null
+                apiToken: null
             });
         });
 
@@ -2212,7 +2297,6 @@ class SidebarProvider {
                 case 'prefill':
                     backendUrlInput.value = message.backendUrl;
                     sessionIdInput.value = message.sessionId;
-                    apiTokenInput.value = message.apiToken || '';
                     break;
                     
                 case 'status':
