@@ -206,6 +206,8 @@ class LabSessionController extends Controller
             }
         }
 
+        $session->update(['last_ping_at' => now()]);
+
         return response()->json([
             'status' => 'success',
             'log' => $log,
@@ -483,6 +485,10 @@ class LabSessionController extends Controller
                 ? (int) $session->started_at->diffInSeconds($endTime, true)
                 : 0;
             $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
+        }
+
+        if ($session->status === 'in_progress') {
+            $session->update(['last_ping_at' => now()]);
         }
 
         $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
@@ -1050,6 +1056,70 @@ class LabSessionController extends Controller
             'status' => 'success',
             'message' => 'Lab session reopened.',
             'session' => $session,
+        ]);
+    }
+
+    /**
+     * Heartbeat / Liveness ping from student browser or VS Code workspace.
+     */
+    public function pingSession(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->find($sessionId);
+        if (!$session) {
+            return response()->json(['error' => 'Session not found'], 404);
+        }
+
+        $lab = $session->laboratory;
+        $timeLimit = $lab ? ($lab->time_limit ?: 60) : 60;
+        $timeLimitSec = $timeLimit * 60;
+        $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
+
+        // Auto-expire if session exceeded laboratory time limit
+        if ($session->status === 'in_progress' && $timeLimitSec > 0 && $elapsed >= $timeLimitSec) {
+            $session->update([
+                'status' => 'abandoned',
+                'ended_at' => now(),
+                'last_ping_at' => now(),
+            ]);
+            return response()->json([
+                'status' => 'abandoned',
+                'is_active' => false,
+                'message' => 'Laboratory session time limit has expired.',
+                'time_remaining_seconds' => 0,
+            ]);
+        }
+
+        if ($session->status !== 'in_progress') {
+            return response()->json([
+                'status' => $session->status,
+                'is_active' => false,
+                'message' => "Session is {$session->status}.",
+                'time_remaining_seconds' => 0,
+            ]);
+        }
+
+        $updateData = ['last_ping_at' => now()];
+        if ($request->has('wpm')) {
+            $updateData['wpm'] = (int) $request->input('wpm');
+        }
+        if ($request->has('keystroke_count')) {
+            $updateData['keystroke_count'] = (int) $request->input('keystroke_count');
+        }
+        $session->update($updateData);
+
+        $remainingSeconds = max(0, $timeLimitSec - $elapsed);
+        if ($lab && $lab->isLiveLab()) {
+            $remainingSeconds = $lab->getRemainingLiveSeconds();
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'session_id' => $session->id,
+            'session_status' => $session->status,
+            'connection_state' => 'active',
+            'is_active' => true,
+            'time_remaining_seconds' => $remainingSeconds,
+            'timestamp' => now()->toIso8601String(),
         ]);
     }
 

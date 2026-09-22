@@ -233,8 +233,26 @@ Route::middleware('auth')->group(function () {
             $user->unreadNotifications->markAsRead();
             \Illuminate\Support\Facades\Cache::forget("user_notifs_{$user->id}");
             \Illuminate\Support\Facades\Cache::store('file')->forget("user_notifs_summary_{$user->id}");
+
+            $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
+                return [
+                    'id' => $notif->id,
+                    'unread' => false,
+                    'url' => $notif->data['url'] ?? '#',
+                    'title' => $notif->data['title'] ?? 'Notification',
+                    'message' => $notif->data['message'] ?? '',
+                    'type' => $notif->data['type'] ?? 'info',
+                    'time' => $notif->created_at->diffForHumans(),
+                ];
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'unreadCount' => 0,
+                'notifications' => $notifications,
+            ]);
         }
-        return response()->json(['status' => 'success']);
+        return response()->json(['status' => 'success', 'unreadCount' => 0, 'notifications' => []]);
     })->name('notifications.mark-as-read');
 });
 

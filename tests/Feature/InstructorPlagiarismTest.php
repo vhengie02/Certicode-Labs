@@ -113,4 +113,45 @@ class InstructorPlagiarismTest extends TestCase
         $response->assertSee('Cohort Plagiarism');
         $response->assertSee('In-Session Cohort Plagiarism Detector');
     }
+
+    public function test_monitoring_view_removes_live_telemetry_badge_and_has_telemetry_button(): void
+    {
+        $response = $this->actingAs($this->instructor)->get(route('instructor.monitoring.show', $this->lab->id));
+        $response->assertStatus(200);
+        $response->assertDontSee('Live Telemetry');
+        $response->assertSee('Telemetry Monitoring');
+        $response->assertSee(route('classes.telemetry', $this->lab->module->schoolClass->id));
+    }
+
+    public function test_monitoring_view_for_solo_lab_hides_group_controls(): void
+    {
+        $this->lab->update(['is_group_lab' => false]);
+
+        $response = $this->actingAs($this->instructor)->get(route('instructor.monitoring.show', $this->lab->id));
+        $response->assertStatus(200);
+        $response->assertDontSee('By Group / Team');
+        $response->assertSee('Active Student Workspaces');
+        $response->assertSee('Filter by student name...');
+    }
+
+    public function test_monitoring_view_for_group_lab_shows_group_controls(): void
+    {
+        $this->lab->update(['is_group_lab' => true]);
+
+        $response = $this->actingAs($this->instructor)->get(route('instructor.monitoring.show', $this->lab->id));
+        $response->assertStatus(200);
+        $response->assertSee('By Group / Team');
+        $response->assertSee('Active Student / Team Workspaces');
+        $response->assertSee('Filter by student or team...');
+    }
+
+    public function test_monitoring_view_suppresses_websocket_when_broadcast_connection_is_log(): void
+    {
+        config(['broadcasting.default' => 'log']);
+
+        $response = $this->actingAs($this->instructor)->get(route('instructor.monitoring.show', $this->lab->id));
+        $response->assertStatus(200);
+        $response->assertSee('this.initPolling()');
+        $response->assertDontSee('this.initWebSocket()');
+    }
 }

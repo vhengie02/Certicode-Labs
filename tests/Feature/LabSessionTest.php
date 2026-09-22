@@ -123,4 +123,87 @@ class LabSessionTest extends TestCase
             'event_type' => 'code_execution',
         ]);
     }
+
+    /**
+     * Test ping updates last_ping_at and returns active connectivity.
+     */
+    public function test_student_can_ping_session_and_update_last_ping_at(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/ping", [
+                'wpm' => 35,
+                'keystroke_count' => 120,
+            ]);
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'status' => 'success',
+            'session_id' => $session->id,
+            'is_active' => true,
+        ]);
+
+        $session->refresh();
+        $this->assertNotNull($session->last_ping_at);
+        $this->assertTrue($session->isActivelyConnected());
+        $this->assertEquals(35, $session->wpm);
+    }
+
+    /**
+     * Test ping on session that exceeded lab time limit auto-abandons it.
+     */
+    public function test_ping_on_expired_session_auto_abandons(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(60), // Time limit is 45 min
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/ping");
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'status' => 'abandoned',
+            'is_active' => false,
+        ]);
+
+        $session->refresh();
+        $this->assertEquals('abandoned', $session->status);
+    }
+
+    /**
+     * Test LabSession::autoExpireStaleSessions cleans up stale abandoned sessions.
+     */
+    public function test_auto_expire_stale_sessions_method(): void
+    {
+        $staleSession = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(120),
+        ]);
+
+        $activeSession = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(10),
+            'last_ping_at' => now(),
+        ]);
+
+        $expired = LabSession::autoExpireStaleSessions($this->laboratory->id);
+
+        $this->assertEquals(1, $expired);
+        $this->assertEquals('abandoned', $staleSession->fresh()->status);
+        $this->assertEquals('in_progress', $activeSession->fresh()->status);
+    }
 }

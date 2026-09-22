@@ -309,67 +309,140 @@
         @endif
 
         @if(auth()->user()->role === 'student')
-            <!-- VS Code Integration & Setup Card -->
-            <div class="border-t border-[#232323] pt-6 mb-6">
-                <div class="p-5 rounded-[6px] bg-[#141414] border border-[#2e2e2e]">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div class="flex items-start space-x-3.5">
-                            <div class="p-2 rounded-[6px] bg-[#171717] border border-[#2e2e2e] text-[#3ecf8e] flex-shrink-0 mt-0.5">
-                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+            <div x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">
+                <!-- Persistent Live Browser Proctoring Monitor Card -->
+                <div x-show="browserProctorActive" x-cloak class="p-5 sm:p-6 rounded-xl bg-[#141414] border-2 border-[#3ecf8e]/50 shadow-xl shadow-[#3ecf8e]/5 mb-6 transition-all">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#242424]">
+                        <div class="flex items-center gap-3">
+                            <span class="relative flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3 bg-[#3ecf8e]"></span>
+                            </span>
+                            <div>
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                                    Browser Camera Proctor Active
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-mono tracking-wider font-semibold"
+                                          :class="{
+                                              'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30': proctorStatus === 'normal',
+                                              'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse': proctorStatus === 'absence' || proctorStatus === 'disconnected',
+                                              'bg-amber-500/20 text-amber-400 border border-amber-500/30': proctorStatus === 'multiple_faces'
+                                          }"
+                                          x-text="proctorStatusText">
+                                    </span>
+                                </h3>
+                                <p class="text-xs text-[#888888] mt-0.5">Webcam stays active in this tab while coding in VS Code. Telemetry is streamed to your instructor.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2.5 shrink-0">
+                            <button type="button" @click="reopenVsCode()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3ecf8e] hover:bg-[#00c573] text-[#0f0f0f] text-xs font-bold transition shadow-sm">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/>
                                 </svg>
+                                <span>Switch to VS Code Workspace</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                        <!-- Compact Live Camera Viewport -->
+                        <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video flex items-center justify-center">
+                            <video x-ref="proctorLiveVideo" autoplay playsinline muted class="w-full h-full object-cover scale-x-[-1]"></video>
+                            <canvas x-ref="proctorCanvas" class="hidden"></canvas>
+                            <div class="absolute bottom-2 left-2 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 flex items-center gap-1.5 border border-emerald-500/30">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                <span>Face Track Active</span>
                             </div>
-                            <div>
-                                <h4 class="text-sm font-bold text-[#ededed] flex items-center gap-2">
-                                    Certicode Labs VS Code Extension
-                                    <span class="px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide rounded-full bg-[#171717] text-[#3ecf8e] border border-[#3ecf8e]/30">Official IDE</span>
-                                </h4>
-                                <p class="text-xs text-[#888888] mt-1 leading-relaxed">
-                                    Complete tasks with live timer synchronization, AI progress checks, and automated rubric evaluations directly inside Visual Studio Code.
+                        </div>
+
+                        <!-- Instructions & Status Log -->
+                        <div class="md:col-span-2 space-y-2.5 text-xs text-[#a3a3a3]">
+                            <div class="p-3 rounded-lg bg-[#171717] border border-[#262626] space-y-1.5">
+                                <div class="flex items-center justify-between text-[11px] font-mono">
+                                    <span class="text-[#888888]">SESSION TELEMETRY &amp; HEARTBEAT:</span>
+                                    <span class="text-[#3ecf8e] flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse"></span>
+                                        Connected (<span x-text="pingCount"></span> pings sent)
+                                    </span>
+                                </div>
+                                <p class="text-xs text-[#d4d4d4] leading-relaxed">
+                                    Your webcam stream stays isolated to this browser window. When focus shifts to VS Code, periodic AI checks confirm presence and stream telemetry directly to your instructor's live panel.
                                 </p>
                             </div>
-                        </div>
 
-                        <div class="flex items-center gap-2.5 flex-shrink-0">
-                            <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="inline-flex items-center px-3.5 py-2 rounded-[6px] border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-semibold text-[#ededed] transition-colors">
-                                <svg class="w-3.5 h-3.5 mr-1.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                                Download Extension (.vsix)
-                            </a>
+                            <div class="flex items-center gap-3 text-[11px] font-mono text-[#777777] flex-wrap">
+                                <span>Status: <strong class="text-white" x-text="proctorStatusText"></strong></span>
+                                <span>•</span>
+                                <span>Faces: <strong class="text-white" x-text="faceCount"></strong></span>
+                                <span>•</span>
+                                <span>Session ID: <strong class="text-[#3ecf8e]" x-text="activeSessionId || '{{ $activeSession ? $activeSession->id : 'Pending' }}'"></strong></span>
+                                <span>•</span>
+                                <span class="text-amber-400">⚠️ Keep this tab open while coding</span>
+                            </div>
                         </div>
                     </div>
-
-                    <!-- Quick Instructions Accordion -->
-                    <div class="mt-4 pt-3 border-t border-[#232323] flex flex-col md:flex-row gap-4 text-xs font-mono text-[#888888]">
-                        <div class="flex items-center space-x-2">
-                            <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">1</span>
-                            <span>Install: VS Code &rarr; Extensions (<kbd class="px-1 py-0.5 rounded bg-[#171717] text-[10px] border border-[#2e2e2e] text-[#ededed]">Ctrl+Shift+X</kbd>) &rarr; <strong class="text-[#ededed]">Install from VSIX</strong></span>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">2</span>
-                            <span>Launch: Connect automatically via <code class="text-[#3ecf8e]">vscode://</code> or click extension in sidebar</span>
-                        </div>
-                    </div>
-
-                    <div class="mt-3 p-3 rounded-[6px] bg-[#f8fafc] dark:bg-[#101010] border border-[#e2e8f0] dark:border-[#262626] text-[11px] font-mono text-[#334155] dark:text-[#a3a3a3] flex items-start gap-2.5">
-                        <svg class="w-4 h-4 text-[#059669] dark:text-[#3ecf8e] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span><strong class="text-[#0f172a] dark:text-[#ededed]">Workspace Tip:</strong> To persist your code on disk while working in VS Code, open an empty folder (<em class="text-[#0f172a] dark:text-[#ededed]">File &rarr; Open Folder</em>) before launching, or click any starter file in the CertiCode sidebar or use the <strong class="text-[#059669] dark:text-[#3ecf8e]">Download Starter File</strong> button above.</span>
-                    </div>
-
-                    @if($activeSession)
-                        <div class="mt-3 pt-3 border-t border-[#232323] text-[11px] font-mono text-[#888888] flex flex-wrap items-center gap-x-4 gap-y-1">
-                            <span class="text-[#666666]">Manual session fallback:</span>
-                            <span>Session ID: <strong class="text-[#3ecf8e]">{{ $activeSession->id }}</strong></span>
-                            <span>Endpoint: <strong class="text-[#ededed]">{{ request()->getSchemeAndHttpHost() }}</strong></span>
-                        </div>
-                    @endif
                 </div>
-            </div>
 
-            <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-4"
-                 x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">
-                <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
-                    &larr; Back to Module
-                </a>
+                <!-- VS Code Integration & Setup Card -->
+                <div class="border-t border-[#232323] pt-6 mb-6">
+                    <div class="p-5 rounded-[6px] bg-[#141414] border border-[#2e2e2e]">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div class="flex items-start space-x-3.5">
+                                <div class="p-2 rounded-[6px] bg-[#171717] border border-[#2e2e2e] text-[#3ecf8e] flex-shrink-0 mt-0.5">
+                                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-bold text-[#ededed] flex items-center gap-2">
+                                        Certicode Labs VS Code Extension
+                                        <span class="px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide rounded-full bg-[#171717] text-[#3ecf8e] border border-[#3ecf8e]/30">Official IDE</span>
+                                    </h4>
+                                    <p class="text-xs text-[#888888] mt-1 leading-relaxed">
+                                        Complete tasks with live timer synchronization, AI progress checks, and automated rubric evaluations directly inside Visual Studio Code.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2.5 flex-shrink-0">
+                                <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="inline-flex items-center px-3.5 py-2 rounded-[6px] border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-semibold text-[#ededed] transition-colors">
+                                    <svg class="w-3.5 h-3.5 mr-1.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                    Download Extension (.vsix)
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Quick Instructions Accordion -->
+                        <div class="mt-4 pt-3 border-t border-[#232323] flex flex-col md:flex-row gap-4 text-xs font-mono text-[#888888]">
+                            <div class="flex items-center space-x-2">
+                                <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">1</span>
+                                <span>Install: VS Code &rarr; Extensions (<kbd class="px-1 py-0.5 rounded bg-[#171717] text-[10px] border border-[#2e2e2e] text-[#ededed]">Ctrl+Shift+X</kbd>) &rarr; <strong class="text-[#ededed]">Install from VSIX</strong></span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">2</span>
+                                <span>Launch: Connect automatically via <code class="text-[#3ecf8e]">vscode://</code> or click extension in sidebar</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 p-3 rounded-[6px] bg-[#f8fafc] dark:bg-[#101010] border border-[#e2e8f0] dark:border-[#262626] text-[11px] font-mono text-[#334155] dark:text-[#a3a3a3] flex items-start gap-2.5">
+                            <svg class="w-4 h-4 text-[#059669] dark:text-[#3ecf8e] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span><strong class="text-[#0f172a] dark:text-[#ededed]">Workspace Tip:</strong> To persist your code on disk while working in VS Code, open an empty folder (<em class="text-[#0f172a] dark:text-[#ededed]">File &rarr; Open Folder</em>) before launching, or click any starter file in the CertiCode sidebar or use the <strong class="text-[#059669] dark:text-[#3ecf8e]">Download Starter File</strong> button above.</span>
+                        </div>
+
+                        @if($activeSession)
+                            <div class="mt-3 pt-3 border-t border-[#232323] text-[11px] font-mono text-[#888888] flex flex-wrap items-center gap-x-4 gap-y-1">
+                                <span class="text-[#666666]">Manual session fallback:</span>
+                                <span>Session ID: <strong class="text-[#3ecf8e]">{{ $activeSession->id }}</strong></span>
+                                <span>Endpoint: <strong class="text-[#ededed]">{{ request()->getSchemeAndHttpHost() }}</strong></span>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-4">
+                    <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
+                        &larr; Back to Module
+                    </a>
 
                 @if($laboratory->isLiveLab() && $laboratory->isLiveNotStarted())
                     <div class="flex items-center gap-3">
@@ -392,7 +465,8 @@
                         <button type="button" 
                                 @click="handleStartClick()"
                                 class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm cursor-pointer">
-                            <span>{{ $activeSession ? 'Resume Lab in VS Code' : 'Start Lab in VS Code' }} &rarr;</span>
+                            <span x-show="!browserProctorActive">{{ $activeSession ? 'Resume Lab in VS Code' : 'Start Lab in VS Code' }} &rarr;</span>
+                            <span x-show="browserProctorActive" style="display: none;">Switch to VS Code Workspace &rarr;</span>
                         </button>
                     </form>
 
@@ -502,6 +576,7 @@
                     </div>
                 @endif
             </div>
+        </div>
         @else
             <!-- Instructor actions & Live Lab lifecycle controls (Feature 9) -->
             <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-3">
@@ -565,8 +640,10 @@
 
 <script src="{{ asset('js/face-api.min.js') }}"></script>
 <script>
-function preLabCameraGate(labId, activeSessionId) {
+function preLabCameraGate(labId, initialSessionId) {
     return {
+        labId: labId,
+        activeSessionId: initialSessionId,
         showModal: false,
         stream: null,
         status: 'idle', // 'idle', 'requesting', 'loading_model', 'denied', 'analyzing', 'failed', 'hard_blocked', 'verified'
@@ -577,19 +654,56 @@ function preLabCameraGate(labId, activeSessionId) {
         maxAttempts: 3,
         modelLoaded: false,
         modelLoading: false,
+
+        // Continuous in-browser proctoring & heartbeat states
+        browserProctorActive: false,
+        proctorStatus: 'idle', // 'idle', 'normal', 'absence', 'multiple_faces', 'disconnected'
+        proctorStatusText: 'Face Present (Normal)',
+        vscodeUrl: '',
+        pingCount: 0,
+        absenceCount: 0,
+        lastAbsenceAlertAt: 0,
+        lastMultiFaceAlertAt: 0,
+        proctorInterval: null,
+        pingInterval: null,
+
+        init() {
+            // Log focus / tab switch telemetry when in active proctor mode
+            document.addEventListener('visibilitychange', () => {
+                if (this.browserProctorActive && this.activeSessionId) {
+                    if (document.hidden) {
+                        this.logTelemetry('tab_switch', { event: 'tab_hidden', timestamp: new Date().toISOString() });
+                    } else {
+                        this.logTelemetry('tab_switch', { event: 'tab_visible', timestamp: new Date().toISOString() });
+                    }
+                }
+            });
+
+            // Prevent accidental tab closing during live proctored lab
+            window.addEventListener('beforeunload', (e) => {
+                if (this.browserProctorActive) {
+                    e.preventDefault();
+                    e.returnValue = 'Live camera proctoring is active for your laboratory session. Leaving or closing this tab will disconnect camera proctoring and notify your instructor.';
+                    return e.returnValue;
+                }
+            });
+        },
+
         handleStartClick() {
-            if (this.cameraVerified) {
-                this.launchLab();
+            if (this.browserProctorActive && this.vscodeUrl) {
+                window.location.href = this.vscodeUrl;
                 return;
             }
             this.openGate();
         },
+
         async openGate() {
             this.showModal = true;
             this.status = 'requesting';
             this.errorMessage = '';
             await this.requestCamera();
         },
+
         async ensureSsdModel() {
             if (this.modelLoaded) return true;
             if (this.modelLoading) {
@@ -611,6 +725,7 @@ function preLabCameraGate(labId, activeSessionId) {
             }
             return this.modelLoaded;
         },
+
         async requestCamera() {
             try {
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -623,7 +738,6 @@ function preLabCameraGate(labId, activeSessionId) {
                     video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
                 });
 
-                // Pre-load model while stream starts
                 this.status = 'loading_model';
                 await this.ensureSsdModel();
 
@@ -642,6 +756,7 @@ function preLabCameraGate(labId, activeSessionId) {
                 this.errorMessage = 'Camera access was denied or no camera device found. Workspace remains locked until permission is granted.';
             }
         },
+
         async runAiPresenceValidation() {
             if (!this.stream || !this.$refs.videoEl) return;
             const video = this.$refs.videoEl;
@@ -699,8 +814,8 @@ function preLabCameraGate(labId, activeSessionId) {
                     image_base64: imageBase64
                 });
 
-                const endpoints = activeSessionId 
-                    ? [`/api/v1/sessions/${activeSessionId}/verify-camera`, `/v1/sessions/${activeSessionId}/verify-camera`]
+                const endpoints = this.activeSessionId 
+                    ? [`/api/v1/sessions/${this.activeSessionId}/verify-camera`, `/v1/sessions/${this.activeSessionId}/verify-camera`]
                     : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
 
                 for (const url of endpoints) {
@@ -710,9 +825,7 @@ function preLabCameraGate(labId, activeSessionId) {
                             headers: headers,
                             body: verifyPayload
                         });
-                        if (res.ok) {
-                            break;
-                        }
+                        if (res.ok) break;
                     } catch (e) {
                         console.warn(`Verify endpoint ${url} network warning:`, e);
                     }
@@ -722,7 +835,7 @@ function preLabCameraGate(labId, activeSessionId) {
                 this.cameraVerified = true;
                 setTimeout(() => {
                     this.launchLab();
-                }, 1200);
+                }, 1000);
             } else {
                 this.attempts++;
                 if (detectedFaces > 1) {
@@ -744,8 +857,8 @@ function preLabCameraGate(labId, activeSessionId) {
                     };
 
                     try {
-                        if (activeSessionId) {
-                            await fetch(`/api/v1/sessions/${activeSessionId}/telemetry`, {
+                        if (this.activeSessionId) {
+                            await fetch(`/api/v1/sessions/${this.activeSessionId}/telemetry`, {
                                 method: 'POST',
                                 headers: headers,
                                 body: JSON.stringify({
@@ -760,8 +873,8 @@ function preLabCameraGate(labId, activeSessionId) {
                             });
                         }
 
-                        const endpoints = activeSessionId 
-                            ? [`/api/v1/sessions/${activeSessionId}/verify-camera`, `/v1/sessions/${activeSessionId}/verify-camera`]
+                        const endpoints = this.activeSessionId 
+                            ? [`/api/v1/sessions/${this.activeSessionId}/verify-camera`, `/v1/sessions/${this.activeSessionId}/verify-camera`]
                             : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
 
                         for (const url of endpoints) {
@@ -786,6 +899,7 @@ function preLabCameraGate(labId, activeSessionId) {
                 }
             }
         },
+
         async launchLab() {
             if (!this.cameraVerified) {
                 console.warn('Cannot launch lab workspace without verified camera presence.');
@@ -808,8 +922,24 @@ function preLabCameraGate(labId, activeSessionId) {
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.vscode_url) {
-                        this.closeGate();
-                        // Direct deep link navigation to launch VS Code automatically
+                        this.activeSessionId = data.session_id || this.activeSessionId;
+                        this.vscodeUrl = data.vscode_url;
+                        this.browserProctorActive = true;
+                        this.showModal = false;
+
+                        // Mount camera stream to persistent live video element on the page
+                        this.$nextTick(() => {
+                            if (this.$refs.proctorLiveVideo && this.stream) {
+                                this.$refs.proctorLiveVideo.srcObject = this.stream;
+                                this.$refs.proctorLiveVideo.play().catch(() => {});
+                            }
+                        });
+
+                        // Start continuous proctoring and ping heartbeat in browser
+                        this.startContinuousProctoring();
+                        this.startPingLoop();
+
+                        // Launch VS Code via deep link
                         window.location.href = data.vscode_url;
                         return;
                     }
@@ -824,8 +954,206 @@ function preLabCameraGate(labId, activeSessionId) {
                 form.submit();
             }
         },
-        closeGate() {
+
+        startContinuousProctoring() {
+            if (this.proctorInterval) {
+                clearInterval(this.proctorInterval);
+            }
+            this.proctorStatus = 'normal';
+            this.proctorStatusText = 'Face Present (Normal)';
+            this.absenceCount = 0;
+
+            this.proctorInterval = setInterval(async () => {
+                await this.runProctorCycle();
+            }, 10000);
+        },
+
+        async runProctorCycle() {
+            if (!this.browserProctorActive) return;
+
+            if (!this.stream || !this.stream.getVideoTracks().some(t => t.readyState === 'live')) {
+                this.proctorStatus = 'disconnected';
+                this.proctorStatusText = 'Camera Disconnected';
+                await this.logTelemetry('camera_absence', {
+                    reason: 'Webcam video track disconnected in browser',
+                    timestamp: new Date().toISOString()
+                });
+                return;
+            }
+
+            const video = this.$refs.proctorLiveVideo || this.$refs.videoEl;
+            if (!video || video.readyState < 2) return;
+
+            let detectedFaces = 0;
+            if (window.faceapi && this.modelLoaded) {
+                try {
+                    const detections = await window.faceapi.detectAllFaces(
+                        video,
+                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+                    );
+                    detectedFaces = detections.length;
+                } catch (e) {
+                    if ('FaceDetector' in window) {
+                        try {
+                            const detector = new window.FaceDetector({ fastMode: false });
+                            const faces = await detector.detect(video);
+                            detectedFaces = faces.length;
+                        } catch (err) {
+                            detectedFaces = 1;
+                        }
+                    } else {
+                        detectedFaces = 1;
+                    }
+                }
+            } else if ('FaceDetector' in window) {
+                try {
+                    const detector = new window.FaceDetector({ fastMode: false });
+                    const faces = await detector.detect(video);
+                    detectedFaces = faces.length;
+                } catch (e) {
+                    detectedFaces = 1;
+                }
+            } else {
+                detectedFaces = 1;
+            }
+
+            this.faceCount = detectedFaces;
+            const nowTime = Date.now();
+
+            if (detectedFaces === 1) {
+                this.absenceCount = 0;
+                this.proctorStatus = 'normal';
+                this.proctorStatusText = 'Face Present (Normal)';
+            } else if (detectedFaces === 0) {
+                this.absenceCount++;
+                this.proctorStatus = 'absence';
+                this.proctorStatusText = `No Face Detected (${this.absenceCount}x warning)`;
+
+                if (this.absenceCount >= 2 && (nowTime - this.lastAbsenceAlertAt > 25000)) {
+                    this.lastAbsenceAlertAt = nowTime;
+                    const snapshot = this.captureSnapshot(video);
+                    await this.logTelemetry('camera_absence', {
+                        image_base64: snapshot,
+                        face_count: 0,
+                        consecutive_absences: this.absenceCount,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            } else {
+                this.absenceCount = 0;
+                this.proctorStatus = 'multiple_faces';
+                this.proctorStatusText = `Multiple Faces Detected (${detectedFaces})`;
+
+                if (nowTime - this.lastMultiFaceAlertAt > 30000) {
+                    this.lastMultiFaceAlertAt = nowTime;
+                    const snapshot = this.captureSnapshot(video);
+                    await this.logTelemetry('webcam_check', {
+                        image_base64: snapshot,
+                        face_count: detectedFaces,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+        },
+
+        captureSnapshot(video) {
+            try {
+                const canvas = this.$refs.proctorCanvas || this.$refs.canvasEl || document.createElement('canvas');
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                return canvas.toDataURL('image/jpeg', 0.65);
+            } catch (e) {
+                return null;
+            }
+        },
+
+        startPingLoop() {
+            if (this.pingInterval) {
+                clearInterval(this.pingInterval);
+            }
+            this.sendPing();
+            this.pingInterval = setInterval(() => {
+                this.sendPing();
+            }, 15000);
+        },
+
+        async sendPing() {
+            if (!this.activeSessionId) return;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            try {
+                const res = await fetch(`/api/v1/sessions/${this.activeSessionId}/ping`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+                    },
+                    body: JSON.stringify({
+                        face_count: this.faceCount,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    this.pingCount++;
+                    if (data && data.is_active === false) {
+                        this.stopProctoring();
+                        alert(`Session Notice: ${data.message || 'The lab session has concluded.'}`);
+                    }
+                }
+            } catch (err) {
+                console.warn('Ping heartbeat warning:', err);
+            }
+        },
+
+        async logTelemetry(eventType, payload) {
+            if (!this.activeSessionId) return;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            try {
+                await fetch(`/api/v1/sessions/${this.activeSessionId}/telemetry`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+                    },
+                    body: JSON.stringify({
+                        event_type: eventType,
+                        payload: payload
+                    })
+                });
+            } catch (err) {
+                console.warn(`Failed to send telemetry event ${eventType}:`, err);
+            }
+        },
+
+        reopenVsCode() {
+            if (this.vscodeUrl) {
+                window.location.href = this.vscodeUrl;
+            }
+        },
+
+        stopProctoring() {
+            if (this.proctorInterval) {
+                clearInterval(this.proctorInterval);
+                this.proctorInterval = null;
+            }
+            if (this.pingInterval) {
+                clearInterval(this.pingInterval);
+                this.pingInterval = null;
+            }
             if (this.stream) {
+                this.stream.getTracks().forEach(t => t.stop());
+                this.stream = null;
+            }
+            this.browserProctorActive = false;
+        },
+
+        closeGate() {
+            if (!this.browserProctorActive && this.stream) {
                 this.stream.getTracks().forEach(t => t.stop());
                 this.stream = null;
             }

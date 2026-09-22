@@ -579,6 +579,9 @@
         function toggleNotifications() {
             const dropdown = document.getElementById('notifications-dropdown');
             dropdown.classList.toggle('hidden');
+            if (!dropdown.classList.contains('hidden')) {
+                pollNotifications(true);
+            }
         }
 
         function toggleProfileDropdown() {
@@ -602,105 +605,133 @@
             }
         });
 
+        let lastNotifState = null;
+        let notifPollTimer = null;
+
+        function renderNotifications(data, force = false) {
+            if (!data) return;
+            const notifs = data.notifications || [];
+            const unreadCount = data.unreadCount ?? 0;
+            const stateKey = JSON.stringify({ count: unreadCount, ids: notifs.map(n => n.id + ':' + n.unread) });
+            if (!force && stateKey === lastNotifState) return;
+            lastNotifState = stateKey;
+
+            // Update unread count badge on bell icon
+            const container = document.getElementById('notification-bell-container');
+            if (container) {
+                let dot = container.querySelector('span.bg-rose-500');
+                if (unreadCount > 0) {
+                    if (!dot) {
+                        const btn = container.querySelector('button');
+                        if (btn) {
+                            dot = document.createElement('span');
+                            dot.className = 'absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950';
+                            btn.appendChild(dot);
+                        }
+                    }
+                } else {
+                    if (dot) dot.remove();
+                }
+            }
+
+            // Update "Mark all read" button in dropdown header
+            const header = document.querySelector('#notifications-dropdown div.px-4.py-2\\.5');
+            if (header) {
+                let markReadBtn = header.querySelector('button');
+                if (unreadCount > 0) {
+                    if (!markReadBtn) {
+                        markReadBtn = document.createElement('button');
+                        markReadBtn.onclick = markAllAsRead;
+                        markReadBtn.className = 'text-indigo-400 hover:underline normal-case';
+                        markReadBtn.innerText = 'Mark all read';
+                        header.appendChild(markReadBtn);
+                    }
+                } else {
+                    if (markReadBtn) markReadBtn.remove();
+                }
+            }
+
+            // Update list items
+            const list = document.getElementById('notifications-list');
+            if (list) {
+                if (notifs.length === 0) {
+                    list.innerHTML = `
+                        <div class="px-4 py-6 text-center text-xs text-slate-500">
+                            No new notifications.
+                        </div>
+                    `;
+                } else {
+                    list.innerHTML = notifs.map(notif => {
+                        const typeColor = notif.type === 'class' ? 'bg-indigo-400' : (notif.type === 'module' ? 'bg-blue-400' : (notif.type === 'certificate' ? 'bg-amber-400' : 'bg-emerald-400'));
+                        const unreadStyle = notif.unread ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '';
+                        return `
+                            <a href="${notif.url}" class="block px-4 py-3 hover:bg-slate-850/40 transition ${unreadStyle}">
+                                <div class="flex items-start space-x-2.5">
+                                    <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
+                                    <div class="overflow-hidden">
+                                        <p class="text-xs font-semibold text-white truncate">${notif.title}</p>
+                                        <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">${notif.message}</p>
+                                        <span class="text-[9px] text-slate-500 font-mono block mt-1">${notif.time}</span>
+                                    </div>
+                                </div>
+                            </a>
+                        `;
+                    }).join('');
+                }
+            }
+        }
+
         function markAllAsRead() {
+            // 1. Instant optimistic update: remove red dot, clear unread styles, remove mark all button
+            const container = document.getElementById('notification-bell-container');
+            if (container) {
+                const dot = container.querySelector('span.bg-rose-500');
+                if (dot) dot.remove();
+            }
+
+            const header = document.querySelector('#notifications-dropdown div.px-4.py-2\\.5');
+            if (header) {
+                const btn = header.querySelector('button');
+                if (btn) btn.remove();
+            }
+
+            const items = document.querySelectorAll('#notifications-list a');
+            items.forEach(item => {
+                item.classList.remove('bg-slate-900/40', 'border-l-2', 'border-indigo-500');
+            });
+
+            // Invalidate cache tracking state so re-render forces clean state
+            lastNotifState = null;
+
+            // 2. Send mark-as-read request and refresh with fresh payload
             fetch("{{ route('notifications.mark-as-read') }}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': '{{ csrf_token() }}'
                 }
             })
             .then(res => res.json())
             .then(data => {
-                if (data.status === 'success') {
-                    const dot = document.querySelector('#notification-bell-container span.bg-rose-500');
-                    if (dot) dot.remove();
-
-                    const items = document.querySelectorAll('#notifications-list a.bg-slate-900\\/40');
-                    items.forEach(item => {
-                        item.classList.remove('bg-slate-900/40', 'border-l-2', 'border-indigo-500');
-                    });
-
-                    const btn = document.querySelector('#notifications-dropdown button');
-                    if (btn) btn.remove();
+                if (data && data.notifications) {
+                    renderNotifications(data, true);
+                } else {
+                    pollNotifications(true);
                 }
+            })
+            .catch(() => {
+                pollNotifications(true);
             });
         }
 
-        let lastNotifState = null;
-        let notifPollTimer = null;
+        function pollNotifications(force = false) {
+            if (document.hidden && !force) return;
 
-        function pollNotifications() {
-            if (document.hidden) return; // Save bandwidth and avoid re-renders when tab is hidden
-
-            fetch("{{ route('notifications.fetch') }}")
+            fetch("{{ route('notifications.fetch') }}?t=" + Date.now(), { cache: 'no-store' })
                 .then(res => res.json())
                 .then(data => {
-                    const stateKey = JSON.stringify({ count: data.unreadCount, ids: data.notifications.map(n => n.id + ':' + n.unread) });
-                    if (stateKey === lastNotifState) return; // Prevent unnecessary DOM re-renders if no notification changes
-                    lastNotifState = stateKey;
-
-                    // Update unread count badge
-                    const container = document.getElementById('notification-bell-container');
-                    if (!container) return;
-                    
-                    let dot = container.querySelector('span.bg-rose-500');
-                    if (data.unreadCount > 0) {
-                        if (!dot) {
-                            const btn = container.querySelector('button');
-                            dot = document.createElement('span');
-                            dot.className = 'absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950';
-                            btn.appendChild(dot);
-                        }
-                    } else {
-                        if (dot) dot.remove();
-                    }
-
-                    // Update "Mark all read" button in dropdown
-                    const header = document.querySelector('#notifications-dropdown div.px-4.py-2\\.5');
-                    if (header) {
-                        let markReadBtn = header.querySelector('button');
-                        if (data.unreadCount > 0) {
-                            if (!markReadBtn) {
-                                markReadBtn = document.createElement('button');
-                                markReadBtn.onclick = markAllAsRead;
-                                markReadBtn.className = 'text-indigo-400 hover:underline normal-case';
-                                markReadBtn.innerText = 'Mark all read';
-                                header.appendChild(markReadBtn);
-                            }
-                        } else {
-                            if (markReadBtn) markReadBtn.remove();
-                        }
-                    }
-
-                    // Update list items
-                    const list = document.getElementById('notifications-list');
-                    if (list) {
-                        if (data.notifications.length === 0) {
-                            list.innerHTML = `
-                                <div class="px-4 py-6 text-center text-xs text-slate-500">
-                                    No new notifications.
-                                </div>
-                            `;
-                        } else {
-                            list.innerHTML = data.notifications.map(notif => {
-                                const typeColor = notif.type === 'class' ? 'bg-indigo-400' : (notif.type === 'module' ? 'bg-blue-400' : (notif.type === 'certificate' ? 'bg-amber-400' : 'bg-emerald-400'));
-                                const unreadStyle = notif.unread ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '';
-                                return `
-                                    <a href="${notif.url}" class="block px-4 py-3 hover:bg-slate-850/40 transition ${unreadStyle}">
-                                        <div class="flex items-start space-x-2.5">
-                                            <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
-                                            <div class="overflow-hidden">
-                                                <p class="text-xs font-semibold text-white truncate">${notif.title}</p>
-                                                <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">${notif.message}</p>
-                                                <span class="text-[9px] text-slate-500 font-mono block mt-1">${notif.time}</span>
-                                            </div>
-                                        </div>
-                                    </a>
-                                `;
-                            }).join('');
-                        }
-                    }
+                    renderNotifications(data, force);
                 })
                 .catch(() => {});
         }

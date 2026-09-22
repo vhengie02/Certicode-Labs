@@ -171,10 +171,6 @@
                 </span>
                 <div class="flex items-center space-x-3">
                     @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                        <a href="{{ route('classes.telemetry', $class->id) }}" class="inline-flex items-center px-3 py-1 border border-slate-800 text-xs font-bold rounded-lg text-rose-400 bg-rose-500/5 hover:bg-rose-500/10 transition-colors shadow shadow-rose-500/5">
-                            <span class="w-1.5 h-1.5 bg-rose-500 rounded-full mr-2 animate-pulse"></span>
-                            Telemetry Monitoring
-                        </a>
                         @if($class->status !== 'completed')
                             <form action="{{ route('classes.end', $class->id) }}" method="POST" onsubmit="return confirm('Conclude this course? All enrolled students at or above the passing threshold ({{ $class->passing_threshold ?? 75 }}%) will be automatically awarded their completion certificates.');" class="inline">
                                 @csrf

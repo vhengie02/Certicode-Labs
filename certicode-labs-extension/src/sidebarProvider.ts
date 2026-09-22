@@ -1735,38 +1735,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             <div class="status-left">
                 <div class="status-dot"></div>
                 <span id="status-text">Connected</span>
-                <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 5px; border-radius: 4px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);">📷 Camera Gate</span>
+                <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 6px; border-radius: 4px; background: rgba(62, 207, 142, 0.15); color: #3ecf8e; border: 1px solid rgba(62, 207, 142, 0.3);">🟢 Browser Proctor Active</span>
             </div>
             <div class="diff-pill" id="diff-counter-pill">
                 <span class="diff-added" id="pill-added">+0</span> / <span class="diff-deleted" id="pill-deleted">-0</span>
             </div>
         </div>
-
-        <!-- Feature 8 Pre-Lab Camera Permission Gate -->
-        <div id="camera-gate-alert" class="integrity-alert" style="display: none; background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.3); color: #93c5fd; flex-direction: column; gap: 8px;">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 6px; font-weight: bold;">
-                    <span>📷</span>
-                    <span>Pre-Lab Camera Presence Gate</span>
-                </div>
-                <span style="font-size: 0.75em; background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 1px 5px; border-radius: 3px; font-weight: bold;">HARD BLOCK</span>
-            </div>
-            <div style="font-size: 0.85em; line-height: 1.35; color: #bfdbfe;" id="camera-gate-msg">
-                Active lab exercises require continuous camera proctoring. Please grant webcam access to unlock your workspace.
-            </div>
-            <div id="camera-preview-box" style="display: none; border-radius: 4px; overflow: hidden; border: 1px solid var(--vscode-panel-border);">
-                <video id="proctor-video-preview" autoplay playsinline muted style="width: 100%; height: 110px; object-fit: cover; background: #000; display: block;"></video>
-            </div>
-            <div style="display: flex; gap: 6px;">
-                <button id="grant-camera-btn" style="background: #3ecf8e; color: #0f0f0f; font-weight: bold; padding: 5px 10px; font-size: 0.85em; border-radius: 3px; border: none; cursor: pointer;">
-                    Enable Webcam & Verify Presence
-                </button>
-            </div>
-        </div>
-
-        <!-- Hidden elements for background proctor capture -->
-        <video id="proctor-bg-video" autoplay playsinline muted style="display: none; width: 320px; height: 240px;"></video>
-        <canvas id="proctor-canvas" width="320" height="240" style="display: none;"></canvas>
 
         <!-- Feature 1 Client-Side Integrity Warning -->
         <div id="integrity-alert" class="integrity-alert" style="display: none;">
@@ -1992,299 +1966,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         let isCountDown = true;
         let isIntegrityValid = true;
 
-        // Feature 8 Camera Presence Check & Pre-Lab Gate (face-api.js)
-        const cameraGateAlert = document.getElementById('camera-gate-alert');
-        const cameraGateMsg = document.getElementById('camera-gate-msg');
-        const cameraPreviewBox = document.getElementById('camera-preview-box');
-        const proctorVideoPreview = document.getElementById('proctor-video-preview');
-        const grantCameraBtn = document.getElementById('grant-camera-btn');
-        const proctorBadge = document.getElementById('proctor-badge');
-        const proctorBgVideo = document.getElementById('proctor-bg-video');
-        const proctorCanvas = document.getElementById('proctor-canvas');
-
-        let isCameraVerified = false;
-        let cameraMediaStream = null;
-        let proctorCheckTimer = null;
-        let preLabAttempts = 0;
-        const MAX_PRELAB_ATTEMPTS = 3;
-        let ssdMobilenetLoaded = false;
-        let tinyFaceDetectorLoaded = false;
-
-        async function loadSsdMobilenetModel() {
-            if (ssdMobilenetLoaded) return true;
-            try {
-                if (window.faceapi && window.faceapi.nets && window.faceapi.nets.ssdMobilenetv1) {
-                    await window.faceapi.nets.ssdMobilenetv1.loadFromUri(MODELS_BASE_PATH);
-                    ssdMobilenetLoaded = true;
-                    return true;
-                }
-            } catch (e) {
-                console.error('Failed to load SsdMobilenetv1 model from', MODELS_BASE_PATH, e);
-            }
-            return false;
-        }
-
-        async function loadTinyFaceDetectorModel() {
-            if (tinyFaceDetectorLoaded) return true;
-            try {
-                if (window.faceapi && window.faceapi.nets && window.faceapi.nets.tinyFaceDetector) {
-                    await window.faceapi.nets.tinyFaceDetector.loadFromUri(MODELS_BASE_PATH);
-                    tinyFaceDetectorLoaded = true;
-                    return true;
-                }
-            } catch (e) {
-                console.error('Failed to load TinyFaceDetector model from', MODELS_BASE_PATH, e);
-            }
-            return false;
-        }
-
-        function updateProctorUIState() {
-            if (!isCameraVerified) {
-                if (cameraGateAlert) cameraGateAlert.style.display = 'flex';
-                if (proctorBadge) {
-                    proctorBadge.innerText = '📷 Gate: Permission Required';
-                    proctorBadge.style.color = '#f59e0b';
-                    proctorBadge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-                    proctorBadge.style.background = 'rgba(245, 158, 11, 0.15)';
-                }
-                if (checkProgressBtn) checkProgressBtn.disabled = true;
-                if (submitBtn) submitBtn.disabled = true;
-            } else {
-                if (cameraGateAlert) cameraGateAlert.style.display = 'none';
-                if (proctorBadge) {
-                    proctorBadge.innerText = '📷 Proctor Active';
-                    proctorBadge.style.color = '#3ecf8e';
-                    proctorBadge.style.borderColor = 'rgba(62, 207, 142, 0.3)';
-                    proctorBadge.style.background = 'rgba(62, 207, 142, 0.15)';
-                }
-            }
-        }
-
-        // Checkpoint 1: Pre-Lab Gate Check (One-Time)
-        if (grantCameraBtn) {
-            grantCameraBtn.addEventListener('click', async () => {
-                try {
-                    grantCameraBtn.disabled = true;
-                    grantCameraBtn.innerText = 'Requesting Camera...';
-
-                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                        throw new Error('Webcam media API not supported in this environment.');
-                    }
-
-                    if (!cameraMediaStream) {
-                        cameraMediaStream = await navigator.mediaDevices.getUserMedia({
-                            video: { width: 320, height: 240, facingMode: 'user' }
-                        });
-                    }
-
-                    if (proctorVideoPreview) {
-                        proctorVideoPreview.srcObject = cameraMediaStream;
-                        try { await proctorVideoPreview.play(); } catch(e) {}
-                    }
-                    if (proctorBgVideo) {
-                        proctorBgVideo.srcObject = cameraMediaStream;
-                        try { await proctorBgVideo.play(); } catch(e) {}
-                    }
-                    if (cameraPreviewBox) cameraPreviewBox.style.display = 'block';
-
-                    grantCameraBtn.innerText = 'Loading SsdMobilenetv1...';
-                    await loadSsdMobilenetModel();
-
-                    grantCameraBtn.innerText = 'Analyzing Face (' + (preLabAttempts + 1) + '/' + MAX_PRELAB_ATTEMPTS + ')...';
-
-                    // Single frame capture and detection
-                    setTimeout(async () => {
-                        let detectedFaces = 0;
-                        if (window.faceapi && ssdMobilenetLoaded && proctorVideoPreview) {
-                            try {
-                                const detections = await window.faceapi.detectAllFaces(
-                                    proctorVideoPreview,
-                                    new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
-                                );
-                                detectedFaces = detections.length;
-                            } catch (e) {
-                                console.error('SsdMobilenetv1 detection error:', e);
-                                if ('FaceDetector' in window) {
-                                    try {
-                                        const fd = new window.FaceDetector({ fastMode: false });
-                                        const faces = await fd.detect(proctorVideoPreview);
-                                        detectedFaces = faces.length;
-                                    } catch (err) {
-                                        detectedFaces = 0;
-                                    }
-                                }
-                            }
-                        } else if ('FaceDetector' in window && proctorVideoPreview) {
-                            try {
-                                const fd = new window.FaceDetector({ fastMode: false });
-                                const faces = await fd.detect(proctorVideoPreview);
-                                detectedFaces = faces.length;
-                            } catch (e) {
-                                detectedFaces = 0;
-                            }
-                        }
-
-                        let imageBase64 = null;
-                        if (proctorCanvas && proctorVideoPreview) {
-                            const ctx = proctorCanvas.getContext('2d');
-                            ctx.drawImage(proctorVideoPreview, 0, 0, 320, 240);
-                            imageBase64 = proctorCanvas.toDataURL('image/jpeg', 0.6);
-                        }
-
-                        if (detectedFaces >= 1) {
-                            // Gate passes: unlock workspace
-                            isCameraVerified = true;
-                            updateProctorUIState();
-                            if (checkProgressBtn) checkProgressBtn.disabled = false;
-                            if (submitBtn) submitBtn.disabled = !isIntegrityValid;
-
-                            vscode.postMessage({
-                                type: 'cameraTelemetry',
-                                eventType: 'webcam_prelab_verification',
-                                payload: {
-                                    verified: true,
-                                    face_count: detectedFaces,
-                                    image_base64: imageBase64,
-                                    timestamp: new Date().toISOString()
-                                }
-                            });
-
-                            // Preload lightweight TinyFaceDetector for Checkpoint 2
-                            loadTinyFaceDetectorModel();
-                            startContinuousProctoring();
-                        } else {
-                            // No face detected: prompt to reposition, up to 3 attempts
-                            preLabAttempts++;
-
-                            if (preLabAttempts < MAX_PRELAB_ATTEMPTS) {
-                                grantCameraBtn.disabled = false;
-                                grantCameraBtn.innerText = 'Retry Face Check (Attempt ' + (preLabAttempts + 1) + ' of ' + MAX_PRELAB_ATTEMPTS + ')';
-                                if (cameraGateMsg) {
-                                    cameraGateMsg.innerHTML = '<span style="color:#fcd34d;">⚠️ Attempt ' + preLabAttempts + ' of ' + MAX_PRELAB_ATTEMPTS + ':</span> No face detected. Please reposition yourself directly in front of the camera and retry.';
-                                }
-                            } else {
-                                // 3/3 failed: hard block and report failure snapshot to instructor telemetry
-                                grantCameraBtn.disabled = true;
-                                grantCameraBtn.innerText = 'Verification Blocked - Contact Instructor';
-                                if (cameraGateMsg) {
-                                    cameraGateMsg.innerHTML = '<span style="color:#fca5a5; font-weight:bold;">❌ Pre-Lab Verification Failed (3/3 attempts):</span> No face was detected. Please contact your instructor. Your workspace remains locked.';
-                                }
-                                if (cameraGateAlert) {
-                                    cameraGateAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                                    cameraGateAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                                    cameraGateAlert.style.color = '#fca5a5';
-                                }
-
-                                vscode.postMessage({
-                                    type: 'cameraTelemetry',
-                                    eventType: 'prelab_verification_failed',
-                                    payload: {
-                                        attempts: preLabAttempts,
-                                        face_count: 0,
-                                        image_base64: imageBase64,
-                                        timestamp: new Date().toISOString()
-                                    }
-                                });
-                            }
-                        }
-                    }, 600);
-
-                } catch (err) {
-                    grantCameraBtn.disabled = false;
-                    grantCameraBtn.innerText = 'Grant Camera Permission';
-                    if (cameraGateMsg) {
-                        cameraGateMsg.innerHTML = '<span style="color:#fca5a5; font-weight:bold;">❌ Camera Permission Required:</span> Camera access is mandatory to unlock and complete this laboratory. Workspace remains locked.';
-                    }
-                    if (cameraGateAlert) {
-                        cameraGateAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                        cameraGateAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                        cameraGateAlert.style.color = '#fca5a5';
-                    }
-                    if (proctorBadge) {
-                        proctorBadge.innerText = '📷 Access Denied';
-                        proctorBadge.style.color = '#ef4444';
-                    }
-                    vscode.postMessage({
-                        type: 'cameraTelemetry',
-                        eventType: 'webcam_permission_denied',
-                        payload: {
-                            reason: err.message || 'Permission denied',
-                            timestamp: new Date().toISOString()
-                        }
-                    });
-                }
-            });
-        }
-
-        // Checkpoint 2: Continuous Re-Verification (Active Session)
-        function startContinuousProctoring() {
-            if (proctorCheckTimer) {
-                clearInterval(proctorCheckTimer);
-            }
-
-            // Ensure TinyFaceDetector is loaded
-            loadTinyFaceDetectorModel();
-
-            proctorCheckTimer = setInterval(async () => {
-                if (!cameraMediaStream || !isCameraVerified || !proctorBgVideo || !proctorCanvas) return;
-
-                try {
-                    let faceCount = 1;
-                    if (window.faceapi && tinyFaceDetectorLoaded) {
-                        try {
-                            const detections = await window.faceapi.detectAllFaces(
-                                proctorBgVideo,
-                                new window.faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
-                            );
-                            faceCount = detections.length;
-                        } catch (e) {
-                            console.error('TinyFaceDetector error:', e);
-                            if ('FaceDetector' in window) {
-                                try {
-                                    const fd = new window.FaceDetector({ fastMode: true });
-                                    const faces = await fd.detect(proctorBgVideo);
-                                    faceCount = faces.length;
-                                } catch (err) {
-                                    faceCount = 1;
-                                }
-                            }
-                        }
-                    } else if ('FaceDetector' in window) {
-                        try {
-                            const fd = new window.FaceDetector({ fastMode: true });
-                            const faces = await fd.detect(proctorBgVideo);
-                            faceCount = faces.length;
-                        } catch (e) {
-                            faceCount = 1;
-                        }
-                    }
-
-                    // If face is detected: Take NO action. Zero network traffic, zero logging, zero notification.
-                    if (faceCount >= 1) {
-                        return;
-                    }
-
-                    // If no face detected (student stepped away or blocked camera):
-                    // Capture that specific frame as static JPEG image
-                    const ctx = proctorCanvas.getContext('2d');
-                    ctx.drawImage(proctorBgVideo, 0, 0, 320, 240);
-                    const snapshotBase64 = proctorCanvas.toDataURL('image/jpeg', 0.5);
-
-                    // Critical constraint: Completely silent on student end (do NOT pause, warn, or block student)
-                    vscode.postMessage({
-                        type: 'cameraTelemetry',
-                        eventType: 'camera_absence',
-                        payload: {
-                            face_count: 0,
-                            image_base64: snapshotBase64,
-                            timestamp: new Date().toISOString()
-                        }
-                    });
-                } catch (e) {
-                    console.error('Silent proctor check error:', e);
-                }
-            }, 25000);
-        }
+        // Camera proctoring runs in the browser tab, keeping the extension lean and unrestricted
 
         // Tabs Logic
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -2361,15 +2043,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         });
 
         exitBtn.addEventListener('click', () => {
-            if (cameraMediaStream) {
-                cameraMediaStream.getTracks().forEach(t => t.stop());
-                cameraMediaStream = null;
-            }
-            if (proctorCheckTimer) {
-                clearInterval(proctorCheckTimer);
-                proctorCheckTimer = null;
-            }
-            isCameraVerified = false;
             vscode.postMessage({ type: 'exit' });
         });
 
@@ -2765,11 +2438,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     submitBtn.disabled = true;
                 } else {
                     liveLabAlert.style.display = 'none';
+                    if (checkProgressBtn) checkProgressBtn.disabled = false;
+                    if (submitBtn) submitBtn.disabled = !isIntegrityValid;
                 }
             }
-
-            // Feature 8: Evaluate Camera Proctor Gate
-            updateProctorUIState();
 
             // Setup timer
             if (session.status === 'completed' || isLiveExpired) {

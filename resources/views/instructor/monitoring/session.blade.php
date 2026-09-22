@@ -22,10 +22,6 @@
             </div>
             <h2 class="text-xl font-bold text-white flex items-center gap-2.5">
                 <span>{{ $laboratory->title }}</span>
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span>
-                    Live Telemetry
-                </span>
                 @if($laboratory->starter_files && count($laboratory->starter_files) > 0)
                     <span class="text-xs font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
                         {{ count($laboratory->starter_files) }} files
@@ -35,17 +31,26 @@
         </div>
 
         <div class="flex items-center gap-3">
-            <!-- Sort Selector -->
-            <div class="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-1 text-xs">
-                <a href="{{ request()->fullUrlWithQuery(['sort' => 'name']) }}" 
-                   class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy !== 'group' ? 'bg-[#3ecf8e] text-slate-950 font-semibold' : 'text-slate-400 hover:text-white' }}">
-                    By Student Name
+            @if($schoolClass)
+                <a href="{{ route('classes.telemetry', $schoolClass->id) }}" class="inline-flex items-center px-3 py-1.5 border border-slate-800 text-xs font-semibold rounded-lg text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300 transition-colors shadow-sm">
+                    <span class="w-1.5 h-1.5 bg-rose-500 rounded-full mr-2 animate-pulse"></span>
+                    Telemetry Monitoring
                 </a>
-                <a href="{{ request()->fullUrlWithQuery(['sort' => 'group']) }}" 
-                   class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy === 'group' ? 'bg-[#3ecf8e] text-slate-950 font-semibold' : 'text-slate-400 hover:text-white' }}">
-                    By Group / Team
-                </a>
-            </div>
+            @endif
+
+            @if($laboratory->is_group_lab)
+                <!-- Sort Selector -->
+                <div class="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-1 text-xs">
+                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'name']) }}" 
+                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy !== 'group' ? 'bg-[#3ecf8e] text-slate-950 font-semibold' : 'text-slate-400 hover:text-white' }}">
+                        By Student Name
+                    </a>
+                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'group']) }}" 
+                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy === 'group' ? 'bg-[#3ecf8e] text-slate-950 font-semibold' : 'text-slate-400 hover:text-white' }}">
+                        By Group / Team
+                    </a>
+                </div>
+            @endif
 
             <!-- Auto-refresh button -->
             <button @click="refreshData()" class="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors" title="Refresh Live Stream">
@@ -148,7 +153,7 @@
         </div>
     @endif
 
-    <!-- Live Telemetry KPI Metrics -->
+    {{-- KPI Metrics --}}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
             <div class="flex items-center justify-between">
@@ -225,10 +230,10 @@
     <div class="glass-panel rounded-xl border border-slate-800 overflow-hidden">
         <div class="p-4 border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-                <h3 class="font-bold text-white text-sm">Active Student / Team Workspaces</h3>
+                <h3 class="font-bold text-white text-sm">{{ $laboratory->is_group_lab ? 'Active Student / Team Workspaces' : 'Active Student Workspaces' }}</h3>
                 <p class="text-xs text-slate-400 mt-0.5">Real-time status, WPM tracking, task progress, and anomaly audit trails.</p>
             </div>
-            <input type="text" id="monitoring-search-query" name="search_query" x-model="searchQuery" placeholder="Filter by student or team..." 
+            <input type="text" id="monitoring-search-query" name="search_query" x-model="searchQuery" placeholder="{{ $laboratory->is_group_lab ? 'Filter by student or team...' : 'Filter by student name...' }}" 
                    class="bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#3ecf8e] w-full sm:w-64">
         </div>
 
@@ -275,8 +280,25 @@
                                     <div class="flex items-center gap-2">
                                         <span class="font-bold text-white text-sm truncate" title="{{ $user->name ?? 'Unknown Student' }}">{{ $user->name ?? 'Unknown Student' }}</span>
                                         @if($session->status === 'in_progress')
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shrink-0">
-                                                Active
+                                            @if($session->isActivelyConnected())
+                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shrink-0">
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                                    Active
+                                                </span>
+                                            @elseif($session->isIdle())
+                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 shrink-0" title="No heartbeat recently">
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                                    Idle
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 shrink-0" title="Disconnected - no active heartbeat">
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                                    Offline
+                                                </span>
+                                            @endif
+                                        @elseif($session->status === 'abandoned')
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 shrink-0" title="Session timed out or abandoned">
+                                                Abandoned
                                             </span>
                                         @else
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
@@ -286,7 +308,7 @@
                                     </div>
                                     <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 truncate">
                                         <span class="truncate" title="{{ $user->email ?? 'No email' }}">{{ $user->email ?? 'No email' }}</span>
-                                        @if($group)
+                                        @if($laboratory->is_group_lab && $group)
                                             <span class="text-slate-600 shrink-0">•</span>
                                             <span class="text-[#3ecf8e] font-semibold flex items-center gap-1 shrink-0 truncate" title="{{ $group->name }}">
                                                 <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
@@ -297,7 +319,7 @@
                                 </div>
                             </div>
 
-                            <!-- Live Telemetry Stats (Fixed Grid & Width for Vertical Alignment) -->
+                            {{-- Workspace Stats (Fixed Grid & Width for Vertical Alignment) --}}
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 text-xs w-full lg:w-[440px] xl:w-[480px] shrink-0">
                                 <!-- WPM Widget -->
                                 <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
@@ -382,7 +404,7 @@
                         </div>
 
                         <!-- Team Contribution Drill-Down (Feature 1 & Feature 6) -->
-                        @if($session->code_contributions && count($session->code_contributions) > 0)
+                        @if($laboratory->is_group_lab && $session->code_contributions && count($session->code_contributions) > 0)
                             <div class="mt-3 pt-3 border-t border-slate-800/60 text-xs">
                                 <span class="text-slate-400 font-semibold text-[11px] uppercase tracking-wider block mb-1.5">Teammate Contributions</span>
                                 <div class="flex flex-wrap gap-2">
@@ -682,12 +704,14 @@
                     </div>
                     <div class="flex items-center gap-2 text-xs text-slate-400">
                         <span class="font-medium text-slate-200" x-text="selectedGradeSession?.student_name"></span>
-                        <template x-if="selectedGradeSession?.is_team">
-                            <span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px]" x-text="'Team: ' + selectedGradeSession.team_name"></span>
-                        </template>
-                        <template x-if="selectedGradeSession?.is_team">
-                            <span class="text-[11px] text-slate-500 italic">(Evaluating combined submission as single unit)</span>
-                        </template>
+                        @if($laboratory->is_group_lab)
+                            <template x-if="selectedGradeSession?.is_team">
+                                <span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px]" x-text="'Team: ' + selectedGradeSession.team_name"></span>
+                            </template>
+                            <template x-if="selectedGradeSession?.is_team">
+                                <span class="text-[11px] text-slate-500 italic">(Evaluating combined submission as single unit)</span>
+                            </template>
+                        @endif
                     </div>
                 </div>
                 <button @click="isGradeModalOpen = false" class="text-slate-400 hover:text-white">
@@ -931,7 +955,28 @@ function instructorMonitor() {
         },
 
         init() {
-            this.initWebSocket();
+            @if(in_array(config('broadcasting.default'), ['pusher', 'reverb']) && (!empty(config('broadcasting.connections.pusher.key')) || !empty(config('broadcasting.connections.reverb.key'))))
+                this.initWebSocket();
+            @else
+                this.initPolling();
+            @endif
+        },
+
+        initPolling() {
+            // Periodic polling when WebSocket daemon is not enabled/supported
+            setInterval(() => {
+                fetch('{{ route("instructor.monitoring.data", $laboratory->id) }}')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.metrics) {
+                            if (this.lastAnomalyCount !== undefined && data.metrics.total_anomalies > this.lastAnomalyCount) {
+                                this.showLiveAlert('anomaly.detected');
+                            }
+                            this.lastAnomalyCount = data.metrics.total_anomalies;
+                        }
+                    })
+                    .catch(() => {});
+            }, 10000);
         },
 
         initWebSocket() {
@@ -961,6 +1006,9 @@ function instructorMonitor() {
                         }
                     } catch {}
                 };
+                this.ws.onerror = () => {
+                    this.wsConnected = false;
+                };
                 this.ws.onclose = () => {
                     this.wsConnected = false;
                 };
@@ -979,7 +1027,7 @@ function instructorMonitor() {
         matchesSearch(name, group) {
             if (!this.searchQuery.trim()) return true;
             const q = this.searchQuery.toLowerCase();
-            return name.includes(q) || group.includes(q);
+            return name.includes(q) || ({{ $laboratory->is_group_lab ? 'true' : 'false' }} && Boolean(group) && group.includes(q));
         },
         openAnomalyModal(sessionId, studentName, anomalies) {
             this.selectedStudentName = studentName;

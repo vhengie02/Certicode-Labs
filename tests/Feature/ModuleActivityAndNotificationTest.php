@@ -213,4 +213,27 @@ class ModuleActivityAndNotificationTest extends TestCase
         $this->assertEquals(1, $response->json('unreadCount'));
         $this->assertEquals("Student Joined Class: {$this->class->name}", $response->json('notifications.0.title'));
     }
+
+    /**
+     * Test marking all notifications as read returns refreshed payload with zero unreadCount.
+     */
+    public function test_can_mark_all_notifications_as_read_and_receive_refreshed_payload(): void
+    {
+        $this->class->students()->attach($this->student->id, ['status' => 'invited']);
+
+        $this->actingAs($this->student)
+            ->post("/classes/{$this->class->id}/invite-accept");
+
+        $response = $this->actingAs($this->instructor)
+            ->postJson(route('notifications.mark-as-read'));
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'status' => 'success',
+            'unreadCount' => 0,
+        ]);
+        $this->assertCount(1, $response->json('notifications'));
+        $this->assertFalse($response->json('notifications.0.unread'));
+        $this->assertEquals(0, $this->instructor->unreadNotifications()->count());
+    }
 }

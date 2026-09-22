@@ -33,12 +33,14 @@ class LabSession extends Model
         'instructor_overridden_at',
         'overridden_by',
         'closed_at',
+        'last_ping_at',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
         'closed_at' => 'datetime',
+        'last_ping_at' => 'datetime',
         'instructor_overridden_at' => 'datetime',
         'performance_score' => 'float',
         'instructor_grade_override' => 'float',
@@ -149,5 +151,118 @@ class LabSession extends Model
     public function isGradeOverridden(): bool
     {
         return $this->instructor_grade_override !== null;
+    }
+
+    /**
+     * Check if the session is currently actively connected with a recent heartbeat.
+     * Pings are dispatched every 15-20s. A 75-second window accommodates minor network jitter.
+     */
+    public function isActivelyConnected(): bool
+    {
+        if ($this->status !== 'in_progress') {
+            return false;
+        }
+
+        if ($this->last_ping_at) {
+            return $this->last_ping_at->diffInSeconds(now()) <= 75;
+        }
+
+        // If newly started without ping yet, allow 60s grace period from started_at
+        return $this->started_at ? $this->started_at->diffInSeconds(now()) <= 60 : false;
+    }
+
+    /**
+     * Check if session has not pinged recently (75s to 5 mins).
+     */
+    public function isIdle(): bool
+    {
+        if ($this->status !== 'in_progress') {
+            return false;
+        }
+
+        if ($this->last_ping_at) {
+            $diff = $this->last_ping_at->diffInSeconds(now());
+            return $diff > 75 && $diff <= 300;
+        }
+
+        if ($this->started_at) {
+            $diff = $this->started_at->diffInSeconds(now());
+            return $diff > 60 && $diff <= 300;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if session has had no heartbeat for more than 5 minutes.
+     */
+    public function isOffline(): bool
+    {
+        if ($this->status !== 'in_progress') {
+            return false;
+        }
+
+        return !$this->isActivelyConnected() && !$this->isIdle();
+    }
+
+    /**
+     * Get a human-readable connectivity state string for telemetry and views.
+     */
+    public function getConnectionState(): string
+    {
+        if ($this->status === 'completed') {
+            return 'completed';
+        }
+        if ($this->status === 'abandoned') {
+            return 'abandoned';
+        }
+        if ($this->status === 'in_progress') {
+            if ($this->isActivelyConnected()) {
+                return 'active';
+            }
+            if ($this->isIdle()) {
+                return 'idle';
+            }
+            return 'offline';
+        }
+        return $this->status;
+    }
+
+    /**
+     * Automatically sweep and expire abandoned or time-limit-exceeded in-progress sessions.
+     */
+    public static function autoExpireStaleSessions(?int $labId = null): int
+    {
+        $query = static::where('status', 'in_progress')->with('laboratory');
+        if ($labId) {
+            $query->where('lab_id', $labId);
+        }
+
+        $sessions = $query->get();
+        $expiredCount = 0;
+
+        foreach ($sessions as $session) {
+            $lab = $session->laboratory;
+            $timeLimitMinutes = $lab ? ($lab->time_limit ?: 60) : 60;
+            $startedAt = $session->started_at ?: $session->created_at;
+
+            // 1. Exceeded the lab's official time limit (in minutes)
+            $exceededTimeLimit = $startedAt && $startedAt->diffInMinutes(now(), true) >= $timeLimitMinutes;
+
+            // 2. Dead/abandoned session: no ping or telemetry in over 30 minutes
+            $lastActivity = $session->last_ping_at ?: $session->updated_at ?: $startedAt;
+            $abandoned = $lastActivity && $lastActivity->diffInMinutes(now(), true) >= 30;
+
+            if ($exceededTimeLimit || $abandoned) {
+                $session->update([
+                    'status' => 'abandoned',
+                    'ended_at' => $session->ended_at ?: now(),
+                    'closed_at' => now(),
+                ]);
+                $expiredCount++;
+            }
+        }
+
+        return $expiredCount;
     }
 }

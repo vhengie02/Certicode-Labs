@@ -21,9 +21,10 @@ class InstructorMonitoringController extends Controller
 
         $laboratory = Laboratory::with(['module.schoolClass.instructor', 'module.schoolClass.students'])->findOrFail($labId);
         $laboratory->checkAndAutoCloseLive();
+        LabSession::autoExpireStaleSessions($laboratory->id);
         $schoolClass = $laboratory->module ? $laboratory->module->schoolClass : null;
 
-        $sortBy = $request->query('sort', 'name'); // 'name' or 'group'
+        $sortBy = $laboratory->is_group_lab ? $request->query('sort', 'name') : 'name'; // 'name' or 'group'
 
         $sessionsQuery = LabSession::with(['user', 'group', 'anomalies', 'overriddenByUser'])
             ->where('lab_id', $laboratory->id);
@@ -46,7 +47,7 @@ class InstructorMonitoringController extends Controller
         }
 
         $totalStudents = $sessions->count();
-        $activeSessions = $sessions->where('status', 'in_progress')->count();
+        $activeSessions = $sessions->filter(fn($s) => $s->status === 'in_progress' && $s->isActivelyConnected())->count();
         $completedSessions = $sessions->where('status', 'completed')->count();
         $totalAnomalies = Anomaly::whereIn('lab_session_id', $sessions->pluck('id'))->count();
         $avgWpm = $sessions->count() > 0 ? round($sessions->avg('wpm')) : 0;
@@ -96,6 +97,7 @@ class InstructorMonitoringController extends Controller
 
         $laboratory = Laboratory::findOrFail($labId);
         $laboratory->checkAndAutoCloseLive();
+        LabSession::autoExpireStaleSessions($laboratory->id);
 
         $sharedCountdown = null;
         if ($laboratory->isLiveLab()) {
@@ -126,6 +128,11 @@ class InstructorMonitoringController extends Controller
                     'group_name' => $s->group->name ?? null,
                     'is_team' => (bool) $s->group_id,
                     'status' => $s->status,
+                    'connection_state' => $s->getConnectionState(),
+                    'is_connected' => $s->isActivelyConnected(),
+                    'is_idle' => $s->isIdle(),
+                    'is_offline' => $s->isOffline(),
+                    'last_ping_human' => $s->last_ping_at ? $s->last_ping_at->diffForHumans() : ($s->started_at ? $s->started_at->diffForHumans() : 'Never'),
                     'wpm' => $s->wpm ?? 0,
                     'keystroke_count' => $s->keystroke_count ?? 0,
                     'focus_lost_count' => $s->focus_lost_count ?? 0,
@@ -160,6 +167,8 @@ class InstructorMonitoringController extends Controller
             'status' => 'success',
             'availability_mode' => $laboratory->availability_mode ?? 'open',
             'shared_countdown' => $sharedCountdown,
+            'active_workspaces_count' => $sessions->where('is_connected', true)->count(),
+            'total_students_count' => $sessions->count(),
             'sessions' => $sessions,
         ]);
     }
