@@ -2600,33 +2600,16 @@ class SidebarProvider {
                 row.onclick = () => {
                     vscode.postMessage({ type: 'openFile', name: f.name });
                 };
-                row.innerHTML = `
-            < span;
-        style = "display:flex; align-items:center; gap:6px;" >
-            width;
-        "12";
-        height = "12";
-        viewBox = "0 0 24 24";
-        fill = "none";
-        stroke = "currentColor";
-        stroke - width;
-        "2" > d;
-        "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" > /path><polyline points="13 2 13 9 20 9"></polyline > (/svg>);
-        $;
-        {
-            f.name;
-        }
-        /span>
-            < (/span>);
-        $;
-        {
-            f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : '';
-        }
-        $;
-        {
-            f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : '';
-        }
-        /span> `;
+                row.innerHTML = \`
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                        <span>\${f.name}</span>
+                    </span>
+                    <span>
+                        \${f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : ''}
+                        \${f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : ''}
+                    </span>
+                \`;
                 starterFilesList.appendChild(row);
             });
 
@@ -2637,24 +2620,13 @@ class SidebarProvider {
                 session.teammates.forEach(tm => {
                     const row = document.createElement('div');
                     row.style.cssText = 'display:flex; justify-content:space-between; font-size:0.85em; padding:3px 0;';
-                    row.innerHTML = `
-            < div;
-        style = "display:flex; align-items:center; gap:5px;" >
-            style;
-        "width:8px; height:8px; border-radius:50%; background-color:\${tm.avatar_color};" > (/span>);
-        $;
-        {
-            tm.name;
-        }
-        /span>
-            < /div>
-            < span;
-        style = "font-weight:bold; color:#3ecf8e;" > ;
-        $;
-        {
-            tm.contribution_score || 0;
-        }
-         % /span> `;
+                    row.innerHTML = \`
+                        <div style="display:flex; align-items:center; gap:5px;">
+                            <span style="width:8px; height:8px; border-radius:50%; background-color:\${tm.avatar_color};"></span>
+                            <span>\${tm.name}</span>
+                        </div>
+                        <span style="font-weight:bold; color:#3ecf8e;">\${tm.contribution_score || 0}%</span>
+                    \`;
                     teammatesBreakdown.appendChild(row);
                 });
             } else {
@@ -2671,36 +2643,15 @@ class SidebarProvider {
                 const taskItem = document.createElement('div');
                 taskItem.className = 'task-item';
                 
-                taskItem.innerHTML = `
-            < div;
-        class {
-        }
-        "task-header" >
-            class {
-            };
-        "task-title" > ;
-        $;
-        {
-            task.task;
-        }
-        /span>
-            < span;
-        class {
-        }
-        "task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" >
-        ;
-        $;
-        {
-            isCompleted ? 'Completed' : 'Pending';
-        }
-        /span>
-            < /div>
-            < div;
-        class {
-        }
-        "task-feedback";
-        id = "feedback-task-\${task.id}";
-        style = "display:none;" > /div> `;
+                taskItem.innerHTML = \`
+                    <div class="task-header">
+                        <span class="task-title">\${task.task}</span>
+                        <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}">
+                            \${isCompleted ? 'Completed' : 'Pending'}
+                        </span>
+                    </div>
+                    <div class="task-feedback" id="feedback-task-\${task.id}" style="display:none;"></div>
+                \`;
                 tasksContainer.appendChild(taskItem);
             });
             
