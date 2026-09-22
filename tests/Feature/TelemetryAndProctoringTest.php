@@ -491,5 +491,46 @@ class TelemetryAndProctoringTest extends TestCase
         $resAfter->assertStatus(200);
         $this->assertTrue($resAfter->json('camera_verified'));
     }
+
+    public function test_v1_and_api_v1_verify_camera_routes_are_both_reachable()
+    {
+        // Both /v1/labs/{id}/verify-camera and /api/v1/labs/{id}/verify-camera should work
+        $resV1 = $this->actingAs($this->student1)->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", [
+            'status' => 'granted',
+            'face_count' => 1,
+            'image_base64' => 'data:image/jpeg;base64,ZmFrZWltYWdl',
+        ]);
+        $resV1->assertStatus(200);
+        $resV1->assertJsonPath('verified', true);
+
+        $resApiV1 = $this->actingAs($this->student1)->postJson("/api/v1/labs/{$this->laboratory->id}/verify-camera", [
+            'status' => 'granted',
+            'face_count' => 1,
+            'image_base64' => 'data:image/jpeg;base64,ZmFrZWltYWdl',
+        ]);
+        $resApiV1->assertStatus(200);
+        $resApiV1->assertJsonPath('verified', true);
+    }
+
+    public function test_student_cannot_start_web_lab_session_without_camera_verification()
+    {
+        $response = $this->actingAs($this->student1)
+            ->post("/laboratories/{$this->laboratory->id}/start");
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error', 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.');
+    }
+
+    public function test_student_can_start_web_lab_session_with_camera_verification()
+    {
+        $response = $this->actingAs($this->student1)
+            ->post("/laboratories/{$this->laboratory->id}/start", [
+                'camera_verified' => 1,
+            ]);
+
+        $response->assertRedirect();
+        $this->assertStringStartsWith('vscode://', $response->headers->get('Location'));
+    }
 }
+
 

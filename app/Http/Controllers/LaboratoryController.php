@@ -269,7 +269,7 @@ class LaboratoryController extends Controller
     /**
      * Start a new laboratory session for a student and redirect to VS Code.
      */
-    public function startSession(int $id)
+    public function startSession(Request $request, int $id)
     {
         $laboratory = Laboratory::findOrFail($id);
         /** @var \App\Models\User|null $user */
@@ -288,6 +288,12 @@ class LaboratoryController extends Controller
             if ($laboratory->isLiveClosed() || $laboratory->getRemainingLiveSeconds() <= 0) {
                 return back()->with('error', 'The countdown for this Live Lab has expired. Late joiners are not permitted to start.');
             }
+        }
+
+        // Feature 8: Pre-Lab Camera Proctoring Verification Gate for Students
+        $isCameraVerified = $request->boolean('camera_verified') || session("camera_verified_lab_{$laboratory->id}", false);
+        if ($user && $user->role === 'student' && !$isCameraVerified) {
+            return back()->with('error', 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.');
         }
 
         // Find existing in-progress session
@@ -319,8 +325,32 @@ class LaboratoryController extends Controller
             ]);
         }
 
+        // Attach prelab verification telemetry if verified
+        if ($isCameraVerified && $session) {
+            \App\Models\TelemetryLog::firstOrCreate([
+                'lab_session_id' => $session->id,
+                'event_type' => 'webcam_prelab_verification',
+            ], [
+                'payload' => [
+                    'status' => 'granted',
+                    'face_count' => 1,
+                    'verified_at' => now()->toIso8601String(),
+                ],
+            ]);
+        }
+
         $backendUrl = request()->getSchemeAndHttpHost();
-        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&backendUrl=" . urlencode($backendUrl);
+        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&endpoint=" . urlencode($backendUrl) . "&backendUrl=" . urlencode($backendUrl);
+
+        if ($request->wantsJson() || $request->ajax() || $request->header('Accept') === 'application/json') {
+            return response()->json([
+                'status' => 'success',
+                'session_id' => $session->id,
+                'vscode_url' => $vscodeUrl,
+                'endpoint' => $backendUrl,
+                'backend_url' => $backendUrl,
+            ]);
+        }
 
         return redirect($vscodeUrl);
     }

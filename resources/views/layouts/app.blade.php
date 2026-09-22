@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="description" content="Certicode Labs - Interactive coding challenges, virtual laboratory environments, and automated competency verification.">
     <meta name="theme-color" content="#0f0f0f">
     <title>@yield('title', 'Certicode Labs') - Certicode Labs</title>
@@ -169,6 +170,10 @@
         html:not(.dark) .bg-slate-850 {
             background-color: #f3f4f6 !important;
         }
+        html:not(.dark) .bg-\[\#101010\],
+        html:not(.dark) .bg-\[\#0d0d0d\] {
+            background-color: #f8fafc !important;
+        }
         html:not(.dark) .bg-\[\#222222\],
         html:not(.dark) .bg-slate-800 {
             background-color: #e5e7eb !important;
@@ -183,6 +188,7 @@
             border-color: #e5e7eb !important;
         }
         html:not(.dark) .border-\[\#232323\],
+        html:not(.dark) .border-\[\#262626\],
         html:not(.dark) .divide-slate-800,
         html:not(.dark) .divide-slate-800\/60 {
             border-color: #f0f2f5 !important;

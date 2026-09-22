@@ -350,9 +350,9 @@
                         </div>
                     </div>
 
-                    <div class="mt-3 p-3 rounded-[6px] bg-[#101010] border border-[#262626] text-[11px] font-mono text-[#a3a3a3] flex items-start gap-2.5">
-                        <svg class="w-4 h-4 text-[#3ecf8e] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span><strong class="text-[#ededed]">Workspace Tip:</strong> To persist your code on disk while working in VS Code, open an empty folder (<em class="text-[#ededed]">File &rarr; Open Folder</em>) before launching, or click any starter file in the CertiCode sidebar or use the <strong class="text-[#3ecf8e]">Download Starter File</strong> button above.</span>
+                    <div class="mt-3 p-3 rounded-[6px] bg-[#f8fafc] dark:bg-[#101010] border border-[#e2e8f0] dark:border-[#262626] text-[11px] font-mono text-[#334155] dark:text-[#a3a3a3] flex items-start gap-2.5">
+                        <svg class="w-4 h-4 text-[#059669] dark:text-[#3ecf8e] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span><strong class="text-[#0f172a] dark:text-[#ededed]">Workspace Tip:</strong> To persist your code on disk while working in VS Code, open an empty folder (<em class="text-[#0f172a] dark:text-[#ededed]">File &rarr; Open Folder</em>) before launching, or click any starter file in the CertiCode sidebar or use the <strong class="text-[#059669] dark:text-[#3ecf8e]">Download Starter File</strong> button above.</span>
                     </div>
 
                     @if($activeSession)
@@ -391,7 +391,6 @@
                         <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
                         <button type="button" 
                                 @click="handleStartClick()"
-                                onclick="if(!window.Alpine){ document.getElementById('start-lab-form').submit(); }"
                                 class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm cursor-pointer">
                             <span>{{ $activeSession ? 'Resume Lab in VS Code' : 'Start Lab in VS Code' }} &rarr;</span>
                         </button>
@@ -688,22 +687,35 @@ function preLabCameraGate(labId, activeSessionId) {
             this.faceCount = detectedFaces;
 
             if (detectedFaces === 1) {
-                try {
-                    const endpoint = activeSessionId 
-                        ? `/api/v1/sessions/${activeSessionId}/verify-camera`
-                        : `/api/v1/labs/${labId}/verify-camera`;
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+                };
+                const verifyPayload = JSON.stringify({
+                    status: 'granted',
+                    face_count: 1,
+                    image_base64: imageBase64
+                });
 
-                    await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({
-                            status: 'granted',
-                            face_count: 1,
-                            image_base64: imageBase64
-                        })
-                    });
-                } catch (e) {
-                    console.warn('Backend verify endpoint failed, proceeding with verified local gate', e);
+                const endpoints = activeSessionId 
+                    ? [`/api/v1/sessions/${activeSessionId}/verify-camera`, `/v1/sessions/${activeSessionId}/verify-camera`]
+                    : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
+
+                for (const url of endpoints) {
+                    try {
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: headers,
+                            body: verifyPayload
+                        });
+                        if (res.ok) {
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`Verify endpoint ${url} network warning:`, e);
+                    }
                 }
 
                 this.status = 'verified';
@@ -714,21 +726,28 @@ function preLabCameraGate(labId, activeSessionId) {
             } else {
                 this.attempts++;
                 if (detectedFaces > 1) {
-                    this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted.`;
+                    this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`;
                 } else {
                     this.errorMessage = `No face detected. Please reposition yourself directly in front of the camera with adequate lighting.`;
                 }
 
                 if (this.attempts >= this.maxAttempts) {
                     this.status = 'hard_blocked';
-                    this.errorMessage = `Pre-lab facial verification failed (3 of 3 attempts). No face was detected. Please contact your instructor. Workspace remains locked.`;
+                    this.errorMessage = `Pre-lab facial verification failed (${this.maxAttempts} of ${this.maxAttempts} attempts). No face was detected. Please contact your instructor. Workspace remains locked.`;
 
                     // Report failure snapshot to backend
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+                    };
+
                     try {
                         if (activeSessionId) {
                             await fetch(`/api/v1/sessions/${activeSessionId}/telemetry`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                                headers: headers,
                                 body: JSON.stringify({
                                     event_type: 'prelab_verification_failed',
                                     payload: {
@@ -741,19 +760,24 @@ function preLabCameraGate(labId, activeSessionId) {
                             });
                         }
 
-                        const endpoint = activeSessionId 
-                            ? `/api/v1/sessions/${activeSessionId}/verify-camera`
-                            : `/api/v1/labs/${labId}/verify-camera`;
+                        const endpoints = activeSessionId 
+                            ? [`/api/v1/sessions/${activeSessionId}/verify-camera`, `/v1/sessions/${activeSessionId}/verify-camera`]
+                            : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
 
-                        await fetch(endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                            body: JSON.stringify({
-                                status: 'failed',
-                                face_count: detectedFaces,
-                                image_base64: imageBase64
-                            })
-                        });
+                        for (const url of endpoints) {
+                            try {
+                                const res = await fetch(url, {
+                                    method: 'POST',
+                                    headers: headers,
+                                    body: JSON.stringify({
+                                        status: 'failed',
+                                        face_count: detectedFaces,
+                                        image_base64: imageBase64
+                                    })
+                                });
+                                if (res.ok) break;
+                            } catch (e) {}
+                        }
                     } catch (e) {
                         console.error('Failed to log pre-lab verification failure', e);
                     }
@@ -762,7 +786,38 @@ function preLabCameraGate(labId, activeSessionId) {
                 }
             }
         },
-        launchLab() {
+        async launchLab() {
+            if (!this.cameraVerified) {
+                console.warn('Cannot launch lab workspace without verified camera presence.');
+                return;
+            }
+            this.status = 'verified';
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+
+            try {
+                const res = await fetch(`{{ route('laboratories.start', $laboratory->id) }}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+                    },
+                    body: JSON.stringify({ camera_verified: 1 })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.vscode_url) {
+                        this.closeGate();
+                        // Direct deep link navigation to launch VS Code automatically
+                        window.location.href = data.vscode_url;
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.warn('Asynchronous launch failed, falling back to form submit:', err);
+            }
+
             this.closeGate();
             const form = document.getElementById('start-lab-form');
             if (form) {

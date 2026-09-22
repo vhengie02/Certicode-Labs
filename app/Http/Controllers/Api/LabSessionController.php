@@ -1214,6 +1214,10 @@ class LabSessionController extends Controller
             ],
         ]);
 
+        if ($request->hasSession()) {
+            $request->session()->put("camera_verified_lab_{$session->lab_id}", true);
+        }
+
         return response()->json([
             'status' => 'success',
             'verified' => true,
@@ -1257,6 +1261,10 @@ class LabSessionController extends Controller
                 'error' => 'multiple_faces',
                 'message' => 'Multiple faces detected in frame. Only one student is permitted.',
             ], 422);
+        }
+
+        if ($request->hasSession()) {
+            $request->session()->put("camera_verified_lab_{$labId}", true);
         }
 
         return response()->json([

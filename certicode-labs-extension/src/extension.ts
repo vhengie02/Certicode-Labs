@@ -28,22 +28,20 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.window.registerUriHandler({
             handleUri(uri: vscode.Uri) {
-                if (uri.path === '/connect') {
-                    const params = new URLSearchParams(uri.query);
-                    const sessionId = params.get('sessionId');
-                    const backendUrl = params.get('backendUrl');
-                    const apiToken = params.get('apiToken');
+                const params = new URLSearchParams(uri.query);
+                const sessionId = params.get('sessionId') || params.get('id') || params.get('session_id');
+                const backendUrl = params.get('backendUrl') || params.get('endpoint') || params.get('url') || params.get('backend_url');
+                const apiToken = params.get('apiToken') || params.get('token') || params.get('api_token');
 
-                    if (sessionId && backendUrl) {
-                        const parsedSessionId = parseInt(sessionId, 10);
-                        if (!isNaN(parsedSessionId)) {
-                            sidebarProvider.connectToSession(
-                                backendUrl,
-                                parsedSessionId,
-                                apiToken || undefined
-                            );
-                            vscode.window.showInformationMessage(`CertiCode: Connecting to Lab Session #${sessionId}...`);
-                        }
+                if (sessionId && backendUrl) {
+                    const parsedSessionId = parseInt(sessionId, 10);
+                    if (!isNaN(parsedSessionId)) {
+                        sidebarProvider.connectToSession(
+                            backendUrl,
+                            parsedSessionId,
+                            apiToken || undefined
+                        );
+                        vscode.window.showInformationMessage(`CertiCode: Connecting automatically to Lab Session #${parsedSessionId}...`);
                     }
                 }
             }

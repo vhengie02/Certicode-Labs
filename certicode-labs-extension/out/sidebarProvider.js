@@ -61,6 +61,16 @@ class SidebarProvider {
             localResourceRoots: [this._extensionUri]
         };
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        if (this._sessionId && !this._pingInterval) {
+            this.startMonitoring();
+        }
+        else if (this._sessionId && this._lastSessionData) {
+            webviewView.webview.postMessage({
+                type: 'update',
+                data: this._lastSessionData,
+                isReconnecting: false
+            });
+        }
         // Listen for postMessages from Webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
@@ -175,7 +185,8 @@ class SidebarProvider {
             type: 'prefill',
             backendUrl: this._backendUrl,
             sessionId: this._sessionId,
-            apiToken: this._apiToken || ''
+            apiToken: this._apiToken || '',
+            autoConnect: true
         });
         this.startMonitoring();
         // Focus the sidebar view in VS Code
@@ -1178,6 +1189,12 @@ class SidebarProvider {
     _getHtmlForWebview(webview) {
         const faceApiScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'js', 'face-api.min.js'));
         const modelsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'models'));
+        const initialSessionId = this._sessionId ? Number(this._sessionId) : 'null';
+        const initialBackendUrl = JSON.stringify(this._backendUrl || '');
+        const initialApiToken = JSON.stringify(this._apiToken || '');
+        const initialSessionData = this._lastSessionData
+            ? JSON.stringify(this._lastSessionData).replace(/<\/script/gi, '<\\/script')
+            : 'null';
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1820,6 +1837,10 @@ class SidebarProvider {
     <script>
         const vscode = acquireVsCodeApi();
         const MODELS_BASE_PATH = "${modelsUri}";
+        const INITIAL_SESSION_ID = ${initialSessionId};
+        const INITIAL_BACKEND_URL = ${initialBackendUrl};
+        const INITIAL_API_TOKEN = ${initialApiToken};
+        const INITIAL_SESSION_DATA = ${initialSessionData};
         
         const connectionScreen = document.getElementById('connection-screen');
         const sessionScreen = document.getElementById('session-screen');
@@ -2295,8 +2316,14 @@ class SidebarProvider {
             const message = event.data;
             switch (message.type) {
                 case 'prefill':
-                    backendUrlInput.value = message.backendUrl;
-                    sessionIdInput.value = message.sessionId;
+                    if (message.backendUrl) backendUrlInput.value = message.backendUrl;
+                    if (message.sessionId) sessionIdInput.value = message.sessionId;
+                    if (message.autoConnect || message.sessionId) {
+                        connectionScreen.style.display = 'none';
+                        sessionScreen.style.display = 'flex';
+                        statusBanner.className = 'connection-status status-reconnecting';
+                        statusText.innerText = 'Connecting...';
+                    }
                     break;
                     
                 case 'status':
@@ -2490,150 +2517,7 @@ class SidebarProvider {
                     break;
                     
                 case 'update':
-                    actionStatus.style.display = 'none';
-                    checkProgressBtn.disabled = false;
-                    submitBtn.disabled = !isIntegrityValid;
-                    
-                    connectionScreen.style.display = 'none';
-                    sessionScreen.style.display = 'flex';
-                    
-                    statusBanner.className = 'connection-status status-connected';
-                    statusText.innerText = 'Connected';
-                    
-                    const session = message.data;
-                    labTitle.innerText = session.laboratory.title;
-                    labDesc.innerText = session.laboratory.description;
-
-                    // Render Starter Files
-                    starterFilesList.innerHTML = '';
-                    const starterFiles = session.laboratory.starter_files || [];
-                    starterFiles.forEach(f => {
-                        const row = document.createElement('div');
-                        row.className = 'file-item';
-                        row.title = 'Click to open ' + f.name;
-                        row.onclick = () => {
-                            vscode.postMessage({ type: 'openFile', name: f.name });
-                        };
-                        row.innerHTML = \`
-                            <span style="display:flex; align-items:center; gap:6px;">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                                <span>\${f.name}</span>
-                            </span>
-                            <span>
-                                \${f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : ''}
-                                \${f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : ''}
-                            </span>
-                        \`;
-                        starterFilesList.appendChild(row);
-                    });
-
-                    // Teammate breakdown for team labs
-                    if (session.is_group_lab && session.teammates && session.teammates.length > 0) {
-                        teammatesCard.style.display = 'block';
-                        teammatesBreakdown.innerHTML = '';
-                        session.teammates.forEach(tm => {
-                            const row = document.createElement('div');
-                            row.style.cssText = 'display:flex; justify-content:space-between; font-size:0.85em; padding:3px 0;';
-                            row.innerHTML = \`
-                                <div style="display:flex; align-items:center; gap:5px;">
-                                    <span style="width:8px; height:8px; border-radius:50%; background-color:\${tm.avatar_color};"></span>
-                                    <span>\${tm.name}</span>
-                                </div>
-                                <span style="font-weight:bold; color:#3ecf8e;">\${tm.contribution_score || 0}%</span>
-                            \`;
-                            teammatesBreakdown.appendChild(row);
-                        });
-                    } else {
-                        teammatesCard.style.display = 'none';
-                    }
-                    
-                    // Render Tasks list
-                    tasksContainer.innerHTML = '';
-                    const tasksDef = session.laboratory.tasks_definition || [];
-                    const completedIds = session.completed_tasks || [];
-                    
-                    tasksDef.forEach(task => {
-                        const isCompleted = completedIds.includes(task.id);
-                        const taskItem = document.createElement('div');
-                        taskItem.className = 'task-item';
-                        
-                        taskItem.innerHTML = \`
-                            <div class="task-header">
-                                <span class="task-title">\${task.task}</span>
-                                <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}">
-                                    \${isCompleted ? 'Completed' : 'Pending'}
-                                </span>
-                            </div>
-                            <div class="task-feedback" id="feedback-task-\${task.id}" style="display:none;"></div>
-                        \`;
-                        tasksContainer.appendChild(taskItem);
-                    });
-                    
-                    // Feature 9: Live Lab state evaluation & alerts
-                    const isLive = session.availability_mode === 'live';
-                    const isLiveExpired = session.is_live_expired || (isLive && session.live_status === 'closed');
-                    const isLiveNotStarted = isLive && session.live_status === 'not_started';
-
-                    if (liveLabAlert && liveLabAlertText) {
-                        if (isLiveExpired) {
-                            liveLabAlert.style.display = 'flex';
-                            liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                            liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                            liveLabAlert.style.color = '#fca5a5';
-                            liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
-                            checkProgressBtn.disabled = true;
-                            submitBtn.disabled = true;
-                        } else if (isLiveNotStarted) {
-                            liveLabAlert.style.display = 'flex';
-                            liveLabAlert.style.background = 'rgba(245, 158, 11, 0.15)';
-                            liveLabAlert.style.borderColor = 'rgba(245, 158, 11, 0.35)';
-                            liveLabAlert.style.color = '#fcd34d';
-                            liveLabAlertText.innerText = '🔒 Live Lab Locked: Waiting for instructor to manually open the session window.';
-                            checkProgressBtn.disabled = true;
-                            submitBtn.disabled = true;
-                        } else {
-                            liveLabAlert.style.display = 'none';
-                        }
-                    }
-
-                    // Feature 8: Evaluate Camera Proctor Gate
-                    updateProctorUIState();
-
-                    // Setup timer
-                    if (session.status === 'completed' || isLiveExpired) {
-                        if (timerInterval) {
-                            clearInterval(timerInterval);
-                            timerInterval = null;
-                        }
-                        if (session.time_limit_minutes > 0 || isLive) {
-                            timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
-                        } else {
-                            timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
-                        }
-                        updateTimerDisplay();
-                        timerLabel.innerText = isLiveExpired ? 'Live Lab Expired' : 'Session Completed';
-                    } else if (isLiveNotStarted) {
-                        if (timerInterval) {
-                            clearInterval(timerInterval);
-                            timerInterval = null;
-                        }
-                        timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || (session.live_duration_minutes * 60) || 0));
-                        updateTimerDisplay();
-                        timerLabel.innerText = 'Live Lab Locked';
-                    } else {
-                        if (isLive || session.time_limit_minutes > 0) {
-                            timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
-                            isCountDown = true;
-                            timerLabel.innerText = isLive
-                                ? (timerVal > 0 ? 'Live Lab Countdown (Shared)' : 'Live Lab Expired')
-                                : (timerVal > 0 ? 'Time Remaining' : 'Time Expired');
-                        } else {
-                            timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
-                            isCountDown = false;
-                            timerLabel.innerText = 'Session Elapsed';
-                        }
-                        startLocalTimer(isLive);
-                    }
+                    handleSessionUpdate(message.data);
                     break;
                     
                 case 'checkResult':
@@ -2689,6 +2573,203 @@ class SidebarProvider {
                     break;
             }
         });
+        
+        function handleSessionUpdate(session) {
+            if (!session || !session.laboratory) return;
+
+            actionStatus.style.display = 'none';
+            checkProgressBtn.disabled = false;
+            submitBtn.disabled = !isIntegrityValid;
+            
+            connectionScreen.style.display = 'none';
+            sessionScreen.style.display = 'flex';
+            
+            statusBanner.className = 'connection-status status-connected';
+            statusText.innerText = 'Connected';
+            
+            labTitle.innerText = session.laboratory.title || 'Laboratory';
+            labDesc.innerText = session.laboratory.description || '';
+
+            // Render Starter Files
+            starterFilesList.innerHTML = '';
+            const starterFiles = session.laboratory.starter_files || [];
+            starterFiles.forEach(f => {
+                const row = document.createElement('div');
+                row.className = 'file-item';
+                row.title = 'Click to open ' + f.name;
+                row.onclick = () => {
+                    vscode.postMessage({ type: 'openFile', name: f.name });
+                };
+                row.innerHTML = `
+            < span;
+        style = "display:flex; align-items:center; gap:6px;" >
+            width;
+        "12";
+        height = "12";
+        viewBox = "0 0 24 24";
+        fill = "none";
+        stroke = "currentColor";
+        stroke - width;
+        "2" > d;
+        "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" > /path><polyline points="13 2 13 9 20 9"></polyline > (/svg>);
+        $;
+        {
+            f.name;
+        }
+        /span>
+            < (/span>);
+        $;
+        {
+            f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : '';
+        }
+        $;
+        {
+            f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : '';
+        }
+        /span> `;
+                starterFilesList.appendChild(row);
+            });
+
+            // Teammate breakdown for team labs
+            if (session.is_group_lab && session.teammates && session.teammates.length > 0) {
+                teammatesCard.style.display = 'block';
+                teammatesBreakdown.innerHTML = '';
+                session.teammates.forEach(tm => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex; justify-content:space-between; font-size:0.85em; padding:3px 0;';
+                    row.innerHTML = `
+            < div;
+        style = "display:flex; align-items:center; gap:5px;" >
+            style;
+        "width:8px; height:8px; border-radius:50%; background-color:\${tm.avatar_color};" > (/span>);
+        $;
+        {
+            tm.name;
+        }
+        /span>
+            < /div>
+            < span;
+        style = "font-weight:bold; color:#3ecf8e;" > ;
+        $;
+        {
+            tm.contribution_score || 0;
+        }
+         % /span> `;
+                    teammatesBreakdown.appendChild(row);
+                });
+            } else {
+                teammatesCard.style.display = 'none';
+            }
+            
+            // Render Tasks list
+            tasksContainer.innerHTML = '';
+            const tasksDef = session.laboratory.tasks_definition || [];
+            const completedIds = session.completed_tasks || [];
+            
+            tasksDef.forEach(task => {
+                const isCompleted = completedIds.includes(task.id);
+                const taskItem = document.createElement('div');
+                taskItem.className = 'task-item';
+                
+                taskItem.innerHTML = `
+            < div;
+        class {
+        }
+        "task-header" >
+            class {
+            };
+        "task-title" > ;
+        $;
+        {
+            task.task;
+        }
+        /span>
+            < span;
+        class {
+        }
+        "task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" >
+        ;
+        $;
+        {
+            isCompleted ? 'Completed' : 'Pending';
+        }
+        /span>
+            < /div>
+            < div;
+        class {
+        }
+        "task-feedback";
+        id = "feedback-task-\${task.id}";
+        style = "display:none;" > /div> `;
+                tasksContainer.appendChild(taskItem);
+            });
+            
+            // Feature 9: Live Lab state evaluation & alerts
+            const isLive = session.availability_mode === 'live';
+            const isLiveExpired = session.is_live_expired || (isLive && session.live_status === 'closed');
+            const isLiveNotStarted = isLive && session.live_status === 'not_started';
+
+            if (liveLabAlert && liveLabAlertText) {
+                if (isLiveExpired) {
+                    liveLabAlert.style.display = 'flex';
+                    liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+                    liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                    liveLabAlert.style.color = '#fca5a5';
+                    liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                    checkProgressBtn.disabled = true;
+                    submitBtn.disabled = true;
+                } else if (isLiveNotStarted) {
+                    liveLabAlert.style.display = 'flex';
+                    liveLabAlert.style.background = 'rgba(245, 158, 11, 0.15)';
+                    liveLabAlert.style.borderColor = 'rgba(245, 158, 11, 0.35)';
+                    liveLabAlert.style.color = '#fcd34d';
+                    liveLabAlertText.innerText = '🔒 Live Lab Locked: Waiting for instructor to manually open the session window.';
+                    checkProgressBtn.disabled = true;
+                    submitBtn.disabled = true;
+                } else {
+                    liveLabAlert.style.display = 'none';
+                }
+            }
+
+            // Feature 8: Evaluate Camera Proctor Gate
+            updateProctorUIState();
+
+            // Setup timer
+            if (session.status === 'completed' || isLiveExpired) {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                if (session.time_limit_minutes > 0 || isLive) {
+                    timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
+                } else {
+                    timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
+                }
+                updateTimerDisplay();
+                timerLabel.innerText = isLiveExpired ? 'Live Lab Expired' : 'Session Completed';
+            } else if (isLiveNotStarted) {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || (session.live_duration_minutes * 60) || 0));
+                updateTimerDisplay();
+                timerLabel.innerText = 'Live Lab Locked';
+            } else {
+                if (isLive || session.time_limit_minutes > 0) {
+                    timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
+                    isCountDown = true;
+                    timerLabel.innerText = isLive
+                        ? (timerVal > 0 ? 'Live Lab Countdown (Shared)' : 'Live Lab Expired')
+                        : (timerVal > 0 ? 'Time Remaining' : 'Time Expired');
+                } else {
+                    timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
+                    isCountDown = false;
+                    timerLabel.innerText = 'Session Elapsed';
+                }
+                startLocalTimer(isLive);
+            }
+        }
         
         function startLocalTimer(isLive = false) {
             if (timerInterval) {
@@ -2756,6 +2837,23 @@ class SidebarProvider {
             } else {
                 timerDisplay.innerText = \`\${paddedMinutes}:\${paddedSeconds}\`;
             }
+        }
+
+        // Auto-connect and state restoration on load
+        if (INITIAL_BACKEND_URL) {
+            backendUrlInput.value = INITIAL_BACKEND_URL;
+        }
+        if (INITIAL_SESSION_ID) {
+            sessionIdInput.value = INITIAL_SESSION_ID;
+        }
+
+        if (INITIAL_SESSION_DATA) {
+            handleSessionUpdate(INITIAL_SESSION_DATA);
+        } else if (INITIAL_SESSION_ID && INITIAL_BACKEND_URL) {
+            connectionScreen.style.display = 'none';
+            sessionScreen.style.display = 'flex';
+            statusBanner.className = 'connection-status status-reconnecting';
+            statusText.innerText = 'Connecting...';
         }
     </script>
 </body>

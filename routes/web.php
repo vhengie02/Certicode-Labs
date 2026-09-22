@@ -11,6 +11,7 @@ use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\InstructorMonitoringController;
+use App\Http\Controllers\Api\LabSessionController;
 
 // Diagnostic Health Check for Serverless & Monitoring (bypasses session/cookie middleware)
 Route::get('/health-check', function () {
@@ -198,3 +199,26 @@ Route::middleware('auth')->group(function () {
         return response()->json(['status' => 'success']);
     })->name('notifications.mark-as-read');
 });
+
+// Feature 8: Pre-Lab Camera Proctoring & V1 Direct Routes (CSRF-exempt for client-side API & webcam verification)
+Route::prefix('v1')->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])->group(function () {
+    Route::post('/labs/{labId}/verify-camera', [LabSessionController::class, 'verifyCameraLab']);
+    Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
+    Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
+    Route::post('/labs/{labId}/start', [LabSessionController::class, 'startSession']);
+    Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
+    Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
+    Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
+    Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);
+    Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions']);
+    Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
+    Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
+    Route::post('/sessions/{sessionId}/chat', [LabSessionController::class, 'sendChat']);
+    Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
+    Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
+    Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+    Route::post('/labs/{labId}/open-live', [LabSessionController::class, 'openLive']);
+    Route::post('/labs/{labId}/end-live', [LabSessionController::class, 'endLive']);
+    Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
+});
+
