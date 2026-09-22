@@ -66,4 +66,133 @@ class SandboxExecutionServiceTest extends TestCase
         $this->assertEquals('error', $result['status']);
         $this->assertStringContainsString('Timed Out', $result['errors']);
     }
+
+    /**
+     * Test executing valid Python code.
+     */
+    public function test_execute_python_code_successfully(): void
+    {
+        $code = 'print("Hello from Python!")';
+        $result = $this->sandbox->execute($code, 'python');
+
+        $this->assertEquals('success', $result['status']);
+        $this->assertNull($result['errors']);
+        $this->assertStringContainsString('Hello from Python!', $result['output']);
+        $this->assertGreaterThan(0, $result['execution_time_ms']);
+    }
+
+    /**
+     * Test executing Python code with syntax/runtime error.
+     */
+    public function test_execute_python_code_with_errors(): void
+    {
+        $code = 'print(1 / 0)';
+        $result = $this->sandbox->execute($code, 'python');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertNotNull($result['errors']);
+        $this->assertStringContainsString('ZeroDivisionError', $result['errors']);
+    }
+
+    /**
+     * Test Python code execution timeout limits.
+     */
+    public function test_execute_python_code_timeout(): void
+    {
+        $code = 'import time; time.sleep(10)';
+        $result = $this->sandbox->execute($code, 'python');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertStringContainsString('Timed Out', $result['errors']);
+    }
+
+    /**
+     * Test executing valid JavaScript / Node.js code.
+     */
+    public function test_execute_javascript_code_successfully(): void
+    {
+        $code = 'console.log("Hello from JavaScript!");';
+        $result = $this->sandbox->execute($code, 'javascript');
+
+        $this->assertEquals('success', $result['status']);
+        $this->assertNull($result['errors']);
+        $this->assertStringContainsString('Hello from JavaScript!', $result['output']);
+        $this->assertGreaterThan(0, $result['execution_time_ms']);
+    }
+
+    /**
+     * Test executing JavaScript code with error.
+     */
+    public function test_execute_javascript_code_with_errors(): void
+    {
+        $code = 'throw new Error("Custom JS Crash");';
+        $result = $this->sandbox->execute($code, 'javascript');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertNotNull($result['errors']);
+        $this->assertStringContainsString('Custom JS Crash', $result['errors']);
+    }
+
+    /**
+     * Test JavaScript execution timeout limits.
+     */
+    public function test_execute_javascript_code_timeout(): void
+    {
+        $code = 'while(true) {}';
+        $result = $this->sandbox->execute($code, 'javascript');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertStringContainsString('Timed Out', $result['errors']);
+    }
+
+    /**
+     * Test compiling and executing valid Java code.
+     */
+    public function test_execute_java_code_successfully(): void
+    {
+        $code = <<<'JAVA'
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello from Java!");
+    }
+}
+JAVA;
+        $result = $this->sandbox->execute($code, 'java');
+
+        $this->assertEquals('success', $result['status']);
+        $this->assertNull($result['errors']);
+        $this->assertStringContainsString('Hello from Java!', $result['output']);
+        $this->assertGreaterThan(0, $result['execution_time_ms']);
+    }
+
+    /**
+     * Test Java compilation failure.
+     */
+    public function test_execute_java_code_with_compilation_errors(): void
+    {
+        $code = 'public class Main { syntax error }';
+        $result = $this->sandbox->execute($code, 'java');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertNotNull($result['errors']);
+        $this->assertStringContainsString('Java Compilation Error', $result['errors']);
+    }
+
+    /**
+     * Test Java execution timeout limits.
+     */
+    public function test_execute_java_code_timeout(): void
+    {
+        $code = <<<'JAVA'
+public class Main {
+    public static void main(String[] args) throws Exception {
+        Thread.sleep(10000);
+    }
+}
+JAVA;
+        $result = $this->sandbox->execute($code, 'java');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertStringContainsString('Timed Out', $result['errors']);
+    }
 }

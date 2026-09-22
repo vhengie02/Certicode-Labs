@@ -507,6 +507,20 @@ class SandboxExecutionService
                     ];
                 }
             }
+        } catch (\Symfony\Component\Process\Exception\ProcessTimedOutException $e) {
+            return [
+                'output' => '',
+                'errors' => "Execution Timed Out (Maximum execution limit of 5.0 seconds reached).",
+                'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
+                'status' => 'error'
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'output' => '',
+                'errors' => "Java execution failed: " . $e->getMessage(),
+                'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
+                'status' => 'error'
+            ];
         } finally {
             $this->cleanupDir($tempDir);
         }

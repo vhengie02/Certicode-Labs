@@ -143,6 +143,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/instructor/sessions/{id}/reopen', [ClassController::class, 'reopenSession'])->name('instructor.sessions.reopen');
     Route::get('/laboratories/{id}/monitoring', [InstructorMonitoringController::class, 'show'])->name('instructor.monitoring.show');
     Route::get('/laboratories/{id}/monitoring/data', [InstructorMonitoringController::class, 'streamData'])->name('instructor.monitoring.data');
+    Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
 
     // Student Profiles & Directory CRUD
     Route::get('/students', [StudentProfileController::class, 'index'])->name('students.index');

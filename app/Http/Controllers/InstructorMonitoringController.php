@@ -51,6 +51,9 @@ class InstructorMonitoringController extends Controller
         $totalAnomalies = Anomaly::whereIn('lab_session_id', $sessions->pluck('id'))->count();
         $avgWpm = $sessions->count() > 0 ? round($sessions->avg('wpm')) : 0;
 
+        $similarityService = app(\App\Services\CodeSimilarityService::class);
+        $plagiarismAnalysis = $similarityService->analyzeLabCohort($laboratory->id, 75.0, 50.0);
+
         return view('instructor.monitoring.session', compact(
             'laboratory',
             'schoolClass',
@@ -60,8 +63,28 @@ class InstructorMonitoringController extends Controller
             'activeSessions',
             'completedSessions',
             'totalAnomalies',
-            'avgWpm'
+            'avgWpm',
+            'plagiarismAnalysis'
         ));
+    }
+
+    /**
+     * Run on-demand cohort plagiarism and code similarity analysis.
+     */
+    public function checkPlagiarism(Request $request, int $labId)
+    {
+        $this->authorizeInstructor();
+
+        $laboratory = Laboratory::findOrFail($labId);
+        $threshold = (float) $request->query('threshold', 75.0);
+
+        $similarityService = app(\App\Services\CodeSimilarityService::class);
+        $results = $similarityService->analyzeLabCohort($laboratory->id, $threshold, 50.0);
+
+        return response()->json([
+            'status' => 'success',
+            'analysis' => $results,
+        ]);
     }
 
     /**

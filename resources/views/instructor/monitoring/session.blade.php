@@ -149,7 +149,7 @@
     @endif
 
     <!-- Live Telemetry KPI Metrics -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
             <div class="flex items-center justify-between">
                 <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Workspaces</span>
@@ -185,7 +185,7 @@
                 <span class="text-2xl font-bold font-mono {{ $totalAnomalies > 0 ? 'text-amber-400' : 'text-white' }}">{{ $totalAnomalies }}</span>
                 <span class="text-xs text-slate-500">flagged events</span>
             </div>
-            <p class="text-xs text-slate-500 mt-2">Focus losses, paste flags & presence checks.</p>
+            <p class="text-xs text-slate-500 mt-2">Focus losses, paste flags & presence.</p>
         </div>
 
         <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
@@ -198,6 +198,26 @@
                 <span class="text-xs text-slate-500">submitted</span>
             </div>
             <p class="text-xs text-slate-500 mt-2">Finalized and evaluated solutions.</p>
+        </div>
+
+        <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cohort Plagiarism</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase {{ ($plagiarismAnalysis['flagged_pairs_count'] ?? 0) > 0 ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400' }}">
+                    {{ ($plagiarismAnalysis['flagged_pairs_count'] ?? 0) > 0 ? 'Flagged' : 'Clean' }}
+                </span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-2">
+                <span class="text-2xl font-bold font-mono {{ ($plagiarismAnalysis['flagged_pairs_count'] ?? 0) > 0 ? 'text-rose-400' : 'text-emerald-400' }}" x-text="plagiarism.flagged_pairs_count ?? {{ $plagiarismAnalysis['flagged_pairs_count'] ?? 0 }}">
+                    {{ $plagiarismAnalysis['flagged_pairs_count'] ?? 0 }}
+                </span>
+                <span class="text-xs text-slate-500">flagged pairs</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-2">
+                <a href="#plagiarism-section" class="text-[#3ecf8e] hover:underline flex items-center gap-1">
+                    <span>Inspect Similarity Matrix</span> &darr;
+                </a>
+            </p>
         </div>
     </div>
 
@@ -355,6 +375,205 @@
         @endif
     </div>
 
+    <!-- Cohort Code Similarity & Plagiarism Detector (Item 2) -->
+    <div id="plagiarism-section" class="glass-panel rounded-xl border border-slate-800 overflow-hidden space-y-4 p-6 bg-slate-950/40">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+                <div class="flex items-center gap-2.5">
+                    <span class="w-2.5 h-2.5 rounded-full" :class="(plagiarism.flagged_pairs_count || 0) > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-400'"></span>
+                    <h3 class="font-bold text-white text-base">In-Session Cohort Plagiarism Detector</h3>
+                    <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700" x-text="(plagiarism.total_students_with_code || 0) + ' submissions analyzed'"></span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">Lightweight AST and token n-gram similarity engine checking student submissions for unauthorized collaboration.</p>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <button @click="showSimilarityMatrix = !showSimilarityMatrix" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                    <span x-text="showSimilarityMatrix ? 'Hide Matrix' : 'Show Matrix (Heatmap)'"></span>
+                </button>
+                <button @click="runPlagiarismScan()" :disabled="isScanningPlagiarism" class="px-3.5 py-1.5 rounded-lg bg-[#3ecf8e] hover:bg-[#00c573] text-slate-950 font-bold text-xs transition flex items-center gap-1.5 shadow-sm disabled:opacity-50">
+                    <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': isScanningPlagiarism }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span x-text="isScanningPlagiarism ? 'Scanning...' : 'Re-Scan Submissions'"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Clean Cohort Banner -->
+        <template x-if="!plagiarism.flagged_pairs || plagiarism.flagged_pairs.length === 0">
+            <div class="py-8 px-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center">
+                <div class="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center mb-2.5">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <h4 class="text-sm font-semibold text-white">No Suspicious Code Duplication Detected</h4>
+                <p class="text-xs text-slate-400 mt-1 max-w-md mx-auto">All student code submissions exhibit distinct structural token distributions with similarity scores below the alert threshold.</p>
+            </div>
+        </template>
+
+        <!-- Flagged Pairs Table -->
+        <template x-if="plagiarism.flagged_pairs && plagiarism.flagged_pairs.length > 0">
+            <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Flagged Cohort Pairs (<span x-text="plagiarism.flagged_pairs.length"></span>)
+                    </span>
+                    <span class="text-xs text-rose-400 font-medium">⚠️ Review identical code structures below</span>
+                </div>
+
+                <div class="overflow-x-auto border border-slate-800 rounded-xl">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-900/90 text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
+                            <tr>
+                                <th class="py-3 px-4">Student 1</th>
+                                <th class="py-3 px-4">Student 2</th>
+                                <th class="py-3 px-4">Similarity Score</th>
+                                <th class="py-3 px-4">Risk Rating</th>
+                                <th class="py-3 px-4">Pattern Summary</th>
+                                <th class="py-3 px-4 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/60 bg-slate-950/20 font-mono">
+                            <template x-for="(pair, idx) in plagiarism.flagged_pairs" :key="idx">
+                                <tr class="hover:bg-slate-900/40 transition">
+                                    <td class="py-3 px-4 font-sans font-medium text-white">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                                            <span x-text="pair.student_a.name"></span>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4 font-sans font-medium text-white">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                                            <span x-text="pair.student_b.name"></span>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-sm" :class="pair.risk === 'high' ? 'text-rose-400' : 'text-amber-400'" x-text="pair.similarity + '%'"></span>
+                                            <div class="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                                <div class="h-1.5 rounded-full" :class="pair.risk === 'high' ? 'bg-rose-500' : 'bg-amber-400'" :style="'width: ' + pair.similarity + '%'"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4 font-sans">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                                              :class="pair.risk === 'high' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'"
+                                              x-text="pair.risk === 'high' ? 'High Risk' : 'Moderate Overlap'"></span>
+                                    </td>
+                                    <td class="py-3 px-4 font-sans text-slate-400 text-xs truncate max-w-xs" x-text="pair.reason"></td>
+                                    <td class="py-3 px-4 text-right font-sans">
+                                        <button @click="openCompareModal(pair)" class="px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold transition flex items-center gap-1 ml-auto border border-slate-700">
+                                            <span>Compare Code</span> &rarr;
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </template>
+
+        <!-- Similarity Heatmap Matrix -->
+        <div x-show="showSimilarityMatrix" x-cloak class="mt-4 pt-4 border-t border-slate-800 space-y-3">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cohort Pairwise Similarity Heatmap</span>
+                <span class="text-[11px] text-slate-500 font-mono">Row & Column = Students</span>
+            </div>
+
+            <template x-if="plagiarism.students && plagiarism.students.length > 0">
+                <div class="overflow-x-auto border border-slate-800 rounded-xl p-3 bg-slate-900/40">
+                    <table class="text-center text-xs font-mono">
+                        <thead>
+                            <tr>
+                                <th class="p-2 text-left font-sans text-slate-400 text-[11px]">Student</th>
+                                <template x-for="st in plagiarism.students" :key="'col_' + st.session_id">
+                                    <th class="p-2 text-[10px] font-sans text-slate-400 max-w-[80px] truncate" :title="st.name" x-text="st.name.split(' ')[0]"></th>
+                                </template>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="rowSt in plagiarism.students" :key="'row_' + rowSt.session_id">
+                                <tr class="border-t border-slate-800/40">
+                                    <td class="p-2 text-left font-sans text-xs text-white font-medium whitespace-nowrap" x-text="rowSt.name"></td>
+                                    <template x-for="colSt in plagiarism.students" :key="'cell_' + rowSt.session_id + '_' + colSt.session_id">
+                                        <td class="p-2 text-[11px] font-bold rounded">
+                                            <span class="px-2 py-1 rounded block"
+                                                  :class="{
+                                                      'bg-slate-800/80 text-slate-500': rowSt.session_id === colSt.session_id,
+                                                      'bg-rose-500/20 text-rose-300 border border-rose-500/30': rowSt.session_id !== colSt.session_id && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) >= 75,
+                                                      'bg-amber-500/20 text-amber-300 border border-amber-500/30': rowSt.session_id !== colSt.session_id && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) >= 50 && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) < 75,
+                                                      'bg-slate-900/60 text-slate-400': rowSt.session_id !== colSt.session_id && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) < 50
+                                                  }"
+                                                  x-text="(plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0).toFixed(0) + '%'"></span>
+                                        </td>
+                                    </template>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Side-by-Side Code Comparison Modal -->
+    <div x-show="isCompareModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style="display: none;">
+        <div class="glass-panel rounded-2xl border border-slate-700 max-w-5xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto" @click.away="isCompareModalOpen = false">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-3">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <span>Side-by-Side Code Comparison</span>
+                        <template x-if="selectedPair">
+                            <span class="text-xs px-2.5 py-0.5 rounded-full font-mono font-bold"
+                                  :class="selectedPair.risk === 'high' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'"
+                                  x-text="selectedPair.similarity + '% Match'"></span>
+                        </template>
+                    </h3>
+                </div>
+                <button @click="isCompareModalOpen = false" class="text-slate-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <template x-if="selectedPair">
+                <div class="space-y-4">
+                    <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                        <span><strong>Analysis:</strong> <span x-text="selectedPair.reason"></span></span>
+                        <span class="font-mono text-slate-500 text-[11px]" x-text="'Tokens: ' + (selectedPair.student_a.token_count || 0) + ' vs ' + (selectedPair.student_b.token_count || 0)"></span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Student A -->
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 bg-slate-900/80 px-3 py-2 rounded-t-lg border border-slate-800">
+                                <span class="text-white" x-text="selectedPair.student_a.name"></span>
+                                <span class="text-[10px] text-slate-500 font-mono" x-text="selectedPair.student_a.code_length + ' bytes'"></span>
+                            </div>
+                            <pre class="p-3 bg-slate-950 rounded-b-lg border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-80 whitespace-pre-wrap leading-relaxed" x-text="selectedPair.student_a.code_preview"></pre>
+                        </div>
+
+                        <!-- Student B -->
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 bg-slate-900/80 px-3 py-2 rounded-t-lg border border-slate-800">
+                                <span class="text-white" x-text="selectedPair.student_b.name"></span>
+                                <span class="text-[10px] text-slate-500 font-mono" x-text="selectedPair.student_b.code_length + ' bytes'"></span>
+                            </div>
+                            <pre class="p-3 bg-slate-950 rounded-b-lg border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-80 whitespace-pre-wrap leading-relaxed" x-text="selectedPair.student_b.code_preview"></pre>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <div class="pt-2 flex justify-end">
+                <button @click="isCompareModalOpen = false" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">
+                    Close Comparison
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Anomaly Timeline & Proof Snapshot Modal -->
     <div x-show="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style="display: none;">
         <div class="glass-panel rounded-2xl border border-slate-700 max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto" @click.away="isModalOpen = false">
@@ -434,6 +653,33 @@ function instructorMonitor() {
         selectedAnomalies: [],
         ws: null,
         wsConnected: false,
+
+        // Cohort Plagiarism State
+        showSimilarityMatrix: false,
+        isScanningPlagiarism: false,
+        isCompareModalOpen: false,
+        selectedPair: null,
+        plagiarism: @json($plagiarismAnalysis),
+
+        openCompareModal(pair) {
+            this.selectedPair = pair;
+            this.isCompareModalOpen = true;
+        },
+
+        runPlagiarismScan() {
+            this.isScanningPlagiarism = true;
+            fetch('{{ route("instructor.monitoring.plagiarism", $laboratory->id) }}')
+                .then(res => res.json())
+                .then(data => {
+                    this.isScanningPlagiarism = false;
+                    if (data && data.analysis) {
+                        this.plagiarism = data.analysis;
+                    }
+                })
+                .catch(() => {
+                    this.isScanningPlagiarism = false;
+                });
+        },
 
         init() {
             this.initWebSocket();

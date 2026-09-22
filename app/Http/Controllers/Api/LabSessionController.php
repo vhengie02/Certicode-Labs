@@ -572,6 +572,8 @@ class LabSessionController extends Controller
         $session->update([
             'completed_tasks' => $completedTasks,
             'performance_score' => (float) ($evaluation['correctness_score'] ?? $session->performance_score),
+            'submitted_code' => $code,
+            'submitted_files' => $request->input('files'),
         ]);
 
         TelemetryLog::create([
@@ -644,6 +646,8 @@ class LabSessionController extends Controller
             'ended_at' => now(),
             'completed_tasks' => $completedTasks,
             'performance_score' => $finalScore,
+            'submitted_code' => $code,
+            'submitted_files' => $request->input('files'),
         ]);
 
         // Map competencies

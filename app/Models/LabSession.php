@@ -25,6 +25,8 @@ class LabSession extends Model
         'keystroke_count',
         'focus_lost_count',
         'paste_anomaly_count',
+        'submitted_code',
+        'submitted_files',
         'closed_at',
     ];
 
@@ -34,6 +36,7 @@ class LabSession extends Model
         'closed_at' => 'datetime',
         'performance_score' => 'float',
         'completed_tasks' => 'array',
+        'submitted_files' => 'array',
         'diff_stats' => 'array',
         'code_contributions' => 'array',
         'wpm' => 'integer',
