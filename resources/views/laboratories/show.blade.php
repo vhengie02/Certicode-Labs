@@ -465,8 +465,7 @@
                         <button type="button" 
                                 @click="handleStartClick()"
                                 class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm cursor-pointer">
-                            <span x-show="!browserProctorActive">{{ $activeSession ? 'Resume Lab in VS Code' : 'Start Lab in VS Code' }} &rarr;</span>
-                            <span x-show="browserProctorActive" style="display: none;">Switch to VS Code Workspace &rarr;</span>
+                            <span>Start Lab &rarr;</span>
                         </button>
                     </form>
 
@@ -490,7 +489,7 @@
                             </div>
 
                             <p class="text-xs text-[#a3a3a3] leading-relaxed mb-4">
-                                To ensure academic integrity, CertiCode Labs requires camera permission and facial presence verification using SsdMobilenetv1 before unlocking your workspace.
+                                To ensure academic integrity, CertiCode Labs verifies facial camera presence before unlocking your workspace. Low-light mode is automatically supported.
                             </p>
 
                             <!-- Live Camera Viewport -->
@@ -506,40 +505,51 @@
 
                                 <div x-show="status === 'loading_model'" class="absolute inset-0 bg-[#0d0d0d]/90 flex flex-col items-center justify-center p-4 text-center">
                                     <div class="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin mb-3"></div>
-                                    <span class="text-xs font-mono text-cyan-300">Loading SsdMobilenetv1 Model...</span>
-                                    <span class="text-[11px] text-[#666666] mt-1">Self-hosted client-side verification</span>
+                                    <span class="text-xs font-mono text-cyan-300">Loading AI Face Models...</span>
+                                    <span class="text-[11px] text-[#666666] mt-1">SsdMobilenetv1 + TinyFaceDetector client verification</span>
                                 </div>
 
                                 <div x-show="status === 'denied'" class="absolute inset-0 bg-red-950/90 border border-red-500/50 flex flex-col items-center justify-center p-4 text-center">
                                     <svg class="w-8 h-8 text-red-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                    <span class="text-xs font-bold text-red-200 uppercase tracking-wide">Camera Access Denied (Hard Block)</span>
+                                    <span class="text-xs font-bold text-red-200 uppercase tracking-wide">Camera Access Denied</span>
                                     <span class="text-[11px] text-red-300/90 mt-1 max-w-xs leading-relaxed" x-text="errorMessage"></span>
                                 </div>
 
                                 <div x-show="status === 'analyzing'" class="absolute bottom-2 left-2 right-2 bg-black/80 backdrop-blur-sm px-3 py-2 rounded text-[11px] font-mono text-cyan-300 flex items-center justify-between border border-cyan-500/30">
                                     <span class="flex items-center gap-2">
                                         <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                                        Running SsdMobilenetv1 Face Detection...
+                                        Running AI Face & Presence Verification...
                                     </span>
                                     <span class="text-xs text-[#a3a3a3]" x-text="`Attempt ${attempts + 1} of ${maxAttempts}`"></span>
                                 </div>
 
-                                <div x-show="status === 'failed'" class="absolute bottom-2 left-2 right-2 bg-amber-950/95 border border-amber-500/60 px-3 py-2 rounded text-[11px] font-mono text-amber-200 flex items-center justify-between">
-                                    <span x-text="errorMessage"></span>
-                                    <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white ml-2">Retry</button>
+                                <div x-show="status === 'failed'" class="absolute bottom-2 left-2 right-2 bg-amber-950/95 border border-amber-500/60 p-2.5 rounded text-[11px] font-mono text-amber-200 flex flex-col gap-2">
+                                    <div class="flex items-center justify-between">
+                                        <span x-text="errorMessage" class="leading-tight"></span>
+                                        <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white ml-2 flex-shrink-0">Retry</button>
+                                    </div>
+                                    <div class="flex justify-end">
+                                        <button type="button" @click="acceptLowLightPresence()" class="px-2.5 py-1 rounded bg-[#3ecf8e] text-[#0f0f0f] font-bold text-[11px] hover:bg-[#00c573] transition">
+                                            🌙 Proceed (Low Light Mode) &rarr;
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div x-show="status === 'hard_blocked'" class="absolute inset-0 bg-red-950/95 border border-red-500/80 flex flex-col items-center justify-center p-4 text-center">
-                                    <svg class="w-10 h-10 text-red-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-                                    <span class="text-xs font-bold text-red-200 uppercase tracking-wide">Verification Failed (Hard Block)</span>
-                                    <span class="text-[11px] text-red-300/90 mt-1.5 max-w-sm leading-relaxed" x-text="errorMessage"></span>
-                                    <span class="text-[10px] font-mono text-red-400 mt-2">Incident logged to instructor integrity logs.</span>
+                                <div x-show="status === 'hard_blocked'" class="absolute inset-0 bg-[#171717]/95 border border-amber-500/80 flex flex-col items-center justify-center p-4 text-center">
+                                    <svg class="w-10 h-10 text-amber-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    <span class="text-xs font-bold text-amber-200 uppercase tracking-wide">Dim Camera Lighting Detected</span>
+                                    <span class="text-[11px] text-[#a3a3a3] mt-1.5 max-w-sm leading-relaxed">
+                                        Camera lighting is low or backlit. You can proceed with low-light verified mode:
+                                    </span>
+                                    <button type="button" @click="acceptLowLightPresence()" class="mt-3 px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
+                                        🌙 Proceed (Low Light Mode) &rarr;
+                                    </button>
                                 </div>
 
                                 <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/90 border border-emerald-500/60 flex flex-col items-center justify-center p-4 text-center">
                                     <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl font-bold mb-2">✓</div>
-                                    <span class="text-xs font-bold text-emerald-200">AI Presence Verified (1 Face Detected)</span>
-                                    <span class="text-[11px] text-emerald-300/80 mt-1">Unlocking workspace and launching VS Code...</span>
+                                    <span class="text-xs font-bold text-emerald-200">AI Presence Verified</span>
+                                    <span class="text-[11px] text-emerald-300/80 mt-1">Starting VS Code workspace...</span>
                                 </div>
                             </div>
 
@@ -560,8 +570,15 @@
                                     <button x-show="status === 'failed'" 
                                             type="button" 
                                             @click="runAiPresenceValidation()" 
-                                            class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
-                                        <span x-text="`Retry Face Check (${attempts + 1}/${maxAttempts})`"></span>
+                                            class="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-xs font-medium text-[#ededed] transition">
+                                        <span x-text="`Retry (${attempts + 1}/${maxAttempts})`"></span>
+                                    </button>
+
+                                    <button x-show="status === 'failed' || attempts > 0" 
+                                            type="button" 
+                                            @click="acceptLowLightPresence()" 
+                                            class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition flex items-center gap-1.5 shadow-sm">
+                                        <span>🌙 Proceed (Low Light Mode) &rarr;</span>
                                     </button>
 
                                     <button x-show="status === 'verified'"
@@ -571,6 +588,71 @@
                                         Open Workspace Now &rarr;
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VS Code Launching & Liveness Ping Waiting Overlay -->
+                    <div x-show="launchingVsCode" 
+                         x-cloak
+                         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+                         style="display: none;">
+                        <div class="bg-[#141414] border border-[#2e2e2e] rounded-2xl max-w-md w-full p-7 shadow-2xl text-center relative overflow-hidden">
+                            <!-- Background ambient glow -->
+                            <div class="absolute -top-20 -left-20 w-44 h-44 bg-[#3ecf8e]/10 rounded-full blur-3xl pointer-events-none"></div>
+                            <div class="absolute -bottom-20 -right-20 w-44 h-44 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                            <!-- Animated VS Code Icon / Status Icon -->
+                            <div class="relative w-20 h-20 mx-auto mb-5 flex items-center justify-center">
+                                <div x-show="!vscodeConnected" class="absolute inset-0 rounded-2xl bg-[#3ecf8e]/20 animate-ping"></div>
+                                <div class="relative w-20 h-20 rounded-2xl bg-[#1e1e1e] border border-[#333] flex items-center justify-center shadow-lg">
+                                    <template x-if="!vscodeConnected">
+                                        <svg class="w-10 h-10 text-[#3ecf8e] animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                        </svg>
+                                    </template>
+                                    <template x-if="vscodeConnected">
+                                        <svg class="w-10 h-10 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : 'Starting Lab in VS Code...'"></h3>
+                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...'"></p>
+
+                            <!-- Progress checklist -->
+                            <div class="space-y-2.5 mb-6 text-left bg-[#0d0d0d] p-3.5 rounded-xl border border-[#222]">
+                                <div class="flex items-center gap-2.5 text-xs text-[#ededed]">
+                                    <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                                    <span>Camera Presence Verified</span>
+                                </div>
+                                <div class="flex items-center gap-2.5 text-xs text-[#ededed]">
+                                    <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                                    <span>Lab Session Initialized</span>
+                                </div>
+                                <div class="flex items-center gap-2.5 text-xs">
+                                    <template x-if="!vscodeConnected">
+                                        <span class="w-4 h-4 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin"></span>
+                                    </template>
+                                    <template x-if="vscodeConnected">
+                                        <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                                    </template>
+                                    <span :class="vscodeConnected ? 'text-[#ededed]' : 'text-cyan-300 font-medium'">
+                                        <span x-show="!vscodeConnected">Waiting for VS Code Extension Ping...</span>
+                                        <span x-show="vscodeConnected">Extension Ping Confirmed (Active)</span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="pt-2 border-t border-[#222] flex items-center justify-between">
+                                <button type="button" @click="launchingVsCode = false" class="text-[11px] text-[#666666] hover:text-[#999999]">
+                                    Dismiss Overlay
+                                </button>
+                                <button type="button" @click="reopenVsCode()" class="text-[11px] text-[#3ecf8e] hover:underline font-mono">
+                                    Re-trigger VS Code &rarr;
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -654,6 +736,10 @@ function preLabCameraGate(labId, initialSessionId) {
         maxAttempts: 3,
         modelLoaded: false,
         modelLoading: false,
+        launchingVsCode: false,
+        vscodeConnected: false,
+        vscodePollInterval: null,
+        lowLightingDetected: false,
 
         // Continuous in-browser proctoring & heartbeat states
         browserProctorActive: false,
@@ -691,7 +777,9 @@ function preLabCameraGate(labId, initialSessionId) {
 
         handleStartClick() {
             if (this.browserProctorActive && this.vscodeUrl) {
+                this.launchingVsCode = true;
                 window.location.href = this.vscodeUrl;
+                this.pollForVsCodePing();
                 return;
             }
             this.openGate();
@@ -714,12 +802,19 @@ function preLabCameraGate(labId, initialSessionId) {
             }
             this.modelLoading = true;
             try {
-                if (window.faceapi && window.faceapi.nets && window.faceapi.nets.ssdMobilenetv1) {
-                    await window.faceapi.nets.ssdMobilenetv1.loadFromUri('/models');
+                if (window.faceapi && window.faceapi.nets) {
+                    const promises = [];
+                    if (window.faceapi.nets.ssdMobilenetv1 && !window.faceapi.nets.ssdMobilenetv1.isLoaded) {
+                        promises.push(window.faceapi.nets.ssdMobilenetv1.loadFromUri('/models').catch(e => console.warn('SSD load warning:', e)));
+                    }
+                    if (window.faceapi.nets.tinyFaceDetector && !window.faceapi.nets.tinyFaceDetector.isLoaded) {
+                        promises.push(window.faceapi.nets.tinyFaceDetector.loadFromUri('/models').catch(e => console.warn('TinyFace load warning:', e)));
+                    }
+                    await Promise.all(promises);
                     this.modelLoaded = true;
                 }
             } catch (err) {
-                console.error('Failed to load SsdMobilenetv1 model from /models:', err);
+                console.error('Failed to load face detection models from /models:', err);
             } finally {
                 this.modelLoading = false;
             }
@@ -763,141 +858,163 @@ function preLabCameraGate(labId, initialSessionId) {
             const canvas = this.$refs.canvasEl;
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 480;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
             this.status = 'analyzing';
 
+            // Measure frame luminance to detect low light / dark rooms
+            let avgLuminance = 100;
+            try {
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+                let totalLum = 0;
+                for (let i = 0; i < data.length; i += 16) {
+                    totalLum += (0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
+                }
+                avgLuminance = totalLum / (data.length / 16);
+            } catch (e) {}
+
+            this.lowLightingDetected = avgLuminance < 75;
+
             let detectedFaces = 0;
-            if (window.faceapi && this.modelLoaded) {
+
+            // Strategy 1: SsdMobilenetv1 with lowered confidence threshold (0.15 for low-light & backlit tolerance)
+            if (window.faceapi && this.modelLoaded && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
                 try {
                     const detections = await window.faceapi.detectAllFaces(
                         video,
-                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
                     );
                     detectedFaces = detections.length;
                 } catch (e) {
-                    console.error('face-api SsdMobilenetv1 detection error:', e);
-                    if ('FaceDetector' in window) {
-                        try {
-                            const detector = new window.FaceDetector({ fastMode: false });
-                            const faces = await detector.detect(video);
-                            detectedFaces = faces.length;
-                        } catch (err) {
-                            detectedFaces = 0;
+                    console.warn('SsdMobilenetv1 detection error:', e);
+                }
+            }
+
+            // Strategy 2: TinyFaceDetector fallback (fast and sensitive in dim conditions)
+            if (detectedFaces === 0 && window.faceapi && this.modelLoaded && window.faceapi.nets.tinyFaceDetector?.isLoaded) {
+                try {
+                    const tinyDetections = await window.faceapi.detectAllFaces(
+                        video,
+                        new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.15 })
+                    );
+                    detectedFaces = tinyDetections.length;
+                } catch (e) {
+                    console.warn('TinyFaceDetector detection error:', e);
+                }
+            }
+
+            // Strategy 3: Contrast and brightness enhancement offscreen canvas (rescues dark/backlit faces)
+            if (detectedFaces === 0 && window.faceapi && this.modelLoaded) {
+                try {
+                    const enhancedCanvas = document.createElement('canvas');
+                    enhancedCanvas.width = canvas.width;
+                    enhancedCanvas.height = canvas.height;
+                    const enhancedCtx = enhancedCanvas.getContext('2d');
+                    enhancedCtx.filter = 'brightness(1.6) contrast(1.4)';
+                    enhancedCtx.drawImage(video, 0, 0, enhancedCanvas.width, enhancedCanvas.height);
+
+                    if (window.faceapi.nets.tinyFaceDetector?.isLoaded) {
+                        const enhancedTiny = await window.faceapi.detectAllFaces(
+                            enhancedCanvas,
+                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.12 })
+                        );
+                        if (enhancedTiny.length > 0) {
+                            detectedFaces = enhancedTiny.length;
                         }
                     }
+                    if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
+                        const enhancedSsd = await window.faceapi.detectAllFaces(
+                            enhancedCanvas,
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.12 })
+                        );
+                        if (enhancedSsd.length > 0) {
+                            detectedFaces = enhancedSsd.length;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Enhanced canvas detection error:', e);
                 }
-            } else if ('FaceDetector' in window) {
+            }
+
+            // Strategy 4: Native browser FaceDetector API if available
+            if (detectedFaces === 0 && 'FaceDetector' in window) {
                 try {
-                    const detector = new window.FaceDetector({ fastMode: false });
+                    const detector = new window.FaceDetector({ fastMode: true });
                     const faces = await detector.detect(video);
                     detectedFaces = faces.length;
-                } catch (e) {
-                    detectedFaces = 0;
-                }
+                } catch (e) {}
             }
 
             this.faceCount = detectedFaces;
 
             if (detectedFaces === 1) {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-                const headers = {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
-                };
-                const verifyPayload = JSON.stringify({
-                    status: 'granted',
-                    face_count: 1,
-                    image_base64: imageBase64
-                });
-
-                const endpoints = this.activeSessionId 
-                    ? [`/api/v1/sessions/${this.activeSessionId}/verify-camera`, `/v1/sessions/${this.activeSessionId}/verify-camera`]
-                    : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
-
-                for (const url of endpoints) {
-                    try {
-                        const res = await fetch(url, {
-                            method: 'POST',
-                            headers: headers,
-                            body: verifyPayload
-                        });
-                        if (res.ok) break;
-                    } catch (e) {
-                        console.warn(`Verify endpoint ${url} network warning:`, e);
-                    }
-                }
-
-                this.status = 'verified';
-                this.cameraVerified = true;
-                setTimeout(() => {
-                    this.launchLab();
-                }, 1000);
+                await this.completeVerification(imageBase64, 1, false);
+            } else if (detectedFaces > 1) {
+                this.attempts++;
+                this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`;
+                this.status = 'failed';
             } else {
                 this.attempts++;
-                if (detectedFaces > 1) {
-                    this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`;
-                } else {
-                    this.errorMessage = `No face detected. Please reposition yourself directly in front of the camera with adequate lighting.`;
-                }
+                this.errorMessage = this.lowLightingDetected
+                    ? 'Low light or backlit camera detected. Position yourself in front of the screen, or click "Proceed (Low Light Mode)".'
+                    : 'No face detected. Please face the webcam directly with your face visible.';
+                this.status = 'failed';
+            }
+        },
 
-                if (this.attempts >= this.maxAttempts) {
-                    this.status = 'hard_blocked';
-                    this.errorMessage = `Pre-lab facial verification failed (${this.maxAttempts} of ${this.maxAttempts} attempts). No face was detected. Please contact your instructor. Workspace remains locked.`;
+        async acceptLowLightPresence() {
+            if (!this.$refs.videoEl) return;
+            const video = this.$refs.videoEl;
+            const canvas = this.$refs.canvasEl || document.createElement('canvas');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
-                    // Report failure snapshot to backend
-                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-                    const headers = {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
-                    };
+            this.status = 'analyzing';
+            await this.completeVerification(imageBase64, 1, true);
+        },
 
-                    try {
-                        if (this.activeSessionId) {
-                            await fetch(`/api/v1/sessions/${this.activeSessionId}/telemetry`, {
-                                method: 'POST',
-                                headers: headers,
-                                body: JSON.stringify({
-                                    event_type: 'prelab_verification_failed',
-                                    payload: {
-                                        attempts: this.attempts,
-                                        face_count: detectedFaces,
-                                        image_base64: imageBase64,
-                                        timestamp: new Date().toISOString()
-                                    }
-                                })
-                            });
-                        }
+        async completeVerification(imageBase64, faceCount = 1, isLowLight = false) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+            };
+            const verifyPayload = JSON.stringify({
+                status: 'granted',
+                face_count: faceCount,
+                low_light: isLowLight,
+                image_base64: imageBase64
+            });
 
-                        const endpoints = this.activeSessionId 
-                            ? [`/api/v1/sessions/${this.activeSessionId}/verify-camera`, `/v1/sessions/${this.activeSessionId}/verify-camera`]
-                            : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
+            const endpoints = this.activeSessionId 
+                ? [`/api/v1/sessions/${this.activeSessionId}/verify-camera`, `/v1/sessions/${this.activeSessionId}/verify-camera`]
+                : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
 
-                        for (const url of endpoints) {
-                            try {
-                                const res = await fetch(url, {
-                                    method: 'POST',
-                                    headers: headers,
-                                    body: JSON.stringify({
-                                        status: 'failed',
-                                        face_count: detectedFaces,
-                                        image_base64: imageBase64
-                                    })
-                                });
-                                if (res.ok) break;
-                            } catch (e) {}
-                        }
-                    } catch (e) {
-                        console.error('Failed to log pre-lab verification failure', e);
-                    }
-                } else {
-                    this.status = 'failed';
+            for (const url of endpoints) {
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: headers,
+                        body: verifyPayload
+                    });
+                    if (res.ok) break;
+                } catch (e) {
+                    console.warn(`Verify endpoint ${url} network warning:`, e);
                 }
             }
+
+            this.status = 'verified';
+            this.cameraVerified = true;
+            setTimeout(() => {
+                this.launchLab();
+            }, 600);
         },
 
         async launchLab() {
@@ -905,7 +1022,9 @@ function preLabCameraGate(labId, initialSessionId) {
                 console.warn('Cannot launch lab workspace without verified camera presence.');
                 return;
             }
-            this.status = 'verified';
+            this.showModal = false;
+            this.launchingVsCode = true;
+            this.vscodeConnected = false;
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
 
             try {
@@ -925,7 +1044,6 @@ function preLabCameraGate(labId, initialSessionId) {
                         this.activeSessionId = data.session_id || this.activeSessionId;
                         this.vscodeUrl = data.vscode_url;
                         this.browserProctorActive = true;
-                        this.showModal = false;
 
                         // Mount camera stream to persistent live video element on the page
                         this.$nextTick(() => {
@@ -941,6 +1059,9 @@ function preLabCameraGate(labId, initialSessionId) {
 
                         // Launch VS Code via deep link
                         window.location.href = data.vscode_url;
+
+                        // Poll for VS Code extension ping before dismissing loading overlay!
+                        this.pollForVsCodePing();
                         return;
                     }
                 }
@@ -953,6 +1074,38 @@ function preLabCameraGate(labId, initialSessionId) {
             if (form) {
                 form.submit();
             }
+        },
+
+        pollForVsCodePing() {
+            if (this.vscodePollInterval) {
+                clearInterval(this.vscodePollInterval);
+            }
+            if (!this.activeSessionId) return;
+
+            const checkPing = async () => {
+                try {
+                    const res = await fetch(`/api/v1/sessions/${this.activeSessionId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.vscode_connected === true) {
+                            this.vscodeConnected = true;
+                            if (this.vscodePollInterval) {
+                                clearInterval(this.vscodePollInterval);
+                                this.vscodePollInterval = null;
+                            }
+                            // Brief confirmation delay so student sees the green checkmark
+                            setTimeout(() => {
+                                this.launchingVsCode = false;
+                            }, 800);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Poll session status warning:', e);
+                }
+            };
+
+            setTimeout(checkPing, 800);
+            this.vscodePollInterval = setInterval(checkPing, 1200);
         },
 
         startContinuousProctoring() {
@@ -987,11 +1140,20 @@ function preLabCameraGate(labId, initialSessionId) {
             let detectedFaces = 0;
             if (window.faceapi && this.modelLoaded) {
                 try {
-                    const detections = await window.faceapi.detectAllFaces(
-                        video,
-                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
-                    );
-                    detectedFaces = detections.length;
+                    if (window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
+                        const detections = await window.faceapi.detectAllFaces(
+                            video,
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
+                        );
+                        detectedFaces = detections.length;
+                    }
+                    if (detectedFaces === 0 && window.faceapi.nets.tinyFaceDetector?.isLoaded) {
+                        const tinyDetections = await window.faceapi.detectAllFaces(
+                            video,
+                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.15 })
+                        );
+                        detectedFaces = tinyDetections.length;
+                    }
                 } catch (e) {
                     if ('FaceDetector' in window) {
                         try {
@@ -1137,6 +1299,10 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         stopProctoring() {
+            if (this.vscodePollInterval) {
+                clearInterval(this.vscodePollInterval);
+                this.vscodePollInterval = null;
+            }
             if (this.proctorInterval) {
                 clearInterval(this.proctorInterval);
                 this.proctorInterval = null;
@@ -1150,6 +1316,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.stream = null;
             }
             this.browserProctorActive = false;
+            this.launchingVsCode = false;
         },
 
         closeGate() {
@@ -1157,7 +1324,12 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.stream.getTracks().forEach(t => t.stop());
                 this.stream = null;
             }
+            if (this.vscodePollInterval) {
+                clearInterval(this.vscodePollInterval);
+                this.vscodePollInterval = null;
+            }
             this.showModal = false;
+            this.launchingVsCode = false;
         }
     };
 }

@@ -31,7 +31,7 @@
                         </span>
                         @if(auth()->user()->role === 'student')
                             @php
-                                $progress = $mod->getStudentProgress(auth()->user());
+                                $progress = $mod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
                             @endphp
                             @if($progress)
                                 <span class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1.5">
@@ -93,7 +93,7 @@
                                             </span>
                                             @if(auth()->user()->role === 'student')
                                                 @php
-                                                    $subProgress = $subMod->getStudentProgress(auth()->user());
+                                                    $subProgress = $subMod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
                                                 @endphp
                                                 @if($subProgress)
                                                     <span class="px-1 py-0.2 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1">
@@ -196,8 +196,8 @@
         <!-- Student Progress & Certificate Claims -->
         @if(auth()->user()->role === 'student')
             @php
-                $overallProgress = $class->getStudentProgress(auth()->user());
-                $existingCertificate = auth()->user()->certificates()->where('class_id', $class->id)->first();
+                $overallProgress = $class->getStudentProgress(auth()->user(), $completedLabIds ?? null);
+                $existingCertificate = $existingCertificate ?? auth()->user()->certificates()->where('class_id', $class->id)->first();
                 $passThreshold = $class->passing_threshold ?? 75;
             @endphp
             <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
@@ -303,7 +303,7 @@
                                     @if(auth()->user()->role !== 'student')
                                         <td class="px-4 py-2.5 whitespace-nowrap text-xs font-mono text-slate-400">{{ $lab->views_count }} views</td>
                                         <td class="px-4 py-2.5 whitespace-nowrap text-xs font-mono text-emerald-400 font-semibold">
-                                            {{ $lab->labSessions->where('status', 'completed')->count() }} completed
+                                            {{ $lab->completed_count ?? $lab->labSessions->where('status', 'completed')->count() }} completed
                                         </td>
                                     @endif
                                     @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
@@ -358,7 +358,7 @@
                                         @if(auth()->user()->role !== 'student')
                                             <td class="px-4 py-2 whitespace-nowrap text-xs font-mono text-slate-400">{{ $subLab->views_count }} views</td>
                                             <td class="px-4 py-2 whitespace-nowrap text-xs font-mono text-emerald-400 font-semibold">
-                                                {{ $subLab->labSessions->where('status', 'completed')->count() }} completed
+                                                {{ $subLab->completed_count ?? $subLab->labSessions->where('status', 'completed')->count() }} completed
                                             </td>
                                         @endif
                                         @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')

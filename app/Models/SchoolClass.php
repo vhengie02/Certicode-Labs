@@ -69,27 +69,36 @@ class SchoolClass extends Model
     /**
      * Calculate aggregate student progress for the class.
      */
-    public function getStudentProgress(User $student)
+    public function getStudentProgress(User $student, ?array $completedLabIds = null)
     {
+        $labIds = [];
+        // Gather all laboratory IDs associated with the modules of this class
+        foreach ($this->modules as $module) {
+            $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
+        }
+        $labIds = array_unique($labIds);
+        $totalLabs = count($labIds);
+
+        if ($totalLabs === 0) {
+            return [
+                'completed' => 0,
+                'total' => 0,
+                'percent' => 0,
+            ];
+        }
+
+        if ($completedLabIds !== null) {
+            $completedCount = count(array_intersect($labIds, array_keys($completedLabIds)));
+            return [
+                'completed' => $completedCount,
+                'total' => $totalLabs,
+                'percent' => round(($completedCount / $totalLabs) * 100),
+            ];
+        }
+
         $cacheKey = "user_{$student->id}_class_{$this->id}_progress";
 
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, function () use ($student) {
-            $labIds = [];
-            // Gather all laboratory IDs associated with the modules of this class
-            foreach ($this->modules as $module) {
-                $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
-            }
-            $labIds = array_unique($labIds);
-            $totalLabs = count($labIds);
-            
-            if ($totalLabs === 0) {
-                return [
-                    'completed' => 0,
-                    'total' => 0,
-                    'percent' => 0,
-                ];
-            }
-
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, function () use ($student, $labIds, $totalLabs) {
             $completedCount = \App\Models\LabSession::whereIn('lab_id', $labIds)
                 ->where('user_id', $student->id)
                 ->where('status', 'completed')

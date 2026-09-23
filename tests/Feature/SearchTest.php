@@ -148,4 +148,22 @@ class SearchTest extends TestCase
         $this->assertCount(1, $response->json('classes'));
         $this->assertEquals('Python Basics (CLASS-PY101)', $response->json('classes.0.label'));
     }
+
+    /**
+     * Test case-insensitive search matching lowercase queries.
+     */
+    public function test_case_insensitive_search(): void
+    {
+        $response = $this->actingAs($this->student)->get('/search?q=laravel');
+        $response->assertStatus(200);
+        $this->assertCount(1, $response->json('classes'));
+
+        $responseModule = $this->actingAs($this->student)->get('/search?q=blade');
+        $responseModule->assertStatus(200);
+        $this->assertCount(1, $responseModule->json('modules'));
+
+        $responseLab = $this->actingAs($this->student)->get('/search?q=html');
+        $responseLab->assertStatus(200);
+        $this->assertCount(1, $responseLab->json('laboratories'));
+    }
 }

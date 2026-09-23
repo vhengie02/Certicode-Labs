@@ -188,4 +188,66 @@ class SubModuleAndTrackingTest extends TestCase
         $this->assertEquals('1.1 Introduction to Java', $subModule->title);
         $this->assertEquals($parentModule->id, $subModule->parent_id);
     }
+
+    /**
+     * Test student viewing module with an active laboratory session renders correctly without route errors.
+     */
+    public function test_student_views_module_with_active_session_renders_correctly(): void
+    {
+        $module = Module::create([
+            'class_id' => $this->class->id,
+            'title' => 'Web Exploitation',
+            'content' => 'SQLi basics',
+        ]);
+
+        $lab = Laboratory::create([
+            'title' => 'SQL Injection Lab',
+            'description' => 'Extract DB credentials',
+            'time_limit' => 30,
+            'module_id' => $module->id,
+            'is_group_lab' => false,
+        ]);
+
+        $session = LabSession::create([
+            'lab_id' => $lab->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+            'performance_score' => 0.0,
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->get("/classes/{$this->class->id}/modules/{$module->id}");
+
+        $response->assertStatus(200);
+        $response->assertSee('Start Lab');
+        $response->assertSee(route('laboratories.show', $lab->id));
+    }
+
+    /**
+     * Test sessions.show route redirects to laboratory show page.
+     */
+    public function test_sessions_show_route_redirects_to_laboratory_show(): void
+    {
+        $lab = Laboratory::create([
+            'title' => 'Buffer Overflow Lab',
+            'description' => 'Smash the stack',
+            'time_limit' => 45,
+            'is_group_lab' => false,
+        ]);
+
+        $session = LabSession::create([
+            'lab_id' => $lab->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+            'performance_score' => 0.0,
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->get(route('sessions.show', $session->id));
+
+        $response->assertRedirect(route('laboratories.show', $lab->id));
+    }
 }
+

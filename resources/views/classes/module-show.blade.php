@@ -196,18 +196,9 @@
                                         ->first();
                                 @endphp
 
-                                @if($activeSession)
-                                    <a href="{{ route('sessions.show', $activeSession->id) }}" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
-                                        Resume Lab &rarr;
-                                    </a>
-                                @else
-                                    <form action="{{ route('laboratories.start', $lab->id) }}" method="POST">
-                                        @csrf
-                                        <button type="submit" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
-                                            Start Lab &rarr;
-                                        </button>
-                                    </form>
-                                @endif
+                                <a href="{{ route('laboratories.show', $lab->id) }}" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
+                                    Start Lab &rarr;
+                                </a>
                             @endif
                         </div>
                     </div>

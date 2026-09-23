@@ -61,19 +61,34 @@ class SidebarProvider {
             localResourceRoots: [this._extensionUri]
         };
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-        if (this._sessionId && !this._pingInterval) {
+        if (this._sessionId) {
             this.startMonitoring();
-        }
-        else if (this._sessionId && this._lastSessionData) {
-            webviewView.webview.postMessage({
-                type: 'update',
-                data: this._lastSessionData,
-                isReconnecting: false
-            });
+            if (this._lastSessionData) {
+                webviewView.webview.postMessage({
+                    type: 'update',
+                    data: this._lastSessionData,
+                    isReconnecting: false
+                });
+            }
         }
         // Listen for postMessages from Webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
+                case 'webviewReady': {
+                    if (this._sessionId) {
+                        if (this._lastSessionData) {
+                            this._view?.webview.postMessage({
+                                type: 'update',
+                                data: this._lastSessionData,
+                                isReconnecting: false
+                            });
+                        }
+                        else {
+                            await this.syncSessionState();
+                        }
+                    }
+                    break;
+                }
                 case 'connect': {
                     this._backendUrl = data.backendUrl.replace(/\/$/, '');
                     this._sessionId = parseInt(data.sessionId);
@@ -90,7 +105,7 @@ class SidebarProvider {
                     break;
                 }
                 case 'exit': {
-                    this.handleExit();
+                    this.handleExit(data.skipConfirm ? false : true);
                     break;
                 }
                 case 'sendChat': {
@@ -181,16 +196,32 @@ class SidebarProvider {
         this._backendUrl = backendUrl.replace(/\/$/, '');
         this._sessionId = sessionId;
         this._apiToken = apiToken;
-        this._view?.webview.postMessage({
-            type: 'prefill',
-            backendUrl: this._backendUrl,
-            sessionId: this._sessionId,
-            apiToken: this._apiToken || '',
-            autoConnect: true
-        });
+        // If view already exists, re-render its HTML immediately so the webview launches into session mode
+        if (this._view) {
+            this._view.webview.html = this._getHtmlForWebview(this._view.webview);
+        }
         this.startMonitoring();
+        // Send immediate ping to notify backend that VS Code extension is active
+        this.sendVsCodePing();
         // Focus the sidebar view in VS Code
         vscode.commands.executeCommand('workbench.view.extension.certicode-explorer');
+        vscode.commands.executeCommand('certicode-labs.sidebar.focus');
+    }
+    async sendVsCodePing() {
+        if (!this._sessionId) {
+            return;
+        }
+        try {
+            const prefix = this._apiToken ? '/api' : '/api/v1';
+            await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/ping`, {
+                source: 'vscode',
+                client: 'vscode_extension',
+                timestamp: new Date().toISOString()
+            });
+        }
+        catch (err) {
+            // Heartbeat warning ignored
+        }
     }
     startMonitoring() {
         if (this._pingInterval) {
@@ -211,12 +242,14 @@ class SidebarProvider {
         this.setupFocusTracking();
         // Connect WebSocket real-time transport (Features 1, 2, 5)
         this.connectWebSocket();
-        // Run sync immediately
+        // Run sync and heartbeat ping immediately
+        this.sendVsCodePing();
         this.syncSessionState();
         this.fetchLeaderboard();
         // Run sync every 15 seconds to detect dropped connections / keepalive
         this._pingInterval = setInterval(() => {
             this.syncSessionState();
+            this.sendVsCodePing();
         }, 15000);
         // Run chat sync every 4 seconds (seamless fallback if WS is not connected)
         this._chatPollInterval = setInterval(() => {
@@ -361,6 +394,9 @@ class SidebarProvider {
         try {
             const prefix = this._apiToken ? '/api' : '/api/v1';
             const result = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}`);
+            if (!this._sessionId) {
+                return;
+            }
             if (result.status === 200) {
                 this._isReconnecting = false;
                 const data = JSON.parse(result.body);
@@ -698,6 +734,9 @@ class SidebarProvider {
         try {
             const prefix = this._apiToken ? '/api' : '/api/v1';
             const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/leaderboard`);
+            if (!this._sessionId) {
+                return;
+            }
             if (res.status === 200) {
                 const data = JSON.parse(res.body);
                 this._view?.webview.postMessage({
@@ -813,6 +852,9 @@ class SidebarProvider {
         try {
             const prefix = this._apiToken ? '/api' : '/api/v1';
             const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/chat`);
+            if (!this._sessionId) {
+                return;
+            }
             if (res.status === 200) {
                 const data = JSON.parse(res.body);
                 const chats = data.chats || [];
@@ -1078,17 +1120,33 @@ class SidebarProvider {
             });
             if (result.status === 200) {
                 const responseData = JSON.parse(result.body);
-                vscode.window.showInformationMessage(`Lab Session Completed! Score: ${responseData.performance_score}%`);
+                const score = responseData.performance_score ?? 0;
                 this._view?.webview.postMessage({
                     type: 'submitResult',
                     data: responseData
                 });
                 if (this._pingInterval) {
                     clearInterval(this._pingInterval);
+                    this._pingInterval = undefined;
                 }
                 if (this._chatPollInterval) {
                     clearInterval(this._chatPollInterval);
+                    this._chatPollInterval = undefined;
                 }
+                if (this._leaderboardInterval) {
+                    clearInterval(this._leaderboardInterval);
+                    this._leaderboardInterval = undefined;
+                }
+                if (this._wpmSyncTimer) {
+                    clearTimeout(this._wpmSyncTimer);
+                    this._wpmSyncTimer = undefined;
+                }
+                this.disconnectWebSocket();
+                vscode.window.showInformationMessage(`Lab Session Completed! Final Score: ${score}%`, 'Exit Lab Workspace', 'Stay in Editor').then(selection => {
+                    if (selection === 'Exit Lab Workspace') {
+                        this.handleExit(false);
+                    }
+                });
             }
             else {
                 const responseData = JSON.parse(result.body);
@@ -1104,25 +1162,36 @@ class SidebarProvider {
             this._view?.webview.postMessage({ type: 'error', message: `Connection Error: ${err.message}` });
         }
     }
-    async handleExit() {
-        const confirm = await vscode.window.showWarningMessage('Are you sure you want to exit this workspace? Any unsaved editor content or unsubmitted progress will remain pending.', { modal: true }, 'Confirm Exit');
-        if (confirm !== 'Confirm Exit') {
-            return;
+    async handleExit(confirmExit = true) {
+        if (confirmExit) {
+            const confirm = await vscode.window.showWarningMessage('Are you sure you want to exit this workspace? Any unsaved editor content or unsubmitted progress will remain pending.', { modal: true }, 'Confirm Exit');
+            if (confirm !== 'Confirm Exit') {
+                return;
+            }
         }
         if (this._pingInterval) {
             clearInterval(this._pingInterval);
+            this._pingInterval = undefined;
         }
         if (this._chatPollInterval) {
             clearInterval(this._chatPollInterval);
+            this._chatPollInterval = undefined;
         }
         if (this._leaderboardInterval) {
             clearInterval(this._leaderboardInterval);
+            this._leaderboardInterval = undefined;
         }
         if (this._wpmSyncTimer) {
             clearTimeout(this._wpmSyncTimer);
+            this._wpmSyncTimer = undefined;
+        }
+        if (this._diffDebounceTimer) {
+            clearTimeout(this._diffDebounceTimer);
+            this._diffDebounceTimer = undefined;
         }
         if (this._windowStateListener) {
             this._windowStateListener.dispose();
+            this._windowStateListener = undefined;
         }
         this.disconnectWebSocket();
         this._sessionId = undefined;
@@ -1134,7 +1203,9 @@ class SidebarProvider {
         this._totalKeystrokes = 0;
         this._currentWpm = 0;
         this._recentChatSnippets = [];
-        this._view?.webview.postMessage({ type: 'disconnected' });
+        if (this._view) {
+            this._view.webview.html = this._getHtmlForWebview(this._view.webview);
+        }
         vscode.window.showInformationMessage('Exited CertiCode Labs session.');
     }
     /**
@@ -1147,6 +1218,7 @@ class SidebarProvider {
                 const headers = {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
+                    'X-Client': 'vscode',
                 };
                 if (this._apiToken) {
                     headers['Authorization'] = `Bearer ${this._apiToken}`;
@@ -1173,6 +1245,9 @@ class SidebarProvider {
                 const req = targetUrl.protocol === 'https:'
                     ? https.request(options, handleResponse)
                     : http.request(options, handleResponse);
+                req.setTimeout(15000, () => {
+                    req.destroy(new Error('Request timed out after 15 seconds'));
+                });
                 req.on('error', (err) => {
                     reject(err);
                 });
@@ -1195,6 +1270,13 @@ class SidebarProvider {
         const initialSessionData = this._lastSessionData
             ? JSON.stringify(this._lastSessionData).replace(/<\/script/gi, '<\\/script')
             : 'null';
+        const showSessionDirectly = !!this._sessionId;
+        const connScreenStyle = showSessionDirectly ? 'display: none;' : '';
+        const sessionScreenStyle = showSessionDirectly ? 'display: flex;' : 'display: none;';
+        const initialStatusText = this._lastSessionData ? 'Connected' : (this._sessionId ? `Connecting to Session #${this._sessionId}...` : 'Connected');
+        const initialStatusClass = this._lastSessionData ? 'status-connected' : 'status-reconnecting';
+        const backendVal = this._backendUrl || 'http://127.0.0.1:8000';
+        const sessionVal = this._sessionId ? String(this._sessionId) : '';
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1626,29 +1708,29 @@ class SidebarProvider {
     </style>
 </head>
 <body>
-    <div id="connection-screen" class="container">
+    <div id="connection-screen" class="container" style="${connScreenStyle}">
         <div class="header">Connect to Lab Session</div>
         <div class="sub-header">Enter details below to establish connection with CertiCode Labs platform.</div>
         
         <div class="form-group">
             <label for="backend-url">Backend Endpoint</label>
-            <input type="text" id="backend-url" value="http://localhost">
+            <input type="text" id="backend-url" value="${backendVal}">
         </div>
         
         <div class="form-group">
             <label for="session-id">Lab Session ID</label>
-            <input type="text" id="session-id" placeholder="e.g. 1" value="1">
+            <input type="text" id="session-id" placeholder="e.g. 1" value="${sessionVal}">
         </div>
         
         <button id="connect-btn">Connect Session</button>
     </div>
 
-    <div id="session-screen" class="container" style="display: none;">
+    <div id="session-screen" class="container" style="${sessionScreenStyle}">
         <!-- Connection & Live Diff Status -->
-        <div id="status-banner" class="connection-status status-connected">
+        <div id="status-banner" class="connection-status ${initialStatusClass}">
             <div class="status-left">
                 <div class="status-dot"></div>
-                <span id="status-text">Connected</span>
+                <span id="status-text">${initialStatusText}</span>
                 <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 6px; border-radius: 4px; background: rgba(62, 207, 142, 0.15); color: #3ecf8e; border: 1px solid rgba(62, 207, 142, 0.3);">🟢 Browser Proctor Active</span>
             </div>
             <div class="diff-pill" id="diff-counter-pill">
@@ -1799,6 +1881,13 @@ class SidebarProvider {
         </div>
 
         <div id="action-status" class="loader-status" style="display: none;"></div>
+
+        <!-- Submission Completed Banner -->
+        <div id="submission-complete-banner" style="display: none; padding: 12px; border-radius: 6px; background: rgba(62, 207, 142, 0.12); border: 1px solid rgba(62, 207, 142, 0.35); color: #3ecf8e; text-align: center; margin-bottom: 8px;">
+            <div style="font-weight: bold; font-size: 1.05em; margin-bottom: 4px;">🎉 Lab Submission Complete!</div>
+            <div style="font-size: 0.9em; margin-bottom: 10px; color: #ededed;">Final Grade: <strong id="submission-final-score" style="color: #3ecf8e; font-size: 1.1em;">100%</strong></div>
+            <button id="post-submit-exit-btn" class="btn-secondary" style="width: 100%; border-color: rgba(62, 207, 142, 0.4); color: #3ecf8e; cursor: pointer;">Exit Lab Workspace</button>
+        </div>
 
         <!-- Actions CTA -->
         <div class="actions">
@@ -1959,6 +2048,13 @@ class SidebarProvider {
         exitBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'exit' });
         });
+
+        const postSubmitExitBtn = document.getElementById('post-submit-exit-btn');
+        if (postSubmitExitBtn) {
+            postSubmitExitBtn.addEventListener('click', () => {
+                vscode.postMessage({ type: 'exit', skipConfirm: true });
+            });
+        }
 
         chatSendBtn.addEventListener('click', sendChatMessage);
         chatInput.addEventListener('keydown', (e) => {
@@ -2182,11 +2278,15 @@ class SidebarProvider {
                     
                 case 'disconnected':
                     if (timerInterval) clearInterval(timerInterval);
+                    timerInterval = null;
                     connectionScreen.style.display = 'flex';
                     sessionScreen.style.display = 'none';
                     actionStatus.style.display = 'none';
                     checkProgressBtn.disabled = false;
                     submitBtn.disabled = false;
+                    submitBtn.innerText = 'Submit Lab (Finalize)';
+                    const bannerEl = document.getElementById('submission-complete-banner');
+                    if (bannerEl) bannerEl.style.display = 'none';
                     break;
                     
                 case 'update':
@@ -2196,8 +2296,8 @@ class SidebarProvider {
                 case 'checkResult':
                 case 'submitResult':
                     actionStatus.style.display = 'none';
-                    checkProgressBtn.disabled = false;
-                    submitBtn.disabled = !isIntegrityValid;
+                    checkProgressBtn.disabled = message.type === 'submitResult';
+                    submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
                     
                     if (message.type === 'submitResult') {
                         if (timerInterval) {
@@ -2205,6 +2305,16 @@ class SidebarProvider {
                             timerInterval = null;
                         }
                         timerLabel.innerText = 'Session Completed';
+                        submitBtn.innerText = '✅ Session Submitted';
+
+                        const compBanner = document.getElementById('submission-complete-banner');
+                        if (compBanner) {
+                            compBanner.style.display = 'block';
+                            const scoreEl = document.getElementById('submission-final-score');
+                            if (scoreEl) {
+                                scoreEl.innerText = (message.data.performance_score || 0) + '%';
+                            }
+                        }
                     }
                     
                     const evalData = message.data.evaluation || {};
@@ -2249,6 +2359,7 @@ class SidebarProvider {
         
         function handleSessionUpdate(session) {
             if (!session || !session.laboratory) return;
+            if (connectionScreen.style.display !== 'none' && !INITIAL_SESSION_ID) return;
 
             actionStatus.style.display = 'none';
             checkProgressBtn.disabled = false;
@@ -2478,6 +2589,9 @@ class SidebarProvider {
             statusBanner.className = 'connection-status status-reconnecting';
             statusText.innerText = 'Connecting...';
         }
+
+        // Inform extension host that webview is mounted and ready for session sync
+        vscode.postMessage({ type: 'webviewReady' });
     </script>
 </body>
 </html>

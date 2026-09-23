@@ -168,6 +168,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/classes/{class_id}/laboratories/create', [LaboratoryController::class, 'create'])->name('laboratories.create');
     Route::get('/laboratories/{id}/starter-files/download', [LaboratoryController::class, 'downloadStarterFiles'])->name('laboratories.starter-files.download');
     Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
+    Route::get('/sessions/{id}', [LaboratoryController::class, 'showWorkspace'])->name('sessions.show');
     Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
 
     // Live Lab Lifecycle Controls (Feature 9)

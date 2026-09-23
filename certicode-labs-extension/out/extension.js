@@ -48,6 +48,8 @@ function activate(context) {
                 const parsedSessionId = parseInt(sessionId, 10);
                 if (!isNaN(parsedSessionId)) {
                     sidebarProvider.connectToSession(backendUrl, parsedSessionId, apiToken || undefined);
+                    vscode.commands.executeCommand('workbench.view.extension.certicode-explorer');
+                    vscode.commands.executeCommand('certicode-labs.sidebar.focus');
                     vscode.window.showInformationMessage(`CertiCode: Connecting automatically to Lab Session #${parsedSessionId}...`);
                 }
             }

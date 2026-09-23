@@ -455,7 +455,7 @@
                     <div class="relative" id="notification-bell-container">
                         @php
                             $currentUserId = auth()->id();
-                            $cachedNotificationsData = \Illuminate\Support\Facades\Cache::store('file')->remember("user_notifs_summary_{$currentUserId}", 30, function () {
+                            $cachedNotificationsData = \Illuminate\Support\Facades\Cache::store('file')->remember("user_notifs_summary_{$currentUserId}", 60, function () {
                                 /** @var \App\Models\User|null $u */
                                 $u = auth()->user();
                                 return [

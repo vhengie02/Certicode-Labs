@@ -35,8 +35,11 @@ class LlmEvaluationService
         }
 
         $apiKey = env('OPENAI_API_KEY') ?: env('AI_API_KEY');
+        $baseUrl = rtrim(env('OPENAI_BASE_URL', env('AI_BASE_URL', '')), '/');
+        $hasCustomBase = !empty($baseUrl) && !str_contains($baseUrl, 'api.openai.com');
+        $isValidOpenAiKey = !empty($apiKey) && $apiKey !== 'mock' && (str_starts_with($apiKey, 'sk-') || $hasCustomBase);
 
-        if (!empty($apiKey) && $apiKey !== 'mock') {
+        if ($isValidOpenAiKey) {
             try {
                 return $this->evaluateWithOpenAi($apiKey, $lab->title, $lab->description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language);
             } catch (\Exception $e) {
@@ -124,7 +127,7 @@ class LlmEvaluationService
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $apiKey,
             'Content-Type' => 'application/json',
-        ])->timeout(30)->post($baseUrl . '/chat/completions', [
+        ])->connectTimeout(3)->timeout(8)->post($baseUrl . '/chat/completions', [
             'model' => 'gpt-4o-mini',
             'messages' => [
                 [

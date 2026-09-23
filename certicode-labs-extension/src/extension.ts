@@ -41,6 +41,8 @@ export function activate(context: vscode.ExtensionContext) {
                             parsedSessionId,
                             apiToken || undefined
                         );
+                        vscode.commands.executeCommand('workbench.view.extension.certicode-explorer');
+                        vscode.commands.executeCommand('certicode-labs.sidebar.focus');
                         vscode.window.showInformationMessage(`CertiCode: Connecting automatically to Lab Session #${parsedSessionId}...`);
                     }
                 }

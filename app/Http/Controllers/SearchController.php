@@ -35,6 +35,9 @@ class SearchController extends Controller
         $cacheKey = "search_{$user->id}_" . md5(strtolower(trim($q)));
 
         $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($q, $user) {
+            $driver = \Illuminate\Support\Facades\DB::connection()->getDriverName();
+            $likeOp = $driver === 'pgsql' ? 'ilike' : 'like';
+
             // 1. Resolve Class query based on user role
             if ($user->role === 'student') {
                 $classQuery = $user->classes();
@@ -43,10 +46,10 @@ class SearchController extends Controller
             } else {
                 $classQuery = SchoolClass::query();
             }
-            $classes = $classQuery->where(function($query) use ($q) {
-                    $query->where('name', 'like', "%{$q}%")
-                          ->orWhere('code', 'like', "%{$q}%")
-                          ->orWhere('description', 'like', "%{$q}%");
+            $classes = $classQuery->where(function($query) use ($q, $likeOp) {
+                    $query->where('name', $likeOp, "%{$q}%")
+                          ->orWhere('code', $likeOp, "%{$q}%")
+                          ->orWhere('description', $likeOp, "%{$q}%");
                 })
                 ->limit(5)
                 ->get(['school_classes.id', 'name', 'code']);
@@ -65,10 +68,10 @@ class SearchController extends Controller
             if ($classIds !== null) {
                 $moduleQuery->whereIn('class_id', $classIds);
             }
-            $modules = $moduleQuery->where(function($query) use ($q) {
-                    $query->where('title', 'like', "%{$q}%")
-                          ->orWhere('description', 'like', "%{$q}%")
-                          ->orWhere('content', 'like', "%{$q}%");
+            $modules = $moduleQuery->where(function($query) use ($q, $likeOp) {
+                    $query->where('title', $likeOp, "%{$q}%")
+                          ->orWhere('description', $likeOp, "%{$q}%")
+                          ->orWhere('content', $likeOp, "%{$q}%");
                 })
                 ->limit(5)
                 ->get(['id', 'title', 'class_id']);
@@ -79,9 +82,9 @@ class SearchController extends Controller
                 $moduleIds = Module::whereIn('class_id', $classIds)->pluck('id');
                 $labQuery->whereIn('module_id', $moduleIds);
             }
-            $laboratories = $labQuery->where(function($query) use ($q) {
-                    $query->where('title', 'like', "%{$q}%")
-                          ->orWhere('description', 'like', "%{$q}%");
+            $laboratories = $labQuery->where(function($query) use ($q, $likeOp) {
+                    $query->where('title', $likeOp, "%{$q}%")
+                          ->orWhere('description', $likeOp, "%{$q}%");
                 })
                 ->limit(5)
                 ->get(['id', 'title', 'module_id']);

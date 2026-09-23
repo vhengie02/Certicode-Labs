@@ -105,21 +105,31 @@ class ClassController extends Controller
      */
     public function show(int $id)
     {
-        $class = SchoolClass::with([
-            'modules.laboratories.labSessions',
-            'modules.children.laboratories.labSessions',
-            'students',
-            'instructor'
-        ])->findOrFail($id);
         $user = Auth::user();
         if (!$user instanceof User) {
             return redirect()->route('login');
         }
 
-        // Authorize student access
+        $with = [
+            'students',
+            'instructor'
+        ];
+
+        if ($user->role !== 'student') {
+            $with['modules.laboratories'] = fn($q) => $q->withCount(['labSessions as completed_count' => fn($sq) => $sq->where('status', 'completed')]);
+            $with['modules.children.laboratories'] = fn($q) => $q->withCount(['labSessions as completed_count' => fn($sq) => $sq->where('status', 'completed')]);
+        } else {
+            $with[] = 'modules.laboratories';
+            $with[] = 'modules.children.laboratories';
+        }
+
+        $class = SchoolClass::with($with)->findOrFail($id);
+
+        // Authorize student access using the already loaded students collection
         if ($user->role === 'student') {
-            $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
-            $isInvited = $class->students()->where('student_id', $user->id)->wherePivot('status', 'invited')->exists();
+            $studentPivot = $class->students->firstWhere('id', $user->id)?->pivot;
+            $isEnrolled = $studentPivot && $studentPivot->status === 'enrolled';
+            $isInvited = $studentPivot && $studentPivot->status === 'invited';
             
             if (!$isEnrolled && !$isInvited) {
                 abort(403, 'You are not enrolled in this class.');
@@ -131,14 +141,16 @@ class ClassController extends Controller
         }
 
         $completedLabIds = [];
+        $existingCertificate = null;
         if ($user->role === 'student') {
             $completedLabIds = \App\Models\LabSession::where('user_id', $user->id)
                 ->where('status', 'completed')
                 ->pluck('lab_id', 'lab_id')
                 ->toArray();
+            $existingCertificate = $user->certificates()->where('class_id', $class->id)->first();
         }
 
-        return view('classes.show', compact('class', 'completedLabIds'));
+        return view('classes.show', compact('class', 'completedLabIds', 'existingCertificate'));
     }
 
     /**
@@ -536,21 +548,50 @@ class ClassController extends Controller
     public function telemetry(int $class_id)
     {
         $this->authorizeInstructor();
-        $class = SchoolClass::findOrFail($class_id);
 
-        $labIds = \App\Models\Laboratory::whereIn('module_id', function ($query) use ($class) {
-            $query->select('id')->from('modules')->where('class_id', $class->id);
-        })->pluck('id');
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(120);
+        }
 
-        $sessions = \App\Models\LabSession::with(['user', 'laboratory'])
-            ->whereIn('lab_id', $labIds)
-            ->latest()
-            ->get();
+        $class = SchoolClass::with(['modules.laboratories', 'modules.children.laboratories'])->findOrFail($class_id);
 
-        $anomalies = \App\Models\Anomaly::with(['labSession.user', 'labSession.laboratory'])
-            ->whereIn('lab_session_id', $sessions->pluck('id'))
-            ->latest()
-            ->get();
+        $cacheKey = "class_telemetry_{$class_id}";
+        [$sessions, $anomalies] = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 15, function () use ($class) {
+            $labIds = [];
+            foreach ($class->modules as $mod) {
+                $labIds = array_merge($labIds, $mod->getAllLaboratoryIds());
+            }
+            $labIds = array_values(array_unique($labIds));
+
+            if (empty($labIds)) {
+                return [collect(), collect()];
+            }
+
+            $sessions = \App\Models\LabSession::with(['user', 'laboratory'])
+                ->whereIn('lab_id', $labIds)
+                ->latest()
+                ->get();
+
+            $sessionIds = $sessions->pluck('id');
+            if ($sessionIds->isEmpty()) {
+                return [$sessions, collect()];
+            }
+
+            $sessionsById = $sessions->keyBy('id');
+
+            $anomalies = \App\Models\Anomaly::whereIn('lab_session_id', $sessionIds)
+                ->latest()
+                ->get();
+
+            // Link existing in-memory models to eliminate redundant remote DB round-trips
+            foreach ($anomalies as $anomaly) {
+                if (isset($sessionsById[$anomaly->lab_session_id])) {
+                    $anomaly->setRelation('labSession', $sessionsById[$anomaly->lab_session_id]);
+                }
+            }
+
+            return [$sessions, $anomalies];
+        });
 
         return view('classes.telemetry', compact('class', 'sessions', 'anomalies'));
     }
@@ -580,8 +621,13 @@ class ClassController extends Controller
     public function resolveAnomaly(int $id)
     {
         $this->authorizeInstructor();
-        $anomaly = \App\Models\Anomaly::findOrFail($id);
+        $anomaly = \App\Models\Anomaly::with('labSession.laboratory.module')->findOrFail($id);
         $anomaly->update(['resolved' => true]);
+
+        $classId = $anomaly->labSession?->laboratory?->module?->class_id;
+        if ($classId) {
+            \Illuminate\Support\Facades\Cache::store('file')->forget("class_telemetry_{$classId}");
+        }
 
         return back()->with('success', 'Anomaly marked as resolved.');
     }

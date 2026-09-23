@@ -356,6 +356,20 @@ class LaboratoryController extends Controller
     }
 
     /**
+     * Display or redirect to the laboratory workspace session.
+     */
+    public function showWorkspace(int $id)
+    {
+        $session = \App\Models\LabSession::findOrFail($id);
+
+        if (auth()->id() !== $session->user_id && auth()->user()->role === 'student') {
+            abort(403, 'Unauthorized.');
+        }
+
+        return redirect()->route('laboratories.show', $session->lab_id);
+    }
+
+    /**
      * Complete and grade the laboratory workspace session.
      */
     public function completeSession(int $id)

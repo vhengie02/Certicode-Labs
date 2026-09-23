@@ -513,6 +513,32 @@ class LabSessionController extends Controller
             }
         }
 
+        $isVscodeSource = $request->input('source') === 'vscode' 
+            || $request->header('X-Client') === 'vscode'
+            || $request->input('client') === 'vscode_extension';
+
+        if ($isVscodeSource) {
+            \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
+            $session->update(['last_ping_at' => now()]);
+            TelemetryLog::create([
+                'lab_session_id' => $session->id,
+                'event_type' => 'vscode_ping',
+                'payload' => [
+                    'source' => 'vscode',
+                    'action' => 'get_session',
+                    'timestamp' => now()->toIso8601String(),
+                ],
+            ]);
+        }
+
+        $vscodePing = \Illuminate\Support\Facades\Cache::get("lab_session_{$session->id}_vscode_ping");
+        $hasRecentVscodePing = $vscodePing && \Carbon\Carbon::parse($vscodePing)->diffInSeconds(now()) < 45;
+        $hasTelemetryVscodePing = TelemetryLog::where('lab_session_id', $session->id)
+            ->where('event_type', 'vscode_ping')
+            ->where('created_at', '>=', now()->subSeconds(45))
+            ->exists();
+        $isVscodeConnected = (bool) ($hasRecentVscodePing || $hasTelemetryVscodePing || ($session->last_ping_at && ($session->wpm > 0 || $session->keystroke_count > 0) && $session->last_ping_at->diffInSeconds(now()) < 30));
+
         $isCameraVerified = TelemetryLog::where('lab_session_id', $session->id)
             ->where('event_type', 'webcam_prelab_verification')
             ->exists();
@@ -521,6 +547,9 @@ class LabSessionController extends Controller
             'session_id' => $session->id,
             'status' => $session->status,
             'camera_verified' => $isCameraVerified,
+            'last_ping_at' => $session->last_ping_at ? $session->last_ping_at->toIso8601String() : null,
+            'vscode_connected' => $isVscodeConnected,
+            'vscode_last_ping_at' => $vscodePing ?: null,
             'started_at' => $session->started_at,
             'elapsed_seconds' => $elapsedSeconds,
             'time_remaining_seconds' => $timeRemainingSeconds,
@@ -1095,6 +1124,22 @@ class LabSessionController extends Controller
                 'is_active' => false,
                 'message' => "Session is {$session->status}.",
                 'time_remaining_seconds' => 0,
+            ]);
+        }
+
+        $isVscode = $request->input('source') === 'vscode' 
+            || $request->header('X-Client') === 'vscode'
+            || $request->input('client') === 'vscode_extension';
+
+        if ($isVscode) {
+            \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
+            TelemetryLog::create([
+                'lab_session_id' => $session->id,
+                'event_type' => 'vscode_ping',
+                'payload' => [
+                    'source' => 'vscode',
+                    'timestamp' => now()->toIso8601String(),
+                ],
             ]);
         }
 
