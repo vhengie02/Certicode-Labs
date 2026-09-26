@@ -135,6 +135,44 @@ class VSCodeExtensionApiTest extends TestCase
     }
 
     /**
+     * Test check progress with syntax error (like trailing garbage after semicolon) returns 0% score and all pending tasks.
+     */
+    public function test_check_progress_with_syntax_error_returns_zero_score_and_pending_tasks(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $brokenCode = <<<JAVA
+public class Repository<T extends Entity<K>, K> {
+    public void save(T entity) {
+    }
+    public Optional<T> findById(K id) {
+        return Optional.ofNullable(storage.get(id));
+    }
+    public List<T> filter(Predicate<T> predicate) {
+        List<T> result = new ArrayList<>();
+        return result;aaaaaaaaaaaaaaaaaa
+    }
+}
+JAVA;
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/check-progress", [
+                'code' => $brokenCode,
+                'language' => 'java',
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertEmpty($response->json('completed_tasks'));
+        $this->assertEquals(0, $response->json('evaluation.correctness_score'));
+        $this->assertStringContainsString('Syntax errors detected', $response->json('evaluation.overall_feedback'));
+    }
+
+    /**
      * Test check progress with markdown/documentation returns 0% score and no completed tasks.
      */
     public function test_check_progress_with_markdown_document_returns_zero_score(): void

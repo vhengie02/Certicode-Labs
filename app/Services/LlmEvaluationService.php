@@ -14,9 +14,10 @@ class LlmEvaluationService
      * @param LabSession $session
      * @param string $code
      * @param string $language
+     * @param array $diagnostics
      * @return array
      */
-    public function evaluate(LabSession $session, string $code, string $language): array
+    public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
     {
         $lab = $session->laboratory;
         $tasks = $lab->tasks_definition ?? [];
@@ -34,6 +35,12 @@ class LlmEvaluationService
             return $this->evaluateEmptySubmission($tasks, 'The submitted file is documentation/markdown, not runnable solution code.');
         }
 
+        // 3. Syntax and compilation error detection (catches syntax errors like trailing garbage, unbalanced braces, etc.)
+        $syntaxErrors = $this->detectSyntaxErrors($code, $language, $diagnostics);
+        if (!empty($syntaxErrors)) {
+            return $this->evaluateSyntaxErrorSubmission($tasks, $syntaxErrors, $language);
+        }
+
         $apiKey = env('OPENAI_API_KEY') ?: env('AI_API_KEY');
         $baseUrl = rtrim(env('OPENAI_BASE_URL', env('AI_BASE_URL', '')), '/');
         $hasCustomBase = !empty($baseUrl) && !str_contains($baseUrl, 'api.openai.com');
@@ -41,7 +48,7 @@ class LlmEvaluationService
 
         if ($isValidOpenAiKey) {
             try {
-                return $this->evaluateWithOpenAi($apiKey, $lab->title, $lab->description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language);
+                return $this->evaluateWithOpenAi($apiKey, $lab->title, $lab->description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language, $diagnostics);
             } catch (\Exception $e) {
                 Log::error('OpenAI evaluation failed: ' . $e->getMessage());
                 // Fall back to rule-based mock evaluation
@@ -98,6 +105,123 @@ class LlmEvaluationService
     }
 
     /**
+     * Return 0% evaluation when syntax or compilation errors prevent verifying requirements.
+     */
+    protected function evaluateSyntaxErrorSubmission(array $tasks, array $syntaxErrors, string $language): array
+    {
+        $errorSummary = implode(' | ', array_slice($syntaxErrors, 0, 3));
+        $evaluatedTasks = [];
+        $competencies = [];
+        foreach ($tasks as $task) {
+            $evaluatedTasks[] = [
+                'id' => $task['id'],
+                'completed' => false,
+                'feedback' => "Requirement cannot be verified: code contains syntax/compilation error ({$syntaxErrors[0]}).",
+            ];
+            $key = \Illuminate\Support\Str::slug($task['task'] ?? 'task_' . $task['id'], '_');
+            $competencies[$key] = [
+                'passed' => false,
+                'reason' => "Syntax error prevented compilation: {$syntaxErrors[0]}",
+            ];
+        }
+
+        $summaryText = "Code analysis detected syntax/compilation errors: {$errorSummary}. Code must compile cleanly before checklist requirements can be evaluated.";
+
+        $gradeSummary = [
+            'competencies' => !empty($competencies) ? $competencies : [
+                'compilation' => ['passed' => false, 'reason' => $errorSummary]
+            ],
+            'test_cases_passed' => 0,
+            'test_cases_total' => count($tasks) ?: 1,
+            'code_quality_notes' => "Syntax/Compilation Errors: {$errorSummary}",
+            'summary' => $summaryText,
+        ];
+
+        return [
+            'tasks' => $evaluatedTasks,
+            'correctness_score' => 0,
+            'overall_feedback' => "Compilation Failed: Syntax errors detected in {$language} code. All tasks marked pending with 0% score.",
+            'code_quality_feedback' => "Syntax/Compilation Errors: {$errorSummary}",
+            'ai_grade_summary' => $gradeSummary,
+            'competencies' => $gradeSummary['competencies'],
+            'test_cases_passed' => 0,
+            'test_cases_total' => $gradeSummary['test_cases_total'],
+            'code_quality_notes' => $gradeSummary['code_quality_notes'],
+            'summary' => $summaryText,
+        ];
+    }
+
+    /**
+     * Statically inspect code for syntax errors, compilation issues, and illegal tokens.
+     */
+    public function detectSyntaxErrors(string $code, string $language, array $diagnostics = []): array
+    {
+        $errors = [];
+
+        // 1. Check IDE diagnostics if provided
+        foreach ($diagnostics as $diag) {
+            $msg = is_array($diag) ? ($diag['message'] ?? '') : (string) $diag;
+            if (!empty($msg) && (
+                stripos($msg, 'syntax error') !== false ||
+                stripos($msg, 'cannot find symbol') !== false ||
+                stripos($msg, 'expected') !== false ||
+                stripos($msg, 'not a statement') !== false ||
+                stripos($msg, 'illegal') !== false ||
+                stripos($msg, 'error:') !== false ||
+                stripos($msg, 'unclosed') !== false
+            )) {
+                $errors[] = $msg;
+            }
+        }
+
+        // Strip single-line and multi-line comments and strings for brace analysis
+        $cleanCode = preg_replace('/\/\*.*?\*\//s', '', $code);
+        $cleanCode = preg_replace('/\/\/.*?$/m', '', $cleanCode);
+        $cleanCode = preg_replace('/"(?:\\\\.|[^"\\\\])*"/', '""', $cleanCode);
+        $cleanCode = preg_replace('/\'(?:\\\\.|[^\'\\\\])*\'/', "''", $cleanCode);
+
+        // 2. Unbalanced curly braces check
+        $openBraces = substr_count($cleanCode, '{');
+        $closeBraces = substr_count($cleanCode, '}');
+        if ($openBraces !== $closeBraces) {
+            $errors[] = "Unbalanced curly braces: found {$openBraces} opening '{' and {$closeBraces} closing '}'.";
+        }
+
+        // 3. Unbalanced parentheses check
+        $openParens = substr_count($cleanCode, '(');
+        $closeParens = substr_count($cleanCode, ')');
+        if ($openParens !== $closeParens) {
+            $errors[] = "Unbalanced parentheses: found {$openParens} opening '(' and {$closeParens} closing ')'.";
+        }
+
+        // 4. Repeated character spam / keyboard mash detection (e.g. aaaaaaaaaaaaaaaaaa)
+        if (preg_match('/([a-zA-Z0-9_])\1{5,}/', $code, $spamMatches)) {
+            $errors[] = "Invalid syntax: unexpected repeated token sequence '{$spamMatches[0]}'.";
+        }
+
+        // 5. Line ending syntax garbage: statement terminated with ';' followed by illegal identifier
+        // e.g. "return result;aaaaaaaaaaaaaaaaaa" or "int x = 5; foo bar"
+        $lines = explode("\n", $code);
+        foreach ($lines as $lineNum => $line) {
+            $trimmedLine = trim($line);
+            // Ignore comment lines
+            if (str_starts_with($trimmedLine, '//') || str_starts_with($trimmedLine, '/*')) {
+                continue;
+            }
+            // Check for semicolon followed by non-whitespace that isn't a comment or recognized keyword
+            if (preg_match('/;\s*([a-zA-Z0-9_]{3,})\s*$/', $trimmedLine, $m)) {
+                $trailing = $m[1];
+                $validFollowers = ['return', 'break', 'continue', 'throw', 'if', 'for', 'while', 'else'];
+                if (!in_array(strtolower($trailing), $validFollowers)) {
+                    $errors[] = "Syntax error on line " . ($lineNum + 1) . ": unexpected token '{$trailing}' after statement terminator ';'.";
+                }
+            }
+        }
+
+        return array_unique($errors);
+    }
+
+    /**
      * Check if the provided text appears to be a markdown document or project notes instead of code.
      */
     protected function isNonCodeDocument(string $code, string $language): bool
@@ -119,9 +243,9 @@ class LlmEvaluationService
     /**
      * Call OpenAI Chat Completion API.
      */
-    protected function evaluateWithOpenAi(string $apiKey, string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language): array
+    protected function evaluateWithOpenAi(string $apiKey, string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language, array $diagnostics = []): array
     {
-        $prompt = $this->buildPrompt($title, $description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language);
+        $prompt = $this->buildPrompt($title, $description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language, $diagnostics);
         $baseUrl = rtrim(env('OPENAI_BASE_URL', env('AI_BASE_URL', 'https://api.openai.com/v1')), '/');
 
         $response = Http::withHeaders([
@@ -132,7 +256,7 @@ class LlmEvaluationService
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => "You are an expert grading assistant for CertiCode Labs. You evaluate student submissions against a tasks checklist, reference solution, grading rubric, and test cases. You must respond ONLY with a valid JSON object matching the requested schema."
+                    'content' => "You are an expert grading assistant for CertiCode Labs. You evaluate student submissions against a tasks checklist, reference solution, grading rubric, and test cases. You must strictly enforce compilation and syntax validity. You must respond ONLY with a valid JSON object matching the requested schema."
                 ],
                 [
                     'role' => 'user',
@@ -177,10 +301,11 @@ class LlmEvaluationService
     /**
      * Build the evaluation prompt.
      */
-    protected function buildPrompt(string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language): string
+    protected function buildPrompt(string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language, array $diagnostics = []): string
     {
         $tasksJson = json_encode($tasks, JSON_PRETTY_PRINT);
         $testCasesJson = json_encode($testCases, JSON_PRETTY_PRINT);
+        $diagnosticsJson = !empty($diagnostics) ? json_encode($diagnostics, JSON_PRETTY_PRINT) : 'None';
 
         return <<<TEXT
 Evaluate the following student submission for the lab exercise: "$title".
@@ -200,19 +325,23 @@ $rubric
 Test Cases (for context):
 $testCasesJson
 
+IDE Compiler Diagnostics:
+$diagnosticsJson
+
 Student Code ($language):
 ```$language
 $code
 ```
 
 Perform the following:
-1. For each task in the Checklist, determine if it has been correctly implemented in the student code. Set the "completed" status (true or false).
-2. Provide a short, constructive feedback message for each task ("feedback").
-3. Determine an overall correctness score (0 to 100) based on how well the code aligns with the tasks, test cases, and rubric.
-4. Evaluate pass/fail result per competency (e.g. oop_inheritance, exception_handling, algorithm_efficiency) with concise reason.
-5. Provide test cases passed count and total count.
-6. Provide specific code quality notes ("code_quality_notes").
-7. Provide a comprehensive plain-language explanation of that grade ("summary") intended as an instructor review aid.
+1. CRITICAL SYNTAX & COMPILATION CHECK: First verify if the code compiles and has valid syntax. If the code has syntax errors (such as unexpected tokens, unbalanced braces, trailing garbage e.g. ';aaaa', or compiler diagnostics), you MUST mark tasks with syntax errors as completed: false, and deduct score severely (0-20%).
+2. For each task in the Checklist, determine if it has been correctly implemented in the student code. Set the "completed" status (true or false).
+3. Provide a short, constructive feedback message for each task ("feedback").
+4. Determine an overall correctness score (0 to 100) based on how well the code aligns with the tasks, test cases, and rubric.
+5. Evaluate pass/fail result per competency (e.g. oop_inheritance, exception_handling, algorithm_efficiency) with concise reason.
+6. Provide test cases passed count and total count.
+7. Provide specific code quality notes ("code_quality_notes").
+8. Provide a comprehensive plain-language explanation of that grade ("summary") intended as an instructor review aid.
 
 You must reply with a JSON object in this exact format:
 {

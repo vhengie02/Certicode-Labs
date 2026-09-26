@@ -679,6 +679,19 @@
                                 <img :src="'/' + item.image_path" class="w-48 h-auto rounded border border-slate-700 hover:scale-105 transition-transform" alt="Anomaly Proof">
                             </div>
                         </template>
+
+                        <!-- Idle timeout metadata preview -->
+                        <template x-if="item.type === 'idle_timeout' && item.metadata">
+                            <div class="mt-2 bg-slate-900/90 p-2.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span class="text-xs font-semibold text-amber-300">Continuous Inactivity: <span x-text="(item.metadata.idle_minutes || 10) + ' min'"></span></span>
+                                </div>
+                                <template x-if="item.metadata.shared_remaining_minutes !== null && item.metadata.shared_remaining_minutes !== undefined">
+                                    <span class="text-[11px] font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700" x-text="item.metadata.shared_remaining_minutes + ' min remain in Live Lab'"></span>
+                                </template>
+                            </div>
+                        </template>
                     </div>
                 </template>
             </div>

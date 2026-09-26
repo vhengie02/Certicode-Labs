@@ -43,6 +43,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _windowStateListener?: vscode.Disposable;
     private _leaderboardInterval?: any;
 
+    // Feature 11: Continuous Idle Detection & Overall Session WPM
+    private _lastActivityTime: number = Date.now();
+    private _lastIdleAlertMinutes: number = 0;
+    private _sessionStartTime: number = Date.now();
+    private _idleCheckInterval?: any;
+    private _cursorListener?: vscode.Disposable;
+    private _scrollListener?: vscode.Disposable;
+    private _activeEditorListener?: vscode.Disposable;
+    private _taskListener?: vscode.Disposable;
+    private _terminalListener?: vscode.Disposable;
+
     // WebSocket Real-time Unified Stream (Features 1, 2, 5)
     private _ws?: any;
     private _wsConnected: boolean = false;
@@ -250,6 +261,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._totalKeystrokes = 0;
         this._currentWpm = 0;
 
+        // Feature 11: Initialize Idle Tracking & Activity Listeners
+        this._lastActivityTime = Date.now();
+        this._lastIdleAlertMinutes = 0;
+        this._sessionStartTime = Date.now();
+        if (this._idleCheckInterval) {
+            clearInterval(this._idleCheckInterval);
+        }
+        this._idleCheckInterval = setInterval(() => {
+            this.checkIdleState();
+        }, 20000);
+        this.setupActivityListeners();
+
         // Setup window focus tracking (Feature 5)
         this.setupFocusTracking();
 
@@ -424,6 +447,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 this._isReconnecting = false;
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
+
+                if (data.started_at) {
+                    const startedMs = new Date(data.started_at).getTime();
+                    if (!isNaN(startedMs) && startedMs > 0) {
+                        this._sessionStartTime = startedMs;
+                    }
+                }
 
                 // Feature 1: Provision starter files on first connect
                 if (!this._filesGenerated && data.laboratory?.starter_files && Array.isArray(data.laboratory.starter_files)) {
@@ -639,6 +669,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
         vscode.workspace.onDidChangeTextDocument((event) => {
             if (!this._sessionId || !this._lastSessionData) { return; }
+            this.recordActivity();
             
             const fileName = event.document.fileName;
             const isTracked = this._lastSessionData.laboratory?.starter_files?.some((f: any) => 
@@ -721,23 +752,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * Feature 4: Record typing keystrokes and calculate rolling WPM
+     * Feature 4 & 11: Record typing keystrokes and calculate overall session average WPM.
+     * Idle time is not excluded from WPM calculation — overall pace is maintained across whole session.
      */
     private recordKeystroke(charsCount: number = 1) {
+        this.recordActivity();
         const now = Date.now();
-        for (let i = 0; i < charsCount; i++) {
-            this._keystrokeTimestamps.push(now);
-            this._totalKeystrokes++;
-        }
+        this._totalKeystrokes += charsCount;
 
-        // Keep timestamps within 60s moving window
-        const cutoff = now - 60000;
-        this._keystrokeTimestamps = this._keystrokeTimestamps.filter(t => t >= cutoff);
-
-        // Approximate WPM (5 chars = 1 word)
-        const windowMinutes = Math.max((now - (this._keystrokeTimestamps[0] || now)) / 60000, 1 / 6);
-        const words = this._keystrokeTimestamps.length / 5;
-        this._currentWpm = Math.round(words / windowMinutes);
+        // Overall session average: (totalKeystrokes / 5) / totalElapsedMinutes
+        // Idle time is NOT excluded, giving a true picture of pace across the whole session
+        const elapsedMinutes = Math.max((now - this._sessionStartTime) / 60000, 1 / 6);
+        const words = this._totalKeystrokes / 5;
+        this._currentWpm = Math.round(words / elapsedMinutes);
 
         // Debounced telemetry sync to backend
         if (!this._wpmSyncTimer) {
@@ -748,6 +775,100 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     keystroke_count: this._totalKeystrokes
                 });
             }, 10000);
+        }
+    }
+
+    /**
+     * Feature 11: Record user activity to reset idle timer.
+     * Activity that resets the timer: keystrokes, cursor movement/scrolling, file switching, running code, submitting, or sending a team chat message.
+     */
+    private recordActivity() {
+        this._lastActivityTime = Date.now();
+        this._lastIdleAlertMinutes = 0;
+    }
+
+    /**
+     * Feature 11: Setup activity event listeners across editor and workspace.
+     */
+    private setupActivityListeners() {
+        this.disposeActivityListeners();
+
+        // 1. Cursor movement / selection changes
+        this._cursorListener = vscode.window.onDidChangeTextEditorSelection(() => {
+            if (this._sessionId) {
+                this.recordActivity();
+            }
+        });
+
+        // 2. Visible ranges / scrolling
+        this._scrollListener = vscode.window.onDidChangeTextEditorVisibleRanges(() => {
+            if (this._sessionId) {
+                this.recordActivity();
+            }
+        });
+
+        // 3. File switching (active text editor changed)
+        this._activeEditorListener = vscode.window.onDidChangeActiveTextEditor(() => {
+            if (this._sessionId) {
+                this.recordActivity();
+            }
+        });
+
+        // 4. Running code via tasks
+        if (vscode.tasks && typeof vscode.tasks.onDidStartTask === 'function') {
+            this._taskListener = vscode.tasks.onDidStartTask(() => {
+                if (this._sessionId) {
+                    this.recordActivity();
+                }
+            });
+        }
+
+        // 5. Terminal opened / executed
+        this._terminalListener = vscode.window.onDidOpenTerminal(() => {
+            if (this._sessionId) {
+                this.recordActivity();
+            }
+        });
+    }
+
+    private disposeActivityListeners() {
+        if (this._cursorListener) { this._cursorListener.dispose(); this._cursorListener = undefined; }
+        if (this._scrollListener) { this._scrollListener.dispose(); this._scrollListener = undefined; }
+        if (this._activeEditorListener) { this._activeEditorListener.dispose(); this._activeEditorListener = undefined; }
+        if (this._taskListener) { this._taskListener.dispose(); this._taskListener = undefined; }
+        if (this._terminalListener) { this._terminalListener.dispose(); this._terminalListener = undefined; }
+    }
+
+    /**
+     * Feature 11: Periodic check for continuous idle inactivity.
+     * Fires at 10 minutes of continuous inactivity, then recurs every additional 10 minutes (20, 30, ...).
+     * Idle time is not excluded from WPM calculation — overall session average decays naturally.
+     */
+    private checkIdleState() {
+        if (!this._sessionId) { return; }
+        const now = Date.now();
+        const idleMs = now - this._lastActivityTime;
+        const idleMinutes = Math.floor(idleMs / 60000);
+
+        // Update overall session average WPM (idle time not excluded)
+        const totalMinutes = Math.max((now - this._sessionStartTime) / 60000, 1 / 6);
+        const words = this._totalKeystrokes / 5;
+        this._currentWpm = Math.round(words / totalMinutes);
+
+        // Continuous inactivity threshold: 10 minutes, recurring every 10 min
+        if (idleMinutes >= 10) {
+            const idleBucket = Math.floor(idleMinutes / 10) * 10;
+            if (idleBucket > this._lastIdleAlertMinutes) {
+                this._lastIdleAlertMinutes = idleBucket;
+                this.sendTelemetry('idle_timeout', {
+                    idle_minutes: idleBucket,
+                    timestamp: new Date().toISOString()
+                });
+                this._view?.webview.postMessage({
+                    type: 'idleAlert',
+                    idleMinutes: idleBucket
+                });
+            }
         }
     }
 
@@ -934,6 +1055,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
      */
     private async handleSendChat(message: string, codeSnippet?: string) {
         if (!this._sessionId) { return; }
+        this.recordActivity();
         try {
             const prefix = this._apiToken ? '/api' : '/api/v1';
             const res = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/chat`, {
@@ -953,6 +1075,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
         }
+        this.recordActivity();
 
         // Collect all workspace files for evaluation
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -1051,6 +1174,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             detectedLang = this.detectLanguage(this._lastSessionData.laboratory.starter_files[0].name);
         }
 
+        // Collect language server compiler / syntax error diagnostics
+        const collectedDiagnostics: any[] = [];
+        try {
+            const allDiags = vscode.languages.getDiagnostics();
+            for (const [uri, diags] of allDiags) {
+                const relPath = vscode.workspace.asRelativePath(uri);
+                for (const d of diags) {
+                    if (d.severity === vscode.DiagnosticSeverity.Error) {
+                        collectedDiagnostics.push({
+                            file: relPath,
+                            line: d.range.start.line + 1,
+                            message: d.message,
+                            source: d.source || 'compiler'
+                        });
+                    }
+                }
+            }
+        } catch {}
+
         this._view?.webview.postMessage({ type: 'status', message: 'Analyzing code with AI evaluator...' });
 
         try {
@@ -1058,10 +1200,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/check-progress`, {
                 code: primaryCode,
                 files: filesPayload,
-                language: detectedLang
+                language: detectedLang,
+                diagnostics: collectedDiagnostics
             });
 
             if (result.status === 200) {
+                this._isReconnecting = false;
                 const responseData = JSON.parse(result.body);
                 vscode.window.showInformationMessage('Check Progress: AI evaluation completed.');
                 this._view?.webview.postMessage({
@@ -1088,6 +1232,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
         }
+        this.recordActivity();
 
         // Feature 1 Client-Side Filename Integrity Check
         if (this._missingFiles && this._missingFiles.length > 0) {
@@ -1181,6 +1326,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        // Collect language server compiler / syntax error diagnostics
+        const collectedDiagnostics: any[] = [];
+        try {
+            const allDiags = vscode.languages.getDiagnostics();
+            for (const [uri, diags] of allDiags) {
+                const relPath = vscode.workspace.asRelativePath(uri);
+                for (const d of diags) {
+                    if (d.severity === vscode.DiagnosticSeverity.Error) {
+                        collectedDiagnostics.push({
+                            file: relPath,
+                            line: d.range.start.line + 1,
+                            message: d.message,
+                            source: d.source || 'compiler'
+                        });
+                    }
+                }
+            }
+        } catch {}
+
         this._view?.webview.postMessage({ type: 'status', message: 'Running final submission & compilation...' });
 
         try {
@@ -1188,7 +1352,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/submit`, {
                 code: primaryCode,
                 files: filesPayload,
-                language: detectedLang
+                language: detectedLang,
+                diagnostics: collectedDiagnostics
             });
 
             if (result.status === 200) {
@@ -1204,6 +1369,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 if (this._chatPollInterval) { clearInterval(this._chatPollInterval); this._chatPollInterval = undefined; }
                 if (this._leaderboardInterval) { clearInterval(this._leaderboardInterval); this._leaderboardInterval = undefined; }
                 if (this._wpmSyncTimer) { clearTimeout(this._wpmSyncTimer); this._wpmSyncTimer = undefined; }
+                if (this._idleCheckInterval) { clearInterval(this._idleCheckInterval); this._idleCheckInterval = undefined; }
+                this.disposeActivityListeners();
                 this.disconnectWebSocket();
 
                 vscode.window.showInformationMessage(
@@ -1242,12 +1409,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
         }
 
+        const sid = this._sessionId;
+        if (sid) {
+            try {
+                const prefix = this._apiToken ? '/api' : '/api/v1';
+                await this.makeRequest('POST', `${prefix}/sessions/${sid}/end`);
+            } catch (err) {
+                console.warn('Failed to notify backend on session exit:', err);
+            }
+        }
+
         if (this._pingInterval) { clearInterval(this._pingInterval); this._pingInterval = undefined; }
         if (this._chatPollInterval) { clearInterval(this._chatPollInterval); this._chatPollInterval = undefined; }
         if (this._leaderboardInterval) { clearInterval(this._leaderboardInterval); this._leaderboardInterval = undefined; }
         if (this._wpmSyncTimer) { clearTimeout(this._wpmSyncTimer); this._wpmSyncTimer = undefined; }
         if (this._diffDebounceTimer) { clearTimeout(this._diffDebounceTimer); this._diffDebounceTimer = undefined; }
         if (this._windowStateListener) { this._windowStateListener.dispose(); this._windowStateListener = undefined; }
+        if (this._idleCheckInterval) { clearInterval(this._idleCheckInterval); this._idleCheckInterval = undefined; }
+        this.disposeActivityListeners();
         this.disconnectWebSocket();
 
         this._sessionId = undefined;
@@ -1259,6 +1438,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._totalKeystrokes = 0;
         this._currentWpm = 0;
         this._recentChatSnippets = [];
+        this._lastActivityTime = Date.now();
+        this._lastIdleAlertMinutes = 0;
 
         if (this._view) {
             this._view.webview.html = this._getHtmlForWebview(this._view.webview);
@@ -2043,6 +2224,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         let timerInterval = null;
         let isCountDown = true;
         let isIntegrityValid = true;
+        let taskFeedbackMap = {};
 
         // Camera proctoring runs in the browser tab, keeping the extension lean and unrestricted
 
@@ -2395,13 +2577,34 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     const evalData = message.data.evaluation || {};
                     const execData = message.data.execution || {};
                     
-                    // Display task feedback from LLM evaluation
+                    // Display task feedback and update badges from evaluation
                     if (evalData.tasks && Array.isArray(evalData.tasks)) {
                         evalData.tasks.forEach(taskEval => {
+                            taskFeedbackMap[taskEval.id] = taskEval.feedback || 'Evaluated successfully.';
                             const feedbackEl = document.getElementById(\`feedback-task-\${taskEval.id}\`);
                             if (feedbackEl) {
                                 feedbackEl.innerText = taskEval.feedback || 'Evaluated successfully.';
                                 feedbackEl.style.display = 'block';
+                            }
+                            const badgeEl = document.getElementById(\`badge-task-\${taskEval.id}\`);
+                            if (badgeEl) {
+                                if (taskEval.completed) {
+                                    badgeEl.className = 'task-badge badge-complete';
+                                    badgeEl.innerText = 'Completed';
+                                } else {
+                                    badgeEl.className = 'task-badge badge-pending';
+                                    badgeEl.innerText = 'Pending';
+                                }
+                            }
+                        });
+                    }
+
+                    if (Array.isArray(message.data.completed_tasks)) {
+                        message.data.completed_tasks.forEach(cid => {
+                            const badgeEl = document.getElementById(\`badge-task-\${cid}\`);
+                            if (badgeEl) {
+                                badgeEl.className = 'task-badge badge-complete';
+                                badgeEl.innerText = 'Completed';
                             }
                         });
                     }
@@ -2498,18 +2701,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const completedIds = session.completed_tasks || [];
             
             tasksDef.forEach(task => {
-                const isCompleted = completedIds.includes(task.id);
+                const isCompleted = (completedIds || []).some(id => String(id) === String(task.id));
                 const taskItem = document.createElement('div');
                 taskItem.className = 'task-item';
+                const cachedFeedback = taskFeedbackMap[task.id];
                 
                 taskItem.innerHTML = \`
                     <div class="task-header">
                         <span class="task-title">\${task.task}</span>
-                        <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}">
+                        <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" id="badge-task-\${task.id}">
                             \${isCompleted ? 'Completed' : 'Pending'}
                         </span>
                     </div>
-                    <div class="task-feedback" id="feedback-task-\${task.id}" style="display:none;"></div>
+                    <div class="task-feedback" id="feedback-task-\${task.id}" style="\${cachedFeedback ? 'display:block;' : 'display:none;'}">\${cachedFeedback || ''}</div>
                 \`;
                 tasksContainer.appendChild(taskItem);
             });

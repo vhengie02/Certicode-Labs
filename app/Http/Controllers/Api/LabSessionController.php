@@ -128,10 +128,23 @@ class LabSessionController extends Controller
         if ($request->event_type === 'wpm_update') {
             $wpm = (int) ($request->payload['wpm'] ?? 0);
             $keystrokes = (int) ($request->payload['keystroke_count'] ?? 0);
+            if ($keystrokes > 0 && (!isset($request->payload['wpm']) || $request->payload['wpm'] === null)) {
+                $session->keystroke_count = $keystrokes;
+                $wpm = $session->calculateOverallWpm();
+            }
             $session->update([
                 'wpm' => $wpm,
                 'keystroke_count' => $keystrokes > 0 ? $keystrokes : $session->keystroke_count,
             ]);
+        }
+
+        // Feature 11: Idle Detection Anomaly Interceptor
+        if ($request->event_type === 'idle_timeout') {
+            $idleMinutes = (int) ($request->payload['idle_minutes'] ?? 10);
+            if ($idleMinutes <= 0) {
+                $idleMinutes = 10;
+            }
+            $session->recordIdleAnomaly($idleMinutes, $request->payload);
         }
 
         if ($request->event_type === 'paste_anomaly') {
@@ -597,6 +610,7 @@ class LabSessionController extends Controller
             'code' => 'nullable|string',
             'files' => 'nullable|array',
             'language' => 'required|string',
+            'diagnostics' => 'nullable|array',
         ]);
 
         $code = $request->code;
@@ -613,8 +627,9 @@ class LabSessionController extends Controller
         }
         $code = $code ?? '';
 
+        $diagnostics = $request->input('diagnostics', []);
         $evaluationService = app(\App\Services\LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -671,6 +686,7 @@ class LabSessionController extends Controller
             'code' => 'nullable|string',
             'files' => 'nullable|array',
             'language' => 'required|string',
+            'diagnostics' => 'nullable|array',
         ]);
 
         $code = $request->code;
@@ -691,8 +707,9 @@ class LabSessionController extends Controller
         $executionResult = $this->sandboxService->execute($code, $request->language);
 
         // AI task-completion evaluation
+        $diagnostics = $request->input('diagnostics', []);
         $evaluationService = app(\App\Services\LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {

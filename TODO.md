@@ -18,6 +18,7 @@ This document outlines the final feature specifications, implementation tasks, a
 | **8. Camera Presence Check** | Pre-Lab Gate & Ongoing Proctoring | ✅ Completed | WebRTC / Video Capture + AI |
 | **9. Lab Availability Modes (Live Lab vs. Open Lab)** | Backend, Web Platform & VS Code Extension | ✅ Completed | REST + Shared Live Window & Scheduled Cron |
 | **10. AI Grade Summary & Explanation (with Instructor Overrides)** | Backend, Instructor Web Platform & LLM Service | ✅ Completed | REST + Same-Call AI Response + Side-by-Side Audit Trail |
+| **11. Idle Detection** | Extension, Backend Telemetry & Monitoring | ✅ Completed | WebSocket / REST Telemetry |
 
 ---
 
@@ -401,6 +402,46 @@ When creating a lab exercise, the instructor selects one of two availability mod
   - Added Alpine.js modal displaying AI vs. Effective scores side-by-side, full plain-language AI explanation, test results, competency checklist with reasons, and inline override form.
 - [x] **Automated Test Verification ([`AiGradeSummaryAndOverrideTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/AiGradeSummaryAndOverrideTest.php))**:
   - Comprehensive feature tests covering persistence, student privacy, side-by-side audit preservation, authorization, and team submission unit evaluation (6 tests, 53 assertions).
+
+---
+
+## Feature 11: Idle Detection
+
+### Specification
+- **Threshold**: 10 continuous minutes with zero activity — identical baseline across both Live Lab and Open Lab modes.
+- **Activity Sensors & Reset Triggers**: Any of the following interactions immediately resets the student's idle timer:
+  - Keystrokes (`vscode.workspace.onDidChangeTextDocument`).
+  - Cursor movement (`vscode.window.onDidChangeTextEditorSelection`).
+  - Scrolling (`vscode.window.onDidChangeTextEditorVisibleRanges`).
+  - File switching (`vscode.window.onDidChangeActiveTextEditor`).
+  - Running code / checking progress (`handleCheckProgress`, task starts, terminal usage).
+  - Submitting the lab (`handleSubmit`).
+  - Sending a team chat message (`handleSendChat`).
+- **Recurring Notification Behavior**:
+  - Triggers at 10 minutes of continuous inactivity, then recurs every additional 10 minutes of ongoing idle time (20 min, 30 min, etc.) — escalating severity (medium -> high).
+  - **In a Live Lab**: Anomaly notification includes shared countdown context (e.g. `"Student Alice has been idle for 10 min; 22 min remain in this Live Lab"`), enabling instructors to immediately gauge remaining window risk.
+  - **In an Open Lab**: Anomaly notification records standard idle alert without countdown reference (e.g. `"Student Alice has been idle for 10 min"`).
+- **Team Labs**: Idle detection is strictly evaluated per-student session (`lab_session_id`). If one teammate is inactive while others code actively, only the idle student is flagged. Active teammate activity does not suppress individual disengagement.
+- **WPM Interaction**: Idle time is NOT excluded from the WPM calculation (`WPM = (keystrokes / 5) / elapsed_minutes`). Idle gaps remain part of the session duration divisor, providing an honest pace without artificial inflation.
+- **Scope & Telemetry Pipeline**: Tagged as `idle_timeout` in the proctoring pipeline (`anomalies` table), surfaced in instructor per-student anomaly history alongside camera absence, paste flags, and focus loss.
+
+### Technical Requirements & Progress
+- [x] **Activity Monitoring & Reset Engine ([`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
+  - Registered listeners for keystrokes, selection changes, visible range changes, editor switching, task execution, terminal events, progress checks, submissions, and team chats to reset the 10-minute idle timer.
+- [x] **Recursive Inactivity Dispatcher ([`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
+  - Dispatches `idle_timeout` telemetry event at 10 minutes, recurring every 10 minutes thereafter (20m, 30m, etc.) with elapsed idle counter.
+- [x] **Backend Anomaly Pipeline Integration ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
+  - Persists `idle_timeout` anomaly in database with escalating severity (`medium` at 10m, `high` >= 20m).
+  - Automatically incorporates shared countdown remaining minutes when occurring in active Live Labs.
+  - Broadcasts `AnomalyDetected` event in real time to instructor monitoring channel.
+- [x] **Per-Student Isolation in Team Labs ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
+  - Binds anomaly strictly to the idle student's `lab_session_id`, ensuring active team members remain unaffected.
+- [x] **WPM Idle Preservation ([`LabSession.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Models/LabSession.php) & [`sidebarProvider.ts`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/certicode-labs-extension/src/sidebarProvider.ts))**:
+  - Computes session-wide WPM using total elapsed minutes as divisor without deducting idle periods.
+- [x] **Instructor UI Activity Feed ([`session.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/instructor/monitoring/session.blade.php))**:
+  - Visual idle clock badges, severity coloring, and Live Lab context in the instructor proctoring modal.
+- [x] **Automated Feature Verification ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
+  - 5 dedicated integration tests verifying Open Lab, Live Lab countdown context, recurring escalation, team isolation, and WPM divisor preservation.
 
 ---
 

@@ -532,6 +532,191 @@ class TelemetryAndProctoringTest extends TestCase
         $response->assertRedirect();
         $this->assertStringStartsWith('vscode://', $response->headers->get('Location'));
     }
+
+    /**
+     * Feature 11: Idle Detection in Open Lab
+     */
+    public function test_idle_timeout_telemetry_in_open_lab_creates_anomaly_without_countdown()
+    {
+        $this->laboratory->update(['availability_mode' => 'open']);
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'idle_timeout',
+            'payload' => [
+                'idle_minutes' => 10,
+                'timestamp' => now()->toISOString(),
+            ],
+        ]);
+
+        $response->assertStatus(200);
+
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'idle_timeout',
+            'severity' => 'medium',
+            'description' => "Student {$this->student1->name} has been idle for 10 min",
+        ]);
+
+        $anomaly = \App\Models\Anomaly::where('lab_session_id', $this->session1->id)
+            ->where('type', 'idle_timeout')
+            ->first();
+
+        $this->assertNotNull($anomaly);
+        $this->assertEquals(10, $anomaly->metadata['idle_minutes']);
+        $this->assertFalse($anomaly->metadata['is_live']);
+        $this->assertNull($anomaly->metadata['shared_remaining_minutes']);
+    }
+
+    /**
+     * Feature 11: Idle Detection in Live Lab includes shared countdown context
+     */
+    public function test_idle_timeout_telemetry_in_live_lab_includes_shared_countdown_context()
+    {
+        $this->laboratory->update([
+            'availability_mode' => 'live',
+            'live_status' => 'active',
+            'live_duration_minutes' => 45,
+            'live_started_at' => now()->subMinutes(15),
+            'live_elapsed_seconds' => 0,
+        ]);
+
+        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'idle_timeout',
+            'payload' => [
+                'idle_minutes' => 10,
+                'timestamp' => now()->toISOString(),
+            ],
+        ]);
+
+        $response->assertStatus(200);
+
+        $anomaly = \App\Models\Anomaly::where('lab_session_id', $this->session1->id)
+            ->where('type', 'idle_timeout')
+            ->first();
+
+        $this->assertNotNull($anomaly);
+        $this->assertEquals('idle_timeout', $anomaly->type);
+        $this->assertEquals('medium', $anomaly->severity);
+        $this->assertTrue($anomaly->metadata['is_live']);
+        $this->assertEquals(30, $anomaly->metadata['shared_remaining_minutes']);
+        $this->assertStringContainsString("Student {$this->student1->name} has been idle for 10 min; 30 min remain in this Live Lab", $anomaly->description);
+    }
+
+    /**
+     * Feature 11: Recurring idle alert every additional 10 minutes escalates severity
+     */
+    public function test_recurring_idle_timeout_escalates_severity_every_additional_ten_minutes()
+    {
+        $this->laboratory->update(['availability_mode' => 'open']);
+
+        // 20 minutes idle
+        $res20 = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'idle_timeout',
+            'payload' => ['idle_minutes' => 20],
+        ]);
+        $res20->assertStatus(200);
+
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'idle_timeout',
+            'severity' => 'high',
+            'description' => "Student {$this->student1->name} has been idle for 20 min",
+        ]);
+
+        // 30 minutes idle
+        $res30 = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'idle_timeout',
+            'payload' => ['idle_minutes' => 30],
+        ]);
+        $res30->assertStatus(200);
+
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'idle_timeout',
+            'severity' => 'high',
+            'description' => "Student {$this->student1->name} has been idle for 30 min",
+        ]);
+    }
+
+    /**
+     * Feature 11: Team labs idle detection is per-student and not suppressed by active teammates
+     */
+    public function test_team_lab_idle_detection_is_per_student_and_not_suppressed_by_teammate()
+    {
+        $this->laboratory->update(['is_group_lab' => true, 'availability_mode' => 'open']);
+
+        // Create a team group with student1 and student2
+        $group = \App\Models\Group::create([
+            'lab_id' => $this->laboratory->id,
+            'name' => 'Team Alpha',
+        ]);
+        $group->members()->attach([
+            $this->student1->id,
+            $this->student2->id,
+        ]);
+
+        $this->session1->update(['group_id' => $group->id]);
+        $session2 = \App\Models\LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student2->id,
+            'group_id' => $group->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        // Teammate 1 is actively working
+        $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'wpm_update',
+            'payload' => ['wpm' => 75, 'keystroke_count' => 500],
+        ])->assertStatus(200);
+
+        // Teammate 2 goes idle and sends idle_timeout telemetry
+        $resIdle = $this->postJson("/api/v1/sessions/{$session2->id}/telemetry", [
+            'event_type' => 'idle_timeout',
+            'payload' => ['idle_minutes' => 10],
+        ]);
+        $resIdle->assertStatus(200);
+
+        // Student 2 is flagged with idle anomaly individually
+        $this->assertDatabaseHas('anomalies', [
+            'lab_session_id' => $session2->id,
+            'type' => 'idle_timeout',
+            'description' => "Student {$this->student2->name} has been idle for 10 min",
+        ]);
+
+        // Student 1 has NO idle anomaly
+        $this->assertDatabaseMissing('anomalies', [
+            'lab_session_id' => $this->session1->id,
+            'type' => 'idle_timeout',
+        ]);
+    }
+
+    /**
+     * Feature 11: WPM interaction keeps idle time in the overall session average divisor
+     */
+    public function test_wpm_calculation_does_not_exclude_idle_time()
+    {
+        $session = \App\Models\LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student1->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(20),
+            'keystroke_count' => 500, // 500 chars / 5 = 100 words
+        ]);
+
+        // Over 20 elapsed minutes with idle time included: 100 words / 20 min = 5 WPM
+        $overallWpm = $session->calculateOverallWpm();
+        $this->assertEquals(5, $overallWpm);
+
+        // Updating wpm via telemetry without explicit wpm payload calculates whole-session average
+        $this->postJson("/api/v1/sessions/{$session->id}/telemetry", [
+            'event_type' => 'wpm_update',
+            'payload' => ['keystroke_count' => 500],
+        ])->assertStatus(200);
+
+        $session->refresh();
+        $this->assertEquals(5, $session->wpm);
+    }
 }
 
 

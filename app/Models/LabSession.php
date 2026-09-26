@@ -265,4 +265,79 @@ class LabSession extends Model
 
         return $expiredCount;
     }
+
+    /**
+     * Record an idle timeout anomaly and broadcast it in real time (Feature 11).
+     *
+     * In a Live Lab, notification includes shared countdown context:
+     * "Student X has been idle for {N} min; {M} min remain in this Live Lab"
+     * In an Open Lab, notification is without countdown context:
+     * "Student X has been idle for {N} min"
+     */
+    public function recordIdleAnomaly(int $idleMinutes = 10, ?array $additionalMetadata = []): Anomaly
+    {
+        $lab = $this->laboratory;
+        $isLive = $lab && $lab->isLiveLab();
+        $studentName = $this->user ? $this->user->name : 'Student';
+
+        if ($isLive) {
+            $remainingSec = $lab->getRemainingLiveSeconds();
+            $remMin = max(0, (int) floor($remainingSec / 60));
+            $description = "Student {$studentName} has been idle for {$idleMinutes} min; {$remMin} min remain in this Live Lab";
+        } else {
+            $description = "Student {$studentName} has been idle for {$idleMinutes} min";
+        }
+
+        $severity = $idleMinutes >= 20 ? 'high' : 'medium';
+
+        $metadata = array_merge([
+            'idle_minutes' => $idleMinutes,
+            'is_live' => (bool) $isLive,
+            'shared_remaining_minutes' => $isLive ? ($remMin ?? 0) : null,
+        ], $additionalMetadata ?? []);
+
+        $anomaly = Anomaly::create([
+            'lab_session_id' => $this->id,
+            'type' => 'idle_timeout',
+            'severity' => $severity,
+            'description' => $description,
+            'metadata' => $metadata,
+        ]);
+
+        try {
+            event(new \App\Events\AnomalyDetected($this->id, [
+                'id' => $anomaly->id,
+                'type' => $anomaly->type,
+                'severity' => $anomaly->severity,
+                'description' => $anomaly->description,
+                'image_path' => null,
+                'created_at' => $anomaly->created_at ? $anomaly->created_at->toIso8601String() : now()->toIso8601String(),
+                'user_id' => $this->user_id,
+                'student_name' => $studentName,
+            ]));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
+        }
+
+        return $anomaly;
+    }
+
+    /**
+     * Calculate overall session average WPM without excluding idle intervals.
+     * Keeps idle time as part of the student's overall session average divisor.
+     */
+    public function calculateOverallWpm(): int
+    {
+        $keystrokes = (int) ($this->keystroke_count ?? 0);
+        if ($keystrokes <= 0) {
+            return 0;
+        }
+
+        $started = $this->started_at ?: $this->created_at ?: now();
+        $ended = $this->ended_at ?: now();
+        $elapsedMinutes = max($started->diffInSeconds($ended, true) / 60, 0.1);
+
+        $words = $keystrokes / 5.0;
+        return (int) round($words / $elapsedMinutes);
+    }
 }

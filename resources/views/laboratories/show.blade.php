@@ -334,7 +334,13 @@
                             </div>
                         </div>
 
-                        <div class="flex items-center gap-2.5 shrink-0">
+                        <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
+                            <button type="button" @click="leaveSessionAndStopProctoring()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition" title="Stop webcam camera and exit laboratory session">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                <span>Stop Camera &amp; Exit</span>
+                            </button>
                             <button type="button" @click="reopenVsCode()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3ecf8e] hover:bg-[#00c573] text-[#0f0f0f] text-xs font-bold transition shadow-sm">
                                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/>
@@ -740,6 +746,7 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodeConnected: false,
         vscodePollInterval: null,
         lowLightingDetected: false,
+        isLowLightMode: false,
 
         // Continuous in-browser proctoring & heartbeat states
         browserProctorActive: false,
@@ -754,6 +761,18 @@ function preLabCameraGate(labId, initialSessionId) {
         pingInterval: null,
 
         init() {
+            // Release webcam media stream tracks whenever the page is unloaded, navigated away from, or hidden
+            window.addEventListener('pagehide', () => {
+                if (this.stream) {
+                    this.stream.getTracks().forEach(t => t.stop());
+                }
+            });
+            window.addEventListener('unload', () => {
+                if (this.stream) {
+                    this.stream.getTracks().forEach(t => t.stop());
+                }
+            });
+
             // Log focus / tab switch telemetry when in active proctor mode
             document.addEventListener('visibilitychange', () => {
                 if (this.browserProctorActive && this.activeSessionId) {
@@ -773,6 +792,27 @@ function preLabCameraGate(labId, initialSessionId) {
                     return e.returnValue;
                 }
             });
+        },
+
+        async leaveSessionAndStopProctoring() {
+            if (confirm('Are you sure you want to stop camera proctoring and exit this laboratory session?')) {
+                const sid = this.activeSessionId;
+                this.stopProctoring();
+                if (sid) {
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+                    try {
+                        await fetch(`/api/v1/sessions/${sid}/end`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+                            }
+                        });
+                    } catch (e) {}
+                }
+                window.location.reload();
+            }
         },
 
         handleStartClick() {
@@ -1012,6 +1052,7 @@ function preLabCameraGate(labId, initialSessionId) {
 
             this.status = 'verified';
             this.cameraVerified = true;
+            this.isLowLightMode = isLowLight;
             setTimeout(() => {
                 this.launchLab();
             }, 600);
@@ -1138,45 +1179,71 @@ function preLabCameraGate(labId, initialSessionId) {
             if (!video || video.readyState < 2) return;
 
             let detectedFaces = 0;
-            if (window.faceapi && this.modelLoaded) {
+
+            // Strategy 1: SsdMobilenetv1 on raw video
+            if (window.faceapi && this.modelLoaded && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
                 try {
-                    if (window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
-                        const detections = await window.faceapi.detectAllFaces(
-                            video,
-                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
-                        );
-                        detectedFaces = detections.length;
-                    }
-                    if (detectedFaces === 0 && window.faceapi.nets.tinyFaceDetector?.isLoaded) {
-                        const tinyDetections = await window.faceapi.detectAllFaces(
-                            video,
-                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.15 })
-                        );
-                        detectedFaces = tinyDetections.length;
-                    }
-                } catch (e) {
-                    if ('FaceDetector' in window) {
-                        try {
-                            const detector = new window.FaceDetector({ fastMode: false });
-                            const faces = await detector.detect(video);
-                            detectedFaces = faces.length;
-                        } catch (err) {
-                            detectedFaces = 1;
-                        }
-                    } else {
-                        detectedFaces = 1;
-                    }
-                }
-            } else if ('FaceDetector' in window) {
+                    const detections = await window.faceapi.detectAllFaces(
+                        video,
+                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
+                    );
+                    detectedFaces = detections.length;
+                } catch (e) {}
+            }
+
+            // Strategy 2: TinyFaceDetector on raw video
+            if (detectedFaces === 0 && window.faceapi && this.modelLoaded && window.faceapi.nets.tinyFaceDetector?.isLoaded) {
                 try {
-                    const detector = new window.FaceDetector({ fastMode: false });
+                    const tinyDetections = await window.faceapi.detectAllFaces(
+                        video,
+                        new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.12 })
+                    );
+                    detectedFaces = tinyDetections.length;
+                } catch (e) {}
+            }
+
+            // Strategy 3: Contrast and brightness enhancement offscreen canvas (rescues dark/backlit faces)
+            if (detectedFaces === 0 && window.faceapi && this.modelLoaded) {
+                try {
+                    const canvas = this.$refs.proctorCanvas || document.createElement('canvas');
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.filter = 'brightness(1.8) contrast(1.5)';
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    if (window.faceapi.nets.tinyFaceDetector?.isLoaded) {
+                        const boostedTiny = await window.faceapi.detectAllFaces(
+                            canvas,
+                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
+                        );
+                        if (boostedTiny.length > 0) detectedFaces = boostedTiny.length;
+                    }
+
+                    if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
+                        const boostedSsd = await window.faceapi.detectAllFaces(
+                            canvas,
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
+                        );
+                        if (boostedSsd.length > 0) detectedFaces = boostedSsd.length;
+                    }
+                } catch (e) {}
+            }
+
+            // Strategy 4: Native browser FaceDetector API
+            if (detectedFaces === 0 && 'FaceDetector' in window) {
+                try {
+                    const detector = new window.FaceDetector({ fastMode: true });
                     const faces = await detector.detect(video);
                     detectedFaces = faces.length;
-                } catch (e) {
+                } catch (e) {}
+            }
+
+            // Strategy 5: Low-light presence check (silhouette/center mass analysis for dark or backlit rooms)
+            if (detectedFaces === 0 && (this.lowLightingDetected || this.isLowLightMode)) {
+                if (this.checkLowLightPresence(video)) {
                     detectedFaces = 1;
                 }
-            } else {
-                detectedFaces = 1;
             }
 
             this.faceCount = detectedFaces;
@@ -1189,9 +1256,9 @@ function preLabCameraGate(labId, initialSessionId) {
             } else if (detectedFaces === 0) {
                 this.absenceCount++;
                 this.proctorStatus = 'absence';
-                this.proctorStatusText = `No Face Detected (${this.absenceCount}x warning)`;
+                this.proctorStatusText = `Face Searching (${this.absenceCount}/4 warning)`;
 
-                if (this.absenceCount >= 2 && (nowTime - this.lastAbsenceAlertAt > 25000)) {
+                if (this.absenceCount >= 4 && (nowTime - this.lastAbsenceAlertAt > 35000)) {
                     this.lastAbsenceAlertAt = nowTime;
                     const snapshot = this.captureSnapshot(video);
                     await this.logTelemetry('camera_absence', {
@@ -1215,6 +1282,45 @@ function preLabCameraGate(labId, initialSessionId) {
                         timestamp: new Date().toISOString()
                     });
                 }
+            }
+        },
+
+        checkLowLightPresence(video) {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 160;
+                canvas.height = 120;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imgData = ctx.getImageData(0, 0, 160, 120);
+                const data = imgData.data;
+
+                let centerLum = 0, centerCount = 0;
+                let borderLum = 0, borderCount = 0;
+
+                for (let y = 0; y < 120; y += 4) {
+                    for (let x = 0; x < 160; x += 4) {
+                        const idx = (y * 160 + x) * 4;
+                        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                        if (x >= 40 && x <= 120 && y >= 20 && y <= 100) {
+                            centerLum += lum;
+                            centerCount++;
+                        } else {
+                            borderLum += lum;
+                            borderCount++;
+                        }
+                    }
+                }
+
+                const avgCenter = centerLum / (centerCount || 1);
+                const avgBorder = borderLum / (borderCount || 1);
+
+                // Silhouette in backlit/dark room: head is darker than surroundings, or non-black center
+                const hasContrast = Math.abs(avgBorder - avgCenter) > 6;
+                const notPitchBlack = avgCenter > 8;
+                return hasContrast && notPitchBlack;
+            } catch (e) {
+                return false;
             }
         },
 
@@ -1263,7 +1369,8 @@ function preLabCameraGate(labId, initialSessionId) {
                     this.pingCount++;
                     if (data && data.is_active === false) {
                         this.stopProctoring();
-                        alert(`Session Notice: ${data.message || 'The lab session has concluded.'}`);
+                        this.proctorStatus = 'disconnected';
+                        this.proctorStatusText = 'Session Concluded';
                     }
                 }
             } catch (err) {
