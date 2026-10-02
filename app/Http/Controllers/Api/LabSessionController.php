@@ -984,21 +984,54 @@ class LabSessionController extends Controller
     public function getLeaderboard(int $sessionId)
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        $lab = $session->laboratory;
+        $timeLimitSeconds = $lab ? ($lab->isLiveLab() ? $lab->getLiveTotalDurationSeconds() : ($lab->time_limit ?? 0) * 60) : 0;
 
         $sessions = LabSession::with(['user', 'group'])
             ->where('lab_id', $session->lab_id)
             ->get()
-            ->map(function ($s) {
+            ->filter(fn($s) => $s->user !== null)
+            ->groupBy(function ($s) {
+                return $s->group_id ? 'g_' . $s->group_id : 'u_' . $s->user_id;
+            })
+            ->map(function ($userSessions) use ($timeLimitSeconds) {
+                $bestSession = $userSessions->sort(function ($a, $b) {
+                    $aTasks = is_array($a->completed_tasks) ? count($a->completed_tasks) : 0;
+                    $bTasks = is_array($b->completed_tasks) ? count($b->completed_tasks) : 0;
+                    if ($aTasks !== $bTasks) {
+                        return $bTasks <=> $aTasks;
+                    }
+                    $aEnd = $a->ended_at ?: now();
+                    $bEnd = $b->ended_at ?: now();
+                    $aDur = $a->started_at ? max(0, abs((int) $a->started_at->diffInSeconds($aEnd, true))) : 9999999;
+                    $bDur = $b->started_at ? max(0, abs((int) $b->started_at->diffInSeconds($bEnd, true))) : 9999999;
+                    if ($aDur !== $bDur) {
+                        return $aDur <=> $bDur;
+                    }
+                    return $b->id <=> $a->id;
+                })->first();
+
+                $s = $bestSession;
                 $tasksCount = is_array($s->completed_tasks) ? count($s->completed_tasks) : 0;
                 $duration = 0;
                 if ($s->started_at) {
                     $end = $s->ended_at ?: now();
-                    $duration = $end->diffInSeconds($s->started_at);
+                    $duration = max(0, abs((int) $s->started_at->diffInSeconds($end, true)));
+                    if ($timeLimitSeconds > 0 && $duration > $timeLimitSeconds) {
+                        $duration = $timeLimitSeconds;
+                    }
                 }
 
                 $name = $s->user->name ?? 'Student';
                 $nameParts = explode(' ', $name);
                 $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+
+                $hours = floor($duration / 3600);
+                $mins = floor(($duration % 3600) / 60);
+                $secs = $duration % 60;
+                $elapsedTime = $hours > 0
+                    ? sprintf('%d:%02d:%02d', $hours, $mins, $secs)
+                    : sprintf('%02d:%02d', $mins, $secs);
 
                 return [
                     'id' => $s->id,
@@ -1010,7 +1043,7 @@ class LabSessionController extends Controller
                     'tasks_completed' => $tasksCount,
                     'status' => $s->status,
                     'elapsed_seconds' => $duration,
-                    'elapsed_time' => sprintf('%02d:%02d', floor($duration / 60), $duration % 60),
+                    'elapsed_time' => $elapsedTime,
                     'wpm' => $s->wpm ?? 0,
                     'focus_lost_count' => $s->focus_lost_count ?? 0,
                     'paste_anomaly_count' => $s->paste_anomaly_count ?? 0,
