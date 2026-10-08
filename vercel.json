@@ -6,7 +6,8 @@
   "regions": ["icn1"],
   "functions": {
     "api/index.php": {
-      "runtime": "vercel-php@0.7.3"
+      "runtime": "vercel-php@0.7.3",
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -25,7 +26,7 @@
       "dest": "/public/downloads/$1"
     },
     {
-      "src": "/(favicon.ico|robots.txt|media/.*|.*\\.(css|js|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot|vsix|ico))",
+      "src": "/(favicon.ico|robots.txt|site.webmanifest|media/.*|.*\\.(css|js|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot|vsix|ico|webmanifest))",
       "dest": "/public/$1"
     },
     {
@@ -51,7 +52,6 @@
     "SESSION_SECURE_COOKIE": "true",
     "BCRYPT_ROUNDS": "12",
     "QUEUE_CONNECTION": "sync",
-    "MAIL_MAILER": "log",
     "LOG_CHANNEL": "stderr",
     "DB_CONNECTION": "pgsql",
     "APP_MAINTENANCE_DRIVER": "file"

@@ -14,33 +14,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Protected routes (Sanctum)
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::get('/user', function (Request $request) {
-        return $request->user();
-    });
-
-    Route::post('/labs/{labId}/start', [LabSessionController::class, 'startSession']);
-    Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions'])->middleware('lab.session');
-    Route::get('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff'])->middleware('lab.session');
-    Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/chat', [LabSessionController::class, 'sendChat'])->middleware('lab.session');
-    Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession'])->middleware('lab.session');
-    Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession'])->middleware('lab.session');
-    Route::post('/labs/{labId}/verify-camera', [LabSessionController::class, 'verifyCameraLab']);
-    Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera'])->middleware('lab.session');
-    Route::post('/labs/{labId}/open-live', [LabSessionController::class, 'openLive']);
-    Route::post('/labs/{labId}/end-live', [LabSessionController::class, 'endLive']);
-    Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
-});
-
 // VS Code extension routes (v1). Session routes require the session's extension token
 // (X-Session-Token, issued in the vscode:// deep link) or an authorized signed-in user.
 Route::prefix('v1')->group(function () {
@@ -65,6 +38,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
         Route::post('/sessions/{sessionId}/chat', [LabSessionController::class, 'sendChat']);
         Route::get('/sessions/{sessionId}/leaderboard', [LabSessionController::class, 'getLeaderboard']);
+        Route::post('/sessions/{sessionId}/broadcasting/auth', [LabSessionController::class, 'authorizeBroadcast']);
         Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
         Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
     });

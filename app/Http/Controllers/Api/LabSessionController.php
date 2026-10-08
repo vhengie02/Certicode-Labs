@@ -469,6 +469,30 @@ class LabSessionController extends Controller
     /**
      * Get active laboratory session information.
      */
+    /**
+     * Sign a Pusher private-channel subscription for the VS Code extension, which has no web login.
+     * Access to the session is already checked by the lab.session middleware (session token or user);
+     * only that session's own channels can be signed.
+     */
+    public function authorizeBroadcast(Request $request, int $sessionId)
+    {
+        if (!\App\Support\Realtime::enabled()) {
+            return response()->json(['error' => 'Live updates are not enabled.'], 404);
+        }
+
+        $validated = $request->validate([
+            'socket_id' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+            'channel_name' => ['required', 'string'],
+        ]);
+
+        $allowed = ["private-lab-session.{$sessionId}", "private-lab-session.{$sessionId}.chat"];
+        if (!in_array($validated['channel_name'], $allowed, true)) {
+            return response()->json(['error' => 'This channel does not belong to the session.'], 403);
+        }
+
+        return response()->json(\App\Support\Realtime::authorize($validated['channel_name'], $validated['socket_id']));
+    }
+
     public function getSession(Request $request, int $sessionId)
     {
         $session = LabSession::with(['laboratory', 'user', 'group.members'])->findOrFail($sessionId);
@@ -577,6 +601,7 @@ class LabSessionController extends Controller
             'completed_tasks' => $session->completed_tasks ?? [],
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
             'code_contributions' => $session->code_contributions ?? [],
+            'realtime' => \App\Support\Realtime::clientConfig(),
             'current_user' => [
                 'id' => $userId,
                 'name' => $userName,

@@ -34,7 +34,7 @@ class AnomalyDetected implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('instructor.monitoring.' . $this->sessionId),
+            new PrivateChannel('instructor.lab.' . $this->labId()),
         ];
     }
 
@@ -56,5 +56,13 @@ class AnomalyDetected implements ShouldBroadcastNow
             'anomaly' => $this->anomaly,
             'timestamp' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Instructors watch a whole lab, so their channel is keyed by lab rather than by session.
+     */
+    private function labId(): int
+    {
+        return (int) \App\Models\LabSession::whereKey($this->sessionId)->value('lab_id');
     }
 }

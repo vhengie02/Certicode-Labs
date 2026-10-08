@@ -38,7 +38,7 @@ Broadcast::channel('lab-session.{sessionId}.chat', function ($user, $sessionId) 
     return false;
 });
 
-// Instructor live monitoring channel
-Broadcast::channel('instructor.monitoring.{sessionId}', function ($user, $sessionId) {
+// Instructor live monitoring channel: one per lab (anomalies, diffs and leaderboard for every student)
+Broadcast::channel('instructor.lab.{labId}', function ($user, $labId) {
     return in_array($user->role, ['instructor', 'admin']);
 });

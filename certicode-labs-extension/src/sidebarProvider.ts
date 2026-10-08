@@ -420,8 +420,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         // Setup window focus tracking (Feature 5)
         this.setupFocusTracking();
 
-        // Connect WebSocket real-time transport (Features 1, 2, 5)
-        this.connectWebSocket();
+        // Live updates connect after the first session sync (see syncSessionState), which carries the config.
+        this.disconnectWebSocket();
 
         // Run sync and heartbeat ping immediately
         this.sendVsCodePing();
@@ -453,93 +453,103 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     /**
-     * Connect real-time WebSocket for Diff, Chat, and Leaderboard streaming
+     * Live updates over Pusher Channels, when the server advertises it in the session payload
+     * (`realtime`). Private channels are signed by the backend using this session's token.
+     * Without that config the extension simply keeps polling.
      */
     private connectWebSocket() {
         this.disconnectWebSocket();
 
+        const realtime = this._lastSessionData?.realtime;
         const WSClass = (globalThis as any).WebSocket || (global as any).WebSocket;
-        if (!WSClass || !this._sessionId) {
+        if (!WSClass || !this._sessionId || !realtime?.key || !realtime?.ws_host) {
             return;
         }
 
-        try {
-            const urlObj = new URL(this._backendUrl);
-            const isSecure = urlObj.protocol === 'https:';
-            const wsProtocol = isSecure ? 'wss:' : 'ws:';
-            const wsHost = urlObj.hostname;
-            const wsPort = isSecure ? '443' : (urlObj.port || '80');
-            const wsEndpoint = `${wsProtocol}//${wsHost}:${wsPort}/app/certicode-key?protocol=7&client=js&version=8.4.0`;
+        const sessionId = this._sessionId;
+        const channels = [`private-lab-session.${sessionId}`, `private-lab-session.${sessionId}.chat`];
+        const subscribed = new Set<string>();
 
-            const ws = new WSClass(wsEndpoint);
+        try {
+            const ws = new WSClass(`wss://${realtime.ws_host}/app/${encodeURIComponent(realtime.key)}?protocol=7&client=js&version=8.4.0&flash=false`);
             this._ws = ws;
 
-            this._ws.onopen = () => {
+            ws.onopen = () => {
                 this._wsConnected = true;
-                this.sendWsPayload({
-                    event: 'pusher:subscribe',
-                    data: { channel: `private-lab-session.${this._sessionId}` }
-                });
-                this.sendWsPayload({
-                    event: 'pusher:subscribe',
-                    data: { channel: `private-lab-session.${this._sessionId}.chat` }
-                });
             };
 
-            this._ws.onmessage = (event: any) => {
+            ws.onmessage = async (event: any) => {
+                let payload: any;
                 try {
-                    const rawData = typeof event.data === 'string' ? event.data : event.data.toString();
-                    const payload = JSON.parse(rawData);
+                    payload = JSON.parse(typeof event.data === 'string' ? event.data : event.data.toString());
+                } catch {
+                    return; // Ignore frame parsing errors
+                }
+                const data = typeof payload.data === 'string' ? this.safeJson(payload.data) : payload.data;
 
-                    if (payload.event === 'pusher_internal:subscription_succeeded') {
-                        this._wsSubscribed = true;
+                switch (payload.event) {
+                    case 'pusher:connection_established':
+                        for (const channel of channels) {
+                            try {
+                                const res = await this.makeRequest('POST', `${API_PREFIX}/sessions/${sessionId}/broadcasting/auth`, {
+                                    socket_id: data?.socket_id,
+                                    channel_name: channel
+                                });
+                                const auth = res.status === 200 ? this.safeJson(res.body)?.auth : undefined;
+                                if (auth && this._ws === ws) {
+                                    ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { channel, auth } }));
+                                }
+                            } catch {
+                                // Stay on polling for this channel
+                            }
+                        }
+                        return;
+                    case 'pusher_internal:subscription_succeeded':
+                        subscribed.add(payload.channel);
+                        // Only stop polling once both channels deliver (chat also feeds paste suppression)
+                        this._wsSubscribed = channels.every(c => subscribed.has(c));
                         this._wsRetryDelayMs = 10000;
                         return;
-                    }
-
-                    if (payload.event === 'chat.message' || payload.event === 'App\\Events\\ChatMessageSent') {
-                        const chatData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
-                        if (chatData?.chat) {
-                            this.handleIncomingWsChat(chatData.chat);
+                    case 'pusher:ping':
+                        ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
+                        return;
+                    case 'chat.message':
+                        if (data?.chat) {
+                            this.handleIncomingWsChat(data.chat);
                         }
-                    } else if (payload.event === 'diff.updated' || payload.event === 'App\\Events\\DiffUpdated') {
-                        const diffData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
-                        if (diffData?.diff_stats) {
-                            this._lastDiffStats = diffData.diff_stats;
-                            this._view?.webview.postMessage({
-                                type: 'diffUpdate',
-                                diffStats: this._lastDiffStats
-                            });
+                        return;
+                    case 'diff.updated':
+                        if (data?.diff_stats) {
+                            this._lastDiffStats = data.diff_stats;
+                            this._view?.webview.postMessage({ type: 'diffUpdate', diffStats: this._lastDiffStats });
                         }
-                    } else if (payload.event === 'leaderboard.updated' || payload.event === 'App\\Events\\LeaderboardUpdated') {
-                        const lbData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
-                        if (lbData?.leaderboard) {
+                        return;
+                    case 'leaderboard.updated':
+                        if (data?.leaderboard) {
                             this._view?.webview.postMessage({
                                 type: 'leaderboardData',
-                                leaderboard: lbData.leaderboard.leaderboard || [],
-                                availability_mode: lbData.leaderboard.availability_mode || 'open',
-                                shared_time_remaining_formatted: lbData.leaderboard.shared_time_remaining_formatted,
-                                live_status: lbData.leaderboard.live_status
+                                leaderboard: data.leaderboard.leaderboard || [],
+                                availability_mode: data.leaderboard.availability_mode || 'open',
+                                shared_time_remaining_formatted: data.leaderboard.shared_time_remaining_formatted,
+                                live_status: data.leaderboard.live_status
                             });
                         }
-                    }
-                } catch {
-                    // Ignore frame parsing errors
+                        return;
                 }
             };
 
-            this._ws.onerror = () => {
+            ws.onerror = () => {
                 this._wsConnected = false;
             };
 
-            this._ws.onclose = () => {
+            ws.onclose = () => {
                 if (this._ws !== ws) {
                     return; // a newer socket replaced this one; let it manage reconnects
                 }
                 this._wsConnected = false;
                 this._wsSubscribed = false;
                 if (this._sessionId && !this._wsReconnectTimer) {
-                    // Back off when no realtime server is reachable (e.g. serverless hosting): 10s, 20s, ... up to 5 min.
+                    // Back off: 10s, 20s, ... up to 5 min.
                     const delay = this._wsRetryDelayMs;
                     this._wsRetryDelayMs = Math.min(this._wsRetryDelayMs * 2, 300000);
                     this._wsReconnectTimer = setTimeout(() => {
@@ -553,11 +563,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         }
     }
 
-    private sendWsPayload(payload: any) {
-        if (this._ws && this._wsConnected && typeof this._ws.send === 'function') {
-            try {
-                this._ws.send(JSON.stringify(payload));
-            } catch {}
+    private safeJson(text: string): any {
+        try {
+            return JSON.parse(text);
+        } catch {
+            return undefined;
         }
     }
 
@@ -612,6 +622,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 this._isReconnecting = false;
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
+
+                if (data.realtime && !this._ws && !this._wsReconnectTimer) {
+                    this.connectWebSocket();
+                }
 
                 if (data.started_at) {
                     const startedMs = new Date(data.started_at).getTime();

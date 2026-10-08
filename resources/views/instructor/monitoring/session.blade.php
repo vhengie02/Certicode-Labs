@@ -968,66 +968,78 @@ function instructorMonitor() {
         },
 
         init() {
-            @if(in_array(config('broadcasting.default'), ['pusher', 'reverb']) && (!empty(config('broadcasting.connections.pusher.key')) || !empty(config('broadcasting.connections.reverb.key'))))
-                this.initWebSocket();
-            @else
+            const realtime = @json(\App\Support\Realtime::clientConfig());
+            if (realtime && typeof window.WebSocket !== 'undefined') {
+                this.initWebSocket(realtime);
+            } else {
                 this.initPolling();
-            @endif
+            }
         },
 
         initPolling() {
-            // Periodic polling when WebSocket daemon is not enabled/supported
+            // Fallback when live updates (Pusher) are not configured
+            const countAnomalies = (data) => (data.sessions || []).reduce((sum, s) => sum + (s.anomalies ? s.anomalies.length : 0), 0);
             setInterval(() => {
-                fetch('{{ route("instructor.monitoring.data", $laboratory->id) }}')
+                fetch('{{ route("instructor.monitoring.data", $laboratory->id) }}', { headers: { 'Accept': 'application/json' } })
                     .then(res => res.json())
                     .then(data => {
-                        if (data && data.metrics) {
-                            if (this.lastAnomalyCount !== undefined && data.metrics.total_anomalies > this.lastAnomalyCount) {
-                                this.showLiveAlert('anomaly.detected');
-                            }
-                            this.lastAnomalyCount = data.metrics.total_anomalies;
+                        if (!data || !Array.isArray(data.sessions)) return;
+                        const total = countAnomalies(data);
+                        if (this.lastAnomalyCount !== undefined && total > this.lastAnomalyCount) {
+                            this.showLiveAlert('anomaly.detected');
                         }
+                        this.lastAnomalyCount = total;
                     })
                     .catch(() => {});
             }, 10000);
         },
 
-        initWebSocket() {
-            try {
-                if (typeof window.WebSocket === 'undefined') return;
-                const isSecure = window.location.protocol === 'https:';
-                const wsProtocol = isSecure ? 'wss:' : 'ws:';
-                const wsHost = window.location.hostname;
-                const wsPort = window.location.port ? window.location.port : (isSecure ? '443' : '80');
-                const wsEndpoint = `${wsProtocol}//${wsHost}:${wsPort}/app/certicode-key?protocol=7&client=js&version=8.4.0`;
+        // Minimal Pusher Channels client: connect, sign the private channel via /broadcasting/auth, subscribe.
+        initWebSocket(realtime) {
+            const channel = 'private-instructor.lab.{{ $laboratory->id }}';
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            let retryDelay = 2000;
 
-                this.ws = new WebSocket(wsEndpoint);
-                this.ws.onopen = () => {
-                    this.wsConnected = true;
-                    try {
-                        this.ws.send(JSON.stringify({
-                            event: 'pusher:subscribe',
-                            data: { channel: 'private-instructor.monitoring.{{ $laboratory->id }}' }
-                        }));
-                    } catch {}
-                };
-                this.ws.onmessage = (event) => {
-                    try {
-                        const payload = JSON.parse(event.data);
-                        if (payload.event === 'anomaly.detected' || payload.event === 'diff.updated' || payload.event === 'leaderboard.updated') {
-                            this.showLiveAlert(payload.event);
+            const connect = () => {
+                const ws = new WebSocket(`wss://${realtime.ws_host}/app/${realtime.key}?protocol=7&client=js&version=8.4.0&flash=false`);
+                this.ws = ws;
+
+                ws.onmessage = async (event) => {
+                    let payload;
+                    try { payload = JSON.parse(event.data); } catch { return; }
+
+                    if (payload.event === 'pusher:connection_established') {
+                        const socketId = JSON.parse(payload.data).socket_id;
+                        try {
+                            const res = await fetch('/broadcasting/auth', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf },
+                                body: new URLSearchParams({ socket_id: socketId, channel_name: channel })
+                            });
+                            if (!res.ok) throw new Error('auth ' + res.status);
+                            const auth = await res.json();
+                            ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { channel, auth: auth.auth } }));
+                        } catch {
+                            ws.close();
                         }
-                    } catch {}
+                    } else if (payload.event === 'pusher_internal:subscription_succeeded') {
+                        this.wsConnected = true;
+                        retryDelay = 2000;
+                    } else if (payload.event === 'pusher:ping') {
+                        ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
+                    } else if (['anomaly.detected', 'diff.updated', 'leaderboard.updated'].includes(payload.event)) {
+                        this.showLiveAlert(payload.event);
+                    }
                 };
-                this.ws.onerror = () => {
+                ws.onclose = () => {
                     this.wsConnected = false;
+                    if (this.ws !== ws) return;
+                    setTimeout(connect, retryDelay);
+                    retryDelay = Math.min(retryDelay * 2, 60000);
                 };
-                this.ws.onclose = () => {
-                    this.wsConnected = false;
-                };
-            } catch {
-                this.wsConnected = false;
-            }
+            };
+
+            connect();
         },
 
         showLiveAlert(eventType) {
