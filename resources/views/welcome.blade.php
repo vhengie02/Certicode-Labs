@@ -265,7 +265,7 @@
                         One lab, start to <span class="font-serif-accent font-normal text-[#3ecf8e]">certificate.</span>
                     </h2>
                     <p class="text-[var(--text-dim)] text-lg leading-relaxed max-w-[52ch] lg:justify-self-end pretty">
-                        Nothing is simulated. Code runs and compiles for real, and every signal you see comes from the student&rsquo;s actual session.
+                        Nothing is simulated. Every signal you see comes from the student&rsquo;s actual session, and every grade comes from the code they actually wrote.
                     </p>
                 </div>
 
@@ -334,7 +334,7 @@
                     <div class="reveal max-w-[480px] lg:order-2 order-1 lg:justify-self-end">
                         <p class="text-sm text-[#3ecf8e] font-medium">Rubric grading</p>
                         <h3 class="font-display mt-4 text-3xl sm:text-4xl font-bold leading-[1.1] balance">The AI gets there first. You make the call.</h3>
-                        <p class="mt-5 text-[var(--text-dim)] leading-relaxed pretty">Every submission is checked against the criteria you wrote. Code that doesn&rsquo;t compile scores zero instead of earning partial credit, and any grade can be overridden with a reason.</p>
+                        <p class="mt-5 text-[var(--text-dim)] leading-relaxed pretty">Every submission is checked against the criteria you wrote. Code with syntax errors scores zero instead of earning partial credit, and any grade can be overridden with a reason.</p>
                     </div>
                 </div>
 
