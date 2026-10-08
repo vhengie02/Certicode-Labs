@@ -100,14 +100,16 @@ class LoginController extends Controller
             return redirect()->route('auth.google.password');
         }
 
-        $code = (string) rand(100000, 999999);
+        $code = (string) random_int(100000, 999999);
 
         // Save target gmail and verification code in session
         session()->put('google_auth_code', $code);
         session()->put('gmail_code_debug', $code);
         session()->put('google_auth_code_sent_at', now());
 
-        Log::info("Google Sign-In/Up verification code for {$gmail}: {$code}");
+        if ($this->mayRevealAuthSecrets()) {
+            Log::info("Google Sign-In/Up verification code for {$gmail}: {$code}");
+        }
 
         $mailError = null;
         try {
@@ -129,6 +131,9 @@ class LoginController extends Controller
         }
 
         if ($mailError) {
+            if (!$this->mayRevealAuthSecrets()) {
+                return back()->withErrors(['email' => "We couldn't send the email right now. Please try again in a few minutes."]);
+            }
             return redirect()->route('auth.google.verify', ['needs_role' => 1])
                 ->with('warning', $mailError)
                 ->with('success', 'Verification code (local testing): ' . $code);
@@ -511,7 +516,9 @@ class LoginController extends Controller
 
         $resetLink = route('password.reset', ['token' => $token, 'email' => $email]);
 
-        Log::info("Password reset link for {$email}: {$resetLink}");
+        if ($this->mayRevealAuthSecrets()) {
+            Log::info("Password reset link for {$email}: {$resetLink}");
+        }
 
         try {
             \Illuminate\Support\Facades\Mail::send('emails.generic', [
@@ -529,7 +536,10 @@ class LoginController extends Controller
             });
         } catch (\Exception $e) {
             Log::error("Failed to send password reset email: " . $e->getMessage());
-            // Show warning for local testing but allow reset
+            if (!$this->mayRevealAuthSecrets()) {
+                return back()->withErrors(['email' => "We couldn't send the email right now. Please try again in a few minutes."]);
+            }
+            // Local development only: show the link so the flow can be completed without email
             return back()->with('status', 'We have generated your reset link (local testing). Check logs or copy link: ' . $resetLink);
         }
 
@@ -613,7 +623,9 @@ class LoginController extends Controller
 
         $resetLink = route('password.reset', ['token' => $token, 'email' => $email]);
 
-        Log::info("Google auth password reset link for {$gmail}: {$resetLink}");
+        if ($this->mayRevealAuthSecrets()) {
+            Log::info("Google auth password reset link for {$gmail}: {$resetLink}");
+        }
 
         try {
             \Illuminate\Support\Facades\Mail::send('emails.generic', [
@@ -631,6 +643,9 @@ class LoginController extends Controller
             });
         } catch (\Exception $e) {
             Log::error("Failed to send Google password reset email: " . $e->getMessage());
+            if (!$this->mayRevealAuthSecrets()) {
+                return redirect()->route('login')->withErrors(['email' => "We couldn't send the email right now. Please try again in a few minutes."]);
+            }
             return redirect()->route('login')->with('status', 'Password reset link (local testing): ' . $resetLink);
         }
 

@@ -65,7 +65,7 @@ class SettingsController extends Controller
         }
 
         // Generate 6-digit code
-        $code = (string) rand(100000, 999999);
+        $code = (string) random_int(100000, 999999);
 
         // Store unverified Gmail and verification code
         $user->update([
@@ -77,7 +77,9 @@ class SettingsController extends Controller
         session()->put('gmail_code_sent_at', now());
 
         // Log code and put it in session so user/tests can see the code easily
-        Log::info("Gmail connection code for User ID {$user->id} ({$request->gmail}): {$code}");
+        if ($this->mayRevealAuthSecrets()) {
+            Log::info("Gmail connection code for User ID {$user->id} ({$request->gmail}): {$code}");
+        }
         session()->put('gmail_code_debug', $code);
 
         $mailError = null;
@@ -100,6 +102,9 @@ class SettingsController extends Controller
         }
 
         if ($mailError) {
+            if (!$this->mayRevealAuthSecrets()) {
+                return redirect()->route('settings.show')->withErrors(['gmail' => "We couldn't send the email right now. Please try again in a few minutes."]);
+            }
             return redirect()->route('settings.show')
                 ->with('warning', $mailError)
                 ->with('success', 'Verification code (local testing): ' . $code);
