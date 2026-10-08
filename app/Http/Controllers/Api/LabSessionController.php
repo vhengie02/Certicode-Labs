@@ -602,6 +602,29 @@ class LabSessionController extends Controller
     /**
      * Run an AI-based check progress check-in-progress assessment.
      */
+    /**
+     * Keep only IDE diagnostics that belong to the submitted files. The extension reports
+     * diagnostics for every document VS Code knows about, and an error in an unrelated file
+     * (settings.json, another project) must not fail the submission's syntax gate.
+     */
+    private function submittedFileDiagnostics(Request $request): array
+    {
+        $diagnostics = array_filter((array) $request->input('diagnostics', []), 'is_array');
+        $fileNames = collect((array) $request->input('files', []))
+            ->pluck('name')
+            ->filter()
+            ->map(fn ($name) => ltrim(str_replace('\\', '/', (string) $name), '/'));
+
+        if ($fileNames->isEmpty()) {
+            return array_values($diagnostics);
+        }
+
+        return array_values(array_filter($diagnostics, function ($diag) use ($fileNames) {
+            $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
+            return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/' . $name));
+        }));
+    }
+
     public function checkProgress(Request $request, int $sessionId)
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
@@ -627,7 +650,7 @@ class LabSessionController extends Controller
         }
         $code = $code ?? '';
 
-        $diagnostics = $request->input('diagnostics', []);
+        $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(\App\Services\LlmEvaluationService::class);
         $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
 
@@ -707,7 +730,7 @@ class LabSessionController extends Controller
         $executionResult = $this->sandboxService->execute($code, $request->language);
 
         // AI task-completion evaluation
-        $diagnostics = $request->input('diagnostics', []);
+        $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(\App\Services\LlmEvaluationService::class);
         $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
 
@@ -1122,8 +1145,15 @@ class LabSessionController extends Controller
     /**
      * Reopen an individual lab session.
      */
-    public function reopenSession(int $sessionId)
+    public function reopenSession(Request $request, int $sessionId)
     {
+        // Reopening a completed session allows resubmission, so only staff may do it.
+        if (!in_array($request->user()?->role, ['admin', 'instructor'], true)) {
+            return response()->json([
+                'error' => 'Unauthorized action. Only instructors or admins can reopen a session.',
+            ], 403);
+        }
+
         $session = LabSession::findOrFail($sessionId);
         $session->update([
             'status' => 'in_progress',

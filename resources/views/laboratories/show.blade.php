@@ -171,14 +171,14 @@
                      },
                      async fetchChats() {
                          try {
-                             const res = await fetch(`/api/v1/sessions/${this.sessionId}/chat`);
+                             const res = await fetch(`/v1/sessions/${this.sessionId}/chat`);
                              const data = await res.json();
                              if (data.chats) this.messages = data.chats;
                          } catch (e) {}
                      },
                      async fetchSessionStats() {
                          try {
-                             const res = await fetch(`/api/v1/sessions/${this.sessionId}`);
+                             const res = await fetch(`/v1/sessions/${this.sessionId}`);
                              const data = await res.json();
                              if (data.code_contributions) this.contributions = data.code_contributions;
                              if (data.diff_stats) this.diffStats = data.diffStats;
@@ -187,7 +187,7 @@
                      async sendMessage() {
                          if (!this.newMessage.trim()) return;
                          try {
-                             const res = await fetch(`/api/v1/sessions/${this.sessionId}/chat`, {
+                             const res = await fetch(`/v1/sessions/${this.sessionId}/chat`, {
                                  method: 'POST',
                                  headers: { 'Content-Type': 'application/json' },
                                  body: JSON.stringify({ message: this.newMessage, code_snippet: this.codeSnippet || null })
@@ -801,7 +801,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 if (sid) {
                     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
                     try {
-                        await fetch(`/api/v1/sessions/${sid}/end`, {
+                        await fetch(`/v1/sessions/${sid}/end`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1034,8 +1034,8 @@ function preLabCameraGate(labId, initialSessionId) {
             });
 
             const endpoints = this.activeSessionId 
-                ? [`/api/v1/sessions/${this.activeSessionId}/verify-camera`, `/v1/sessions/${this.activeSessionId}/verify-camera`]
-                : [`/api/v1/labs/${labId}/verify-camera`, `/v1/labs/${labId}/verify-camera`];
+                ? [`/v1/sessions/${this.activeSessionId}/verify-camera`]
+                : [`/v1/labs/${labId}/verify-camera`];
 
             for (const url of endpoints) {
                 try {
@@ -1125,7 +1125,7 @@ function preLabCameraGate(labId, initialSessionId) {
 
             const checkPing = async () => {
                 try {
-                    const res = await fetch(`/api/v1/sessions/${this.activeSessionId}`);
+                    const res = await fetch(`/v1/sessions/${this.activeSessionId}`);
                     if (res.ok) {
                         const data = await res.json();
                         if (data && data.vscode_connected === true) {
@@ -1351,7 +1351,7 @@ function preLabCameraGate(labId, initialSessionId) {
             if (!this.activeSessionId) return;
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
             try {
-                const res = await fetch(`/api/v1/sessions/${this.activeSessionId}/ping`, {
+                const res = await fetch(`/v1/sessions/${this.activeSessionId}/ping`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1382,7 +1382,7 @@ function preLabCameraGate(labId, initialSessionId) {
             if (!this.activeSessionId) return;
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
             try {
-                await fetch(`/api/v1/sessions/${this.activeSessionId}/telemetry`, {
+                await fetch(`/v1/sessions/${this.activeSessionId}/telemetry`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

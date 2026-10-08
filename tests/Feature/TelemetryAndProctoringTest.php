@@ -27,6 +27,14 @@ class TelemetryAndProctoringTest extends TestCase
     protected LabSession $session1;
     protected LabSession $session2;
 
+    /**
+     * Send requests the way the VS Code extension does: with the session's extension token.
+     */
+    protected function asExtension(LabSession $session): static
+    {
+        return $this->withHeaders(['X-Session-Token' => $session->issueExtensionToken()]);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -105,7 +113,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         // Send focus_lost 3 times
         for ($i = 0; $i < 3; $i++) {
-            $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
                 'event_type' => 'focus_lost',
                 'payload' => ['timestamp' => now()->toISOString()],
             ]);
@@ -124,7 +132,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_wpm_update_telemetry()
     {
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'wpm_update',
             'payload' => [
                 'wpm' => 64,
@@ -140,7 +148,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_paste_anomaly_telemetry_creates_record_silently()
     {
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'paste_anomaly',
             'payload' => [
                 'pasted_length' => 150,
@@ -163,7 +171,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_live_leaderboard_ranks_by_tasks_descending()
     {
-        $response = $this->getJson("/api/v1/sessions/{$this->session1->id}/leaderboard");
+        $response = $this->asExtension($this->session1)->getJson("/api/v1/sessions/{$this->session1->id}/leaderboard");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -262,7 +270,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_prelab_camera_verification_denied_returns_forbidden_and_logs_telemetry()
     {
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'denied',
             'reason' => 'User blocked webcam permission.',
         ]);
@@ -284,7 +292,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('fake-image-bytes');
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 0,
             'image_base64' => $dummyBase64,
@@ -308,7 +316,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('fake-multi-face-image');
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 2,
             'image_base64' => $dummyBase64,
@@ -332,7 +340,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('valid-face-snapshot-data');
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
             'image_base64' => $dummyBase64,
@@ -362,7 +370,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('absence-snapshot-proof');
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'camera_absence',
             'payload' => [
                 'face_count' => 0,
@@ -395,7 +403,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('two-faces-captured');
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'webcam_check',
             'payload' => [
                 'face_count' => 3,
@@ -420,7 +428,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('instructor-alert-image');
 
-        $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'camera_absence',
             'payload' => [
                 'face_count' => 0,
@@ -447,7 +455,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('prelab-failure-proof');
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'prelab_verification_failed',
             'payload' => [
                 'attempts' => 3,
@@ -476,7 +484,7 @@ class TelemetryAndProctoringTest extends TestCase
     public function test_get_session_reflects_camera_verified_state()
     {
         // Initially not camera verified
-        $resBefore = $this->getJson("/api/v1/sessions/{$this->session1->id}");
+        $resBefore = $this->asExtension($this->session1)->getJson("/api/v1/sessions/{$this->session1->id}");
         $resBefore->assertStatus(200);
         $this->assertFalse($resBefore->json('camera_verified'));
 
@@ -488,7 +496,7 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
 
         // After verification
-        $resAfter = $this->getJson("/api/v1/sessions/{$this->session1->id}");
+        $resAfter = $this->asExtension($this->session1)->getJson("/api/v1/sessions/{$this->session1->id}");
         $resAfter->assertStatus(200);
         $this->assertTrue($resAfter->json('camera_verified'));
     }
@@ -540,7 +548,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $this->laboratory->update(['availability_mode' => 'open']);
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'idle_timeout',
             'payload' => [
                 'idle_minutes' => 10,
@@ -580,7 +588,7 @@ class TelemetryAndProctoringTest extends TestCase
             'live_elapsed_seconds' => 0,
         ]);
 
-        $response = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'idle_timeout',
             'payload' => [
                 'idle_minutes' => 10,
@@ -610,7 +618,7 @@ class TelemetryAndProctoringTest extends TestCase
         $this->laboratory->update(['availability_mode' => 'open']);
 
         // 20 minutes idle
-        $res20 = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $res20 = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'idle_timeout',
             'payload' => ['idle_minutes' => 20],
         ]);
@@ -624,7 +632,7 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
 
         // 30 minutes idle
-        $res30 = $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $res30 = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'idle_timeout',
             'payload' => ['idle_minutes' => 30],
         ]);
@@ -665,13 +673,13 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
 
         // Teammate 1 is actively working
-        $this->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'wpm_update',
             'payload' => ['wpm' => 75, 'keystroke_count' => 500],
         ])->assertStatus(200);
 
         // Teammate 2 goes idle and sends idle_timeout telemetry
-        $resIdle = $this->postJson("/api/v1/sessions/{$session2->id}/telemetry", [
+        $resIdle = $this->asExtension($session2)->postJson("/api/v1/sessions/{$session2->id}/telemetry", [
             'event_type' => 'idle_timeout',
             'payload' => ['idle_minutes' => 10],
         ]);
@@ -709,7 +717,7 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertEquals(5, $overallWpm);
 
         // Updating wpm via telemetry without explicit wpm payload calculates whole-session average
-        $this->postJson("/api/v1/sessions/{$session->id}/telemetry", [
+        $this->asExtension($session)->postJson("/api/v1/sessions/{$session->id}/telemetry", [
             'event_type' => 'wpm_update',
             'payload' => ['keystroke_count' => 500],
         ])->assertStatus(200);

@@ -340,7 +340,8 @@ class LaboratoryController extends Controller
         }
 
         $backendUrl = request()->getSchemeAndHttpHost();
-        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&endpoint=" . urlencode($backendUrl) . "&backendUrl=" . urlencode($backendUrl);
+        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&endpoint=" . urlencode($backendUrl)
+            . "&backendUrl=" . urlencode($backendUrl) . "&token=" . urlencode($session->issueExtensionToken());
 
         if ($request->wantsJson() || $request->ajax() || $request->header('Accept') === 'application/json') {
             return response()->json([

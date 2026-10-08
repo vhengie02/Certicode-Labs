@@ -41,6 +41,7 @@ class LabSession extends Model
         'ended_at' => 'datetime',
         'closed_at' => 'datetime',
         'last_ping_at' => 'datetime',
+        'extension_token' => 'encrypted',
         'instructor_overridden_at' => 'datetime',
         'performance_score' => 'float',
         'instructor_grade_override' => 'float',
@@ -54,6 +55,41 @@ class LabSession extends Model
         'focus_lost_count' => 'integer',
         'paste_anomaly_count' => 'integer',
     ];
+
+    protected $hidden = [
+        'extension_token',
+    ];
+
+    /**
+     * Return this session's VS Code extension token, generating it on first use.
+     * The token travels in the vscode:// deep link and authorizes /api/v1 calls for this session only.
+     */
+    public function issueExtensionToken(): string
+    {
+        if (!$this->extension_token) {
+            $this->forceFill(['extension_token' => \Illuminate\Support\Str::random(48)])->save();
+        }
+
+        return $this->extension_token;
+    }
+
+    /**
+     * Whether a user may act on this session: its owner, a teammate in the same group,
+     * or an instructor/admin.
+     */
+    public function isAccessibleBy(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ((int) $this->user_id === (int) $user->id || in_array($user->role, ['instructor', 'admin'], true)) {
+            return true;
+        }
+
+        return $this->group_id
+            && static::where('group_id', $this->group_id)->where('user_id', $user->id)->exists();
+    }
 
     /**
      * Invalidate cached progress upon session completion.

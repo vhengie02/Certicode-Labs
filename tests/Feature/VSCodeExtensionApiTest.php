@@ -233,6 +233,41 @@ JAVA;
     }
 
     /**
+     * Errors in files outside the submission (e.g. VS Code settings) must not fail the syntax gate.
+     */
+    public function test_check_progress_ignores_diagnostics_from_unsubmitted_files(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $validJavaCode = <<<JAVA
+class InvalidAgeException extends Exception {}
+class Student {
+    private String name;
+    private int age;
+}
+JAVA;
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/check-progress", [
+                'code' => $validJavaCode,
+                'files' => [['name' => 'Student.java', 'content' => $validJavaCode, 'is_primary' => true]],
+                'language' => 'java',
+                'diagnostics' => [
+                    ['file' => '.vscode/settings.json', 'line' => 3, 'message' => 'Expected comma', 'source' => 'json'],
+                ],
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertContains(1, $response->json('completed_tasks'));
+        $this->assertContains(2, $response->json('completed_tasks'));
+    }
+
+    /**
      * Test final submission executes code and maps competency.
      */
     public function test_submit_session_completes_and_maps_competency(): void
