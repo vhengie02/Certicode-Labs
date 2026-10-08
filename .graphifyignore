@@ -1,0 +1,13 @@
+# Vendored third-party libraries and generated output (keeps the knowledge graph focused on project code)
+**/face-api*.js
+**/models/*-weights_manifest.json
+certicode-labs-extension/out/
+
+# Config manifests: every JSON key becomes an unconnected node
+composer.json
+package.json
+vercel.json
+tsconfig.json
+
+# Local graphify tooling
+scripts/graphify/

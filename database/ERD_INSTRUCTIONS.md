@@ -46,6 +46,7 @@ Table users {
   last_name varchar [null]
   username varchar [unique, null]
   gender varchar [null]
+  auth_user_id uuid [unique, null, note: "Supabase auth.users id (PostgreSQL only); exposed via the public.profiles view"]
   remember_token varchar [null]
   created_at timestamp
   updated_at timestamp
@@ -57,6 +58,9 @@ Table school_classes {
   code varchar [unique, note: "Join Code"]
   instructor_id bigint [ref: > users.id]
   description text [null]
+  passing_threshold integer [default: 75, note: "Minimum score (%) to earn a certificate"]
+  scheduled_end_date timestamp [null]
+  status varchar [default: "active", note: "active, completed, closed"]
   created_at timestamp
   updated_at timestamp
 }
@@ -116,9 +120,15 @@ Table laboratories {
   description text
   github_repo_template varchar [null]
   tasks_definition json [null]
+  starter_files json [null, note: "Files pre-loaded into the student's workspace"]
   time_limit integer [default: 60]
   views_count integer [default: 0]
   is_group_lab boolean [default: false]
+  availability_mode varchar [default: "open", note: "open, live"]
+  live_duration_minutes integer [null, note: "Fixed window for live mode"]
+  live_status varchar [default: "not_started", note: "not_started, active, closed"]
+  live_started_at timestamp [null, note: "Set when the instructor opens the live lab"]
+  live_elapsed_seconds integer [default: 0, note: "Accumulated elapsed time, used when a live lab is reopened"]
   created_at timestamp
   updated_at timestamp
 }
@@ -163,9 +173,36 @@ Table lab_sessions {
   github_repo_url varchar [null]
   started_at timestamp [null]
   ended_at timestamp [null]
+  last_ping_at timestamp [null, note: "Last heartbeat from the client; used to expire stale sessions"]
+  closed_at timestamp [null]
   status varchar [default: "in_progress", note: "in_progress, completed, flagged, abandoned"]
   completed_tasks json [null]
+  submitted_code longtext [null]
+  submitted_files json [null]
+  diff_stats json [null]
+  code_contributions json [null, note: "Per-member contribution data for group labs"]
   performance_score float [default: 0.0]
+  ai_grade_summary json [null, note: "LLM evaluation result"]
+  instructor_grade_override float [null]
+  instructor_override_reason text [null]
+  instructor_overridden_at timestamp [null]
+  overridden_by bigint [ref: > users.id, null, note: "Instructor who overrode the AI grade"]
+  wpm integer [default: 0]
+  keystroke_count integer [default: 0]
+  focus_lost_count integer [default: 0]
+  paste_anomaly_count integer [default: 0]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table lab_session_chats {
+  id bigint [pk, increment]
+  lab_session_id bigint [ref: > lab_sessions.id, note: "cascade on delete"]
+  user_id bigint [ref: > users.id, null, note: "null on delete"]
+  user_name varchar [default: "Student"]
+  avatar_color varchar [default: "#3ecf8e"]
+  message text
+  code_snippet text [null]
   created_at timestamp
   updated_at timestamp
 }
@@ -184,6 +221,8 @@ Table anomalies {
   type varchar [note: "no_face, multiple_faces, excessive_tab_switch, low_contribution, etc."]
   severity varchar [default: "low", note: "low, medium, high"]
   description text [null]
+  metadata json [null]
+  image_path varchar [null, note: "Webcam snapshot captured with the anomaly"]
   resolved boolean [default: false]
   created_at timestamp
   updated_at timestamp
@@ -255,6 +294,8 @@ erDiagram
         string name
         string code UK
         bigint instructor_id FK
+        integer passing_threshold
+        string status
     }
 
     class_student {
@@ -294,6 +335,9 @@ erDiagram
         integer time_limit
         integer views_count
         boolean is_group_lab
+        json starter_files
+        string availability_mode
+        string live_status
     }
 
     laboratory_views {
@@ -321,6 +365,18 @@ erDiagram
         bigint group_id FK
         string status
         float performance_score
+        json ai_grade_summary
+        float instructor_grade_override
+        bigint overridden_by FK
+        timestamp last_ping_at
+    }
+
+    lab_session_chats {
+        bigint id PK
+        bigint lab_session_id FK
+        bigint user_id FK
+        text message
+        text code_snippet
     }
 
     telemetry_logs {
@@ -335,6 +391,7 @@ erDiagram
         bigint lab_session_id FK
         string type
         string severity
+        string image_path
         boolean resolved
     }
 
@@ -371,6 +428,9 @@ erDiagram
     
     lab_sessions ||--o{ telemetry_logs : "records"
     lab_sessions ||--o{ anomalies : "detects"
+    lab_sessions ||--o{ lab_session_chats : "chat"
+    users ||--o{ lab_session_chats : "sends"
+    users ||--o{ lab_sessions : "overrides_grade"
     
     users ||--o{ student_competencies : "achieves"
     competencies ||--o{ student_competencies : "tracks"
@@ -436,16 +496,17 @@ php artisan generate:erd erd.svg
 
 ### 1. User & Enrollment Management
 * **`users`**: Contains students, instructors, and admins. Integrates OAuth (GitHub) and verification channels (Gmail).
-* **`school_classes`**: Created by instructors. Features a join `code` for student self-enrollment.
+* **`school_classes`**: Created by instructors. Features a join `code` for student self-enrollment, a `passing_threshold` for certification, and a lifecycle `status` (`active`, `completed`, `closed`).
 * **`class_student`**: Pivot representing student enrollment in classes. Status tracks whether they are `enrolled` or just `invited` via email.
 
 ### 2. Curriculum Structure
 * **`modules`**: Topics inside a class. Supports nested structure via `parent_id` (self-relation) for sub-topics.
 * **`module_attachments`**: Files uploaded to a module (PDFs, guides, attachments).
-* **`laboratories`**: Virtual labs associated with modules. Contains task definitions (checklists/validation scripts).
+* **`laboratories`**: Virtual labs associated with modules. Contains task definitions (checklists/validation scripts) and optional `starter_files`. `availability_mode` is either `open` (students start any time) or `live` (the instructor opens a timed window; tracked by the `live_*` columns).
 
 ### 3. Lab Activity & Tracking
-* **`lab_sessions`**: Single student (or group) lab attempt. Tracks status, repo URL, start/end times, and scores.
+* **`lab_sessions`**: Single student (or group) lab attempt. Tracks status, repo URL, start/end times, heartbeat (`last_ping_at`), submitted code, typing/focus/paste telemetry counters, and scores. The AI grade lives in `ai_grade_summary`; instructors can override it (`instructor_grade_override`, `overridden_by`).
+* **`lab_session_chats`**: Messages (with optional code snippets) posted inside a lab session.
 * **`groups`**: Collaborative teams formed for `is_group_lab` labs.
 * **`group_members`**: Pivot connecting users to groups. Tracks individual contribution scores.
 * **`telemetry_logs`**: Logs active events during a lab session (idle, copy-pastes, cmd line runs, tab switches) for cheating/activity analysis.

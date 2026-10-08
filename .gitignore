@@ -84,3 +84,6 @@ ehthumbs.db
 desktop.ini
 $RECYCLE.BIN/
 credentials.txt
+
+# graphify knowledge graph output (regenerate with /graphify)
+graphify-out/
