@@ -1,0 +1,32 @@
+{
+  "brand": "Certicode Labs",
+  "tagline": "See how your students actually code",
+  "brief": "Live Java coding labs in VS Code where instructors see the process, not just the result: integrity signals, rubric-based AI grading, and verifiable certificates. The mark must replace a stock lightning bolt and read at 16 px in a VS Code activity bar.",
+  "adjectives": ["watchful", "verifiable", "precise", "developer-native"],
+  "criteria": "Success: avoids dev-tool bracket clichés and edtech blue, recognisable at 16 px, works in one colour, ties to the product's core idea.",
+  "industry": "software",
+  "mockups": ["readme", "terminal", "app-icon", "favicon-tab", "website", "badge"],
+  "nav": ["How it works", "For instructors", "Sign in"],
+  "brand_color": "#3ecf8e",
+  "tile_color": "#0b0c0b",
+  "greyscale": false,
+  "designer": "Certicode Labs",
+  "round": 2,
+  "concepts": [
+    {
+      "name": "Typed C",
+      "symbol": "final/certicode-symbol.svg",
+      "lockup": "final/certicode-horizontal-black.svg",
+      "symbol_on_tile": "final/certicode-symbol-on-dark.svg",
+      "lockup_on_dark": "final/certicode-horizontal-on-dark.svg",
+      "idea": "Your initial, mid-keystroke: the work is seen as it is written.",
+      "rationale": [
+        "The cursor is the product's core idea: watching the process, not the output",
+        "Echoes the blinking emerald caret on the landing page; animates naturally",
+        "Two shapes, clear at 16 px; emerald separates it from blue edtech marks"
+      ]
+    }
+  ],
+  "recommendation": "Typed C, with the emerald cursor as the single ownable detail. Keep the cursor in every use; the C alone is a generic geometric letter.",
+  "next_steps": ["Apply to favicon, landing page and VS Code extension icon", "Optional: blinking-cursor motion for loading states", "Professional trademark search before registration"]
+}

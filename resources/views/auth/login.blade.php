@@ -26,11 +26,7 @@
         <!-- Logo and Brand Name -->
         <div class="flex items-center gap-3 z-10">
             <a href="/" class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-[6px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center">
-                    <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                </div>
+                <x-logo-mark class="w-7 h-7 text-[#ececea]" />
                 <span class="text-xl font-bold tracking-tight text-[#ededed]">
                     Certicode <span class="text-[#3ecf8e]">Labs</span>
                 </span>
@@ -88,11 +84,7 @@
         <div class="max-w-md w-full mx-auto py-12 space-y-6">
             <!-- Mobile Brand Header -->
             <div class="flex items-center gap-2.5 md:hidden mb-6">
-                <div class="w-8 h-8 rounded-[6px] bg-[#171717] border border-[#2e2e2e] flex items-center justify-center">
-                    <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                </div>
+                <x-logo-mark class="w-7 h-7 text-[#ececea]" />
                 <span class="text-xl font-bold tracking-tight text-[#ededed]">
                     Certicode <span class="text-[#3ecf8e]">Labs</span>
                 </span>

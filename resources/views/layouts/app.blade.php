@@ -9,6 +9,8 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; script-src 'self' https: 'unsafe-inline' 'unsafe-eval' blob: data:; style-src 'self' https: 'unsafe-inline'; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https: ws: wss:;">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     <link rel="alternate icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
+    <link rel="manifest" href="{{ asset('site.webmanifest') }}">
     <title>@yield('title', 'Certicode Labs') - Certicode Labs</title>
 
     <!-- Immediate Theme Initialization (No-FOUC) -->
@@ -410,14 +412,9 @@
                 <div class="flex items-center space-x-4">
                     <!-- Logo / Link to Dashboard -->
                     <a href="{{ route('dashboard') }}" class="flex items-center space-x-2.5 hover:opacity-95 transition-opacity">
-                        <div class="w-7 h-7 rounded-md bg-[#0f0f0f] border border-[#2e2e2e] flex items-center justify-center">
-                            <!-- Supabase-inspired emerald icon -->
-                            <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M21.362 9.354H12V.396a.396.396 0 0 0-.716-.233L.103 13.916a.396.396 0 0 0 .307.632H9.6v9.056a.396.396 0 0 0 .716.233l11.181-13.753a.396.396 0 0 0-.307-.632z"/>
-                            </svg>
-                        </div>
+                        <x-logo-mark class="w-6 h-6 text-[var(--color-text,#ededed)]" />
                         <span class="text-base font-bold tracking-tight text-white flex items-center gap-1 font-sans">
-                            Certicode<span class="text-[#3ecf8e]">Labs</span>
+                            Certicode<span class="font-medium opacity-60">Labs</span>
                         </span>
                     </a>
                     

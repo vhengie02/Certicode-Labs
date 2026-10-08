@@ -24,11 +24,7 @@
     <div class="max-w-md w-full bg-[#171717] border border-[#2e2e2e] rounded-xl p-8 space-y-6">
         <!-- Logo and Header -->
         <div class="flex flex-col items-center space-y-3">
-            <div class="w-10 h-10 rounded-[6px] bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[#3ecf8e]">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                </svg>
-            </div>
+            <x-logo-mark class="w-10 h-10 text-[#ececea]" />
             <div class="text-center space-y-1">
                 <h1 class="text-xl font-bold text-[#ededed] tracking-tight">Forgot Password</h1>
                 <p class="text-xs text-[#888888]">Enter your email to receive a password reset link</p>
