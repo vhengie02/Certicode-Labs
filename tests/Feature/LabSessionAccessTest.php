@@ -79,6 +79,24 @@ class LabSessionAccessTest extends TestCase
         $this->assertSame($token, $this->aliceSession->fresh()->issueExtensionToken(), 'token is stable once issued');
     }
 
+    public function test_token_encrypted_with_a_previous_app_key_is_treated_as_missing()
+    {
+        // Simulate an APP_KEY rotation: the stored ciphertext no longer decrypts.
+        $oldKey = new \Illuminate\Encryption\Encrypter(random_bytes(32), 'AES-256-CBC');
+        \Illuminate\Support\Facades\DB::table('lab_sessions')
+            ->where('id', $this->aliceSession->id)
+            ->update(['extension_token' => $oldKey->encryptString('old-token')]);
+        $session = $this->aliceSession->fresh();
+
+        $this->withHeaders(['X-Session-Token' => 'old-token'])
+            ->getJson("/api/v1/sessions/{$session->id}")->assertStatus(401);
+
+        $newToken = $session->issueExtensionToken();
+        $this->assertNotSame('old-token', $newToken);
+        $this->withHeaders(['X-Session-Token' => $newToken])
+            ->getJson("/api/v1/sessions/{$session->id}")->assertOk();
+    }
+
     public function test_signed_in_users_need_access_to_the_session()
     {
         $this->actingAs($this->bob)->getJson("/v1/sessions/{$this->aliceSession->id}")->assertStatus(403);

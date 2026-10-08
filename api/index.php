@@ -34,11 +34,14 @@ foreach ($tmpDirs as $dir) {
     }
 }
 
-// Fallback APP_KEY if not in environment
+// Refuse to run without an APP_KEY. A fallback key in source is public (the repo is on GitHub)
+// and would let anyone forge encrypted cookies and decrypt encrypted columns.
 if (!getenv('APP_KEY')) {
-    putenv('APP_KEY=base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=');
-    $_ENV['APP_KEY'] = 'base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=';
-    $_SERVER['APP_KEY'] = 'base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8=';
+    error_log('Vercel Serverless: APP_KEY is not set. Add it in Vercel > Project > Settings > Environment Variables.');
+    http_response_code(500);
+    header('Content-Type: text/plain');
+    echo 'Server configuration error.';
+    exit;
 }
 
 // Point compiled views and caches to writable /tmp
@@ -88,7 +91,8 @@ try {
         exit;
     }
 
-    $showDebug = (isset($_GET['debug']) || env('APP_DEBUG', false));
+    // Details only when APP_DEBUG is on; never from a query string, which any visitor can add.
+    $showDebug = filter_var(getenv('APP_DEBUG'), FILTER_VALIDATE_BOOLEAN);
     http_response_code(500);
 
     if ($showDebug) {
@@ -101,6 +105,6 @@ try {
         echo "Stack Trace:\n" . $e->getTraceAsString();
     } else {
         header('Content-Type: text/html');
-        echo '<!DOCTYPE html><html><head><title>500 Server Error</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0f172a;color:#cbd5e1;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;"><div style="text-align:center;"><h1 style="font-size:2rem;margin-bottom:0.5rem;color:#f87171;">500 | Server Error</h1><p style="color:#94a3b8;">The server encountered an error while processing your request.</p><p style="font-size:0.85rem;color:#64748b;margin-top:1rem;">Add <code style="background:#1e293b;padding:2px 6px;border-radius:4px;color:#38bdf8;">?debug=1</code> to the URL to view diagnostic details.</p></div></body></html>';
+        echo '<!DOCTYPE html><html><head><title>500 Server Error</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0f172a;color:#cbd5e1;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;"><div style="text-align:center;"><h1 style="font-size:2rem;margin-bottom:0.5rem;color:#f87171;">500 | Server Error</h1><p style="color:#94a3b8;">The server encountered an error while processing your request.</p></div></body></html>';
     }
 }

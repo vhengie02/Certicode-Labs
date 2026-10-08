@@ -66,11 +66,30 @@ class LabSession extends Model
      */
     public function issueExtensionToken(): string
     {
-        if (!$this->extension_token) {
-            $this->forceFill(['extension_token' => \Illuminate\Support\Str::random(48)])->save();
+        $token = $this->currentExtensionToken();
+        if (!$token) {
+            $token = \Illuminate\Support\Str::random(48);
+            // Written with a query rather than save(): save() decrypts the old value to detect changes,
+            // which throws when that value was encrypted with a previous APP_KEY.
+            $encrypted = \Illuminate\Support\Facades\Crypt::encryptString($token);
+            static::whereKey($this->getKey())->update(['extension_token' => $encrypted]);
+            $this->setRawAttributes(['extension_token' => $encrypted] + $this->getAttributes(), true);
         }
 
-        return $this->extension_token;
+        return $token;
+    }
+
+    /**
+     * The stored extension token, or null when there is none or it was encrypted with a
+     * previous APP_KEY (after a key rotation the student simply reconnects from the website).
+     */
+    public function currentExtensionToken(): ?string
+    {
+        try {
+            return $this->extension_token ?: null;
+        } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+            return null;
+        }
     }
 
     /**

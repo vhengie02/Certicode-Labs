@@ -22,7 +22,8 @@ class AuthorizeLabSession
         }
 
         $token = (string) $request->header('X-Session-Token', '');
-        $tokenValid = $token !== '' && $session->extension_token && hash_equals($session->extension_token, $token);
+        $storedToken = $session->currentExtensionToken();
+        $tokenValid = $token !== '' && $storedToken && hash_equals($storedToken, $token);
 
         if (!$tokenValid && !$session->isAccessibleBy($request->user())) {
             return response()->json(['error' => 'unauthorized', 'message' => 'You do not have access to this lab session.'], $request->user() ? 403 : 401);

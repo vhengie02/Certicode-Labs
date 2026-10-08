@@ -19,20 +19,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) {
-            if ($request->has('debug')) {
-                return response(
-                    "Server Exception Details:\n" .
-                    "-------------------------\n" .
-                    "Type:    " . get_class($e) . "\n" .
-                    "Message: " . $e->getMessage() . "\n" .
-                    "File:    " . $e->getFile() . ':' . $e->getLine() . "\n\n" .
-                    "Stack Trace:\n" . $e->getTraceAsString(),
-                    500,
-                    ['Content-Type' => 'text/plain']
-                );
-            }
-        });
+        // Error details come from Laravel's own handler only when APP_DEBUG is true.
     })->create();
 
 // Auto-detect serverless environment (e.g. Vercel) where base storage is read-only

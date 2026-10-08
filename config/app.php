@@ -99,7 +99,8 @@ return [
 
     'cipher' => 'AES-256-CBC',
 
-    'key' => env('APP_KEY', 'base64:5rIS7wYfHDb4YF3M4e5bkT9VlXAeMvji+EkFPyKkOl8='),
+    // No default: a key committed to the repo is public. Set APP_KEY in the environment.
+    'key' => env('APP_KEY'),
 
     'previous_keys' => [
         ...array_filter(
