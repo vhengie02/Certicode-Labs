@@ -97,6 +97,31 @@ class LabSessionAccessTest extends TestCase
             ->getJson("/api/v1/sessions/{$session->id}")->assertOk();
     }
 
+    /**
+     * On Vercel, the extension's /api/v1/... requests reach Laravel as /v1/... (the "/api"
+     * prefix of the api/index.php function is stripped), with no login and no CSRF token.
+     */
+    public function test_extension_token_works_on_the_v1_routes_vercel_routes_it_to()
+    {
+        $this->app['env'] = 'production'; // CSRF is only skipped automatically in the testing env
+        $token = $this->aliceSession->issueExtensionToken();
+
+        $this->withHeaders(['X-Session-Token' => $token])
+            ->getJson("/v1/sessions/{$this->aliceSession->id}")->assertOk();
+        $this->withHeaders(['X-Session-Token' => $token])
+            ->postJson("/v1/sessions/{$this->aliceSession->id}/ping", ['source' => 'vscode'])->assertOk();
+
+        $this->flushHeaders(); // headers persist between test requests; drop the token
+        $this->postJson("/v1/sessions/{$this->aliceSession->id}/ping")->assertStatus(401);
+        $this->postJson("/v1/labs/{$this->laboratory->id}/start")->assertStatus(401);
+    }
+
+    public function test_cron_tick_answers_with_and_without_the_api_prefix()
+    {
+        $this->getJson('/api/cron/tick')->assertOk()->assertJsonPath('status', 'success');
+        $this->getJson('/cron/tick')->assertOk()->assertJsonPath('status', 'success');
+    }
+
     public function test_signed_in_users_need_access_to_the_session()
     {
         $this->actingAs($this->bob)->getJson("/v1/sessions/{$this->aliceSession->id}")->assertStatus(403);
