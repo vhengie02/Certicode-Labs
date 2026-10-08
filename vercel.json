@@ -7,7 +7,7 @@
   "functions": {
     "api/index.php": {
       "runtime": "vercel-php@0.7.3",
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "crons": [

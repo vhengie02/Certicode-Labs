@@ -47,6 +47,13 @@ return [
         'redirect' => env('GITHUB_REDIRECT_URI', '/auth/github/callback'),
     ],
 
+    // AI grading with Claude. Without a key the rule-based mock grader is used.
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY'),
+        'grader_model' => env('ANTHROPIC_GRADER_MODEL', 'claude-opus-5-5'),
+        'grader_effort' => env('ANTHROPIC_GRADER_EFFORT', 'medium'), // low | medium | high | xhigh | max
+    ],
+
     // Remote code execution (Judge0). Needed where Docker/JDK are unavailable, e.g. Vercel.
     // Self-hosted: JUDGE0_URL (+ optional JUDGE0_KEY sent as X-Auth-Token).
     // RapidAPI: JUDGE0_URL=https://judge0-ce.p.rapidapi.com, JUDGE0_KEY, JUDGE0_RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
