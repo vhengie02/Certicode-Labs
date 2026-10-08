@@ -15,7 +15,9 @@ return [
     |
     */
 
-    'default' => env('BROADCAST_CONNECTION', 'null'),
+    // `?:` rather than env()'s default: an empty BROADCAST_CONNECTION (as set on Vercel) must not
+    // resolve to a connection named '' — that throws on boot when routes/channels.php registers.
+    'default' => env('BROADCAST_CONNECTION') ?: 'null',
 
     /*
     |--------------------------------------------------------------------------
