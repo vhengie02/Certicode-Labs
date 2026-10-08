@@ -3,6 +3,7 @@
   "framework": null,
   "outputDirectory": "public",
   "buildCommand": "npm run build",
+  "regions": ["icn1"],
   "functions": {
     "api/index.php": {
       "runtime": "vercel-php@0.7.3"
@@ -11,7 +12,7 @@
   "crons": [
     {
       "path": "/api/cron/tick",
-      "schedule": "* * * * *"
+      "schedule": "0 16 * * *"
     }
   ],
   "routes": [

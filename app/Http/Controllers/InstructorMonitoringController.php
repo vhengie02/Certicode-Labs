@@ -19,14 +19,14 @@ class InstructorMonitoringController extends Controller
     {
         $this->authorizeInstructor();
 
-        $laboratory = Laboratory::with(['module.schoolClass.instructor', 'module.schoolClass.students'])->findOrFail($labId);
+        $laboratory = Laboratory::with('module.schoolClass')->findOrFail($labId);
         $laboratory->checkAndAutoCloseLive();
         LabSession::autoExpireStaleSessions($laboratory->id);
         $schoolClass = $laboratory->module ? $laboratory->module->schoolClass : null;
 
         $sortBy = $laboratory->is_group_lab ? $request->query('sort', 'name') : 'name'; // 'name' or 'group'
 
-        $sessionsQuery = LabSession::with(['user', 'group', 'anomalies', 'overriddenByUser'])
+        $sessionsQuery = LabSession::with(['user', 'group', 'anomalies' => fn($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
             ->where('lab_id', $laboratory->id);
 
         $sessions = $sessionsQuery->get();
@@ -49,7 +49,7 @@ class InstructorMonitoringController extends Controller
         $totalStudents = $sessions->count();
         $activeSessions = $sessions->filter(fn($s) => $s->status === 'in_progress' && $s->isActivelyConnected())->count();
         $completedSessions = $sessions->where('status', 'completed')->count();
-        $totalAnomalies = Anomaly::whereIn('lab_session_id', $sessions->pluck('id'))->count();
+        $totalAnomalies = $sessions->sum(fn($s) => $s->anomalies->count());
         $avgWpm = $sessions->count() > 0 ? round($sessions->avg('wpm')) : 0;
 
         $similarityService = app(\App\Services\CodeSimilarityService::class);
@@ -110,7 +110,7 @@ class InstructorMonitoringController extends Controller
             ];
         }
 
-        $sessions = LabSession::with(['user', 'group', 'anomalies', 'overriddenByUser'])
+        $sessions = LabSession::with(['user', 'group', 'anomalies' => fn($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
             ->where('lab_id', $laboratory->id)
             ->get()
             ->map(function ($s) {

@@ -48,7 +48,7 @@
                                 </span>
                                 @if(auth()->user()->role === 'student')
                                     @php
-                                        $progress = $mod->getStudentProgress(auth()->user());
+                                        $progress = $mod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
                                     @endphp
                                     @if($progress)
                                         <span class="px-1 py-0.2 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1">
@@ -70,7 +70,7 @@
                                             </span>
                                             @if(auth()->user()->role === 'student')
                                                 @php
-                                                    $subProgress = $subMod->getStudentProgress(auth()->user());
+                                                    $subProgress = $subMod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
                                                 @endphp
                                                 @if($subProgress)
                                                     <span class="px-1 py-0.2 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1">

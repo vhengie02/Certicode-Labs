@@ -67,6 +67,24 @@ class SchoolClass extends Model
     }
 
     /**
+     * Load every module of the class (with its laboratories) in two queries and wire up
+     * each module's `children` relation in memory, so walking the tree at any depth
+     * (e.g. Module::getAllLaboratoryIds) issues no further queries.
+     */
+    public function loadModuleTree(?\Closure $laboratoryConstraint = null): static
+    {
+        $this->load(['modules.laboratories' => $laboratoryConstraint ?? fn ($query) => $query]);
+
+        $childrenByParent = $this->modules->groupBy('parent_id');
+        foreach ($this->modules as $module) {
+            $children = $childrenByParent[$module->id] ?? new \Illuminate\Database\Eloquent\Collection();
+            $module->setRelation('children', $children->sortBy('order_index')->values());
+        }
+
+        return $this;
+    }
+
+    /**
      * Calculate aggregate student progress for the class.
      */
     public function getStudentProgress(User $student, ?array $completedLabIds = null)

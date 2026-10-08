@@ -110,20 +110,10 @@ class ClassController extends Controller
             return redirect()->route('login');
         }
 
-        $with = [
-            'students',
-            'instructor'
-        ];
-
-        if ($user->role !== 'student') {
-            $with['modules.laboratories'] = fn($q) => $q->withCount(['labSessions as completed_count' => fn($sq) => $sq->where('status', 'completed')]);
-            $with['modules.children.laboratories'] = fn($q) => $q->withCount(['labSessions as completed_count' => fn($sq) => $sq->where('status', 'completed')]);
-        } else {
-            $with[] = 'modules.laboratories';
-            $with[] = 'modules.children.laboratories';
-        }
-
-        $class = SchoolClass::with($with)->findOrFail($id);
+        $class = SchoolClass::with(['students', 'instructor'])->findOrFail($id);
+        $class->loadModuleTree($user->role !== 'student'
+            ? fn($q) => $q->withCount(['labSessions as completed_count' => fn($sq) => $sq->where('status', 'completed')])
+            : null);
 
         // Authorize student access using the already loaded students collection
         if ($user->role === 'student') {
@@ -382,15 +372,16 @@ class ClassController extends Controller
      */
     public function showModule(int $class_id, int $module_id)
     {
-        $class = SchoolClass::with([
-            'modules.children.laboratories',
-            'modules.laboratories'
-        ])->findOrFail($class_id);
-        $module = Module::with(['laboratories', 'attachments'])->findOrFail($module_id);
+        $class = SchoolClass::findOrFail($class_id)->loadModuleTree();
+        // Taken from the already-loaded tree: no extra queries, and the module must belong to this class.
+        $module = $class->modules->firstWhere('id', $module_id) ?? abort(404);
+        $module->load('attachments');
         $user = Auth::user();
         if (!$user instanceof User) {
             return redirect()->route('login');
         }
+
+        $completedLabIds = null;
 
         // Check if student is enrolled in the class
         if ($user->role === 'student') {
@@ -410,9 +401,15 @@ class ClassController extends Controller
                 ]);
                 $module->increment('views_count');
             }
+
+            // One query for the whole outline instead of one progress count per module.
+            $completedLabIds = \App\Models\LabSession::where('user_id', $user->id)
+                ->where('status', 'completed')
+                ->pluck('lab_id', 'lab_id')
+                ->toArray();
         }
 
-        return view('classes.module-show', compact('class', 'module'));
+        return view('classes.module-show', compact('class', 'module', 'completedLabIds'));
     }
 
     /**
@@ -553,7 +550,7 @@ class ClassController extends Controller
             @set_time_limit(120);
         }
 
-        $class = SchoolClass::with(['modules.laboratories', 'modules.children.laboratories'])->findOrFail($class_id);
+        $class = SchoolClass::findOrFail($class_id)->loadModuleTree();
 
         $cacheKey = "class_telemetry_{$class_id}";
         [$sessions, $anomalies] = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 15, function () use ($class) {
@@ -579,7 +576,8 @@ class ClassController extends Controller
 
             $sessionsById = $sessions->keyBy('id');
 
-            $anomalies = \App\Models\Anomaly::whereIn('lab_session_id', $sessionIds)
+            $anomalies = \App\Models\Anomaly::withoutSnapshotData()
+                ->whereIn('lab_session_id', $sessionIds)
                 ->latest()
                 ->get();
 
