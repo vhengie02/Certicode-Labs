@@ -4,7 +4,8 @@ import { URLSearchParams } from 'url';
 
 
 export function activate(context: vscode.ExtensionContext) {
-    const sidebarProvider = new SidebarProvider(context.extensionUri);
+    const sidebarProvider = new SidebarProvider(context.extensionUri, context.globalState);
+    context.subscriptions.push(sidebarProvider);
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
@@ -36,14 +37,12 @@ export function activate(context: vscode.ExtensionContext) {
                 if (sessionId && backendUrl) {
                     const parsedSessionId = parseInt(sessionId, 10);
                     if (!isNaN(parsedSessionId)) {
-                        sidebarProvider.connectToSession(
-                            backendUrl,
-                            parsedSessionId,
-                            apiToken || undefined
-                        );
-                        vscode.commands.executeCommand('workbench.view.extension.certicode-explorer');
-                        vscode.commands.executeCommand('certicode-labs.sidebar.focus');
-                        vscode.window.showInformationMessage(`CertiCode: Connecting automatically to Lab Session #${parsedSessionId}...`);
+                        // connectToSession asks before trusting a server the student has not used before.
+                        sidebarProvider.connectToSession(backendUrl, parsedSessionId, apiToken || undefined).then(connected => {
+                            if (connected) {
+                                vscode.window.showInformationMessage(`CertiCode: Connecting to Lab Session #${parsedSessionId}...`);
+                            }
+                        });
                     }
                 }
             }

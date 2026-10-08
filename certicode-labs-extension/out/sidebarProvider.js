@@ -28,9 +28,15 @@ const vscode = __importStar(require("vscode"));
 const http = __importStar(require("http"));
 const https = __importStar(require("https"));
 const url_1 = require("url");
+const crypto = __importStar(require("crypto"));
+const API_PREFIX = '/api/v1';
+const TRUSTED_BACKENDS_KEY = 'certicode.trustedBackends';
+// Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
+const MIN_CHAT_SNIPPET_LENGTH = 20;
 class SidebarProvider {
-    constructor(_extensionUri) {
+    constructor(_extensionUri, _globalState) {
         this._extensionUri = _extensionUri;
+        this._globalState = _globalState;
         this._backendUrl = 'http://localhost';
         this._isReconnecting = false;
         this._lastSessionData = null;
@@ -57,6 +63,118 @@ class SidebarProvider {
         this._lastIdleAlertMinutes = 0;
         this._sessionStartTime = Date.now();
         this._wsConnected = false;
+        // Polling is only paused once the server confirms a channel subscription.
+        this._wsSubscribed = false;
+        this._wsRetryDelayMs = 10000;
+        this._seenChatCount = 0;
+        this._lastChatCount = 0;
+        // Workspace-wide listeners, registered once and disposed with the provider.
+        this._workspaceDisposables = [];
+    }
+    dispose() {
+        this.stopSessionTimers();
+        this._workspaceDisposables.forEach(d => d.dispose());
+        this._workspaceDisposables = [];
+        if (this._windowStateListener) {
+            this._windowStateListener.dispose();
+            this._windowStateListener = undefined;
+        }
+    }
+    /**
+     * Stop every timer, listener, and socket tied to the active session.
+     */
+    stopSessionTimers() {
+        if (this._pingInterval) {
+            clearInterval(this._pingInterval);
+            this._pingInterval = undefined;
+        }
+        if (this._chatPollInterval) {
+            clearInterval(this._chatPollInterval);
+            this._chatPollInterval = undefined;
+        }
+        if (this._leaderboardInterval) {
+            clearInterval(this._leaderboardInterval);
+            this._leaderboardInterval = undefined;
+        }
+        if (this._wpmSyncTimer) {
+            clearTimeout(this._wpmSyncTimer);
+            this._wpmSyncTimer = undefined;
+        }
+        if (this._diffDebounceTimer) {
+            clearTimeout(this._diffDebounceTimer);
+            this._diffDebounceTimer = undefined;
+        }
+        if (this._idleCheckInterval) {
+            clearInterval(this._idleCheckInterval);
+            this._idleCheckInterval = undefined;
+        }
+        this.disposeActivityListeners();
+        this.disconnectWebSocket();
+    }
+    /**
+     * Ask before talking to a backend the student has not connected to before. Deep links can
+     * name any server, and a connected server decides which files are written to the workspace.
+     */
+    async ensureTrustedBackend(rawUrl) {
+        let url;
+        try {
+            url = new url_1.URL(rawUrl.trim());
+        }
+        catch {
+            vscode.window.showErrorMessage(`CertiCode: "${rawUrl}" is not a valid backend URL.`);
+            return undefined;
+        }
+        const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+        if (url.protocol !== 'https:' && !(isLocal && url.protocol === 'http:')) {
+            vscode.window.showErrorMessage('CertiCode: The backend must use https:// (http:// is only allowed for localhost).');
+            return undefined;
+        }
+        const origin = url.origin;
+        const trusted = this._globalState.get(TRUSTED_BACKENDS_KEY, []);
+        if (!trusted.includes(origin)) {
+            const choice = await vscode.window.showWarningMessage(`Connect to the CertiCode lab server at ${origin}? It will be able to create files in your workspace and receive your code and activity.`, { modal: true }, 'Connect');
+            if (choice !== 'Connect') {
+                return undefined;
+            }
+            await this._globalState.update(TRUSTED_BACKENDS_KEY, [...trusted, origin]);
+        }
+        return origin;
+    }
+    /**
+     * Resolve a server-provided relative file name inside the workspace root.
+     * Rejects absolute paths and anything that would escape the root (e.g. "../../.bashrc").
+     */
+    resolveWorkspaceFile(rootUri, name) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            return undefined;
+        }
+        const normalized = name.replace(/\\/g, '/');
+        const segments = normalized.split('/');
+        if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized) || segments.some(s => s === '..')) {
+            return undefined;
+        }
+        return vscode.Uri.joinPath(rootUri, ...segments.filter(s => s !== '' && s !== '.'));
+    }
+    /**
+     * Read a lab file as the student currently sees it: the open editor buffer (including
+     * unsaved edits) when the file is open, otherwise the file on disk.
+     */
+    async readWorkspaceText(fileUri) {
+        const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === fileUri.toString());
+        if (openDoc) {
+            return openDoc.getText();
+        }
+        return new TextDecoder().decode(await vscode.workspace.fs.readFile(fileUri));
+    }
+    /**
+     * Whether an editor event comes from the student's own code, as opposed to Output panels,
+     * logs, settings, or files outside the lab workspace.
+     */
+    isStudentDocument(doc) {
+        if (doc.uri.scheme === 'untitled') {
+            return true;
+        }
+        return doc.uri.scheme === 'file' && vscode.workspace.getWorkspaceFolder(doc.uri) !== undefined;
     }
     resolveWebviewView(webviewView, context, _token) {
         this._view = webviewView;
@@ -94,9 +212,18 @@ class SidebarProvider {
                     break;
                 }
                 case 'connect': {
-                    this._backendUrl = data.backendUrl.replace(/\/$/, '');
-                    this._sessionId = parseInt(data.sessionId);
-                    this._apiToken = data.apiToken;
+                    const sessionId = parseInt(data.sessionId, 10);
+                    if (isNaN(sessionId)) {
+                        vscode.window.showErrorMessage('CertiCode: Enter a numeric Lab Session ID.');
+                        break;
+                    }
+                    const origin = await this.ensureTrustedBackend(String(data.backendUrl || ''));
+                    if (!origin) {
+                        break;
+                    }
+                    this._backendUrl = origin;
+                    this._sessionId = sessionId;
+                    this._apiToken = data.apiToken || undefined;
                     this.startMonitoring();
                     break;
                 }
@@ -120,6 +247,7 @@ class SidebarProvider {
                     this._isChatTabActive = data.active;
                     if (data.active) {
                         this._unreadChatCount = 0;
+                        this._seenChatCount = this._lastChatCount;
                         this._view?.webview.postMessage({ type: 'unreadReset' });
                     }
                     break;
@@ -132,8 +260,10 @@ class SidebarProvider {
                 }
                 case 'openFile': {
                     const workspaceFolders = vscode.workspace.workspaceFolders;
-                    if (workspaceFolders && workspaceFolders.length > 0) {
-                        const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, data.name);
+                    const fileUri = workspaceFolders && workspaceFolders.length > 0
+                        ? this.resolveWorkspaceFile(workspaceFolders[0].uri, data.name)
+                        : undefined;
+                    if (fileUri) {
                         try {
                             const doc = await vscode.workspace.openTextDocument(fileUri);
                             await vscode.window.showTextDocument(doc, { preview: false });
@@ -162,6 +292,13 @@ class SidebarProvider {
                 }
             }
         });
+        // Catch up on chat and leaderboard skipped or slowed while the view was hidden
+        webviewView.onDidChangeVisibility(() => {
+            if (webviewView.visible && this._sessionId) {
+                this.fetchChatMessages();
+                this.fetchLeaderboard();
+            }
+        });
         // Setup FileSystemWatcher and Document change tracking
         this.setupWorkspaceWatchers();
     }
@@ -178,13 +315,18 @@ class SidebarProvider {
         }
         const session = await vscode.window.showInputBox({
             prompt: 'Enter Lab Session ID',
-            placeHolder: 'e.g. 1'
+            placeHolder: 'e.g. 1',
+            validateInput: value => /^\d+$/.test(value.trim()) ? undefined : 'Enter a numeric session ID.'
         });
         if (!session) {
             return;
         }
-        this._backendUrl = url.replace(/\/$/, '');
-        this._sessionId = parseInt(session);
+        const origin = await this.ensureTrustedBackend(url);
+        if (!origin) {
+            return;
+        }
+        this._backendUrl = origin;
+        this._sessionId = parseInt(session, 10);
         this._apiToken = undefined;
         this._view?.webview.postMessage({
             type: 'prefill',
@@ -196,8 +338,12 @@ class SidebarProvider {
     /**
      * Connect directly to a session (called via deep-linking custom URI handler)
      */
-    connectToSession(backendUrl, sessionId, apiToken) {
-        this._backendUrl = backendUrl.replace(/\/$/, '');
+    async connectToSession(backendUrl, sessionId, apiToken) {
+        const origin = await this.ensureTrustedBackend(backendUrl);
+        if (!origin) {
+            return false;
+        }
+        this._backendUrl = origin;
         this._sessionId = sessionId;
         this._apiToken = apiToken;
         // If view already exists, re-render its HTML immediately so the webview launches into session mode
@@ -210,13 +356,14 @@ class SidebarProvider {
         // Focus the sidebar view in VS Code
         vscode.commands.executeCommand('workbench.view.extension.certicode-explorer');
         vscode.commands.executeCommand('certicode-labs.sidebar.focus');
+        return true;
     }
     async sendVsCodePing() {
         if (!this._sessionId) {
             return;
         }
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/ping`, {
                 source: 'vscode',
                 client: 'vscode_extension',
@@ -242,6 +389,9 @@ class SidebarProvider {
         this._keystrokeTimestamps = [];
         this._totalKeystrokes = 0;
         this._currentWpm = 0;
+        this._seenChatCount = 0;
+        this._lastChatCount = 0;
+        this._wsRetryDelayMs = 10000;
         // Feature 11: Initialize Idle Tracking & Activity Listeners
         this._lastActivityTime = Date.now();
         this._lastIdleAlertMinutes = 0;
@@ -266,15 +416,18 @@ class SidebarProvider {
             this.syncSessionState();
             this.sendVsCodePing();
         }, 15000);
-        // Run chat sync every 4 seconds (seamless fallback if WS is not connected)
+        // Chat sync every 4 seconds while the sidebar is visible, every 16 seconds while hidden.
+        // It keeps running when hidden because recent chat snippets feed paste suppression rule B.
+        let chatTick = 0;
         this._chatPollInterval = setInterval(() => {
-            if (!this._wsConnected) {
+            chatTick++;
+            if (!this._wsSubscribed && (this._view?.visible || chatTick % 4 === 0)) {
                 this.fetchChatMessages();
             }
         }, 4000);
-        // Run leaderboard sync every 10 seconds (seamless fallback if WS is not connected)
+        // Leaderboard sync every 10 seconds, only while visible (display only)
         this._leaderboardInterval = setInterval(() => {
-            if (!this._wsConnected) {
+            if (!this._wsSubscribed && this._view?.visible) {
                 this.fetchLeaderboard();
             }
         }, 10000);
@@ -295,7 +448,8 @@ class SidebarProvider {
             const wsHost = urlObj.hostname;
             const wsPort = isSecure ? '443' : (urlObj.port || '80');
             const wsEndpoint = `${wsProtocol}//${wsHost}:${wsPort}/app/certicode-key?protocol=7&client=js&version=8.4.0`;
-            this._ws = new WSClass(wsEndpoint);
+            const ws = new WSClass(wsEndpoint);
+            this._ws = ws;
             this._ws.onopen = () => {
                 this._wsConnected = true;
                 this.sendWsPayload({
@@ -311,6 +465,11 @@ class SidebarProvider {
                 try {
                     const rawData = typeof event.data === 'string' ? event.data : event.data.toString();
                     const payload = JSON.parse(rawData);
+                    if (payload.event === 'pusher_internal:subscription_succeeded') {
+                        this._wsSubscribed = true;
+                        this._wsRetryDelayMs = 10000;
+                        return;
+                    }
                     if (payload.event === 'chat.message' || payload.event === 'App\\Events\\ChatMessageSent') {
                         const chatData = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data;
                         if (chatData?.chat) {
@@ -348,12 +507,19 @@ class SidebarProvider {
                 this._wsConnected = false;
             };
             this._ws.onclose = () => {
+                if (this._ws !== ws) {
+                    return; // a newer socket replaced this one; let it manage reconnects
+                }
                 this._wsConnected = false;
+                this._wsSubscribed = false;
                 if (this._sessionId && !this._wsReconnectTimer) {
+                    // Back off when no realtime server is reachable (e.g. serverless hosting): 10s, 20s, ... up to 5 min.
+                    const delay = this._wsRetryDelayMs;
+                    this._wsRetryDelayMs = Math.min(this._wsRetryDelayMs * 2, 300000);
                     this._wsReconnectTimer = setTimeout(() => {
                         this._wsReconnectTimer = undefined;
                         this.connectWebSocket();
-                    }, 10000);
+                    }, delay);
                 }
             };
         }
@@ -382,6 +548,7 @@ class SidebarProvider {
             this._ws = undefined;
         }
         this._wsConnected = false;
+        this._wsSubscribed = false;
     }
     handleIncomingWsChat(chat) {
         if (!chat) {
@@ -393,7 +560,11 @@ class SidebarProvider {
         if (chat.code_snippet && typeof chat.code_snippet === 'string') {
             this._recentChatSnippets.push(chat.code_snippet.trim());
         }
-        if (!this._isChatTabActive) {
+        this._lastChatCount++;
+        if (this._isChatTabActive) {
+            this._seenChatCount = this._lastChatCount;
+        }
+        else {
             this._unreadChatCount++;
         }
         this._view?.webview.postMessage({
@@ -407,7 +578,7 @@ class SidebarProvider {
             return;
         }
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             const result = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}`);
             if (!this._sessionId) {
                 return;
@@ -436,6 +607,16 @@ class SidebarProvider {
                 });
                 // Fetch chats if group lab
                 this.fetchChatMessages();
+            }
+            else if (result.status === 401) {
+                // Missing or wrong session token (e.g. connected by typing the ID instead of using the link).
+                this._isReconnecting = false;
+                this.stopSessionTimers();
+                this._view?.webview.postMessage({
+                    type: 'error',
+                    message: 'This lab session needs its secure link. Open the lab on the CertiCode website and click "Open in VS Code".'
+                });
+                vscode.window.showErrorMessage('CertiCode: Not authorized for this lab session. Reopen it from the CertiCode website using "Open in VS Code".');
             }
             else if (result.status === 403) {
                 this._isReconnecting = false;
@@ -539,10 +720,13 @@ class SidebarProvider {
         const rootUri = workspaceFolders[0].uri;
         let primaryUri = null;
         for (const file of starterFiles) {
-            if (!file.name) {
+            const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
+            if (!fileUri) {
+                if (file.name) {
+                    vscode.window.showWarningMessage(`CertiCode: Skipped starter file "${file.name}" because it points outside the workspace.`);
+                }
                 continue;
             }
-            const fileUri = vscode.Uri.joinPath(rootUri, file.name);
             // Cache snapshot for diff engine
             if (!this._starterFileSnapshots.has(file.name)) {
                 this._starterFileSnapshots.set(file.name, file.content || '');
@@ -565,7 +749,7 @@ class SidebarProvider {
         }
         // Fallback to first file if none marked primary
         if (!primaryUri && starterFiles.length > 0) {
-            primaryUri = vscode.Uri.joinPath(rootUri, starterFiles[0].name);
+            primaryUri = this.resolveWorkspaceFile(rootUri, starterFiles[0].name) ?? null;
         }
         // Auto-open primary starter file
         if (primaryUri) {
@@ -596,10 +780,10 @@ class SidebarProvider {
         const rootUri = workspaceFolders[0].uri;
         const missing = [];
         for (const file of starterFiles) {
-            if (!file.name) {
+            const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
+            if (!fileUri) {
                 continue;
             }
-            const fileUri = vscode.Uri.joinPath(rootUri, file.name);
             try {
                 await vscode.workspace.fs.stat(fileUri);
             }
@@ -618,69 +802,79 @@ class SidebarProvider {
      * Feature 2: Workspace watchers for file integrity and code change diffs
      */
     setupWorkspaceWatchers() {
-        if (this._fileWatcher) {
-            this._fileWatcher.dispose();
+        // Registered once for the provider's lifetime; resolveWebviewView can run again when the
+        // view is moved or reopened, and re-registering would double-count every keystroke and paste.
+        if (this._workspaceDisposables.length > 0) {
+            return;
         }
         this._fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
-        this._fileWatcher.onDidCreate(() => this.verifyWorkspaceFileIntegrity());
-        this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity());
+        this._workspaceDisposables.push(this._fileWatcher, this._fileWatcher.onDidCreate(() => this.verifyWorkspaceFileIntegrity()), this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity()), 
         // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
-        vscode.workspace.onDidChangeTextDocument((event) => {
-            if (!this._sessionId || !this._lastSessionData) {
-                return;
-            }
-            this.recordActivity();
-            const fileName = event.document.fileName;
-            const isTracked = this._lastSessionData.laboratory?.starter_files?.some((f) => fileName.endsWith(f.name));
-            // Feature 4: Keystroke velocity & Paste anomaly interceptor
-            for (const change of event.contentChanges) {
-                if (change.text.length === 1) {
-                    this.recordKeystroke(1);
-                }
-                else if (change.text.length > 1 && change.text.length < 25) {
-                    this.recordKeystroke(change.text.length);
-                }
-                else if (change.text.length >= 25 && (change.text.includes('\n') || change.text.split(/\s+/).length > 3)) {
-                    // Bulk code insertion detected!
-                    const trimmedPaste = change.text.trim();
-                    // Suppression Rule A: Internal Move/Restructure check
-                    let isSuppressedA = false;
-                    for (const [, snapshotContent] of this._starterFileSnapshots.entries()) {
-                        if (snapshotContent.includes(trimmedPaste)) {
-                            isSuppressedA = true;
-                            break;
-                        }
-                    }
-                    // Suppression Rule B: Permitted Collaboration / Team Chat match
-                    let isSuppressedB = false;
-                    if (!isSuppressedA && this._recentChatSnippets.length > 0) {
-                        isSuppressedB = this._recentChatSnippets.some(snippet => snippet.includes(trimmedPaste) || trimmedPaste.includes(snippet));
-                    }
-                    // Flagging Rule: External paste without internal/chat justification
-                    if (!isSuppressedA && !isSuppressedB) {
-                        this.sendTelemetry('paste_anomaly', {
-                            pasted_length: change.text.length,
-                            snippet: change.text.slice(0, 100),
-                            file: fileName,
-                            wpm: this._currentWpm
-                        });
-                    }
-                }
-            }
-            if (isTracked) {
-                if (this._diffDebounceTimer) {
-                    clearTimeout(this._diffDebounceTimer);
-                }
-                this._diffDebounceTimer = setTimeout(() => {
-                    this.computeAndSyncDiffs();
-                }, 2000);
-            }
-        });
-        vscode.workspace.onDidSaveTextDocument(() => {
-            if (this._sessionId && this._lastSessionData) {
+        vscode.workspace.onDidChangeTextDocument(event => this.handleDocumentChange(event)), vscode.workspace.onDidSaveTextDocument(doc => {
+            if (this._sessionId && this._lastSessionData && this.isStudentDocument(doc)) {
                 this.computeAndSyncDiffs();
             }
-        });
+        }));
+    }
+    handleDocumentChange(event) {
+        if (!this._sessionId || !this._lastSessionData) {
+            return;
+        }
+        // Output panels, logs, settings and files outside the lab are not the student typing.
+        if (!this.isStudentDocument(event.document) || event.contentChanges.length === 0) {
+            return;
+        }
+        this.recordActivity();
+        const fileName = event.document.fileName;
+        const isTracked = this._lastSessionData.laboratory?.starter_files?.some((f) => typeof f.name === 'string' && fileName.replace(/\\/g, '/').endsWith(f.name.replace(/\\/g, '/')));
+        // Undo/redo re-applies text the student already had; it is neither typing nor a paste.
+        const isUndoRedo = event.reason === vscode.TextDocumentChangeReason.Undo
+            || event.reason === vscode.TextDocumentChangeReason.Redo;
+        // Feature 4: Keystroke velocity & Paste anomaly interceptor
+        for (const change of isUndoRedo ? [] : event.contentChanges) {
+            if (change.text.length === 1) {
+                this.recordKeystroke(1);
+            }
+            else if (change.text.length > 1 && change.text.length < 25) {
+                this.recordKeystroke(change.text.length);
+            }
+            else if (change.text.length >= 25 && (change.text.includes('\n') || change.text.split(/\s+/).length > 3)) {
+                // Bulk code insertion detected!
+                const trimmedPaste = change.text.trim();
+                // Suppression Rule A: Internal Move/Restructure check
+                let isSuppressedA = false;
+                for (const [, snapshotContent] of this._starterFileSnapshots.entries()) {
+                    if (snapshotContent.includes(trimmedPaste)) {
+                        isSuppressedA = true;
+                        break;
+                    }
+                }
+                // Suppression Rule B: Permitted Collaboration / Team Chat match.
+                // Short chat text is ignored so a one-word message cannot excuse arbitrary pastes.
+                let isSuppressedB = false;
+                if (!isSuppressedA && this._recentChatSnippets.length > 0) {
+                    isSuppressedB = this._recentChatSnippets.some(snippet => snippet.length >= MIN_CHAT_SNIPPET_LENGTH
+                        && (snippet.includes(trimmedPaste) || trimmedPaste.includes(snippet)));
+                }
+                // Flagging Rule: External paste without internal/chat justification
+                if (!isSuppressedA && !isSuppressedB) {
+                    this.sendTelemetry('paste_anomaly', {
+                        pasted_length: change.text.length,
+                        snippet: change.text.slice(0, 100),
+                        file: vscode.workspace.asRelativePath(event.document.uri),
+                        wpm: this._currentWpm
+                    });
+                }
+            }
+        }
+        if (isTracked) {
+            if (this._diffDebounceTimer) {
+                clearTimeout(this._diffDebounceTimer);
+            }
+            this._diffDebounceTimer = setTimeout(() => {
+                this.computeAndSyncDiffs();
+            }, 2000);
+        }
     }
     /**
      * Feature 5: OS-Level Focus Loss Sensor
@@ -739,20 +933,20 @@ class SidebarProvider {
     setupActivityListeners() {
         this.disposeActivityListeners();
         // 1. Cursor movement / selection changes
-        this._cursorListener = vscode.window.onDidChangeTextEditorSelection(() => {
-            if (this._sessionId) {
+        this._cursorListener = vscode.window.onDidChangeTextEditorSelection(e => {
+            if (this._sessionId && this.isStudentDocument(e.textEditor.document)) {
                 this.recordActivity();
             }
         });
         // 2. Visible ranges / scrolling
-        this._scrollListener = vscode.window.onDidChangeTextEditorVisibleRanges(() => {
-            if (this._sessionId) {
+        this._scrollListener = vscode.window.onDidChangeTextEditorVisibleRanges(e => {
+            if (this._sessionId && this.isStudentDocument(e.textEditor.document)) {
                 this.recordActivity();
             }
         });
         // 3. File switching (active text editor changed)
-        this._activeEditorListener = vscode.window.onDidChangeActiveTextEditor(() => {
-            if (this._sessionId) {
+        this._activeEditorListener = vscode.window.onDidChangeActiveTextEditor(editor => {
+            if (this._sessionId && editor && this.isStudentDocument(editor.document)) {
                 this.recordActivity();
             }
         });
@@ -833,7 +1027,7 @@ class SidebarProvider {
             return;
         }
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/telemetry`, {
                 event_type: eventType,
                 payload: payload
@@ -851,7 +1045,7 @@ class SidebarProvider {
             return;
         }
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/leaderboard`);
             if (!this._sessionId) {
                 return;
@@ -889,11 +1083,13 @@ class SidebarProvider {
         const filesSummary = [];
         for (const sfile of starterFiles) {
             const initialContent = this._starterFileSnapshots.get(sfile.name) ?? (sfile.content || '');
-            const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, sfile.name);
+            const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, sfile.name);
+            if (!fileUri) {
+                continue;
+            }
             let currentContent = '';
             try {
-                const data = await vscode.workspace.fs.readFile(fileUri);
-                currentContent = new TextDecoder().decode(data);
+                currentContent = await this.readWorkspaceText(fileUri);
             }
             catch {
                 continue;
@@ -922,7 +1118,7 @@ class SidebarProvider {
         });
         // Transmit diff payload to backend
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/diff`, {
                 lines_added: totalAdded,
                 lines_deleted: totalDeleted,
@@ -969,7 +1165,7 @@ class SidebarProvider {
             return;
         }
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/chat`);
             if (!this._sessionId) {
                 return;
@@ -987,9 +1183,12 @@ class SidebarProvider {
                         this._recentChatSnippets.push(c.code_snippet.trim());
                     }
                 }
-                if (!this._isChatTabActive && chats.length > 0) {
-                    this._unreadChatCount = chats.length;
+                // Unread = messages that arrived since the chat tab was last open, not the total.
+                this._lastChatCount = chats.length;
+                if (this._isChatTabActive) {
+                    this._seenChatCount = chats.length;
                 }
+                this._unreadChatCount = Math.max(0, chats.length - this._seenChatCount);
                 this._view?.webview.postMessage({
                     type: 'chatUpdate',
                     chats: chats,
@@ -1010,7 +1209,7 @@ class SidebarProvider {
         }
         this.recordActivity();
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             const res = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/chat`, {
                 message,
                 code_snippet: codeSnippet || null
@@ -1023,29 +1222,27 @@ class SidebarProvider {
             vscode.window.showErrorMessage(`Send Chat Error: ${err.message}`);
         }
     }
-    async handleCheckProgress() {
-        if (!this._sessionId) {
-            vscode.window.showErrorMessage('No active CertiCode lab session.');
-            return;
-        }
-        this.recordActivity();
-        // Collect all workspace files for evaluation
+    /**
+     * Gather the files to evaluate for Check Progress and Submit. Lab starter files are read
+     * from their open editors when open, so unsaved edits are what gets graded.
+     */
+    async collectSubmissionFiles() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         let primaryCode = '';
         let primaryFileName = '';
         const filesPayload = [];
+        const fileUris = [];
         if (workspaceFolders && workspaceFolders.length > 0) {
             const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
             for (const sfile of starterFiles) {
-                const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, sfile.name);
+                const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, sfile.name);
+                if (!fileUri) {
+                    continue;
+                }
                 try {
-                    const data = await vscode.workspace.fs.readFile(fileUri);
-                    const content = new TextDecoder().decode(data);
-                    filesPayload.push({
-                        name: sfile.name,
-                        content: content,
-                        is_primary: !!sfile.is_primary
-                    });
+                    const content = await this.readWorkspaceText(fileUri);
+                    filesPayload.push({ name: sfile.name, content, is_primary: !!sfile.is_primary });
+                    fileUris.push(fileUri);
                     if (sfile.is_primary || !primaryCode) {
                         primaryCode = content;
                         primaryFileName = sfile.name;
@@ -1057,30 +1254,24 @@ class SidebarProvider {
         const isNonCodeDoc = (name) => {
             return /\.(md|txt|json|env|log|lock|ya?ml)$/i.test(name) || name.includes('.git');
         };
-        // Fallback to active editor text only if it is an actual code file
+        // Fallback to the active editor only if it is the student's own code file
         if (!primaryCode) {
             const activeEditor = vscode.window.activeTextEditor;
-            if (activeEditor) {
-                const fname = activeEditor.document.fileName;
-                if (!isNonCodeDoc(fname)) {
-                    primaryCode = activeEditor.document.getText();
-                    primaryFileName = fname;
-                }
+            if (activeEditor && this.isStudentDocument(activeEditor.document) && !isNonCodeDoc(activeEditor.document.fileName)) {
+                primaryCode = activeEditor.document.getText();
+                primaryFileName = vscode.workspace.asRelativePath(activeEditor.document.uri);
+                fileUris.push(activeEditor.document.uri);
             }
         }
-        // Also search workspace for actual source code files if primaryCode still not found
+        // Finally, search the workspace for source files
         if (!primaryCode && workspaceFolders && workspaceFolders.length > 0) {
             try {
                 const codeFiles = await vscode.workspace.findFiles('**/*.{c,cpp,h,java,py,js,ts,go,rs,cs,php}', '**/{node_modules,vendor,.git,build,out,dist}/**', 10);
                 for (const uri of codeFiles) {
-                    const data = await vscode.workspace.fs.readFile(uri);
-                    const content = new TextDecoder().decode(data);
+                    const content = await this.readWorkspaceText(uri);
                     const relPath = vscode.workspace.asRelativePath(uri);
-                    filesPayload.push({
-                        name: relPath,
-                        content: content,
-                        is_primary: !primaryCode
-                    });
+                    filesPayload.push({ name: relPath, content, is_primary: !primaryCode });
+                    fileUris.push(uri);
                     if (!primaryCode) {
                         primaryCode = content;
                         primaryFileName = relPath;
@@ -1089,6 +1280,42 @@ class SidebarProvider {
             }
             catch { }
         }
+        return { primaryCode, primaryFileName, filesPayload, fileUris };
+    }
+    detectSubmissionLanguage(primaryFileName) {
+        if (primaryFileName) {
+            return this.detectLanguage(primaryFileName);
+        }
+        const firstStarter = this._lastSessionData?.laboratory?.starter_files?.[0]?.name;
+        return firstStarter ? this.detectLanguage(firstStarter) : 'c';
+    }
+    /**
+     * Compiler/language-server errors for the submitted files only. Errors in other documents
+     * (settings, other projects) must not count against the student's submission.
+     */
+    collectDiagnostics(fileUris) {
+        const collected = [];
+        for (const uri of fileUris) {
+            for (const d of vscode.languages.getDiagnostics(uri)) {
+                if (d.severity === vscode.DiagnosticSeverity.Error) {
+                    collected.push({
+                        file: vscode.workspace.asRelativePath(uri),
+                        line: d.range.start.line + 1,
+                        message: d.message,
+                        source: d.source || 'compiler'
+                    });
+                }
+            }
+        }
+        return collected;
+    }
+    async handleCheckProgress() {
+        if (!this._sessionId) {
+            vscode.window.showErrorMessage('No active CertiCode lab session.');
+            return;
+        }
+        this.recordActivity();
+        const { primaryCode, primaryFileName, filesPayload, fileUris } = await this.collectSubmissionFiles();
         if (!primaryCode && filesPayload.length === 0) {
             vscode.window.showErrorMessage('No code files found in workspace. Please open or create your solution file (e.g. main.c, Solution.java) to check progress.');
             this._view?.webview.postMessage({
@@ -1111,35 +1338,11 @@ class SidebarProvider {
             });
             return;
         }
-        let detectedLang = 'c';
-        if (primaryFileName) {
-            detectedLang = this.detectLanguage(primaryFileName);
-        }
-        else if (this._lastSessionData?.laboratory?.starter_files?.[0]?.name) {
-            detectedLang = this.detectLanguage(this._lastSessionData.laboratory.starter_files[0].name);
-        }
-        // Collect language server compiler / syntax error diagnostics
-        const collectedDiagnostics = [];
-        try {
-            const allDiags = vscode.languages.getDiagnostics();
-            for (const [uri, diags] of allDiags) {
-                const relPath = vscode.workspace.asRelativePath(uri);
-                for (const d of diags) {
-                    if (d.severity === vscode.DiagnosticSeverity.Error) {
-                        collectedDiagnostics.push({
-                            file: relPath,
-                            line: d.range.start.line + 1,
-                            message: d.message,
-                            source: d.source || 'compiler'
-                        });
-                    }
-                }
-            }
-        }
-        catch { }
+        const detectedLang = this.detectSubmissionLanguage(primaryFileName);
+        const collectedDiagnostics = this.collectDiagnostics(fileUris);
         this._view?.webview.postMessage({ type: 'status', message: 'Analyzing code with AI evaluator...' });
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/check-progress`, {
                 code: primaryCode,
                 files: filesPayload,
@@ -1181,100 +1384,20 @@ class SidebarProvider {
             vscode.window.showErrorMessage(`Submission blocked: Missing required file(s): ${this._missingFiles.join(', ')}. Please restore or recreate the file to submit.`);
             return;
         }
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        let primaryCode = '';
-        let primaryFileName = '';
-        const filesPayload = [];
-        if (workspaceFolders && workspaceFolders.length > 0) {
-            const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
-            for (const sfile of starterFiles) {
-                const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, sfile.name);
-                try {
-                    const data = await vscode.workspace.fs.readFile(fileUri);
-                    const content = new TextDecoder().decode(data);
-                    filesPayload.push({
-                        name: sfile.name,
-                        content: content,
-                        is_primary: !!sfile.is_primary
-                    });
-                    if (sfile.is_primary || !primaryCode) {
-                        primaryCode = content;
-                        primaryFileName = sfile.name;
-                    }
-                }
-                catch { }
-            }
-        }
-        const isNonCodeDoc = (name) => {
-            return /\.(md|txt|json|env|log|lock|ya?ml)$/i.test(name) || name.includes('.git');
-        };
-        if (!primaryCode) {
-            const activeEditor = vscode.window.activeTextEditor;
-            if (activeEditor) {
-                const fname = activeEditor.document.fileName;
-                if (!isNonCodeDoc(fname)) {
-                    primaryCode = activeEditor.document.getText();
-                    primaryFileName = fname;
-                }
-            }
-        }
-        if (!primaryCode && workspaceFolders && workspaceFolders.length > 0) {
-            try {
-                const codeFiles = await vscode.workspace.findFiles('**/*.{c,cpp,h,java,py,js,ts,go,rs,cs,php}', '**/{node_modules,vendor,.git,build,out,dist}/**', 10);
-                for (const uri of codeFiles) {
-                    const data = await vscode.workspace.fs.readFile(uri);
-                    const content = new TextDecoder().decode(data);
-                    const relPath = vscode.workspace.asRelativePath(uri);
-                    filesPayload.push({
-                        name: relPath,
-                        content: content,
-                        is_primary: !primaryCode
-                    });
-                    if (!primaryCode) {
-                        primaryCode = content;
-                        primaryFileName = relPath;
-                    }
-                }
-            }
-            catch { }
-        }
+        const { primaryCode, primaryFileName, filesPayload, fileUris } = await this.collectSubmissionFiles();
         if (!primaryCode && filesPayload.length === 0) {
             vscode.window.showErrorMessage('No runnable code files found in workspace. Please create or open your solution file before submitting.');
             return;
-        }
-        let detectedLang = 'c';
-        if (primaryFileName) {
-            detectedLang = this.detectLanguage(primaryFileName);
-        }
-        else if (this._lastSessionData?.laboratory?.starter_files?.[0]?.name) {
-            detectedLang = this.detectLanguage(this._lastSessionData.laboratory.starter_files[0].name);
         }
         const confirm = await vscode.window.showWarningMessage('Submit Lab Solution: Are you sure you want to finalize your submission? This compiles, runs test cases, evaluates competencies, and completes your session.', { modal: true }, 'Yes, Submit');
         if (confirm !== 'Yes, Submit') {
             return;
         }
-        // Collect language server compiler / syntax error diagnostics
-        const collectedDiagnostics = [];
-        try {
-            const allDiags = vscode.languages.getDiagnostics();
-            for (const [uri, diags] of allDiags) {
-                const relPath = vscode.workspace.asRelativePath(uri);
-                for (const d of diags) {
-                    if (d.severity === vscode.DiagnosticSeverity.Error) {
-                        collectedDiagnostics.push({
-                            file: relPath,
-                            line: d.range.start.line + 1,
-                            message: d.message,
-                            source: d.source || 'compiler'
-                        });
-                    }
-                }
-            }
-        }
-        catch { }
+        const detectedLang = this.detectSubmissionLanguage(primaryFileName);
+        const collectedDiagnostics = this.collectDiagnostics(fileUris);
         this._view?.webview.postMessage({ type: 'status', message: 'Running final submission & compilation...' });
         try {
-            const prefix = this._apiToken ? '/api' : '/api/v1';
+            const prefix = API_PREFIX;
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/submit`, {
                 code: primaryCode,
                 files: filesPayload,
@@ -1288,28 +1411,7 @@ class SidebarProvider {
                     type: 'submitResult',
                     data: responseData
                 });
-                if (this._pingInterval) {
-                    clearInterval(this._pingInterval);
-                    this._pingInterval = undefined;
-                }
-                if (this._chatPollInterval) {
-                    clearInterval(this._chatPollInterval);
-                    this._chatPollInterval = undefined;
-                }
-                if (this._leaderboardInterval) {
-                    clearInterval(this._leaderboardInterval);
-                    this._leaderboardInterval = undefined;
-                }
-                if (this._wpmSyncTimer) {
-                    clearTimeout(this._wpmSyncTimer);
-                    this._wpmSyncTimer = undefined;
-                }
-                if (this._idleCheckInterval) {
-                    clearInterval(this._idleCheckInterval);
-                    this._idleCheckInterval = undefined;
-                }
-                this.disposeActivityListeners();
-                this.disconnectWebSocket();
+                this.stopSessionTimers();
                 vscode.window.showInformationMessage(`Lab Session Completed! Final Score: ${score}%`, 'Exit Lab Workspace', 'Stay in Editor').then(selection => {
                     if (selection === 'Exit Lab Workspace') {
                         this.handleExit(false);
@@ -1340,43 +1442,18 @@ class SidebarProvider {
         const sid = this._sessionId;
         if (sid) {
             try {
-                const prefix = this._apiToken ? '/api' : '/api/v1';
+                const prefix = API_PREFIX;
                 await this.makeRequest('POST', `${prefix}/sessions/${sid}/end`);
             }
             catch (err) {
                 console.warn('Failed to notify backend on session exit:', err);
             }
         }
-        if (this._pingInterval) {
-            clearInterval(this._pingInterval);
-            this._pingInterval = undefined;
-        }
-        if (this._chatPollInterval) {
-            clearInterval(this._chatPollInterval);
-            this._chatPollInterval = undefined;
-        }
-        if (this._leaderboardInterval) {
-            clearInterval(this._leaderboardInterval);
-            this._leaderboardInterval = undefined;
-        }
-        if (this._wpmSyncTimer) {
-            clearTimeout(this._wpmSyncTimer);
-            this._wpmSyncTimer = undefined;
-        }
-        if (this._diffDebounceTimer) {
-            clearTimeout(this._diffDebounceTimer);
-            this._diffDebounceTimer = undefined;
-        }
+        this.stopSessionTimers();
         if (this._windowStateListener) {
             this._windowStateListener.dispose();
             this._windowStateListener = undefined;
         }
-        if (this._idleCheckInterval) {
-            clearInterval(this._idleCheckInterval);
-            this._idleCheckInterval = undefined;
-        }
-        this.disposeActivityListeners();
-        this.disconnectWebSocket();
         this._sessionId = undefined;
         this._lastSessionData = null;
         this._filesGenerated = false;
@@ -1406,7 +1483,8 @@ class SidebarProvider {
                     'X-Client': 'vscode',
                 };
                 if (this._apiToken) {
-                    headers['Authorization'] = `Bearer ${this._apiToken}`;
+                    // Per-session secret from the vscode:// deep link; scoped to this session only.
+                    headers['X-Session-Token'] = this._apiToken;
                 }
                 const options = {
                     method: method,
@@ -1461,14 +1539,24 @@ class SidebarProvider {
         const initialStatusText = this._lastSessionData ? 'Connected' : (this._sessionId ? `Connecting to Session #${this._sessionId}...` : 'Connected');
         const initialStatusClass = this._lastSessionData ? 'status-connected' : 'status-reconnecting';
         const backendVal = this._backendUrl || 'http://127.0.0.1:8000';
+        const nonce = crypto.randomBytes(16).toString('base64');
+        const csp = [
+            "default-src 'none'",
+            `script-src 'nonce-${nonce}'`,
+            `style-src ${webview.cspSource} 'unsafe-inline'`,
+            `img-src ${webview.cspSource} data: blob:`,
+            `font-src ${webview.cspSource}`,
+            `connect-src ${webview.cspSource}`,
+        ].join('; ');
         const sessionVal = this._sessionId ? String(this._sessionId) : '';
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="${csp}">
     <title>CertiCode Labs IDE</title>
-    <script src="${faceApiScriptUri}"></script>
+    <script nonce="${nonce}" src="${faceApiScriptUri}"></script>
     <style>
         body {
             font-family: var(--vscode-font-family, sans-serif);
@@ -2082,8 +2170,18 @@ class SidebarProvider {
         </div>
     </div>
 
-    <script>
+    <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
+
+        // Every server-, teammate- or AI-provided value goes through esc() before innerHTML.
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        // Colors land in style attributes, so only plain hex colors are allowed.
+        function safeColor(value) {
+            return /^#[0-9a-fA-F]{3,8}$/.test(String(value || '')) ? value : '#3ecf8e';
+        }
         const MODELS_BASE_PATH = "${modelsUri}";
         const INITIAL_SESSION_ID = ${initialSessionId};
         const INITIAL_BACKEND_URL = ${initialBackendUrl};
@@ -2302,7 +2400,7 @@ class SidebarProvider {
                         submitBtn.disabled = false;
                     } else {
                         integrityAlert.style.display = 'flex';
-                        integrityText.innerHTML = \`<strong>Missing:</strong> \${message.missing.join(', ')} — this file is required for submission.\`;
+                        integrityText.innerHTML = \`<strong>Missing:</strong> \${esc(message.missing.join(', '))} — this file is required for submission.\`;
                         submitBtn.disabled = true;
                     }
                     break;
@@ -2325,9 +2423,9 @@ class SidebarProvider {
                             const item = document.createElement('div');
                             item.className = 'file-item';
                             item.innerHTML = \`
-                                <span>\${f.name}</span>
+                                <span>\${esc(f.name)}</span>
                                 <span style="font-size:0.85em;">
-                                    <span class="diff-added">+\${f.added}</span> / <span class="diff-deleted">-\${f.deleted}</span>
+                                    <span class="diff-added">+\${esc(f.added)}</span> / <span class="diff-deleted">-\${esc(f.deleted)}</span>
                                 </span>
                             \`;
                             diffFilesContainer.appendChild(item);
@@ -2345,13 +2443,13 @@ class SidebarProvider {
                             el.innerHTML = \`
                                 <div class="chat-header">
                                     <div class="chat-author">
-                                        <span class="chat-avatar" style="background-color: \${c.avatar_color || '#3ecf8e'};"></span>
-                                        <span>\${c.user_name}</span>
+                                        <span class="chat-avatar" style="background-color: \${safeColor(c.avatar_color)};"></span>
+                                        <span>\${esc(c.user_name)}</span>
                                     </div>
-                                    <span class="chat-time">\${c.time || ''}</span>
+                                    <span class="chat-time">\${esc(c.time)}</span>
                                 </div>
-                                <div class="chat-text">\${c.message}</div>
-                                \${c.code_snippet ? \`<pre class="chat-snippet">\${c.code_snippet}</pre>\` : ''}
+                                <div class="chat-text">\${esc(c.message)}</div>
+                                \${c.code_snippet ? \`<pre class="chat-snippet">\${esc(c.code_snippet)}</pre>\` : ''}
                             \`;
                             chatMessagesContainer.appendChild(el);
                         });
@@ -2372,13 +2470,13 @@ class SidebarProvider {
                         el.innerHTML = \`
                             <div class="chat-header">
                                 <div class="chat-author">
-                                    <span class="chat-avatar" style="background-color: \${singleMsg.avatar_color || '#3ecf8e'};"></span>
-                                    <span>\${singleMsg.user_name}</span>
+                                    <span class="chat-avatar" style="background-color: \${safeColor(singleMsg.avatar_color)};"></span>
+                                    <span>\${esc(singleMsg.user_name)}</span>
                                 </div>
-                                <span class="chat-time">\${singleMsg.time || ''}</span>
+                                <span class="chat-time">\${esc(singleMsg.time)}</span>
                             </div>
-                            <div class="chat-text">\${singleMsg.message}</div>
-                            \${singleMsg.code_snippet ? \`<pre class="chat-snippet">\${singleMsg.code_snippet}</pre>\` : ''}
+                            <div class="chat-text">\${esc(singleMsg.message)}</div>
+                            \${singleMsg.code_snippet ? \`<pre class="chat-snippet">\${esc(singleMsg.code_snippet)}</pre>\` : ''}
                         \`;
                         chatMessagesContainer.appendChild(el);
                         chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
@@ -2401,7 +2499,7 @@ class SidebarProvider {
                             clockBanner.style.cssText = 'padding: 6px 10px; background: rgba(62, 207, 142, 0.1); border: 1px solid rgba(62, 207, 142, 0.3); border-radius: 6px; font-size: 0.78em; color: #3ecf8e; font-weight: bold; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;';
                             clockBanner.innerHTML = \`
                                 <span>⏱️ Live Lab Shared Clock</span>
-                                <span style="font-family: monospace; font-size: 1.1em;">\${message.shared_time_remaining_formatted || '00:00'} remaining</span>
+                                <span style="font-family: monospace; font-size: 1.1em;">\${esc(message.shared_time_remaining_formatted || '00:00')} remaining</span>
                             \`;
                             leaderboardContainer.appendChild(clockBanner);
                         }
@@ -2418,19 +2516,19 @@ class SidebarProvider {
                                 const rankClass = item.rank <= 3 ? (' rank-' + item.rank) : '';
                                 row.innerHTML = \`
                                     <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                                        <span class="rank-badge\${rankClass}">#\${item.rank}</span>
+                                        <span class="rank-badge\${rankClass}">#\${esc(item.rank)}</span>
                                         <div style="min-width: 0;">
                                             <div style="font-weight: 600; color: var(--vscode-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                                \${item.name}\${item.is_current ? ' (You)' : ''}
+                                                \${esc(item.name)}\${item.is_current ? ' (You)' : ''}
                                             </div>
                                             <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">
-                                                \${item.is_team && item.group_name ? item.group_name + ' • ' : ''}\${item.elapsed_time}
+                                                \${item.is_team && item.group_name ? esc(item.group_name) + ' • ' : ''}\${esc(item.elapsed_time)}
                                             </div>
                                         </div>
                                     </div>
                                     <div style="text-align: right; flex-shrink: 0;">
                                         <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; font-weight: bold; background: rgba(62, 207, 142, 0.15); color: #3ecf8e;">
-                                            \${item.tasks_completed} done
+                                            \${esc(item.tasks_completed)} done
                                         </span>
                                     </div>
                                 \`;
@@ -2542,10 +2640,10 @@ class SidebarProvider {
                     if (evalData.overall_feedback) {
                         llmFeedbackSection.style.display = 'block';
                         llmFeedbackText.innerHTML = \`
-                            <div style="font-weight:bold; margin-bottom:4px;">Score: \${evalData.correctness_score ?? 0}%</div>
-                            <div>\${evalData.overall_feedback}</div>
+                            <div style="font-weight:bold; margin-bottom:4px;">Score: \${esc(evalData.correctness_score ?? 0)}%</div>
+                            <div>\${esc(evalData.overall_feedback)}</div>
                             <div style="margin-top:6px; font-size:0.9em; border-top:1px solid rgba(255,255,255,0.05); padding-top:4px;">
-                                <strong>Code Quality:</strong> \${evalData.code_quality_feedback || 'N/A'}
+                                <strong>Code Quality:</strong> \${esc(evalData.code_quality_feedback || 'N/A')}
                             </div>
                         \`;
                     }
@@ -2594,7 +2692,7 @@ class SidebarProvider {
                 row.innerHTML = \`
                     <span style="display:flex; align-items:center; gap:6px;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                        <span>\${f.name}</span>
+                        <span>\${esc(f.name)}</span>
                     </span>
                     <span>
                         \${f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : ''}
@@ -2613,10 +2711,10 @@ class SidebarProvider {
                     row.style.cssText = 'display:flex; justify-content:space-between; font-size:0.85em; padding:3px 0;';
                     row.innerHTML = \`
                         <div style="display:flex; align-items:center; gap:5px;">
-                            <span style="width:8px; height:8px; border-radius:50%; background-color:\${tm.avatar_color};"></span>
-                            <span>\${tm.name}</span>
+                            <span style="width:8px; height:8px; border-radius:50%; background-color:\${safeColor(tm.avatar_color)};"></span>
+                            <span>\${esc(tm.name)}</span>
                         </div>
-                        <span style="font-weight:bold; color:#3ecf8e;">\${tm.contribution_score || 0}%</span>
+                        <span style="font-weight:bold; color:#3ecf8e;">\${esc(tm.contribution_score || 0)}%</span>
                     \`;
                     teammatesBreakdown.appendChild(row);
                 });
@@ -2637,12 +2735,12 @@ class SidebarProvider {
                 
                 taskItem.innerHTML = \`
                     <div class="task-header">
-                        <span class="task-title">\${task.task}</span>
-                        <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" id="badge-task-\${task.id}">
+                        <span class="task-title">\${esc(task.task)}</span>
+                        <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" id="badge-task-\${esc(task.id)}">
                             \${isCompleted ? 'Completed' : 'Pending'}
                         </span>
                     </div>
-                    <div class="task-feedback" id="feedback-task-\${task.id}" style="\${cachedFeedback ? 'display:block;' : 'display:none;'}">\${cachedFeedback || ''}</div>
+                    <div class="task-feedback" id="feedback-task-\${esc(task.id)}" style="\${cachedFeedback ? 'display:block;' : 'display:none;'}">\${esc(cachedFeedback)}</div>
                 \`;
                 tasksContainer.appendChild(taskItem);
             });
