@@ -96,30 +96,6 @@
         </div>
     </div>
 
-    <!-- GitHub-Style Contribution Graph -->
-    <div class="p-6 rounded-xl bg-[#171717] border border-[#2e2e2e]">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-xs uppercase font-mono font-bold tracking-wider text-[#a3a3a3]">Collaboration Activity Graph</h3>
-            <span class="text-xs text-[#666666] font-mono">Real-time commit telemetry</span>
-        </div>
-        <!-- Grid columns representing weeks -->
-        <div class="flex space-x-1.5 overflow-x-auto py-2" id="contribution-graph-grid">
-            <!-- Render blocks via JavaScript below -->
-        </div>
-        <div class="flex items-center justify-between text-xs text-[#666666] font-mono mt-3 pt-3 border-t border-[#232323]">
-            <span>Activity logged from linked repositories.</span>
-            <div class="flex items-center space-x-1.5">
-                <span>Less</span>
-                <span class="w-3 h-3 bg-[#121212] border border-[#2e2e2e] rounded-sm"></span>
-                <span class="w-3 h-3 bg-[#0e4429] rounded-sm"></span>
-                <span class="w-3 h-3 bg-[#006d32] rounded-sm"></span>
-                <span class="w-3 h-3 bg-[#26a641] rounded-sm"></span>
-                <span class="w-3 h-3 bg-[#3ecf8e] rounded-sm"></span>
-                <span>More</span>
-            </div>
-        </div>
-    </div>
-
     <!-- Earned Competency Certificates Panel -->
     @if(auth()->user()->role === 'student')
         <div class="p-6 rounded-xl bg-[#171717] border border-[#2e2e2e]">
@@ -152,7 +128,20 @@
     @endif
 
     <!-- Telemetry Log Tracker Table -->
-    @if(auth()->user()->role !== 'student')
+    @if(auth()->user()->role === 'admin')
+        @php($pendingRequests = \App\Models\User::whereNotNull('instructor_requested_at')->count())
+        <a href="{{ route('admin.instructor-requests.index') }}" class="flex items-center justify-between gap-4 p-6 rounded-xl bg-[#171717] border border-[#2e2e2e] hover:border-[#3ecf8e]/35 transition-colors">
+            <div>
+                <h3 class="text-xs uppercase font-mono font-bold tracking-wider text-[#a3a3a3]">Instructor requests</h3>
+                <p class="text-sm text-[#ededed] mt-2">
+                    {{ $pendingRequests === 0 ? 'No one is waiting for approval.' : $pendingRequests . ' ' . \Illuminate\Support\Str::plural('person', $pendingRequests) . ' waiting for approval.' }}
+                </p>
+            </div>
+            <span class="text-xs font-semibold text-[#3ecf8e] shrink-0">Review &rarr;</span>
+        </a>
+    @endif
+
+    @if(auth()->user()->role === 'instructor')
     <div class="p-6 rounded-xl bg-[#171717] border border-[#2e2e2e]">
         <h3 class="text-xs font-mono uppercase font-bold tracking-wider text-[#a3a3a3] mb-4">Integrity & Anomaly Telemetry Monitor</h3>
         <div class="overflow-x-auto">
@@ -167,7 +156,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#232323] bg-transparent text-[#ededed]">
-                    @forelse($recentAnomalies ?? \App\Models\Anomaly::with('labSession')->latest()->take(5)->get() as $anomaly)
+                    @forelse($recentAnomalies ?? collect() as $anomaly)
                         <tr>
                             <td class="px-5 py-3.5 whitespace-nowrap text-xs text-[#888888] font-mono">#AN-{{ $anomaly->id }}</td>
                             <td class="px-5 py-3.5 whitespace-nowrap text-xs text-[#ededed]">Session #{{ $anomaly->lab_session_id }}</td>
@@ -204,36 +193,4 @@
     </div>
     @endif
 </div>
-@endsection
-
-@section('scripts')
-<script>
-    // Contribution Graph layout renderer using Supabase palette
-    document.addEventListener('DOMContentLoaded', () => {
-        const grid = document.getElementById('contribution-graph-grid');
-        if (!grid) return;
-        grid.innerHTML = '';
-        const numWeeks = window.innerWidth < 640 ? 20 : 38;
-        
-        for (let w = 0; w < numWeeks; w++) {
-            const col = document.createElement('div');
-            col.className = 'flex flex-col space-y-1';
-            
-            for (let d = 0; d < 7; d++) {
-                const sq = document.createElement('div');
-                const rand = Math.random();
-                let color = 'bg-[#121212] border border-[#2e2e2e]/50';
-                if (rand > 0.9) color = 'bg-[#3ecf8e]';
-                else if (rand > 0.78) color = 'bg-[#26a641]';
-                else if (rand > 0.65) color = 'bg-[#006d32]';
-                else if (rand > 0.5) color = 'bg-[#0e4429]';
-                
-                sq.className = `w-2.5 h-2.5 rounded-sm ${color} cursor-pointer hover:scale-125 transition-transform duration-100`;
-                sq.title = `Commit records logged on week ${w+1}, day ${d+1}`;
-                col.appendChild(sq);
-            }
-            grid.appendChild(col);
-        }
-    });
-</script>
 @endsection

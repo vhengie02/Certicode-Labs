@@ -123,7 +123,12 @@ Route::middleware('auth')->group(function () {
                     'activeLabSessionsCount' => 0,
                     'certificates' => collect(),
                     'laboratoryCount' => \App\Models\Laboratory::count(),
-                    'recentAnomalies' => \App\Models\Anomaly::with('labSession')->latest()->take(5)->get(),
+                    // Instructors only see flags from their own classes; admins don't see this panel
+                    'recentAnomalies' => $user->role === 'instructor'
+                        ? \App\Models\Anomaly::withoutSnapshotData()
+                            ->whereHas('labSession.laboratory.module.schoolClass', fn ($q) => $q->where('instructor_id', $user->id))
+                            ->latest()->take(5)->get()
+                        : collect(),
                 ];
             }
         });
