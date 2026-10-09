@@ -143,7 +143,7 @@ class GmailIntegrationTest extends TestCase
     {
         $response = $this->get('/auth/google');
         $response->assertStatus(200);
-        $response->assertSee('Sign in');
+        $response->assertSee('Continue with Google')->assertSee('name="gmail"', false);
     }
 
     /**

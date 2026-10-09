@@ -1,184 +1,115 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full bg-[#FFFFFF]">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign in with Google - Verify</title>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Roboto', sans-serif;
-            background-color: #F0F4F9;
-        }
-    </style>
-</head>
-<body class="min-h-full flex items-center justify-center p-4">
-    <div class="max-w-[450px] w-full bg-white border border-[#dadce0] rounded-lg p-10 shadow-sm space-y-6">
-        <!-- Google Logo -->
-        <div class="flex flex-col items-center space-y-4">
-            <svg class="h-10 w-auto" viewBox="0 0 24 24" width="24" height="24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <div class="text-center space-y-1">
-                @if(request('needs_role'))
-                    <h1 class="text-2xl font-normal text-[#202124]">Create account</h1>
-                    <p class="text-sm text-[#5f6368]">Choose your role and enter verification code</p>
-                @else
-                    <h1 class="text-2xl font-normal text-[#202124]">Verification Code</h1>
-                    <p class="text-sm text-[#5f6368]">Confirm ownership of your Google account</p>
-                @endif
-            </div>
-        </div>
+@extends('layouts.auth')
 
-        <!-- Google OAuth Form -->
-        <form action="{{ route('auth.google.callback') }}" method="POST" class="space-y-6">
-            @csrf
+@php($needsRole = (bool) request('needs_role'))
+@php($oauthVerified = session('google_auth_code') === 'OAUTH_VERIFIED')
 
-            <!-- Success/Debug alert -->
-            @if(session('success'))
-                <div class="bg-blue-50 border border-blue-200 text-blue-800 p-3 rounded text-xs leading-normal">
-                    {{ session('success') }}
-                </div>
-            @endif
+@section('title', $needsRole ? 'Finish creating your account' : 'Enter your code')
 
-            <!-- Warning alert -->
-            @if(session('warning'))
-                <div class="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded text-xs leading-normal">
-                    {{ session('warning') }}
-                </div>
-            @endif
+@section('topLink')
+    <p class="text-sm text-[var(--cc-text-dim)] whitespace-nowrap">
+        <a href="{{ route('auth.google') }}" class="cc-link font-medium">Use a different account</a>
+    </p>
+@endsection
 
-            <!-- Errors Handler Alert -->
-            @if ($errors->any())
-                <div class="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-650 space-y-0.5">
-                    @foreach ($errors->all() as $error)
-                        <p>{{ $error }}</p>
-                    @endforeach
-                </div>
-            @endif
-
-            <div class="bg-[#f8f9fa] border border-[#dadce0] rounded p-3 text-xs text-[#202124] font-medium truncate">
-                Connecting: <span class="font-mono text-[#1a73e8]">{{ session('google_auth_gmail') }}</span>
-            </div>
-
-            <!-- 1. Role select for registration -->
-            @if(request('needs_role'))
-                <div class="space-y-4">
-                    <div class="space-y-2">
-                        <label class="block text-xs font-medium text-[#5f6368] uppercase tracking-wider">Account Role</label>
-                        <select name="role" required class="w-full px-3 py-2 border border-[#dadce0] rounded text-sm text-[#202124] bg-white focus:outline-none focus:border-[#1a73e8]">
-                            <option value="student">Student</option>
-                            <option value="instructor">Instructor</option>
-                        </select>
-                    </div>
-                    <div class="space-y-2">
-                        <label for="password" class="block text-xs font-medium text-[#5f6368] uppercase tracking-wider">Password</label>
-                        <div class="relative">
-                            <input type="password" name="password" id="password" required minlength="8" placeholder="••••••••"
-                                   class="w-full pl-4 pr-10 py-3 border border-[#dadce0] rounded text-sm text-[#202124] focus:outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] transition-all">
-                            <button type="button" onclick="togglePasswordVisibility('password', 'password-eye-icon')" class="absolute inset-y-0 right-0 pr-3 flex items-center text-[#5f6368] hover:text-[#202124]">
-                                <svg id="password-eye-icon" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            @endif
-
-            <!-- 2. Code select for all -->
-            @if(session('google_auth_code') === 'OAUTH_VERIFIED')
-                <input type="hidden" name="code" value="OAUTH_VERIFIED">
-            @else
-                <div>
-                    <label for="code" class="block text-xs font-medium text-[#5f6368] uppercase tracking-wider mb-2">Verification Code (6 digits)</label>
-                    <input type="text" name="code" id="code" required maxlength="6" autofocus placeholder="######"
-                           class="w-full text-center tracking-[0.25em] font-mono px-4 py-3 border border-[#dadce0] rounded text-sm text-[#202124] focus:outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] transition-all">
-                    <div class="mt-2 text-right">
-                        <button type="button" id="resend-google-btn" onclick="document.getElementById('resend-code-form').submit()" class="text-xs font-medium text-[#1a73e8] hover:underline hover:text-[#174ea6] transition-colors bg-transparent border-0 p-0 cursor-pointer">
-                            Didn't receive code? Resend Code
-                        </button>
-                    </div>
-                </div>
-            @endif
-
-            <!-- Footer Buttons -->
-            <div class="flex items-center justify-between pt-4">
-                <a href="{{ route('auth.google') }}" class="text-sm font-medium text-[#1a73e8] hover:text-[#174ea6] transition-colors">
-                    Back
-                </a>
-                <button type="submit" class="bg-[#1a73e8] hover:bg-[#1b66ca] text-white text-sm font-medium px-6 py-2.5 rounded transition shadow-sm">
-                    Complete
-                </button>
-            </div>
-        </form>
+@section('content')
+    <div class="cc-rise" style="--d:0">
+        @include('auth.partials.google-chip', ['email' => session('google_auth_gmail')])
+        @if ($needsRole)
+            <h2 class="mt-5 cc-display text-[32px] leading-tight font-bold">Almost <span class="cc-serif font-normal text-[#3ecf8e]">there.</span></h2>
+            <p class="mt-2 text-[15px] text-[var(--cc-text-dim)] cc-pretty">
+                Pick your role and set a password{{ $oauthVerified ? '' : ', then enter the code we emailed you' }}.
+            </p>
+        @else
+            <h2 class="mt-5 cc-display text-[32px] leading-tight font-bold">Check your <span class="cc-serif font-normal text-[#3ecf8e]">inbox.</span></h2>
+            <p class="mt-2 text-[15px] text-[var(--cc-text-dim)] cc-pretty">We emailed a 6-digit code to the address above. It confirms the account is yours.</p>
+        @endif
     </div>
+
+    <form class="mt-8 space-y-5 cc-rise" style="--d:1" method="POST" action="{{ route('auth.google.callback') }}">
+        @csrf
+
+        @include('auth.partials.notices')
+
+        @if ($needsRole)
+            @include('auth.partials.role-cards')
+
+            <div>
+                <label for="password" class="cc-label">Password</label>
+                <div class="relative">
+                    <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" aria-describedby="password-hint"
+                           class="cc-field !pr-11" placeholder="At least 8 characters" @error('password') aria-invalid="true" @enderror>
+                    @include('auth.partials.password-toggle', ['target' => 'password'])
+                </div>
+                <p id="password-hint" class="mt-2 text-[13px] text-[var(--cc-text-faint)]">Lets you sign in with your email too, not just Google.</p>
+            </div>
+        @endif
+
+        @if ($oauthVerified)
+            <input type="hidden" name="code" value="OAUTH_VERIFIED">
+        @else
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label for="code" class="cc-label !mb-0">Verification code</label>
+                    <button type="submit" form="resend-code-form" id="resend-google-btn"
+                            class="text-[13px] text-[var(--cc-text-dim)] hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-[var(--cc-text-dim)]">
+                        Resend code
+                    </button>
+                </div>
+                <input id="code" name="code" type="text" required maxlength="6" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}"
+                       @if (!$needsRole) autofocus @endif
+                       class="cc-field cc-mono text-center text-xl !tracking-[0.5em]" placeholder="000000" @error('code') aria-invalid="true" @enderror>
+            </div>
+        @endif
+
+        <button type="submit" class="cc-btn cc-btn-brand w-full">
+            {{ $needsRole ? 'Create account' : 'Verify and sign in' }} <span class="cc-arrow" aria-hidden="true">&rarr;</span>
+        </button>
+    </form>
 
     <form id="resend-code-form" action="{{ route('auth.google.email') }}" method="POST" class="hidden">
         @csrf
         <input type="hidden" name="gmail" value="{{ session('google_auth_gmail') }}">
     </form>
+
+    <p class="mt-10 text-center text-[13px] cc-rise" style="--d:2">
+        <a href="{{ route('auth.google') }}" class="text-[var(--cc-text-faint)] hover:text-white transition-colors">&larr; Back</a>
+    </p>
+@endsection
+
+@push('scripts')
+    @include('auth.partials.password-toggle-script')
     <script>
-        function togglePasswordVisibility(inputId, iconId) {
-            const input = document.getElementById(inputId);
-            const icon = document.getElementById(iconId);
-            if (!input || !icon) return;
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />';
-            } else {
-                input.type = 'password';
-                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />';
-            }
-        }
+        // After a code is sent, wait 60 seconds before allowing another (survives reloads in this tab)
+        (() => {
+            const button = document.getElementById('resend-google-btn');
+            if (!button) return;
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const resendBtn = document.getElementById('resend-google-btn');
-            if (resendBtn) {
-                let cooldownEnd = sessionStorage.getItem('google_resend_cooldown_end');
-                let secondsLeft = 0;
-                
-                if (cooldownEnd) {
-                    secondsLeft = Math.ceil((parseInt(cooldownEnd) - Date.now()) / 1000);
-                } else if ("{{ session('success') }}" && !"{{ $errors->any() }}") {
-                    secondsLeft = 60;
-                    sessionStorage.setItem('google_resend_cooldown_end', Date.now() + 60000);
+            const key = 'google_resend_cooldown_end';
+            const justSent = @json((bool) session('success') && !$errors->any());
+            let end = 0;
+            try {
+                end = parseInt(sessionStorage.getItem(key) || '0', 10);
+                if (!end && justSent) {
+                    end = Date.now() + 60000;
+                    sessionStorage.setItem(key, String(end));
                 }
-
-                if (secondsLeft > 0) {
-                    disableResend(secondsLeft);
-                }
-                
-                function disableResend(duration) {
-                    resendBtn.disabled = true;
-                    resendBtn.style.pointerEvents = 'none';
-                    resendBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                    resendBtn.classList.remove('hover:underline');
-                    resendBtn.textContent = `Resend Code in ${duration}s`;
-                    
-                    let timeLeft = duration;
-                    const interval = setInterval(() => {
-                        timeLeft--;
-                        if (timeLeft <= 0) {
-                            clearInterval(interval);
-                            sessionStorage.removeItem('google_resend_cooldown_end');
-                            resendBtn.disabled = false;
-                            resendBtn.style.pointerEvents = 'auto';
-                            resendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                            resendBtn.classList.add('hover:underline');
-                            resendBtn.textContent = "Didn't receive code? Resend Code";
-                        } else {
-                            resendBtn.textContent = `Resend Code in ${timeLeft}s`;
-                        }
-                    }, 1000);
-                }
+            } catch (e) {
+                if (justSent) end = Date.now() + 60000;
             }
-        });
+
+            const tick = () => {
+                const left = Math.ceil((end - Date.now()) / 1000);
+                if (left > 0) {
+                    button.disabled = true;
+                    button.textContent = `Resend in ${left}s`;
+                    setTimeout(tick, 1000);
+                } else {
+                    button.disabled = false;
+                    button.textContent = 'Resend code';
+                    try { sessionStorage.removeItem(key); } catch (e) {}
+                }
+            };
+            if (end) tick();
+        })();
     </script>
-</body>
-</html>
+@endpush

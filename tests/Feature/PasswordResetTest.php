@@ -32,7 +32,7 @@ class PasswordResetTest extends TestCase
     {
         $response = $this->get('/forgot-password');
         $response->assertStatus(200);
-        $response->assertSee('Forgot Password');
+        $response->assertSee('Forgot your')->assertSee('name="email"', false);
     }
 
     public function test_reset_link_sent_successfully_for_valid_email(): void
@@ -62,7 +62,7 @@ class PasswordResetTest extends TestCase
     {
         $response = $this->get('/reset-password/sample-token?email=john@example.com');
         $response->assertStatus(200);
-        $response->assertSee('Reset Password');
+        $response->assertSee('Choose a new')->assertSee('name="token"', false)->assertSee('john@example.com');
     }
 
     public function test_password_can_be_reset_successfully_with_valid_token(): void
