@@ -1,0 +1,125 @@
+/*
+ * Certicode Labs brand layer — the design language of the landing page, shared with the
+ * auth pages (and, over time, the rest of the app). Every class is prefixed `cc-` so it
+ * can't collide with the app's existing utility classes.
+ *
+ * Fonts (load in the page head): Geist 400–800, Geist Mono 400–600, Instrument Serif italic.
+ */
+
+:root {
+    --cc-ink: #0b0c0b;
+    --cc-ink-raised: #121412;
+    --cc-ink-card: #151815;
+    --cc-line: rgba(236, 236, 234, 0.08);
+    --cc-line-strong: rgba(236, 236, 234, 0.14);
+    --cc-text: #ececea;
+    --cc-text-dim: #a6a9a4;
+    --cc-text-faint: #7d817b; /* 4.6:1 on --cc-ink */
+    --cc-brand: #3ecf8e;
+    --cc-brand-deep: #1f8a5c;
+    --cc-danger: #f87171;
+    --cc-warning: #f5c37a;
+    --cc-shadow-tint: 0 30px 80px -30px rgba(8, 40, 26, 0.9), 0 12px 30px -12px rgba(0, 0, 0, 0.6);
+}
+
+.cc-page {
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    background-color: var(--cc-ink);
+    color: var(--cc-text);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'ss01', 'cv11';
+}
+
+.cc-display { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.035em; }
+.cc-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
+.cc-mono { font-family: 'Geist Mono', ui-monospace, Menlo, monospace; }
+.cc-balance { text-wrap: balance; }
+.cc-pretty { text-wrap: pretty; }
+
+/* Fixed grain overlay */
+.cc-grain {
+    position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0.06; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Emerald light + fading engineering grid */
+.cc-atmosphere {
+    background:
+        radial-gradient(60% 55% at 70% 35%, rgba(62, 207, 142, 0.14) 0%, transparent 70%),
+        radial-gradient(40% 40% at 10% 0%, rgba(62, 207, 142, 0.06) 0%, transparent 70%);
+}
+.cc-grid {
+    background-image:
+        linear-gradient(to right, rgba(236, 236, 234, 0.045) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(236, 236, 234, 0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(70% 60% at 55% 40%, #000 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(70% 60% at 55% 40%, #000 0%, transparent 75%);
+}
+
+/* Glass panel with an inner hairline (refracted edge) and a tinted shadow */
+.cc-panel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)), var(--cc-ink-card);
+    border: 1px solid var(--cc-line);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--cc-shadow-tint);
+}
+
+/* Buttons: lift on hover, press on click */
+.cc-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 10px; font-weight: 600; font-size: 0.9rem; line-height: 1;
+    padding: 0.95rem 1.35rem; cursor: pointer; border: 1px solid transparent;
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1), background-color 220ms ease, box-shadow 220ms ease, border-color 220ms ease, color 220ms ease;
+}
+.cc-btn:active { transform: translateY(1px) scale(0.985); }
+.cc-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.cc-btn-brand { background: var(--cc-brand); color: #06150e; box-shadow: 0 10px 30px -10px rgba(62, 207, 142, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.cc-btn-brand:hover:not(:disabled) { background: #52dba0; transform: translateY(-2px); box-shadow: 0 16px 40px -12px rgba(62, 207, 142, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.cc-btn-quiet { color: var(--cc-text); border-color: var(--cc-line-strong); background: rgba(255, 255, 255, 0.02); }
+.cc-btn-quiet:hover:not(:disabled) { border-color: rgba(62, 207, 142, 0.45); background: rgba(62, 207, 142, 0.06); transform: translateY(-2px); }
+.cc-btn .cc-arrow { transition: transform 220ms cubic-bezier(.2, .8, .2, 1); }
+.cc-btn:hover .cc-arrow { transform: translateX(3px); }
+
+/* Form fields */
+.cc-label { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--cc-text-dim); margin-bottom: 0.5rem; }
+.cc-field {
+    width: 100%; border-radius: 10px; padding: 0.8rem 0.95rem; font-size: 0.95rem;
+    color: var(--cc-text); background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--cc-line-strong);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: border-color 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
+}
+.cc-field::placeholder { color: var(--cc-text-faint); }
+.cc-field:hover { border-color: rgba(236, 236, 234, 0.22); }
+.cc-field:focus { outline: none; border-color: var(--cc-brand); background: rgba(62, 207, 142, 0.03); box-shadow: 0 0 0 4px rgba(62, 207, 142, 0.14); }
+.cc-field[aria-invalid="true"] { border-color: rgba(248, 113, 113, 0.6); }
+.cc-checkbox { width: 1rem; height: 1rem; border-radius: 4px; accent-color: var(--cc-brand); cursor: pointer; }
+
+/* Inline notices */
+.cc-notice { display: flex; gap: 0.625rem; border-radius: 10px; padding: 0.8rem 0.95rem; font-size: 0.85rem; line-height: 1.5; border: 1px solid; }
+.cc-notice-success { color: #b7f0d2; background: rgba(62, 207, 142, 0.07); border-color: rgba(62, 207, 142, 0.3); }
+.cc-notice-error { color: #fecaca; background: rgba(248, 113, 113, 0.07); border-color: rgba(248, 113, 113, 0.35); }
+/* brand.css loads after Tailwind, so its display values would beat `hidden`; keep `hidden` working */
+.cc-notice.hidden, .cc-btn.hidden { display: none; }
+
+.cc-link { color: var(--cc-brand); text-underline-offset: 3px; transition: color 200ms ease; }
+.cc-link:hover { color: #6ee7b0; text-decoration: underline; }
+
+.cc-page :focus-visible { outline: 2px solid var(--cc-brand); outline-offset: 3px; border-radius: 6px; }
+.cc-page .cc-field:focus-visible { outline: none; }
+
+/* Motion */
+@keyframes cc-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes cc-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes cc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes cc-pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.5); } 100% { box-shadow: 0 0 0 10px rgba(62, 207, 142, 0); } }
+.cc-rise { opacity: 0; animation: cc-rise 800ms cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: calc(var(--d, 0) * 90ms); }
+.cc-float { animation: cc-float 7s ease-in-out infinite; }
+.cc-float-slow { animation: cc-float 9s ease-in-out infinite; animation-delay: -3s; }
+.cc-caret::after { content: ''; display: inline-block; width: 0.42em; height: 0.9em; margin-left: 0.08em; vertical-align: baseline; background: var(--cc-brand); animation: cc-blink 1.1s steps(1) infinite; }
+.cc-live-dot { animation: cc-pulse-ring 1.8s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+    .cc-page *, .cc-page *::before, .cc-page *::after { animation: none !important; transition: none !important; }
+    .cc-rise { opacity: 1 !important; transform: none !important; }
+}
