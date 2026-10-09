@@ -31,15 +31,23 @@ class RegisterController extends Controller
             'role' => 'required|string|in:student,instructor',
         ]);
 
+        // Instructors see every student's work, so that role needs an admin's approval:
+        // the account starts as a student with a pending request.
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'role' => $validated['role'],
+            'role' => 'student',
         ]);
+
+        if ($validated['role'] === 'instructor') {
+            $user->requestInstructorAccess();
+        }
 
         Auth::login($user);
 
-        return redirect('/dashboard')->with('success', 'Account created successfully!');
+        return redirect('/dashboard')->with('success', $validated['role'] === 'instructor'
+            ? 'Account created. Your instructor access is waiting for an admin to approve it; until then you can use Certicode as a student.'
+            : 'Account created successfully!');
     }
 }

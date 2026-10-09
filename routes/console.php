@@ -11,6 +11,18 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Artisan::command('certicode:make-admin {email}', function (string $email) {
+    $user = \App\Models\User::where('email', $email)->first();
+    if (!$user) {
+        $this->error("No user with email {$email}. Create the account first, then run this again.");
+        return 1;
+    }
+
+    $user->forceFill(['role' => 'admin', 'instructor_requested_at' => null])->save();
+    $this->info("{$user->name} ({$email}) is now an admin and can review instructor requests at /admin/instructor-requests.");
+    return 0;
+})->purpose('Make an existing user an admin');
+
 Artisan::command('certicode:close-expired-live-labs', function () {
     $expiredCount = 0;
     $activeLiveLabs = Laboratory::where('availability_mode', 'live')

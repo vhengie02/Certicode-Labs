@@ -61,6 +61,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'gmail_verified_at' => 'datetime',
+            'instructor_requested_at' => 'datetime',
             'notify_class' => 'boolean',
             'notify_module' => 'boolean',
             'notify_lab' => 'boolean',
@@ -146,5 +147,36 @@ class User extends Authenticatable
         }
 
         return $this->email;
+    }
+
+    /**
+     * Record a request for instructor access. Self-service sign-ups never get the instructor
+     * role directly: they stay students until an admin approves, and admins are notified.
+     */
+    public function requestInstructorAccess(): void
+    {
+        if ($this->role !== 'student' || $this->instructor_requested_at) {
+            return;
+        }
+
+        $this->forceFill(['instructor_requested_at' => now()])->save();
+
+        foreach (static::where('role', 'admin')->get() as $admin) {
+            try {
+                $admin->notify(new \App\Notifications\ClassActivityNotification(
+                    'Instructor access requested',
+                    "{$this->name} ({$this->email}) asked for instructor access.",
+                    route('admin.instructor-requests.index'),
+                    'info'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Could not notify admin about instructor request: ' . $e->getMessage());
+            }
+        }
+    }
+
+    public function hasPendingInstructorRequest(): bool
+    {
+        return $this->role === 'student' && $this->instructor_requested_at !== null;
     }
 }

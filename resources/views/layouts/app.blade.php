@@ -519,6 +519,13 @@
                                 <a href="{{ route('classes.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Classes</a>
                                 @if(auth()->user()->role === 'admin')
                                     <a href="{{ route('students.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Student Directory</a>
+                                    @php($pendingInstructorRequests = \App\Models\User::where('role', 'student')->whereNotNull('instructor_requested_at')->count())
+                                    <a href="{{ route('admin.instructor-requests.index') }}" class="flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">
+                                        Instructor requests
+                                        @if($pendingInstructorRequests > 0)
+                                            <span class="ml-2 min-w-5 px-1.5 py-0.5 rounded-full bg-[#3ecf8e] text-[10px] font-bold text-[#06150e] text-center">{{ $pendingInstructorRequests }}</span>
+                                        @endif
+                                    </a>
                                 @endif
                                 <a href="{{ route('settings.show') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Account Settings</a>
                             </div>
@@ -539,6 +546,12 @@
 
         <!-- Main Viewport -->
         <main class="flex-1 relative overflow-y-auto focus:outline-none py-8 px-6">
+            @if(auth()->user()?->hasPendingInstructorRequest())
+                <div class="mb-6 p-3.5 rounded-md border border-[#eab308]/30 bg-[#eab308]/5 text-[#eab308]" role="status">
+                    <span class="text-xs font-semibold">Your instructor access is waiting for an admin to approve it. Until then you can use Certicode as a student.</span>
+                </div>
+            @endif
+
             @if(session('success'))
                 <div class="mb-6 p-3.5 rounded-md border border-[#16a34a]/30 bg-[#16a34a]/5 text-[#16a34a] flex items-center justify-between">
                     <div class="flex items-center space-x-2.5">

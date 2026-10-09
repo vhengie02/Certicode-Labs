@@ -33,7 +33,7 @@ class RegistrationTest extends TestCase
     /**
      * Test successful instructor registration.
      */
-    public function test_can_register_as_instructor(): void
+    public function test_registering_as_instructor_requests_approval(): void
     {
         $response = $this->post('/register', [
             'name' => 'Prof. Instructor',
@@ -43,11 +43,13 @@ class RegistrationTest extends TestCase
             'role' => 'instructor',
         ]);
 
+        // Instructor access needs an admin's approval: the account starts as a student with a request
         $response->assertRedirect('/dashboard');
         $this->assertDatabaseHas('users', [
             'email' => 'instructor@example.com',
-            'role' => 'instructor',
+            'role' => 'student',
         ]);
+        $this->assertNotNull(\App\Models\User::where('email', 'instructor@example.com')->value('instructor_requested_at'));
     }
 
     /**

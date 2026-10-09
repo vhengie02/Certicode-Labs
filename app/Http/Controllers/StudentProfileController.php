@@ -69,6 +69,11 @@ class StudentProfileController extends Controller
         $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];
         $user->update($validated);
 
+        // An admin setting the role directly settles any pending instructor request
+        if (isset($validated['role']) && $validated['role'] !== 'student' && $user->instructor_requested_at) {
+            $user->forceFill(['instructor_requested_at' => null])->save();
+        }
+
         // Redirect appropriately
         if ($user->id === auth()->id()) {
             return redirect()->route('settings.show')->with('success', 'Profile updated successfully.');

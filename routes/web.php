@@ -191,6 +191,13 @@ Route::middleware('auth')->group(function () {
     Route::put('/profiles/{id}', [StudentProfileController::class, 'update'])->name('profiles.update');
     Route::delete('/profiles/{id}', [StudentProfileController::class, 'destroy'])->name('profiles.destroy');
 
+    // Admin: review instructor access requests
+    Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/instructor-requests', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'index'])->name('instructor-requests.index');
+        Route::post('/instructor-requests/{user}/approve', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'approve'])->name('instructor-requests.approve');
+        Route::post('/instructor-requests/{user}/decline', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'decline'])->name('instructor-requests.decline');
+    });
+
     // Global Search
     Route::get('/search', [SearchController::class, 'search'])->name('search');
 

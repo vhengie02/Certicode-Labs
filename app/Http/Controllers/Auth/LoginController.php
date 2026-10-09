@@ -104,6 +104,7 @@ class LoginController extends Controller
 
         // Save target gmail and verification code in session
         session()->put('google_auth_code', $code);
+        session()->forget('google_auth_code_attempts'); // a fresh code gets a fresh set of attempts
         session()->put('gmail_code_debug', $code);
         session()->put('google_auth_code_sent_at', now());
 
@@ -171,10 +172,18 @@ class LoginController extends Controller
             return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
         }
 
-        // Check verification code
+        // Check verification code. After 5 wrong guesses the code is discarded, so a 6-digit
+        // code can't be brute-forced; the user requests a new one.
         if ($request->code !== $expectedCode) {
+            $attempts = (int) session('google_auth_code_attempts', 0) + 1;
+            if ($attempts >= 5) {
+                session()->forget(['google_auth_code', 'google_auth_code_attempts']);
+                return redirect()->route('auth.google')->withErrors(['email' => 'Too many incorrect codes. Request a new code to try again.']);
+            }
+            session()->put('google_auth_code_attempts', $attempts);
             return back()->withErrors(['code' => 'Incorrect verification code. Please try again.']);
         }
+        session()->forget('google_auth_code_attempts');
 
         // 1. Check if user already exists with this verified Gmail
         $user = User::where('gmail', $gmail)
@@ -220,15 +229,21 @@ class LoginController extends Controller
                 'gmail' => $gmail,
                 'gmail_verified_at' => now(),
                 'password' => Hash::make($password),
-                'role' => $request->role,
+                'role' => 'student', // instructor access needs an admin's approval
                 'github_username' => session('github_auth_username'),
             ]);
+
+            if ($request->role === 'instructor') {
+                $newUser->requestInstructorAccess();
+            }
 
             Auth::login($newUser);
             $request->session()->regenerate();
             $this->clearAuthSessions();
 
-            return redirect('/dashboard')->with('success', 'Account created and Google linked successfully!');
+            return redirect('/dashboard')->with('success', $request->role === 'instructor'
+                ? 'Account created and Google linked. Your instructor access is waiting for an admin to approve it.'
+                : 'Account created and Google linked successfully!');
         }
 
         // If code is correct but role is missing for a new account (should not happen with required select, but just in case)
@@ -251,6 +266,9 @@ class LoginController extends Controller
                 return redirect()->route('auth.google')->with('warning', 'Google OAuth not configured locally. Falling back to Mock authentication.');
             }
             if ($provider === 'github') {
+                if (!$this->mockGithubAllowed()) {
+                    return redirect()->route('login')->withErrors(['email' => "GitHub sign-in isn't set up yet. Sign in with your email or Google instead."]);
+                }
                 return redirect()->route('auth.github')->with('warning', 'GitHub OAuth not configured locally. Falling back to Mock authentication.');
             }
             return redirect()->route('login')->withErrors(["email" => "{$provider} OAuth credentials not configured in system services."]);
@@ -264,7 +282,18 @@ class LoginController extends Controller
      */
     public function redirectToGithub()
     {
+        abort_unless($this->mockGithubAllowed(), 404);
+
         return view('auth.github');
+    }
+
+    /**
+     * The mock GitHub flow trusts whatever username and email are typed in, so it may only run in
+     * local development and tests. Anywhere else it would let anyone sign in as any user.
+     */
+    private function mockGithubAllowed(): bool
+    {
+        return app()->environment('local', 'testing');
     }
 
     /**
@@ -272,6 +301,8 @@ class LoginController extends Controller
      */
     public function handleGithubCallback(Request $request)
     {
+        abort_unless($this->mockGithubAllowed(), 404);
+
         $user = auth()->user();
 
         // 1. Linking case: User is already logged in
