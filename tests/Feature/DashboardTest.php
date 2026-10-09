@@ -65,6 +65,22 @@ class DashboardTest extends TestCase
             ->assertDontSee('some_flag');
     }
 
+    public function test_main_menu_shows_admin_pages_only_to_admins()
+    {
+        $adminLinks = [route('students.index'), route('admin.instructor-requests.index')];
+
+        $adminPage = $this->actingAs($this->user('admin@example.com', 'admin'))->get('/dashboard')->assertOk();
+        foreach ($adminLinks as $link) {
+            $adminPage->assertSee('href="' . $link . '"', false);
+        }
+
+        $instructorPage = $this->actingAs($this->user('prof@example.com', 'instructor'))->get('/dashboard')->assertOk();
+        $instructorPage->assertSee('href="' . route('classes.index') . '"', false);
+        foreach ($adminLinks as $link) {
+            $instructorPage->assertDontSee('href="' . $link . '"', false);
+        }
+    }
+
     public function test_activity_graph_is_gone()
     {
         $this->actingAs($this->user('s@example.com', 'student'))->get('/dashboard')

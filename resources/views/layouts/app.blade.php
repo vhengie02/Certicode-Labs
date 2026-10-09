@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="description" content="Certicode Labs - Interactive coding challenges, virtual laboratory environments, and automated competency verification.">
-    <meta name="theme-color" content="#0f0f0f">
+    <meta name="theme-color" content="#0b0c0b">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; script-src 'self' https: 'unsafe-inline' 'unsafe-eval' blob: data:; style-src 'self' https: 'unsafe-inline'; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https: ws: wss:;">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     <link rel="alternate icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
@@ -34,11 +34,11 @@
     </script>
 
     <!-- Vite Compiled Assets -->
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <!-- Google Fonts: Inter (Circular-like geometric sans) & Source Code Pro -->
+    @vite(['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js'])
+    <!-- Brand fonts: Geist (UI), Geist Mono (code, labels), Instrument Serif (accents) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
     <style>
         @font-face {
             font-family: 'Brick Sans';
@@ -48,7 +48,7 @@
             font-display: swap;
         }
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
             background-color: #0f0f0f;
             color: #ededed;
         }
@@ -104,7 +104,7 @@
         }
         /* Uppercase technical tags */
         .tech-tag {
-            font-family: 'Source Code Pro', monospace;
+            font-family: 'Geist Mono', ui-monospace, monospace;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             font-size: 0.6875rem;
@@ -348,7 +348,7 @@
             background-color: #f3f4f6 !important;
             color: #111827 !important;
         }
-        html:not(.dark) #search-results a.bg-slate-800\/80 {
+        html:not(.dark) #search-modal a.is-active {
             background-color: #f3f4f6 !important;
             color: #111827 !important;
         }
@@ -399,52 +399,104 @@
         html:not(.dark) #theme-status-indicator span.rounded-full {
             background-color: #059669 !important;
         }
+        /* App shell: header nav, icon buttons, menu states */
+        .app-nav-link.is-active::after {
+            content: ''; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px;
+            height: 2px; border-radius: 2px 2px 0 0; background: #3ecf8e;
+        }
+        .app-icon-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 2.25rem; height: 2.25rem; border-radius: 0.5rem;
+            color: #888888; transition: color 150ms ease, background-color 150ms ease;
+        }
+        .app-icon-btn:hover { color: #ededed; background-color: #1c1c1c; }
+        #theme-toggle-sun, #theme-toggle-moon { color: inherit; }
+        .notif-item.is-unread { background-color: rgba(62, 207, 142, 0.05); box-shadow: inset 2px 0 0 #3ecf8e; }
+        #search-modal a.is-active { background-color: #1c1c1c; color: #ededed; }
+        .app-mobile-nav { scrollbar-width: none; }
+        .app-mobile-nav::-webkit-scrollbar { display: none; }
+        :focus-visible { outline: 2px solid #3ecf8e; outline-offset: 2px; }
+
+        html:not(.dark) .app-nav-link.is-active::after { background: #059669; }
+        html:not(.dark) .app-icon-btn { color: #6b7280; }
+        html:not(.dark) .app-icon-btn:hover { color: #111827; background-color: #f3f4f6; }
+        html:not(.dark) .notif-item.is-unread { background-color: #ecfdf5; box-shadow: inset 2px 0 0 #059669; }
+        html:not(.dark) .app-mobile-nav { background-color: #ffffff !important; }
+        html:not(.dark) .app-search-trigger { background-color: #f8f9fa !important; }
+        html:not(.dark) .app-flash-success { color: #047857 !important; background-color: #ecfdf5 !important; border-color: #a7f3d0 !important; }
+        html:not(.dark) .app-flash-error { color: #b91c1c !important; background-color: #fef2f2 !important; border-color: #fecaca !important; }
+        html:not(.dark) .app-flash-warning { color: #92400e !important; background-color: #fffbeb !important; border-color: #fde68a !important; }
+        html:not(.dark) :focus-visible { outline-color: #059669; }
     </style>
 </head>
-<body class="h-full text-[#ededed] bg-[#0f0f0f] flex flex-col overflow-hidden" data-is-instructor-or-admin="{{ auth()->user() && (auth()->user()->role === 'instructor' || auth()->user()->role === 'admin') ? 'true' : 'false' }}">
+<body class="h-full text-[#ededed] bg-[#0f0f0f] flex flex-col overflow-hidden antialiased selection:bg-[#3ecf8e]/25" data-is-instructor-or-admin="{{ auth()->user() && (auth()->user()->role === 'instructor' || auth()->user()->role === 'admin') ? 'true' : 'false' }}">
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[80] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#3ecf8e] focus:text-[#06150e] focus:font-semibold">Skip to content</a>
+
+    @php
+        $authUser = auth()->user();
+        $isAdmin = $authUser->role === 'admin';
+        $pendingInstructorRequests = $isAdmin
+            ? \App\Models\User::where('role', 'student')->whereNotNull('instructor_requested_at')->count()
+            : 0;
+        $primaryNav = array_filter([
+            ['label' => 'Dashboard', 'url' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
+            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'modules.*', 'instructor.*', 'certificates.*')],
+            $isAdmin ? ['label' => 'Students', 'url' => route('students.index'), 'active' => request()->routeIs('students.*', 'profiles.*')] : null,
+            $isAdmin ? ['label' => 'Requests', 'url' => route('admin.instructor-requests.index'), 'active' => request()->routeIs('admin.instructor-requests.*'), 'badge' => $pendingInstructorRequests] : null,
+        ]);
+    @endphp
 
     <!-- Main Content Shell -->
     <div class="flex flex-col flex-1 overflow-hidden">
-        <!-- Top bar (60px tall with hairline border) -->
-        <header class="h-15 bg-[#171717] border-b border-[#2e2e2e] flex items-center justify-between px-6 z-50 flex-shrink-0">
-            <div class="flex-1 flex items-center justify-between">
-                <!-- Left Header: Logo & Branding + Breadcrumbs -->
-                <div class="flex items-center space-x-4">
-                    <!-- Logo / Link to Dashboard -->
-                    <a href="{{ route('dashboard') }}" class="flex items-center space-x-2.5 hover:opacity-95 transition-opacity">
-                        <x-logo-mark class="w-6 h-6 text-[var(--color-text,#ededed)]" />
-                        <span class="text-base font-bold tracking-tight text-white flex items-center gap-1 font-sans">
-                            Certicode<span class="font-medium opacity-60">Labs</span>
-                        </span>
-                    </a>
-                    
-                    <span class="text-[#404040]">/</span>
-                    
-                    <h2 class="text-xs font-medium text-[#a3a3a3] font-mono tracking-wide uppercase">@yield('page_header', 'Workspace')</h2>
-                </div>
+        <!-- Top bar -->
+        <header class="app-header h-15 bg-[#0f0f0f] border-b border-[#2e2e2e] flex-shrink-0 z-50">
+            <div class="h-full mx-auto max-w-[1440px] px-4 sm:px-6 flex items-center gap-4">
+                <!-- Logo -->
+                <a href="{{ route('dashboard') }}" class="flex items-center gap-2.5 shrink-0 group" aria-label="Certicode Labs dashboard">
+                    <x-logo-mark class="w-[22px] h-[22px] text-[var(--color-text,#ededed)] transition-transform duration-300 group-hover:-translate-y-px" />
+                    <span class="hidden sm:flex items-baseline gap-1 text-[15px] font-semibold tracking-tight text-[#ededed]">
+                        Certicode<span class="font-medium text-[#888888]">Labs</span>
+                    </span>
+                </a>
 
-                <!-- Center Search Input (GitHub Style) -->
-                <div class="hidden lg:block w-80 relative mx-4">
-                    <input type="text" id="global-search-bar-input" name="global_search_header" placeholder="Search..." onclick="openSearchModal()" readonly class="w-full h-8 pl-8 pr-12 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 placeholder-slate-500 cursor-pointer hover:border-slate-700 transition-colors">
-                    <div class="absolute left-2.5 top-2 text-slate-500 pointer-events-none">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                    </div>
-                    <div class="absolute right-2 top-1.5 bg-slate-950 border border-slate-800 px-1 py-0.5 rounded text-[9px] text-slate-500 font-mono pointer-events-none">
-                        Ctrl+K
-                    </div>
-                </div>
+                <!-- Primary navigation (desktop) -->
+                <nav class="hidden md:flex items-center gap-1 ml-4 h-full" aria-label="Primary">
+                    @foreach ($primaryNav as $item)
+                        <a href="{{ $item['url'] }}" @if($item['active']) aria-current="page" @endif
+                           class="app-nav-link relative h-full inline-flex items-center gap-2 px-3 text-sm font-medium transition-colors {{ $item['active'] ? 'text-[#ededed] is-active' : 'text-[#888888] hover:text-[#ededed]' }}">
+                            {{ $item['label'] }}
+                            @if (!empty($item['badge']))
+                                <span class="min-w-5 h-5 px-1.5 rounded-full bg-[#3ecf8e] text-[11px] font-bold text-[#06150e] inline-flex items-center justify-center" aria-label="{{ $item['badge'] }} pending">{{ $item['badge'] }}</span>
+                            @endif
+                        </a>
+                    @endforeach
+                </nav>
 
-                <!-- Right Actions & Profile Dropdown -->
-                <div class="flex items-center space-x-3">
+                <div class="flex-1"></div>
+
+                <!-- Search trigger -->
+                <button type="button" id="global-search-bar-input" onclick="openSearchModal()" aria-label="Search (Ctrl+K)"
+                        class="app-search-trigger hidden lg:flex items-center gap-2.5 w-64 h-9 pl-3 pr-2 rounded-lg bg-[#171717] border border-[#2e2e2e] text-sm text-[#888888] hover:border-[#383838] hover:text-[#a3a3a3] transition-colors">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
+                    <span class="flex-1 text-left">Search…</span>
+                    <kbd class="rounded-md border border-[#2e2e2e] px-1.5 py-0.5 font-mono text-[10px] text-[#888888]">Ctrl K</kbd>
+                </button>
+
+                <!-- Right actions -->
+                <div class="flex items-center gap-1">
+                    <div class="lg:hidden">
+                        <button type="button" onclick="openSearchModal()" aria-label="Search" class="app-icon-btn">
+                            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
+                        </button>
+                    </div>
+
                     <!-- Quick Theme Toggle Button -->
-                    <button id="quick-theme-toggle" onclick="toggleQuickTheme()" title="Toggle theme (Light / Dark)" aria-label="Toggle theme" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none flex items-center justify-center">
-                        <!-- Sun icon (shown when dark, click to switch to light) -->
-                        <svg id="theme-toggle-sun" class="w-4 h-4 hidden text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    <button type="button" id="quick-theme-toggle" onclick="toggleQuickTheme()" title="Switch light / dark" aria-label="Switch light or dark theme" class="app-icon-btn">
+                        <svg id="theme-toggle-sun" class="w-[18px] h-[18px] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                         </svg>
-                        <!-- Moon icon (shown when light, click to switch to dark) -->
-                        <svg id="theme-toggle-moon" class="w-4 h-4 hidden text-[#059669]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                        <svg id="theme-toggle-moon" class="w-[18px] h-[18px] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                         </svg>
                     </button>
 
@@ -463,77 +515,66 @@
                             $unreadCount = $cachedNotificationsData['count'] ?? 0;
                             $notifications = $cachedNotificationsData['items'] ?? collect();
                         @endphp
-                        <button onclick="toggleNotifications()" aria-label="View notifications" class="relative p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-slate-850 transition focus:outline-none">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                        <button type="button" onclick="toggleNotifications()" aria-label="Notifications" aria-haspopup="true" class="app-icon-btn relative">
+                            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                             @if($unreadCount > 0)
-                                <span class="absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950"></span>
+                                <span class="notif-dot absolute top-1.5 right-1.5 block h-2 w-2 rounded-full bg-[#3ecf8e] ring-2 ring-[#0f0f0f]"></span>
                             @endif
                         </button>
 
                         <!-- Dropdown Panel -->
-                        <div id="notifications-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl z-50 text-left">
-                            <div class="px-4 py-2.5 border-b border-slate-800 bg-slate-950 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                                <span class="text-white">Notifications</span>
+                        <div id="notifications-dropdown" class="hidden absolute right-0 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] bg-[#171717] border border-[#2e2e2e] rounded-xl overflow-hidden shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)] z-50 text-left">
+                            <div id="notifications-header" class="px-4 py-3 border-b border-[#2e2e2e] flex items-center justify-between">
+                                <span class="text-sm font-semibold text-[#ededed]">Notifications</span>
                                 @if($unreadCount > 0)
-                                    <button onclick="markAllAsRead()" class="text-indigo-400 hover:underline normal-case">Mark all read</button>
+                                    <button type="button" onclick="markAllAsRead()" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">Mark all read</button>
                                 @endif
                             </div>
-                            <div class="max-h-64 overflow-y-auto divide-y divide-slate-800/60" id="notifications-list">
+                            <div class="max-h-80 overflow-y-auto divide-y divide-[#232323]" id="notifications-list">
                                 @forelse($notifications as $notif)
-                                    <a href="{{ $notif->data['url'] ?? '#' }}" class="block px-4 py-3 hover:bg-slate-850/40 transition {{ $notif->unread() ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '' }}">
-                                        <div class="flex items-start space-x-2.5">
-                                            <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full {{ ($notif->data['type'] ?? 'info') === 'class' ? 'bg-indigo-400' : (($notif->data['type'] ?? 'info') === 'module' ? 'bg-blue-400' : (($notif->data['type'] ?? 'info') === 'certificate' ? 'bg-amber-400' : 'bg-emerald-400')) }}"></span>
-                                            <div class="overflow-hidden">
-                                                <p class="text-xs font-semibold text-white truncate">{{ $notif->data['title'] }}</p>
-                                                <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">{{ $notif->data['message'] }}</p>
-                                                <span class="text-[9px] text-slate-500 font-mono block mt-1">{{ $notif->created_at->diffForHumans() }}</span>
+                                    @php $notifType = $notif->data['type'] ?? 'info'; @endphp
+                                    <a href="{{ $notif->data['url'] ?? '#' }}" class="notif-item block px-4 py-3 hover:bg-[#1c1c1c] transition-colors {{ $notif->unread() ? 'is-unread' : '' }}">
+                                        <div class="flex items-start gap-3">
+                                            <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full {{ $notifType === 'certificate' ? 'bg-amber-400' : ($notifType === 'class' || $notifType === 'module' ? 'bg-sky-400' : 'bg-[#3ecf8e]') }}"></span>
+                                            <div class="min-w-0">
+                                                <p class="text-[13px] font-semibold text-[#ededed] truncate">{{ $notif->data['title'] }}</p>
+                                                <p class="text-xs text-[#a3a3a3] mt-0.5 leading-normal line-clamp-2">{{ $notif->data['message'] }}</p>
+                                                <span class="text-[11px] text-[#666666] font-mono block mt-1">{{ $notif->created_at->diffForHumans() }}</span>
                                             </div>
                                         </div>
                                     </a>
                                 @empty
-                                    <div class="px-4 py-6 text-center text-xs text-slate-500">
-                                        No new notifications.
-                                    </div>
+                                    <div class="px-4 py-8 text-center text-sm text-[#888888]">You're all caught up.</div>
                                 @endforelse
                             </div>
                         </div>
                     </div>
 
-                    <!-- Profile Dropdown (Replaces Left Sidebar) -->
-                    <div class="relative" id="profile-dropdown-container">
-                        <button onclick="toggleProfileDropdown()" class="flex items-center space-x-2 p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-850 transition focus:outline-none">
-                            <div class="h-7 w-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold text-xs">
-                                {{ strtoupper(substr(auth()->user()->name, 0, 2)) }}
-                            </div>
-                            <span class="text-xs font-semibold text-slate-300 hidden sm:block">{{ auth()->user()->name }}</span>
-                            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    <!-- Profile menu -->
+                    <div class="relative ml-1" id="profile-dropdown-container">
+                        <button type="button" onclick="toggleProfileDropdown()" aria-haspopup="true" aria-label="Account menu"
+                                class="flex items-center gap-2 h-9 pl-1 pr-2 rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">
+                            <span class="h-7 w-7 rounded-full bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 flex items-center justify-center text-[#3ecf8e] font-semibold text-[11px]">
+                                {{ strtoupper(\Illuminate\Support\Str::substr($authUser->name, 0, 2)) }}
+                            </span>
+                            <span class="text-sm font-medium text-[#ededed] hidden xl:block max-w-[10rem] truncate">{{ $authUser->name }}</span>
+                            <svg class="w-3.5 h-3.5 text-[#888888] hidden sm:block" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
 
-                        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl z-50 text-left">
-                            <div class="px-4 py-2.5 border-b border-slate-800 bg-slate-950/40">
-                                <p class="text-xs font-semibold text-white truncate">{{ auth()->user()->name }}</p>
-                                <p class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mt-0.5">{{ auth()->user()->role }}</p>
+                        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-60 bg-[#171717] border border-[#2e2e2e] rounded-xl overflow-hidden shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)] z-50 text-left">
+                            <div class="px-4 py-3 border-b border-[#2e2e2e]">
+                                <p class="text-sm font-semibold text-[#ededed] truncate">{{ $authUser->name }}</p>
+                                <p class="text-xs text-[#888888] truncate mt-0.5">{{ $authUser->email }}</p>
+                                <span class="inline-block mt-2 px-2 py-0.5 rounded-full border border-[#3ecf8e]/30 bg-[#3ecf8e]/10 font-mono text-[10px] uppercase tracking-[0.12em] text-[#3ecf8e]">{{ $authUser->role }}</span>
                             </div>
-                            <div class="py-1">
-                                <a href="{{ route('dashboard') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Dashboard</a>
-                                <a href="{{ route('classes.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Classes</a>
-                                @if(auth()->user()->role === 'admin')
-                                    <a href="{{ route('students.index') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Student Directory</a>
-                                    @php($pendingInstructorRequests = \App\Models\User::where('role', 'student')->whereNotNull('instructor_requested_at')->count())
-                                    <a href="{{ route('admin.instructor-requests.index') }}" class="flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">
-                                        Instructor requests
-                                        @if($pendingInstructorRequests > 0)
-                                            <span class="ml-2 min-w-5 px-1.5 py-0.5 rounded-full bg-[#3ecf8e] text-[10px] font-bold text-[#06150e] text-center">{{ $pendingInstructorRequests }}</span>
-                                        @endif
-                                    </a>
-                                @endif
-                                <a href="{{ route('settings.show') }}" class="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-850 hover:text-white transition">Account Settings</a>
+                            <div class="p-1.5">
+                                <a href="{{ route('settings.show') }}" class="block px-3 py-2 rounded-lg text-sm text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-[#ededed] transition-colors">Account settings</a>
                             </div>
-                            <div class="border-t border-slate-800 py-1">
+                            <div class="border-t border-[#2e2e2e] p-1.5">
                                 <form method="POST" action="{{ route('logout') }}">
                                     @csrf
-                                    <button type="submit" class="w-full text-left px-4 py-2 text-xs text-rose-400 hover:bg-slate-850 transition">
-                                        Logout
+                                    <button type="submit" class="w-full text-left px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors">
+                                        Sign out
                                     </button>
                                 </form>
                             </div>
@@ -543,43 +584,53 @@
             </div>
         </header>
 
+        <!-- Primary navigation (mobile) -->
+        <nav class="app-mobile-nav md:hidden flex items-center gap-1 overflow-x-auto px-4 h-11 border-b border-[#2e2e2e] bg-[#0f0f0f] flex-shrink-0" aria-label="Primary">
+            @foreach ($primaryNav as $item)
+                <a href="{{ $item['url'] }}" @if($item['active']) aria-current="page" @endif
+                   class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors {{ $item['active'] ? 'bg-[#1c1c1c] text-[#ededed]' : 'text-[#888888] hover:text-[#ededed]' }}">
+                    {{ $item['label'] }}
+                    @if (!empty($item['badge']))
+                        <span class="min-w-4 h-4 px-1 rounded-full bg-[#3ecf8e] text-[10px] font-bold text-[#06150e] inline-flex items-center justify-center">{{ $item['badge'] }}</span>
+                    @endif
+                </a>
+            @endforeach
+        </nav>
 
         <!-- Main Viewport -->
-        <main class="flex-1 relative overflow-y-auto focus:outline-none py-8 px-6">
-            @if(auth()->user()?->hasPendingInstructorRequest())
-                <div class="mb-6 p-3.5 rounded-md border border-[#eab308]/30 bg-[#eab308]/5 text-[#eab308]" role="status">
-                    <span class="text-xs font-semibold">Your instructor access is waiting for an admin to approve it. Until then you can use Certicode as a student.</span>
-                </div>
-            @endif
-
-            @if(session('success'))
-                <div class="mb-6 p-3.5 rounded-md border border-[#16a34a]/30 bg-[#16a34a]/5 text-[#16a34a] flex items-center justify-between">
-                    <div class="flex items-center space-x-2.5">
-                        <svg class="w-4 h-4 text-[#16a34a]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="text-xs font-semibold">{{ session('success') }}</span>
+        <main id="main-content" tabindex="-1" class="flex-1 relative overflow-y-auto focus:outline-none">
+            <div class="mx-auto max-w-[1440px] px-4 sm:px-6 py-6 sm:py-8">
+                @php
+                    $flashes = array_filter([
+                        $authUser->hasPendingInstructorRequest() ? ['warning', 'Your instructor access is waiting for an admin to approve it. Until then you can use Certicode as a student.'] : null,
+                        session('success') ? ['success', session('success')] : null,
+                        session('error') ? ['error', session('error')] : null,
+                        session('warning') ? ['warning', session('warning')] : null,
+                    ]);
+                    $flashStyles = [
+                        'success' => 'border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.06] text-[#3ecf8e]',
+                        'error' => 'border-red-500/30 bg-red-500/[0.06] text-red-400',
+                        'warning' => 'border-amber-400/30 bg-amber-400/[0.06] text-amber-300',
+                    ];
+                @endphp
+                @foreach ($flashes as [$tone, $message])
+                    <div class="app-flash app-flash-{{ $tone }} mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 {{ $flashStyles[$tone] }}" role="{{ $tone === 'error' ? 'alert' : 'status' }}">
+                        @if ($tone === 'success')
+                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        @elseif ($tone === 'error')
+                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                        @else
+                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                        @endif
+                        <p class="flex-1 text-sm font-medium">{{ $message }}</p>
+                        <button type="button" onclick="this.closest('.app-flash').remove()" aria-label="Dismiss" class="-mr-1 p-1 rounded-md opacity-60 hover:opacity-100 transition-opacity">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
                     </div>
-                </div>
-            @endif
+                @endforeach
 
-            @if(session('error'))
-                <div class="mb-6 p-3.5 rounded-md border border-[#dc2626]/30 bg-[#dc2626]/5 text-[#dc2626] flex items-center justify-between">
-                    <div class="flex items-center space-x-2.5">
-                        <svg class="w-4 h-4 text-[#dc2626]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="text-xs font-semibold">{{ session('error') }}</span>
-                    </div>
-                </div>
-            @endif
-
-            @if(session('warning'))
-                <div class="mb-6 p-3.5 rounded-md border border-[#eab308]/30 bg-[#eab308]/5 text-[#eab308] flex items-center justify-between">
-                    <div class="flex items-center space-x-2.5">
-                        <svg class="w-4 h-4 text-[#eab308]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <span class="text-xs font-semibold">{{ session('warning') }}</span>
-                    </div>
-                </div>
-            @endif
-
-            @yield('content')
+                @yield('content')
+            </div>
         </main>
     </div>
     
@@ -626,16 +677,16 @@
             if (!force && stateKey === lastNotifState) return;
             lastNotifState = stateKey;
 
-            // Update unread count badge on bell icon
+            // Update unread dot on the bell icon
             const container = document.getElementById('notification-bell-container');
             if (container) {
-                let dot = container.querySelector('span.bg-rose-500');
+                let dot = container.querySelector('.notif-dot');
                 if (unreadCount > 0) {
                     if (!dot) {
                         const btn = container.querySelector('button');
                         if (btn) {
                             dot = document.createElement('span');
-                            dot.className = 'absolute top-0.5 right-0.5 block h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-950';
+                            dot.className = 'notif-dot absolute top-1.5 right-1.5 block h-2 w-2 rounded-full bg-[#3ecf8e] ring-2 ring-[#0f0f0f]';
                             btn.appendChild(dot);
                         }
                     }
@@ -645,14 +696,15 @@
             }
 
             // Update "Mark all read" button in dropdown header
-            const header = document.querySelector('#notifications-dropdown div.px-4.py-2\\.5');
+            const header = document.getElementById('notifications-header');
             if (header) {
                 let markReadBtn = header.querySelector('button');
                 if (unreadCount > 0) {
                     if (!markReadBtn) {
                         markReadBtn = document.createElement('button');
+                        markReadBtn.type = 'button';
                         markReadBtn.onclick = markAllAsRead;
-                        markReadBtn.className = 'text-indigo-400 hover:underline normal-case';
+                        markReadBtn.className = 'text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2';
                         markReadBtn.innerText = 'Mark all read';
                         header.appendChild(markReadBtn);
                     }
@@ -665,23 +717,18 @@
             const list = document.getElementById('notifications-list');
             if (list) {
                 if (notifs.length === 0) {
-                    list.innerHTML = `
-                        <div class="px-4 py-6 text-center text-xs text-slate-500">
-                            No new notifications.
-                        </div>
-                    `;
+                    list.innerHTML = '<div class="px-4 py-8 text-center text-sm text-[#888888]">You\'re all caught up.</div>';
                 } else {
                     list.innerHTML = notifs.map(notif => {
-                        const typeColor = notif.type === 'class' ? 'bg-indigo-400' : (notif.type === 'module' ? 'bg-blue-400' : (notif.type === 'certificate' ? 'bg-amber-400' : 'bg-emerald-400'));
-                        const unreadStyle = notif.unread ? 'bg-slate-900/40 border-l-2 border-indigo-500' : '';
+                        const typeColor = notif.type === 'certificate' ? 'bg-amber-400' : ((notif.type === 'class' || notif.type === 'module') ? 'bg-sky-400' : 'bg-[#3ecf8e]');
                         return `
-                            <a href="${notif.url}" class="block px-4 py-3 hover:bg-slate-850/40 transition ${unreadStyle}">
-                                <div class="flex items-start space-x-2.5">
-                                    <span class="mt-1 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
-                                    <div class="overflow-hidden">
-                                        <p class="text-xs font-semibold text-white truncate">${notif.title}</p>
-                                        <p class="text-[10px] text-slate-400 mt-0.5 leading-normal line-clamp-2">${notif.message}</p>
-                                        <span class="text-[9px] text-slate-500 font-mono block mt-1">${notif.time}</span>
+                            <a href="${escapeHtml(safeUrl(notif.url))}" class="notif-item block px-4 py-3 hover:bg-[#1c1c1c] transition-colors ${notif.unread ? 'is-unread' : ''}">
+                                <div class="flex items-start gap-3">
+                                    <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
+                                    <div class="min-w-0">
+                                        <p class="text-[13px] font-semibold text-[#ededed] truncate">${escapeHtml(notif.title)}</p>
+                                        <p class="text-xs text-[#a3a3a3] mt-0.5 leading-normal line-clamp-2">${escapeHtml(notif.message)}</p>
+                                        <span class="text-[11px] text-[#666666] font-mono block mt-1">${escapeHtml(notif.time)}</span>
                                     </div>
                                 </div>
                             </a>
@@ -691,24 +738,30 @@
             }
         }
 
+        // Notification and search text comes from user-entered names; never insert it as HTML
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        function safeUrl(url) {
+            return /^(https?:\/\/|\/(?!\/)|#)/i.test(String(url ?? '')) ? url : '#';
+        }
+
         function markAllAsRead() {
-            // 1. Instant optimistic update: remove red dot, clear unread styles, remove mark all button
+            // 1. Instant optimistic update: remove the dot, clear unread styles, remove mark all button
             const container = document.getElementById('notification-bell-container');
             if (container) {
-                const dot = container.querySelector('span.bg-rose-500');
+                const dot = container.querySelector('.notif-dot');
                 if (dot) dot.remove();
             }
 
-            const header = document.querySelector('#notifications-dropdown div.px-4.py-2\\.5');
+            const header = document.getElementById('notifications-header');
             if (header) {
                 const btn = header.querySelector('button');
                 if (btn) btn.remove();
             }
 
-            const items = document.querySelectorAll('#notifications-list a');
-            items.forEach(item => {
-                item.classList.remove('bg-slate-900/40', 'border-l-2', 'border-indigo-500');
-            });
+            document.querySelectorAll('#notifications-list a').forEach(item => item.classList.remove('is-unread'));
 
             // Invalidate cache tracking state so re-render forces clean state
             lastNotifState = null;
@@ -769,10 +822,7 @@
                 
                 // Clear highlighted states
                 const items = Array.from(modal.querySelectorAll('a'));
-                items.forEach(item => {
-                    item.classList.remove('bg-slate-800/80', 'text-white');
-                    item.classList.add('text-slate-300');
-                });
+                items.forEach(item => item.classList.remove('is-active'));
                 
                 setTimeout(() => input.focus(), 50);
             }
@@ -810,8 +860,11 @@
 
             if (isInstructorOrAdmin) {
                 navLinks.push({ label: 'Create a Class', url: "{{ route('classes.create') }}", type: 'Navigation', keywords: ['create a class', 'create class', 'new class', 'add class'] });
-                navLinks.push({ label: 'Student Directory', url: "{{ route('students.index') }}", type: 'Navigation', keywords: ['students', 'directory', 'users', 'profiles', 'student directory'] });
             }
+            @if(auth()->user()->role === 'admin')
+                navLinks.push({ label: 'Student Directory', url: "{{ route('students.index') }}", type: 'Navigation', keywords: ['students', 'directory', 'users', 'profiles', 'student directory'] });
+                navLinks.push({ label: 'Instructor requests', url: "{{ route('admin.instructor-requests.index') }}", type: 'Navigation', keywords: ['requests', 'instructor', 'approve', 'admin'] });
+            @endif
 
             const queryLower = query.toLowerCase().trim();
             const matchingNavs = navLinks.filter(link => {
@@ -849,13 +902,13 @@
                                 section.classList.remove('hidden');
                                 items.forEach(item => {
                                     const a = document.createElement('a');
-                                    a.href = item.url;
-                                    a.className = 'flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition';
+                                    a.href = safeUrl(item.url);
+                                    a.className = 'flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors';
                                     a.innerHTML = `
-                                        <svg class="h-3.5 w-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="h-4 w-4 text-[#666666] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             ${getIconSvg(item.type)}
                                         </svg>
-                                        <span class="truncate">${item.label}</span>
+                                        <span class="truncate">${escapeHtml(item.label)}</span>
                                     `;
                                     container.appendChild(a);
                                 });
@@ -921,7 +974,7 @@
 
                     e.preventDefault();
 
-                    let activeIndex = items.findIndex(item => item.classList.contains('bg-slate-800/80'));
+                    let activeIndex = items.findIndex(item => item.classList.contains('is-active'));
 
                     if (e.key === 'Enter') {
                         if (activeIndex >= 0) {
@@ -931,8 +984,7 @@
                     }
 
                     if (activeIndex >= 0) {
-                        items[activeIndex].classList.remove('bg-slate-800/80', 'text-white');
-                        items[activeIndex].classList.add('text-slate-300');
+                        items[activeIndex].classList.remove('is-active');
                     }
 
                     if (e.key === 'ArrowDown') {
@@ -941,8 +993,7 @@
                         activeIndex = (activeIndex - 1 + items.length) % items.length;
                     }
 
-                    items[activeIndex].classList.remove('text-slate-300');
-                    items[activeIndex].classList.add('bg-slate-800/80', 'text-white');
+                    items[activeIndex].classList.add('is-active');
                     items[activeIndex].scrollIntoView({ block: 'nearest' });
                 }
             }
@@ -1019,65 +1070,42 @@
     </script>
 
     <!-- Search Command Palette Modal -->
-    <div id="search-modal" class="fixed inset-0 z-50 hidden overflow-y-auto p-4 sm:p-6 md:p-20" role="dialog" aria-modal="true">
+    <div id="search-modal" class="fixed inset-0 z-[70] hidden overflow-y-auto p-4 sm:p-6 md:pt-24" role="dialog" aria-modal="true" aria-label="Search">
         <!-- Backdrop -->
-        <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onclick="closeSearchModal()"></div>
+        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSearchModal()"></div>
 
         <!-- Modal Box -->
-        <div class="mx-auto max-w-xl transform divide-y divide-slate-800 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl transition-all ring-1 ring-black ring-opacity-5 relative z-10">
-            <div class="relative">
-                <!-- Search Icon -->
-                <div class="pointer-events-none absolute left-4 top-3.5 text-slate-400">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <div class="relative z-10 mx-auto max-w-xl overflow-hidden rounded-2xl border border-[#2e2e2e] bg-[#171717] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]">
+            <div class="relative border-b border-[#2e2e2e]">
+                <div class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#888888]">
+                    <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                 </div>
-                <input type="text" id="search-modal-input" name="search_modal_query" oninput="performSearch(this.value)" placeholder="Search classes, modules, challenges..."
-                       class="h-12 w-full border-0 bg-transparent pl-11 pr-4 text-sm text-slate-200 placeholder-slate-500 focus:ring-0 focus:outline-none" role="combobox" aria-expanded="false" aria-controls="options">
+                <input type="text" id="search-modal-input" name="search_modal_query" oninput="performSearch(this.value)" placeholder="Search classes, modules, labs…" autocomplete="off"
+                       class="h-14 w-full border-0 bg-transparent pl-12 pr-16 text-[15px] text-[#ededed] placeholder-[#666666] focus:ring-0 focus:outline-none" role="combobox" aria-expanded="false" aria-controls="search-results">
+                <kbd class="absolute right-4 top-1/2 -translate-y-1/2 rounded-md border border-[#2e2e2e] px-1.5 py-0.5 font-mono text-[10px] text-[#888888]">Esc</kbd>
             </div>
 
             <!-- Default Quick Links (when input is empty) -->
-            <div id="search-quick-links" class="p-2 space-y-1">
-                <span class="block px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quick Links</span>
-                <a href="{{ route('dashboard') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
-                    <span>Dashboard</span>
-                </a>
-                <a href="{{ route('classes.index') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
-                    <span>All Classes</span>
-                </a>
-                @if(auth()->user()->role === 'instructor' || auth()->user()->role === 'admin')
-                    <a href="{{ route('classes.create') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
-                        <span>Create a Class</span>
-                    </a>
+            <div id="search-quick-links" class="p-2">
+                <span class="block px-3 pt-2 pb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#888888]">Jump to</span>
+                <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">Dashboard</a>
+                <a href="{{ route('classes.index') }}" class="flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">All classes</a>
+                @if(in_array(auth()->user()->role, ['instructor', 'admin'], true))
+                    <a href="{{ route('classes.create') }}" class="flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">Create a class</a>
                 @endif
-                <a href="{{ route('settings.show') }}" class="flex items-center space-x-3 px-3 py-2 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
-                    <span>Account Settings</span>
-                </a>
+                <a href="{{ route('settings.show') }}" class="flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">Account settings</a>
             </div>
 
             <!-- Search Results -->
-            <div id="search-results" class="hidden max-h-96 overflow-y-auto p-2 space-y-4">
-                <!-- Navigation section -->
-                <div id="search-section-navigation" class="hidden space-y-1">
-                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Navigation</span>
-                    <div class="search-items-container space-y-0.5"></div>
-                </div>
-                <!-- Classes section -->
-                <div id="search-section-classes" class="hidden space-y-1">
-                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classes</span>
-                    <div class="search-items-container space-y-0.5"></div>
-                </div>
-                <!-- Modules section -->
-                <div id="search-section-modules" class="hidden space-y-1">
-                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Modules</span>
-                    <div class="search-items-container space-y-0.5"></div>
-                </div>
-                <!-- Laboratories section -->
-                <div id="search-section-laboratories" class="hidden space-y-1">
-                    <span class="block px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lab Challenges</span>
-                    <div class="search-items-container space-y-0.5"></div>
-                </div>
-                <!-- No results -->
-                <div id="search-no-results" class="hidden text-center py-6 text-xs text-slate-500">
-                    No results found. Try a different query.
+            <div id="search-results" class="hidden max-h-96 overflow-y-auto p-2 space-y-3">
+                @foreach (['navigation' => 'Pages', 'classes' => 'Classes', 'modules' => 'Modules', 'laboratories' => 'Labs'] as $section => $heading)
+                    <div id="search-section-{{ $section }}" class="hidden">
+                        <span class="block px-3 pt-2 pb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#888888]">{{ $heading }}</span>
+                        <div class="search-items-container space-y-0.5"></div>
+                    </div>
+                @endforeach
+                <div id="search-no-results" class="hidden text-center py-8 text-sm text-[#888888]">
+                    Nothing matches that. Try another word.
                 </div>
             </div>
         </div>
