@@ -34,8 +34,8 @@ class GmailIntegrationTest extends TestCase
     {
         $response = $this->actingAs($this->user)->get('/settings');
         $response->assertStatus(200);
-        $response->assertSee('Gmail Integration');
-        $response->assertSee('Notification Preferences');
+        $response->assertSee('Connected accounts');
+        $response->assertSee('Email notifications');
     }
 
     /**

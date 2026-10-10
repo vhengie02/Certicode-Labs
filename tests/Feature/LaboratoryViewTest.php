@@ -13,6 +13,17 @@ class LaboratoryViewTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** A lab inside a class the student is enrolled in. */
+    private function labForEnrolledStudent(User $student, array $attributes): Laboratory
+    {
+        $instructor = User::firstOrCreate(['email' => 'lab-owner@example.com'], ['name' => 'Lab Owner', 'password' => bcrypt('password'), 'role' => 'instructor']);
+        $class = SchoolClass::create(['name' => 'Class ' . $student->id, 'code' => 'CLS-' . $student->id . '-' . uniqid(), 'instructor_id' => $instructor->id]);
+        $class->students()->attach($student->id, ['status' => 'enrolled']);
+        $module = Module::create(['class_id' => $class->id, 'title' => 'Module', 'content' => 'Content']);
+
+        return Laboratory::create(['module_id' => $module->id] + $attributes);
+    }
+
     public function test_laboratory_view_count_increments_for_student()
     {
         $instructor = User::create([
@@ -43,7 +54,7 @@ class LaboratoryViewTest extends TestCase
             'content' => 'Syllabus content',
         ]);
 
-        $laboratory = Laboratory::create([
+        $laboratory = $this->labForEnrolledStudent($student, [
             'title' => 'Memory Exploitation Challenge',
             'description' => 'Verify registers memory manipulation.',
             'time_limit' => 60,
@@ -76,7 +87,7 @@ class LaboratoryViewTest extends TestCase
             'role' => 'student',
         ]);
 
-        $laboratory = Laboratory::create([
+        $laboratory = $this->labForEnrolledStudent($student, [
             'title' => 'Memory Exploitation Challenge',
             'description' => 'Verify registers memory manipulation.',
             'time_limit' => 60,
@@ -102,7 +113,7 @@ class LaboratoryViewTest extends TestCase
             'role' => 'student',
         ]);
 
-        $laboratory = Laboratory::create([
+        $laboratory = $this->labForEnrolledStudent($student, [
             'title' => 'Memory Exploitation Challenge',
             'description' => 'Verify registers memory manipulation.',
             'time_limit' => 60,
@@ -136,7 +147,7 @@ class LaboratoryViewTest extends TestCase
             'role' => 'student',
         ]);
 
-        $laboratory = Laboratory::create([
+        $laboratory = $this->labForEnrolledStudent($student, [
             'title' => 'POSIX Fork Lab',
             'description' => 'IPC in C',
             'time_limit' => 60,
@@ -165,7 +176,7 @@ class LaboratoryViewTest extends TestCase
             'role' => 'student',
         ]);
 
-        $laboratory = Laboratory::create([
+        $laboratory = $this->labForEnrolledStudent($student, [
             'title' => 'Multi-file Project Lab',
             'description' => 'Multi-file project in C',
             'time_limit' => 60,

@@ -32,7 +32,7 @@ class ThemeSettingsTest extends TestCase
         $response = $this->actingAs($this->user)->get(route('settings.show'));
 
         $response->assertStatus(200);
-        $response->assertSee('Appearance & Theme', false);
+        $response->assertSee('Appearance');
         $response->assertSee('System', false);
         $response->assertSee('Dark Mode');
         $response->assertSee('Light Mode');

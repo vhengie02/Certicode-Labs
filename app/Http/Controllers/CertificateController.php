@@ -77,8 +77,8 @@ class CertificateController extends Controller
         $certificate = Certificate::with(['user', 'schoolClass.instructor'])->findOrFail($id);
         $user = auth()->user();
 
-        // Check permissions (student owner, instructor, or admin)
-        if ($user->role === 'student' && $user->id !== $certificate->user_id) {
+        // The student it was issued to, the class's instructor, or an admin
+        if ($user->id !== $certificate->user_id && !$user->canManageClass($certificate->schoolClass)) {
             abort(403, 'Unauthorized.');
         }
 

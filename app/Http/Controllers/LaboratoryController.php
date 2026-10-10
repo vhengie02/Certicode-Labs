@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 
 class LaboratoryController extends Controller
 {
+    use Concerns\AuthorizesClassAccess;
+
     /**
      * Display a listing of the laboratories.
      */
@@ -27,6 +29,7 @@ class LaboratoryController extends Controller
         }
 
         $class = \App\Models\SchoolClass::with('modules')->findOrFail($class_id);
+        $this->authorizeClassManager($class);
         return view('laboratories.create', compact('class'));
     }
 
@@ -90,6 +93,7 @@ class LaboratoryController extends Controller
         }
 
         $module = \App\Models\Module::findOrFail($validated['module_id']);
+        $this->authorizeModuleManager($module);
 
         $availabilityMode = $validated['availability_mode'] ?? 'open';
         $liveDuration = $validated['live_duration_minutes'] ?? $validated['time_limit'];
@@ -132,6 +136,7 @@ class LaboratoryController extends Controller
      */
     public function show(Laboratory $laboratory)
     {
+        $this->authorizeLabViewer($laboratory);
         $this->recordUniqueView($laboratory);
         $laboratory->load(['module.schoolClass']);
 
@@ -153,6 +158,7 @@ class LaboratoryController extends Controller
 
         $module = \App\Models\Module::findOrFail($laboratory->module_id);
         $class = \App\Models\SchoolClass::with('modules')->findOrFail($module->class_id);
+        $this->authorizeClassManager($class);
 
         return view('laboratories.edit', compact('laboratory', 'class'));
     }
@@ -163,6 +169,7 @@ class LaboratoryController extends Controller
     public function update(Request $request, Laboratory $laboratory)
     {
         $this->authorizeAdminOrInstructor();
+        $this->authorizeLabManager($laboratory);
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -216,6 +223,8 @@ class LaboratoryController extends Controller
         }
 
         $module = \App\Models\Module::findOrFail($validated['module_id']);
+        // Moving the lab is only allowed into a module of a class you also manage
+        $this->authorizeModuleManager($module);
 
         $availabilityMode = $validated['availability_mode'] ?? $laboratory->availability_mode ?? 'open';
         $liveDuration = $validated['live_duration_minutes'] ?? $laboratory->live_duration_minutes ?? $validated['time_limit'];
@@ -248,6 +257,7 @@ class LaboratoryController extends Controller
     public function destroy(Laboratory $laboratory)
     {
         $this->authorizeAdminOrInstructor();
+        $this->authorizeLabManager($laboratory);
 
         $classId = null;
         if ($laboratory->module_id) {
@@ -272,6 +282,7 @@ class LaboratoryController extends Controller
     public function startSession(Request $request, int $id)
     {
         $laboratory = Laboratory::findOrFail($id);
+        $this->authorizeLabViewer($laboratory);
         /** @var \App\Models\User|null $user */
         $user = auth()->user();
 
@@ -363,8 +374,11 @@ class LaboratoryController extends Controller
     {
         $session = \App\Models\LabSession::findOrFail($id);
 
-        if (auth()->id() !== $session->user_id && auth()->user()->role === 'student') {
-            abort(403, 'Unauthorized.');
+        if (auth()->id() !== $session->user_id) {
+            if (auth()->user()->role === 'student') {
+                abort(403, 'Unauthorized.');
+            }
+            $this->authorizeSessionManager($session);
         }
 
         return redirect()->route('laboratories.show', $session->lab_id);
@@ -378,8 +392,11 @@ class LaboratoryController extends Controller
         $session = \App\Models\LabSession::findOrFail($id);
 
         // Check ownership
-        if (auth()->id() !== $session->user_id && auth()->user()->role === 'student') {
-            abort(403, 'Unauthorized.');
+        if (auth()->id() !== $session->user_id) {
+            if (auth()->user()->role === 'student') {
+                abort(403, 'Unauthorized.');
+            }
+            $this->authorizeSessionManager($session);
         }
 
         $session->update([
@@ -448,6 +465,7 @@ class LaboratoryController extends Controller
     public function downloadStarterFiles(int $id)
     {
         $laboratory = Laboratory::findOrFail($id);
+        $this->authorizeLabViewer($laboratory);
         $files = $laboratory->getStarterFilesList();
 
         if (empty($files)) {
@@ -492,6 +510,7 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
         $laboratory = Laboratory::findOrFail($id);
+        $this->authorizeLabManager($laboratory);
 
         $duration = $request->input('duration_minutes') ? (int) $request->input('duration_minutes') : null;
         $laboratory->openLive($duration);
@@ -507,6 +526,7 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
         $laboratory = Laboratory::findOrFail($id);
+        $this->authorizeLabManager($laboratory);
 
         $laboratory->closeLive();
 
@@ -520,6 +540,7 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
         $laboratory = Laboratory::findOrFail($id);
+        $this->authorizeLabManager($laboratory);
 
         $extendMinutes = $request->input('extend_minutes') ?? $request->input('add_minutes');
         $extendMinutes = $extendMinutes ? (int) $extendMinutes : null;

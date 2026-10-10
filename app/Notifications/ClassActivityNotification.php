@@ -21,7 +21,8 @@ class ClassActivityNotification extends Notification
     {
         $this->title = $title;
         $this->message = $message;
-        $this->url = $url;
+        // Stored as a path so it works on any host the app runs on (see InternalUrl)
+        $this->url = \App\Support\InternalUrl::path($url);
         $this->type = $type; // class, module, lab
     }
 
@@ -82,7 +83,7 @@ class ClassActivityNotification extends Notification
             ->subject("Certicode Alert: " . $this->title)
             ->greeting("Hello " . $notifiable->name . ",")
             ->line($this->message)
-            ->action('View Details on Certicode', $this->url)
+            ->action('View Details on Certicode', $this->url === '#' ? url('/') : url($this->url))
             ->line('Thank you for participating in Certicode Labs!')
             ->salutation('Best regards, Certicode Labs Team');
     }

@@ -179,4 +179,25 @@ class User extends Authenticatable
     {
         return $this->role === 'student' && $this->instructor_requested_at !== null;
     }
+
+    /**
+     * Whether this user may see and change a class and everything in it: its modules, labs,
+     * student sessions, telemetry and grades. Admins manage every class; an instructor only
+     * the classes they own. Accepts a class, a class id, or null (no class: never allowed).
+     */
+    public function canManageClass(SchoolClass|int|null $class): bool
+    {
+        if ($this->role === 'admin') {
+            return true;
+        }
+        if ($this->role !== 'instructor' || $class === null) {
+            return false;
+        }
+
+        $instructorId = $class instanceof SchoolClass
+            ? $class->instructor_id
+            : SchoolClass::whereKey($class)->value('instructor_id');
+
+        return $instructorId !== null && (int) $instructorId === (int) $this->id;
+    }
 }

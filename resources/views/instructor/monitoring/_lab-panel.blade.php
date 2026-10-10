@@ -1,60 +1,105 @@
-@extends('layouts.app')
-
-@section('title', 'Instructor Live Monitoring - ' . $laboratory->title)
-@section('page_header', 'Live Lab Monitoring: ' . $laboratory->title)
-
-@section('content')
-<div class="max-w-7xl mx-auto space-y-6" x-data="instructorMonitor()">
-    <!-- Header & Navigation -->
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div class="space-y-1">
-            <div class="flex items-center gap-2">
-                @if($schoolClass)
-                    <a href="{{ route('classes.show', $schoolClass->id) }}" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                        Back to {{ $schoolClass->name }}
-                    </a>
-                    <span class="text-slate-600">/</span>
+{{-- Live monitoring for one lab. Included by classes/telemetry.blade.php when ?lab= is set. --}}
+<div class="space-y-6" x-data="instructorMonitor()">
+    <!-- Lab header: title on the left; live-lab timer and controls on the right -->
+    @php
+        $isLive = $laboratory->isLiveLab();
+        $liveRemaining = $isLive ? max(0, (int) $laboratory->getRemainingLiveSeconds()) : 0;
+        $leftoverMinutes = max(1, (int) ceil($liveRemaining / 60));
+    @endphp
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div class="min-w-0">
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <h2 class="text-xl font-semibold text-[#ededed] truncate">{{ $laboratory->title }}</h2>
+                @if($laboratory->is_group_lab)
+                    <span class="px-2 py-0.5 rounded-full border border-[#2e2e2e] font-mono text-[10px] uppercase tracking-[0.12em] text-[#888888]">group lab</span>
                 @endif
-                <a href="{{ route('laboratories.show', $laboratory->id) }}" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors">
-                    Lab Details
-                </a>
             </div>
-            <h2 class="text-xl font-bold text-white flex items-center gap-2.5">
-                <span>{{ $laboratory->title }}</span>
-                @if($laboratory->starter_files && count($laboratory->starter_files) > 0)
-                    <span class="text-xs font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
-                        {{ count($laboratory->starter_files) }} files
-                    </span>
-                @endif
-            </h2>
+            <p class="text-sm text-[#888888] mt-1">
+                {{ $laboratory->module->title ?? 'Module' }}
+                <span aria-hidden="true">&middot;</span>
+                {{ $isLive ? 'Live lab' : 'Open lab, self-paced' }}
+                <span aria-hidden="true">&middot;</span>
+                <a href="{{ route('laboratories.show', $laboratory->id) }}" class="text-[#a3a3a3] hover:text-[#ededed] underline-offset-2 hover:underline">Lab details</a>
+            </p>
         </div>
 
-        <div class="flex items-center gap-3">
-            @if($schoolClass)
-                <a href="{{ route('classes.telemetry', $schoolClass->id) }}" class="inline-flex items-center px-3 py-1.5 border border-slate-800 text-xs font-semibold rounded-lg text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300 transition-colors shadow-sm">
-                    <span class="w-1.5 h-1.5 bg-rose-500 rounded-full mr-2 animate-pulse"></span>
-                    Telemetry Monitoring
-                </a>
+        <div class="flex flex-wrap items-center gap-2.5">
+            @if($isLive)
+                @if($laboratory->isLiveActive())
+                    {{-- Shared timer: counts down in the browser from the server's remaining time --}}
+                    <div class="live-timer flex items-center gap-2.5 h-10 pl-3 pr-2 rounded-lg border border-[#3ecf8e]/35 bg-[#3ecf8e]/[0.06]"
+                         data-remaining="{{ $liveRemaining }}" role="timer" aria-label="Time left in this live lab">
+                        <span class="relative flex h-2 w-2" aria-hidden="true">
+                            <span class="absolute inline-flex h-full w-full rounded-full bg-[#3ecf8e] opacity-60 animate-ping"></span>
+                            <span class="relative inline-flex h-2 w-2 rounded-full bg-[#3ecf8e]"></span>
+                        </span>
+                        <span class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#3ecf8e]">Live</span>
+                        <span class="live-timer-clock font-mono text-lg font-semibold tabular-nums text-[#ededed]">{{ $liveRemaining >= 3600 ? sprintf('%d:%02d:%02d', intdiv($liveRemaining, 3600), intdiv($liveRemaining % 3600, 60), $liveRemaining % 60) : sprintf('%02d:%02d', intdiv($liveRemaining, 60), $liveRemaining % 60) }}</span>
+                        <span class="text-xs text-[#888888]">left</span>
+                        <x-info-tip align="right">Every student shares this one timer. Students who join late only get the time that's left, and every open workspace is submitted automatically when it reaches zero.</x-info-tip>
+                    </div>
+                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? Every open student workspace will be submitted and graded.');">
+                        @csrf
+                        <button type="submit" class="inline-flex items-center gap-2 h-10 px-3.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-300 hover:bg-red-500/20 transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                            End lab
+                        </button>
+                    </form>
+                @elseif($laboratory->isLiveNotStarted())
+                    <span class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-amber-400/30 bg-amber-400/[0.06] text-sm text-amber-300">
+                        <span class="h-2 w-2 rounded-full bg-amber-400" aria-hidden="true"></span>
+                        Not started
+                        <x-info-tip align="right">Students can't enter this lab until you start it. Starting it begins one shared countdown for everyone.</x-info-tip>
+                    </span>
+                    <form action="{{ route('laboratories.open-live', $laboratory->id) }}" method="POST" class="flex items-center gap-2">
+                        @csrf
+                        <label class="flex items-center gap-1.5 h-10 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm text-[#888888]">
+                            <span class="sr-only">Duration in minutes</span>
+                            <input type="number" name="duration_minutes" value="{{ $laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60 }}" min="1" max="600"
+                                   class="w-12 bg-transparent text-right font-mono text-[#ededed] focus:outline-none">
+                            min
+                        </label>
+                        <button type="submit" class="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+                            Start live lab
+                        </button>
+                    </form>
+                @else
+                    <span class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm text-[#a3a3a3]">
+                        <span class="h-2 w-2 rounded-full bg-[#666666]" aria-hidden="true"></span>
+                        Ended
+                    </span>
+                    <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST" class="flex items-center gap-2">
+                        @csrf
+                        @if($liveRemaining > 0)
+                            <button type="submit" class="inline-flex items-center gap-2 h-10 px-3.5 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm font-medium text-[#ededed] hover:border-[#383838] transition-colors" title="Resumes the shared timer with the time that was left">
+                                Reopen ({{ $leftoverMinutes }} min left)
+                            </button>
+                        @else
+                            <label class="flex items-center gap-1.5 h-10 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm text-[#888888]">
+                                <span class="sr-only">Extra minutes</span>
+                                +<input type="number" name="extend_minutes" value="15" min="1" max="180" class="w-10 bg-transparent text-right font-mono text-[#ededed] focus:outline-none">
+                                min
+                            </label>
+                            <button type="submit" class="inline-flex items-center h-10 px-3.5 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm font-medium text-[#ededed] hover:border-[#383838] transition-colors">
+                                Extend and reopen
+                            </button>
+                        @endif
+                    </form>
+                @endif
             @endif
 
             @if($laboratory->is_group_lab)
-                <!-- Sort Selector -->
-                <div class="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-1 text-xs">
-                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'name']) }}" 
-                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy !== 'group' ? 'bg-[#3ecf8e] text-slate-950 font-semibold' : 'text-slate-400 hover:text-white' }}">
-                        By Student Name
-                    </a>
-                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'group']) }}" 
-                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy === 'group' ? 'bg-[#3ecf8e] text-slate-950 font-semibold' : 'text-slate-400 hover:text-white' }}">
-                        By Group / Team
-                    </a>
+                <div class="flex items-center h-10 rounded-lg bg-[#171717] border border-[#2e2e2e] p-1 text-xs" role="group" aria-label="Sort roster">
+                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'name']) }}" @if($sortBy !== 'group') aria-current="true" @endif
+                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy !== 'group' ? 'bg-[#3ecf8e] text-[#06150e] font-semibold' : 'text-[#888888] hover:text-[#ededed]' }}">By student</a>
+                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'group']) }}" @if($sortBy === 'group') aria-current="true" @endif
+                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy === 'group' ? 'bg-[#3ecf8e] text-[#06150e] font-semibold' : 'text-[#888888] hover:text-[#ededed]' }}">By team</a>
                 </div>
             @endif
 
-            <!-- Auto-refresh button -->
-            <button @click="refreshData()" class="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors" title="Refresh Live Stream">
-                <svg class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <button type="button" @click="refreshData()" class="inline-flex items-center justify-center h-10 w-10 rounded-lg bg-[#171717] border border-[#2e2e2e] text-[#a3a3a3] hover:text-[#ededed] hover:border-[#383838] transition-colors" aria-label="Refresh live data" title="Refresh">
+                <svg class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             </button>
         </div>
     </div>
@@ -70,165 +115,75 @@
         </button>
     </div>
 
-    @if($laboratory->isLiveLab())
-        <!-- Live Lab Shared Countdown Banner (Feature 9) -->
-        <div class="p-5 rounded-xl border {{ $laboratory->isLiveActive() ? 'bg-emerald-950/20 border-emerald-500/30' : ($laboratory->isLiveNotStarted() ? 'bg-amber-950/20 border-amber-500/30' : 'bg-red-950/20 border-red-500/30') }} flex flex-col md:flex-row items-center justify-between gap-4">
-            <div class="flex items-center gap-3.5">
-                @if($laboratory->isLiveActive())
-                    <span class="relative flex h-3.5 w-3.5 flex-shrink-0">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
-                    </span>
-                    <div>
-                        <div class="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                            <span>Live Lab Shared Countdown Active</span>
-                            <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">Synchronized Clock</span>
-                        </div>
-                        <p class="text-xs text-slate-400 mt-0.5">All students share this timer. Late joiners only receive remaining time. Auto-submits on cutoff.</p>
-                    </div>
-                @elseif($laboratory->isLiveNotStarted())
-                    <span class="h-3.5 w-3.5 rounded-full bg-amber-400 flex-shrink-0"></span>
-                    <div>
-                        <div class="text-xs font-mono font-bold uppercase tracking-wider text-amber-400">
-                            Live Lab Locked / Not Yet Started
-                        </div>
-                        <p class="text-xs text-slate-400 mt-0.5">Students are currently blocked from entering until you open the session window.</p>
-                    </div>
-                @else
-                    <span class="h-3.5 w-3.5 rounded-full bg-red-400 flex-shrink-0"></span>
-                    <div>
-                        <div class="text-xs font-mono font-bold uppercase tracking-wider text-red-400">
-                            Live Lab Countdown Expired / Closed
-                        </div>
-                        <p class="text-xs text-slate-400 mt-0.5">Shared time limit reached. Active student workspaces have been auto-submitted.</p>
-                    </div>
-                @endif
-            </div>
-
-            <div class="flex items-center gap-4 flex-wrap">
-                @if($laboratory->isLiveActive())
-                    <div class="text-center px-4 py-2 rounded-lg bg-slate-950/80 border border-emerald-500/30">
-                        <div class="text-[10px] font-mono uppercase text-slate-400">Shared Remaining</div>
-                        <div class="text-2xl font-mono font-bold text-emerald-400 tracking-wider">
-                            {{ sprintf('%02d:%02d', floor($laboratory->getRemainingLiveSeconds() / 60), $laboratory->getRemainingLiveSeconds() % 60) }}
-                        </div>
-                    </div>
-                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? All in-progress student workspaces will be auto-submitted and assessed.');">
-                        @csrf
-                        <button type="submit" class="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-xs font-semibold transition">
-                            ⏹️ End Live Lab
-                        </button>
-                    </form>
-                @elseif($laboratory->isLiveNotStarted())
-                    <form action="{{ route('laboratories.open-live', $laboratory->id) }}" method="POST" class="flex items-center gap-2">
-                        @csrf
-                        <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5">
-                            <span class="text-xs font-mono text-slate-400">Window:</span>
-                            <input type="number" name="duration_minutes" value="{{ $laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60 }}" min="1" max="600" class="w-14 bg-transparent text-xs font-mono text-white focus:outline-none">
-                            <span class="text-xs font-mono text-slate-400">min</span>
-                        </div>
-                        <button type="submit" class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-slate-950 font-bold text-xs hover:bg-[#00c573] transition shadow-sm">
-                            ▶️ Open Live Lab &rarr;
-                        </button>
-                    </form>
-                @else
-                    @if($laboratory->getRemainingLiveSeconds() > 0)
-                        <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST">
-                            @csrf
-                            <button type="submit" class="px-4 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition" title="Carries forward leftover {{ max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60)) }}m">
-                                🔄 Reopen Live Lab ({{ max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60)) }}m left)
-                            </button>
-                        </form>
-                    @else
-                        <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST" class="flex items-center gap-2">
-                            @csrf
-                            <input type="number" name="extend_minutes" value="15" min="1" max="180" class="w-16 px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-xs font-mono rounded text-white" title="Extend duration in minutes">
-                            <button type="submit" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">
-                                🔄 Extend & Reopen (+min)
-                            </button>
-                        </form>
-                    @endif
-                @endif
-            </div>
-        </div>
-    @endif
 
     {{-- KPI Metrics --}}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Workspaces</span>
-                <span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-            </div>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-2xl font-bold font-mono text-white">{{ $activeSessions }}</span>
-                <span class="text-xs text-slate-500">of {{ $totalStudents }} total</span>
-            </div>
-            <div class="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                <div class="bg-emerald-400 h-1.5 rounded-full" style="width: {{ $totalStudents > 0 ? round(($activeSessions / $totalStudents) * 100) : 0 }}%"></div>
-            </div>
+    @php
+        $flaggedPairs = $plagiarismAnalysis['flagged_pairs_count'] ?? 0;
+    @endphp
+    <dl class="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                Connected now
+                <x-info-tip align="left">Students whose VS Code extension checked in during the last 75 seconds, out of everyone who has opened this lab. The extension checks in every 15–20 seconds, so a student who closes VS Code drops off within about a minute.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums text-[#ededed]">{{ $activeSessions }}</span>
+                <span class="text-xs text-[#888888]">of {{ $totalStudents }}</span>
+            </dd>
+            <dd class="mt-3 h-1.5 w-full rounded-full bg-[#232323] overflow-hidden" aria-hidden="true">
+                <span class="block h-full rounded-full bg-[#3ecf8e]" style="width: {{ $totalStudents > 0 ? round(($activeSessions / $totalStudents) * 100) : 0 }}%"></span>
+            </dd>
         </div>
 
-        <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Average WPM Baseline</span>
-                <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-            </div>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-2xl font-bold font-mono text-sky-400">{{ $avgWpm }}</span>
-                <span class="text-xs text-slate-500">words / min</span>
-            </div>
-            <p class="text-xs text-slate-500 mt-2">Active keystroke velocity cadence.</p>
+        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                Avg typing speed
+                <x-info-tip>Average words per minute across everyone in this lab, counting 5 keystrokes as one word. Students who haven't typed yet count as 0, so the average starts low and rises as people work.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums text-[#ededed]">{{ $avgWpm }}</span>
+                <span class="text-xs text-[#888888]">wpm</span>
+            </dd>
         </div>
 
-        <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Integrity Alerts</span>
-                <svg class="w-4 h-4 {{ $totalAnomalies > 0 ? 'text-amber-400' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-            </div>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-2xl font-bold font-mono {{ $totalAnomalies > 0 ? 'text-amber-400' : 'text-white' }}">{{ $totalAnomalies }}</span>
-                <span class="text-xs text-slate-500">flagged events</span>
-            </div>
-            <p class="text-xs text-slate-500 mt-2">Focus losses, paste flags & presence.</p>
+        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                Integrity flags
+                <x-info-tip>Every flag raised in this lab, including ones you've resolved: switching away from VS Code 3+ times in 2 minutes, suspicious pastes, the camera not seeing exactly one face, and long idle periods. Open a student's "Anomalies" to see each one.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums {{ $totalAnomalies > 0 ? 'text-amber-400' : 'text-[#ededed]' }}">{{ $totalAnomalies }}</span>
+                <span class="text-xs text-[#888888]">events</span>
+            </dd>
         </div>
 
-        <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Completed Sessions</span>
-                <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            </div>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-2xl font-bold font-mono text-[#3ecf8e]">{{ $completedSessions }}</span>
-                <span class="text-xs text-slate-500">submitted</span>
-            </div>
-            <p class="text-xs text-slate-500 mt-2">Finalized and evaluated solutions.</p>
+        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                Submitted
+                <x-info-tip>Sessions that are finished and graded: submitted by the student, ended by you, or auto-submitted when a live lab's timer ran out.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums text-[#ededed]">{{ $completedSessions }}</span>
+                <span class="text-xs text-[#888888]">of {{ $totalStudents }}</span>
+            </dd>
         </div>
 
-        <div class="glass-panel p-5 rounded-xl border border-slate-800 bg-slate-900/60">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cohort Plagiarism</span>
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase {{ ($plagiarismAnalysis['flagged_pairs_count'] ?? 0) > 0 ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400' }}">
-                    {{ ($plagiarismAnalysis['flagged_pairs_count'] ?? 0) > 0 ? 'Flagged' : 'Clean' }}
-                </span>
-            </div>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-2xl font-bold font-mono {{ ($plagiarismAnalysis['flagged_pairs_count'] ?? 0) > 0 ? 'text-rose-400' : 'text-emerald-400' }}" x-text="plagiarism.flagged_pairs_count ?? {{ $plagiarismAnalysis['flagged_pairs_count'] ?? 0 }}">
-                    {{ $plagiarismAnalysis['flagged_pairs_count'] ?? 0 }}
-                </span>
-                <span class="text-xs text-slate-500">flagged pairs</span>
-            </div>
-            <p class="text-xs text-slate-500 mt-2">
-                <a href="#plagiarism-section" class="text-[#3ecf8e] hover:underline flex items-center gap-1">
-                    <span>Inspect Similarity Matrix</span> &darr;
-                </a>
-            </p>
+        <div class="col-span-2 lg:col-span-1 rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                Similar code
+                <x-info-tip align="right">Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums {{ $flaggedPairs > 0 ? 'text-red-400' : 'text-[#ededed]' }}" x-text="plagiarism.flagged_pairs_count ?? {{ (int) $flaggedPairs }}">{{ $flaggedPairs }}</span>
+                <span class="text-xs text-[#888888]">flagged pairs</span>
+            </dd>
+            <dd class="mt-1"><a href="#plagiarism-section" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">Compare code &darr;</a></dd>
         </div>
-    </div>
+    </dl>
 
     <!-- Student & Team Monitoring Roster -->
-    <div class="glass-panel rounded-xl border border-slate-800 overflow-hidden">
-        <div class="p-4 border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="glass-panel rounded-xl border border-slate-800">
+        <div class="p-4 rounded-t-xl border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
                 <h3 class="font-bold text-white text-sm">{{ $laboratory->is_group_lab ? 'Active Student / Team Workspaces' : 'Active Student Workspaces' }}</h3>
                 <p class="text-xs text-slate-400 mt-0.5">Real-time status, WPM tracking, task progress, and anomaly audit trails.</p>
@@ -269,7 +224,7 @@
                         ];
                     @endphp
                     <div class="p-5 hover:bg-slate-900/40 transition-colors" 
-                         x-show="matchesSearch('{{ strtolower($user->name ?? '') }}', '{{ strtolower($group->name ?? '') }}')">
+                         x-show="matchesSearch({{ \Illuminate\Support\Js::from(strtolower($user->name ?? '')) }}, {{ \Illuminate\Support\Js::from(strtolower($group->name ?? '')) }})">
                         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                             <!-- Student / Team Identity (Fixed Width for Perfect Alignment) -->
                             <div class="flex items-center gap-3 w-full lg:w-64 xl:w-72 shrink-0 min-w-0">
@@ -323,21 +278,21 @@
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 text-xs w-full lg:w-[440px] xl:w-[480px] shrink-0">
                                 <!-- WPM Widget -->
                                 <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Live WPM</span>
+                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Live WPM</span><x-info-tip align="left" class="shrink-0">This student's typing speed in words per minute, as reported by the extension (5 keystrokes = 1 word).</x-info-tip></span>
                                     <span class="text-base font-mono font-bold text-sky-400 my-0.5">{{ $session->wpm ?? 0 }}</span>
                                     <span class="text-[10px] text-slate-500 block truncate">words/min</span>
                                 </div>
 
                                 <!-- Tasks Completed -->
                                 <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Tasks Done</span>
+                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Tasks Done</span><x-info-tip align="center" class="shrink-0">Lab tasks this student's code has passed so far. Tasks are checked each time they run their code.</x-info-tip></span>
                                     <span class="text-base font-mono font-bold text-emerald-400 my-0.5">{{ $tasksCount }}</span>
                                     <span class="text-[10px] text-slate-500 block truncate">completed</span>
                                 </div>
 
                                 <!-- Focus Losses -->
                                 <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Focus Lost</span>
+                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Focus Lost</span><x-info-tip align="center" class="shrink-0">How many times VS Code lost focus, for example switching to a browser. Turns amber above 2; 3 or more within 2 minutes raises an integrity flag.</x-info-tip></span>
                                     <span class="text-base font-mono font-bold my-0.5 {{ ($session->focus_lost_count ?? 0) > 2 ? 'text-amber-400' : 'text-slate-300' }}">
                                         {{ $session->focus_lost_count ?? 0 }}
                                     </span>
@@ -346,7 +301,7 @@
 
                                 <!-- Paste Anomalies -->
                                 <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="text-slate-500 text-[10px] uppercase font-bold block truncate">Paste Flags</span>
+                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Paste Flags</span><x-info-tip align="right" class="shrink-0">Pastes of 25+ characters that include a line break or more than 3 words. Pastes of the student's own starter code or of snippets from the lab chat are not counted.</x-info-tip></span>
                                     <span class="text-base font-mono font-bold my-0.5 {{ ($session->paste_anomaly_count ?? 0) > 0 ? 'text-rose-400 font-semibold' : 'text-slate-300' }}">
                                         {{ $session->paste_anomaly_count ?? 0 }}
                                     </span>
@@ -364,7 +319,7 @@
                                 </div>
 
                                 <!-- Grade & AI Summary Button (Feature 10) -->
-                                <button @click="openGradeModal({{ json_encode($gradeSessionPayload) }})"
+                                <button @click="openGradeModal({{ \Illuminate\Support\Js::from($gradeSessionPayload) }})"
                                         class="px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 {{ $session->isGradeOverridden() ? 'border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200' }}"
                                         title="View AI Grade Explanation & Manual Override">
                                     <svg class="w-3.5 h-3.5 {{ $session->isGradeOverridden() ? 'text-purple-400' : 'text-[#3ecf8e]' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>
@@ -378,7 +333,7 @@
                                 </button>
 
                                 <!-- Anomaly History Modal Toggle -->
-                                <button @click="openAnomalyModal({{ $session->id }}, '{{ addslashes($user->name ?? 'Student') }}', {{ json_encode($anomaliesList) }})"
+                                <button @click="openAnomalyModal({{ $session->id }}, {{ \Illuminate\Support\Js::from($user->name ?? 'Student') }}, {{ \Illuminate\Support\Js::from($anomaliesList) }})"
                                         class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors flex items-center gap-1.5 shrink-0">
                                     <svg class="w-3.5 h-3.5 {{ $anomaliesList->count() > 0 ? 'text-amber-400' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                     <span>Anomalies ({{ $anomaliesList->count() }})</span>
@@ -468,7 +423,7 @@
                     <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                         Flagged Cohort Pairs (<span x-text="plagiarism.flagged_pairs.length"></span>)
                     </span>
-                    <span class="text-xs text-rose-400 font-medium">⚠️ Review identical code structures below</span>
+                    <span class="text-xs text-rose-400 font-medium">Review the matching code below</span>
                 </div>
 
                 <div class="overflow-x-auto border border-slate-800 rounded-xl">
@@ -1045,8 +1000,8 @@ function instructorMonitor() {
         showLiveAlert(eventType) {
             this.hasLiveUpdate = true;
             this.liveUpdateMessage = eventType === 'anomaly.detected'
-                ? '⚠️ New proctoring anomaly detected!'
-                : '⚡ Live student code diff / activity updated!';
+                ? 'New integrity flag from a student.'
+                : 'Student activity updated.';
         },
 
         matchesSearch(name, group) {
@@ -1074,6 +1029,32 @@ function instructorMonitor() {
         }
     };
 }
+// Live lab timer: counts down in the browser from the server's remaining seconds.
+// At zero the page reloads, which lets the server close the lab and show "Ended".
+(() => {
+    const format = (secs) => {
+        const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+        const pad = (n) => String(n).padStart(2, '0');
+        return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+    };
+    document.querySelectorAll('.live-timer').forEach((timer) => {
+        const clock = timer.querySelector('.live-timer-clock');
+        const endsAt = Date.now() + parseInt(timer.dataset.remaining || '0', 10) * 1000;
+        const tick = () => {
+            const left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+            clock.textContent = format(left);
+            timer.classList.toggle('is-ending', left > 0 && left <= 300);
+            if (left === 0) {
+                timer.classList.add('is-over');
+                setTimeout(() => window.location.reload(), 2500);
+                return;
+            }
+            setTimeout(tick, 1000);
+        };
+        tick();
+    });
+})();
+
 window.instructorMonitor = instructorMonitor;
 if (window.Alpine) {
     window.Alpine.data('instructorMonitor', instructorMonitor);
@@ -1083,4 +1064,3 @@ if (window.Alpine) {
     });
 }
 </script>
-@endsection

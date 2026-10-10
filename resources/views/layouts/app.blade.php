@@ -136,17 +136,20 @@
 
         /* Loading Skeletons */
         .skeleton-pulse {
-            background: linear-gradient(90deg, #171717 25%, #222222 50%, #171717 75%);
+            background: linear-gradient(90deg, #232323 25%, #303030 50%, #232323 75%);
             background-size: 200% 100%;
             animation: skeleton-pulse-anim 1.5s infinite ease-in-out;
             border-radius: 6px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .skeleton-pulse { animation: none; background: #262626; }
         }
         @keyframes skeleton-pulse-anim {
             0% { background-position: 200% 0; }
             100% { background-position: -200% 0; }
         }
         html:not(.dark) .skeleton-pulse {
-            background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+            background: linear-gradient(90deg, #eceef1 25%, #dfe2e6 50%, #eceef1 75%);
             background-size: 200% 100%;
         }
 
@@ -417,6 +420,113 @@
         .app-mobile-nav::-webkit-scrollbar { display: none; }
         :focus-visible { outline: 2px solid #3ecf8e; outline-offset: 2px; }
 
+        /* App UI kit: shared form and card styles for redesigned pages */
+        .ui-card { background: #171717; border: 1px solid #2e2e2e; border-radius: 0.875rem; }
+        .ui-card-header { padding: 1.25rem 1.5rem 0; }
+        .ui-card-body { padding: 1.25rem 1.5rem 1.5rem; }
+        .ui-card-title { font-size: 0.95rem; font-weight: 600; color: #ededed; }
+        .ui-card-subtitle { margin-top: 0.25rem; font-size: 0.8125rem; color: #888888; line-height: 1.5; }
+        .ui-label { display: block; margin-bottom: 0.4rem; font-size: 0.8125rem; font-weight: 500; color: #ededed; }
+        .ui-label .ui-optional { font-weight: 400; color: #888888; }
+        .ui-hint { margin-top: 0.4rem; font-size: 0.75rem; color: #888888; line-height: 1.5; }
+        .ui-error { margin-top: 0.4rem; font-size: 0.75rem; color: #f87171; }
+        .ui-input {
+            display: block; width: 100%; min-height: 2.5rem; padding: 0.5rem 0.8rem;
+            background: #141414; border: 1px solid #2e2e2e; border-radius: 0.6rem;
+            font-size: 0.875rem; color: #ededed; transition: border-color 150ms ease, box-shadow 150ms ease;
+        }
+        .ui-input::placeholder { color: #666666; }
+        .ui-input:hover { border-color: #383838; }
+        .ui-input:focus { outline: none; border-color: #3ecf8e; box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.15); }
+        .ui-input[aria-invalid="true"] { border-color: rgba(248, 113, 113, 0.6); }
+        textarea.ui-input { min-height: 6rem; line-height: 1.55; resize: vertical; }
+        .ui-input-mono { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.8125rem; }
+        .ui-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+            height: 2.5rem; padding: 0 1rem; border-radius: 0.6rem; font-size: 0.875rem; font-weight: 500;
+            border: 1px solid transparent; white-space: nowrap;
+            transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+        }
+        .ui-btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.8125rem; border-radius: 0.5rem; }
+        .ui-btn-primary { background: #3ecf8e; color: #06150e; font-weight: 600; }
+        .ui-btn-primary:hover { background: #00c573; }
+        .ui-btn-secondary { background: #171717; border-color: #2e2e2e; color: #ededed; }
+        .ui-btn-secondary:hover { border-color: #3a3a3a; background: #1c1c1c; }
+        .ui-btn-ghost { color: #a3a3a3; }
+        .ui-btn-ghost:hover { color: #ededed; background: #1c1c1c; }
+        .ui-btn-danger { background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.3); color: #fca5a5; }
+        .ui-btn-danger:hover { background: rgba(239, 68, 68, 0.16); }
+        .ui-btn:disabled, .ui-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+        .ui-eyebrow { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.14em; color: #888888; }
+        .ui-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.15rem 0.55rem; border-radius: 9999px; border: 1px solid #2e2e2e; font-size: 0.75rem; color: #a3a3a3; }
+        .ui-badge-brand { border-color: rgba(62, 207, 142, 0.3); background: rgba(62, 207, 142, 0.06); color: #3ecf8e; }
+        .ui-badge-warn { border-color: rgba(251, 191, 36, 0.3); background: rgba(251, 191, 36, 0.06); color: #fcd34d; }
+        .ui-badge-danger { border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.06); color: #fca5a5; }
+        html:not(.dark) .ui-card { background: #ffffff; border-color: #e5e7eb; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+        html:not(.dark) .ui-card-title, html:not(.dark) .ui-label { color: #111827; }
+        html:not(.dark) .ui-card-subtitle, html:not(.dark) .ui-hint, html:not(.dark) .ui-eyebrow, html:not(.dark) .ui-label .ui-optional { color: #6b7280; }
+        html:not(.dark) .ui-input:focus { border-color: #059669 !important; box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15) !important; }
+        html:not(.dark) .ui-btn-primary { background: #059669; color: #ffffff; }
+        html:not(.dark) .ui-btn-primary:hover { background: #047857; }
+        html:not(.dark) .ui-btn-secondary { background: #ffffff; border-color: #e5e7eb; color: #111827; }
+        html:not(.dark) .ui-btn-secondary:hover { background: #f9fafb; border-color: #d1d5db; }
+        html:not(.dark) .ui-btn-ghost { color: #4b5563; }
+        html:not(.dark) .ui-btn-ghost:hover { color: #111827; background: #f3f4f6; }
+        html:not(.dark) .ui-btn-danger { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+        html:not(.dark) .ui-badge { border-color: #e5e7eb; color: #4b5563; }
+        html:not(.dark) .ui-badge-brand { color: #047857; background: #ecfdf5; border-color: #a7f3d0; }
+        html:not(.dark) .ui-badge-warn { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+        html:not(.dark) .ui-badge-danger { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+
+        /* Live lab timer: amber in the last five minutes */
+        .live-timer.is-ending { border-color: rgba(251, 191, 36, 0.45); background-color: rgba(251, 191, 36, 0.07); }
+        .live-timer.is-ending .live-timer-clock { color: #fbbf24; }
+        .live-timer.is-over .live-timer-clock { color: #f87171; }
+        html:not(.dark) .live-timer.is-ending .live-timer-clock { color: #b45309; }
+
+        /* Lab switcher on the class monitoring page */
+        .monitor-tab-active::after {
+            content: ''; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px;
+            height: 2px; border-radius: 2px 2px 0 0; background: #3ecf8e;
+        }
+        .monitor-tabs { scrollbar-width: none; }
+        .monitor-tabs::-webkit-scrollbar { display: none; }
+        html:not(.dark) .monitor-tab-active::after { background: #059669; }
+
+        /* (i) explanations: the info-tip Blade component */
+        .info-tip { position: relative; display: inline-flex; vertical-align: middle; }
+        .info-tip-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 1.125rem; height: 1.125rem; border-radius: 9999px;
+            color: #777777; transition: color 150ms ease;
+        }
+        .info-tip-btn svg { width: 0.95rem; height: 0.95rem; }
+        .info-tip-btn:hover, .info-tip:focus-within .info-tip-btn { color: #3ecf8e; }
+        .info-tip-bubble {
+            position: absolute; top: calc(100% + 8px); z-index: 60;
+            width: max-content; max-width: min(18rem, 80vw);
+            padding: 0.6rem 0.75rem; border-radius: 0.6rem;
+            background: #232323; border: 1px solid #383838; color: #e5e5e5;
+            box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+            font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+            font-size: 0.78rem; font-weight: 400; line-height: 1.45;
+            letter-spacing: normal; text-transform: none; text-align: left; white-space: normal;
+            opacity: 0; visibility: hidden; transform: translateY(-3px);
+            transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+            pointer-events: none;
+        }
+        .info-tip-center .info-tip-bubble { left: 50%; translate: -50% 0; }
+        .info-tip-left .info-tip-bubble { left: -0.5rem; }
+        .info-tip-right .info-tip-bubble { right: -0.5rem; }
+        .info-tip:hover .info-tip-bubble, .info-tip:focus-within .info-tip-bubble {
+            opacity: 1; visibility: visible; transform: translateY(0);
+            transition: opacity 140ms ease, transform 140ms ease, visibility 0s;
+        }
+        @media (prefers-reduced-motion: reduce) { .info-tip-bubble { transition: none; transform: none; } }
+        html:not(.dark) .info-tip-btn { color: #9ca3af; }
+        html:not(.dark) .info-tip-btn:hover, html:not(.dark) .info-tip:focus-within .info-tip-btn { color: #059669; }
+        html:not(.dark) .info-tip-bubble { background: #111827; border-color: #111827; color: #f9fafb; }
+
         html:not(.dark) .app-nav-link.is-active::after { background: #059669; }
         html:not(.dark) .app-icon-btn { color: #6b7280; }
         html:not(.dark) .app-icon-btn:hover { color: #111827; background-color: #f3f4f6; }
@@ -533,7 +643,7 @@
                             <div class="max-h-80 overflow-y-auto divide-y divide-[#232323]" id="notifications-list">
                                 @forelse($notifications as $notif)
                                     @php $notifType = $notif->data['type'] ?? 'info'; @endphp
-                                    <a href="{{ $notif->data['url'] ?? '#' }}" class="notif-item block px-4 py-3 hover:bg-[#1c1c1c] transition-colors {{ $notif->unread() ? 'is-unread' : '' }}">
+                                    <a href="{{ \App\Support\InternalUrl::path($notif->data['url'] ?? null) }}" class="notif-item block px-4 py-3 hover:bg-[#1c1c1c] transition-colors {{ $notif->unread() ? 'is-unread' : '' }}">
                                         <div class="flex items-start gap-3">
                                             <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full {{ $notifType === 'certificate' ? 'bg-amber-400' : ($notifType === 'class' || $notifType === 'module' ? 'bg-sky-400' : 'bg-[#3ecf8e]') }}"></span>
                                             <div class="min-w-0">
@@ -998,6 +1108,81 @@
                 }
             }
         });
+
+        // --- Lazy sections ---
+        // <div data-lazy-src="/same-origin/url">skeleton</div> renders at once; the server HTML
+        // at that URL replaces the skeleton after the page appears. Fragments are our own Blade
+        // templates (escaped server-side) and must not contain scripts.
+        function loadLazySection(el) {
+            const src = el.getAttribute('data-lazy-src');
+            let url;
+            try { url = new URL(src, window.location.href); } catch (e) { return; }
+            if (url.origin !== window.location.origin) return;
+
+            el.setAttribute('data-lazy-state', 'loading');
+            el.setAttribute('aria-busy', 'true');
+            const skeleton = el.innerHTML;
+
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' }, credentials: 'same-origin' })
+                .then(res => {
+                    // Signed out meanwhile: the request was redirected to the login page
+                    if (res.redirected && new URL(res.url).pathname === '/login') {
+                        window.location.reload();
+                        return null;
+                    }
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.text();
+                })
+                .then(html => {
+                    if (html === null) return;
+                    el.innerHTML = html;
+                    el.setAttribute('data-lazy-state', 'done');
+                    el.removeAttribute('aria-busy');
+                    el.dispatchEvent(new CustomEvent('certicode:lazyloaded', { bubbles: true }));
+                })
+                .catch(() => {
+                    el.setAttribute('data-lazy-state', 'error');
+                    el.removeAttribute('aria-busy');
+                    el.innerHTML = `
+                        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] px-5 py-8 text-center" role="alert">
+                            <p class="text-sm font-medium text-[#ededed]">This section didn't load.</p>
+                            <p class="text-sm text-[#888888] mt-1">Check your connection and try again.</p>
+                            <button type="button" class="lazy-retry mt-4 inline-flex items-center h-9 px-4 rounded-lg border border-[#2e2e2e] text-sm font-medium text-[#ededed] hover:border-[#383838] transition-colors">Try again</button>
+                        </div>`;
+                    el.querySelector('.lazy-retry').addEventListener('click', () => {
+                        el.innerHTML = skeleton;
+                        loadLazySection(el);
+                    }, { once: true });
+                });
+        }
+
+        // --- Info tips: nudge each bubble back inside the window when it opens ---
+        function placeInfoTip(tip) {
+            const bubble = tip.querySelector('.info-tip-bubble');
+            if (!bubble) return;
+            // Right-anchored bubbles move with margin-right; the rest with margin-left
+            const anchoredRight = tip.classList.contains('info-tip-right');
+            bubble.style.marginLeft = bubble.style.marginRight = '0px';
+            const rect = bubble.getBoundingClientRect();
+            const gutter = 8;
+            let shift = 0;
+            if (rect.right > window.innerWidth - gutter) shift = window.innerWidth - gutter - rect.right;
+            if (rect.left + shift < gutter) shift = gutter - rect.left;
+            if (anchoredRight) {
+                bubble.style.marginRight = (-shift) + 'px';
+            } else {
+                bubble.style.marginLeft = shift + 'px';
+            }
+        }
+        ['mouseover', 'focusin'].forEach(type => document.addEventListener(type, e => {
+            const tip = e.target.closest && e.target.closest('.info-tip');
+            if (tip) placeInfoTip(tip);
+        }));
+
+        window.loadLazySections = function (root = document) {
+            root.querySelectorAll('[data-lazy-src]:not([data-lazy-state])').forEach(loadLazySection);
+        };
+        window.loadLazySections();
 
         // Global Theme Management
         window.applyTheme = function(theme) {

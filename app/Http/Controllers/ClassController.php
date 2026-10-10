@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Auth;
 
 class ClassController extends Controller
 {
+    use Concerns\AuthorizesClassAccess;
+
     /**
      * Display a listing of classes.
      */
@@ -128,6 +130,8 @@ class ClassController extends Controller
             if ($isInvited) {
                 return view('classes.invited', compact('class'));
             }
+        } else {
+            $this->authorizeClassManager($class);
         }
 
         $completedLabIds = [];
@@ -150,6 +154,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
         return view('classes.edit', compact('class'));
     }
 
@@ -160,6 +165,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -182,6 +188,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
         $class->delete();
         self::clearClassesCache((int) Auth::id());
 
@@ -225,6 +232,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
 
         $request->validate([
             'email' => 'required|email|max:255',
@@ -297,6 +305,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
 
         return view('classes.module-create', compact('class'));
     }
@@ -308,6 +317,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -407,6 +417,8 @@ class ClassController extends Controller
                 ->where('status', 'completed')
                 ->pluck('lab_id', 'lab_id')
                 ->toArray();
+        } else {
+            $this->authorizeClassManager($class);
         }
 
         return view('classes.module-show', compact('class', 'module', 'completedLabIds'));
@@ -419,7 +431,8 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
-        $module = Module::with('attachments')->findOrFail($module_id);
+        $this->authorizeClassManager($class);
+        $module = Module::with('attachments')->where('class_id', $class->id)->findOrFail($module_id);
 
         return view('classes.module-edit', compact('class', 'module'));
     }
@@ -431,7 +444,8 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($class_id);
-        $module = Module::findOrFail($module_id);
+        $this->authorizeClassManager($class);
+        $module = Module::where('class_id', $class->id)->findOrFail($module_id);
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -495,7 +509,8 @@ class ClassController extends Controller
     public function destroyModule(int $class_id, int $module_id)
     {
         $this->authorizeInstructor();
-        $module = Module::findOrFail($module_id);
+        $this->authorizeClassManager($class_id);
+        $module = Module::where('class_id', $class_id)->findOrFail($module_id);
 
         // Delete associated files
         foreach ($module->attachments as $attachment) {
@@ -526,6 +541,8 @@ class ClassController extends Controller
             if (!$isEnrolled) {
                 abort(403, 'Unauthorized.');
             }
+        } else {
+            $this->authorizeClassManager($class);
         }
 
         if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
@@ -540,9 +557,10 @@ class ClassController extends Controller
     }
 
     /**
-     * Display real-time telemetry and anomalies monitor dashboard.
+     * Class monitoring: one page for the whole class ("All labs") or a single lab's live
+     * panel (?lab=ID), which used to be the separate /laboratories/{id}/monitoring page.
      */
-    public function telemetry(int $class_id)
+    public function telemetry(Request $request, int $class_id)
     {
         $this->authorizeInstructor();
 
@@ -550,8 +568,37 @@ class ClassController extends Controller
             @set_time_limit(120);
         }
 
-        $class = SchoolClass::findOrFail($class_id)->loadModuleTree();
+        $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
+        $class->loadModuleTree();
 
+        // Labs for the switcher, in syllabus order
+        $labs = $class->modules
+            ->flatMap(fn ($module) => $module->laboratories->each(fn ($lab) => $lab->setRelation('module', $module)))
+            ->unique('id')
+            ->values();
+
+        $selectedLab = $request->filled('lab') ? $labs->firstWhere('id', (int) $request->query('lab')) : null;
+        abort_if($request->filled('lab') && !$selectedLab, 404);
+
+        if ($selectedLab) {
+            $selectedLab->module->setRelation('schoolClass', $class);
+            $panel = app(\App\Http\Controllers\InstructorMonitoringController::class)->labPanelData($request, $selectedLab);
+
+            return view('classes.telemetry', compact('class', 'labs', 'selectedLab') + $panel);
+        }
+
+        [$sessions, $anomalies] = $this->classTelemetryOverview($class);
+
+        return view('classes.telemetry', compact('class', 'labs', 'selectedLab', 'sessions', 'anomalies'));
+    }
+
+    /**
+     * Sessions and anomalies across every lab in the class (cached briefly).
+     */
+    private function classTelemetryOverview(SchoolClass $class): array
+    {
+        $class_id = $class->id;
         $cacheKey = "class_telemetry_{$class_id}";
         [$sessions, $anomalies] = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 15, function () use ($class) {
             $labIds = [];
@@ -591,7 +638,7 @@ class ClassController extends Controller
             return [$sessions, $anomalies];
         });
 
-        return view('classes.telemetry', compact('class', 'sessions', 'anomalies'));
+        return [$sessions, $anomalies];
     }
 
     /**
@@ -601,6 +648,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $session = \App\Models\LabSession::with(['user', 'laboratory.module.schoolClass'])->findOrFail($id);
+        $this->authorizeClassManager($session->laboratory?->module?->schoolClass);
 
         $logs = \App\Models\TelemetryLog::where('lab_session_id', $session->id)
             ->latest()
@@ -620,9 +668,10 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $anomaly = \App\Models\Anomaly::with('labSession.laboratory.module')->findOrFail($id);
+        $classId = $anomaly->labSession?->laboratory?->module?->class_id;
+        $this->authorizeClassManager($classId);
         $anomaly->update(['resolved' => true]);
 
-        $classId = $anomaly->labSession?->laboratory?->module?->class_id;
         if ($classId) {
             \Illuminate\Support\Facades\Cache::store('file')->forget("class_telemetry_{$classId}");
         }
@@ -637,6 +686,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $class = SchoolClass::with(['students', 'modules.laboratories'])->findOrFail($id);
+        $this->authorizeClassManager($class);
 
         $class->update([
             'status' => 'completed',
@@ -693,6 +743,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $session = \App\Models\LabSession::findOrFail($id);
+        $this->authorizeSessionManager($session);
 
         $session->update([
             'status' => 'completed',
@@ -721,6 +772,7 @@ class ClassController extends Controller
     {
         $this->authorizeInstructor();
         $session = \App\Models\LabSession::findOrFail($id);
+        $this->authorizeSessionManager($session);
 
         $session->update([
             'status' => 'in_progress',

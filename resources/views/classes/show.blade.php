@@ -1,445 +1,196 @@
 @extends('layouts.app')
 
 @section('title', $class->name)
-@section('page_header')
-    {{ $class->name }}
-@endsection
+
+@php
+    $user = auth()->user();
+    $isStaff = $user->canManageClass($class);
+    $topModules = $class->modules->where('parent_id', null)->sortBy('order_index');
+    $enrolled = $class->students->filter(fn ($s) => $s->pivot->status === 'enrolled');
+    $invited = $class->students->filter(fn ($s) => $s->pivot->status === 'invited');
+    $threshold = $class->passing_threshold ?? 75;
+    $isEnded = $class->isEnded();
+@endphp
 
 @section('content')
-<!-- Master Layout Split (Left Modules Tree + Main Grid) -->
-<div class="flex flex-col lg:flex-row gap-6 -mt-4">
-    
-    <!-- LEFT PANEL: NetAcad Course Modules Navigation Tree -->
-    <div class="w-full lg:w-72 flex flex-col bg-[#141414] rounded-xl border border-slate-800 p-4 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-y-auto z-10">
-        <div class="mb-4 pb-3 border-b border-slate-800/80">
-            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Course Outline</span>
-            <h2 class="text-base font-bold text-white mt-1">{{ $class->name }}</h2>
-            <span class="text-xs text-slate-400 mt-1 block">Instructor: {{ $class->instructor->name }}</span>
-        </div>
+<div class="space-y-6">
+    <x-page-header :back="route('classes.index')" back-label="Classes" :title="$class->name"
+                   :subtitle="$class->description ?: null">
+        @if ($isStaff)
+            <a href="{{ route('classes.telemetry', $class->id) }}" class="ui-btn ui-btn-secondary">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                Monitoring
+            </a>
+            <a href="{{ route('classes.edit', $class->id) }}" class="ui-btn ui-btn-secondary">Settings</a>
+        @endif
+    </x-page-header>
 
-        <!-- Modules Tree -->
-        <div class="flex-1 space-y-3 overflow-y-auto">
-            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Modules & Tasks</span>
-            
-            @forelse($class->modules->where('parent_id', null)->sortBy('order_index') as $mod)
-                <!-- Module Node -->
-                <div class="space-y-1.5">
-                    <div class="flex items-center justify-between text-xs font-bold text-white px-2 py-1 bg-slate-900 border border-slate-800 rounded">
-                        <span class="truncate flex items-center">
-                            <svg class="w-3.5 h-3.5 mr-1.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
-                            {{ $mod->title }}
-                        </span>
-                        @if(auth()->user()->role === 'student')
-                            @php
-                                $progress = $mod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
-                            @endphp
-                            @if($progress)
-                                <span class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1.5">
-                                    {{ $progress['completed'] }}/{{ $progress['total'] }} Done
-                                </span>
-                            @endif
-                        @endif
-                    </div>
-                    
-                    <div class="pl-3 space-y-1">
-                        <!-- 1. Lesson Reading materials -->
-                        <a href="{{ route('modules.show', [$class->id, $mod->id]) }}" class="flex items-center px-2 py-1 text-xs text-slate-400 hover:text-white rounded hover:bg-slate-800/40 transition">
-                            <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                            Study Module Lessons
-                        </a>
-
-                        <!-- 2. Coding Challenge / Laboratories inside module -->
-                        @foreach($mod->laboratories as $lab)
-                            @php
-                                $isCompleted = false;
-                                if (auth()->user()->role === 'student') {
-                                    $isCompleted = isset($completedLabIds[$lab->id]);
-                                }
-                            @endphp
-                            <a href="{{ route('laboratories.show', $lab->id) }}" class="flex items-center justify-between px-2 py-1 text-xs text-slate-400 hover:text-white rounded hover:bg-slate-800/40 transition">
-                                <span class="flex items-center truncate">
-                                    <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                    <span class="truncate">Lab: {{ $lab->title }}</span>
-                                    @if($lab->isLiveLab())
-                                        <span class="ml-1.5 px-1.5 py-0.5 text-[9px] font-mono rounded bg-red-500/10 text-red-400 border border-red-500/20 uppercase shrink-0 font-semibold flex items-center gap-1">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
-                                            Live
-                                        </span>
-                                    @else
-                                        <span class="ml-1.5 px-1.5 py-0.5 text-[9px] font-mono rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase shrink-0 font-semibold">
-                                            Open
-                                        </span>
-                                    @endif
-                                </span>
-                                @if(auth()->user()->role === 'student')
-                                    @if($isCompleted)
-                                        <svg class="w-3.5 h-3.5 text-emerald-500 shrink-0 ml-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                                    @else
-                                        <span class="w-2.5 h-2.5 rounded-full border border-slate-600 shrink-0 ml-1.5"></span>
-                                    @endif
-                                @endif
-                            </a>
-                        @endforeach
-
-                        <!-- Sub-Modules under this parent module -->
-                        @if($mod->children->isNotEmpty())
-                            <div class="pl-3 border-l border-slate-800 space-y-1.5 mt-2">
-                                @foreach($mod->children->sortBy('order_index') as $subMod)
-                                    <div class="space-y-1">
-                                        <div class="flex items-center justify-between text-[11px] font-bold text-slate-300 px-2 py-0.5 bg-slate-900/40 border border-slate-800 rounded">
-                                            <span class="truncate flex items-center">
-                                                <svg class="w-3.5 h-3.5 mr-1 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                                                {{ $subMod->title }}
-                                            </span>
-                                            @if(auth()->user()->role === 'student')
-                                                @php
-                                                    $subProgress = $subMod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
-                                                @endphp
-                                                @if($subProgress)
-                                                    <span class="px-1 py-0.2 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1">
-                                                        {{ $subProgress['completed'] }}/{{ $subProgress['total'] }}
-                                                    </span>
-                                                @endif
-                                            @endif
-                                        </div>
-                                        <div class="pl-2 space-y-1">
-                                            <a href="{{ route('modules.show', [$class->id, $subMod->id]) }}" class="flex items-center px-2 py-0.5 text-xs text-slate-400 hover:text-white rounded hover:bg-slate-800/40 transition">
-                                                <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                                                Study Lesson
-                                            </a>
-                                            @foreach($subMod->laboratories as $subLab)
-                                                @php
-                                                    $subLabCompleted = false;
-                                                    if (auth()->user()->role === 'student') {
-                                                        $subLabCompleted = isset($completedLabIds[$subLab->id]);
-                                                    }
-                                                @endphp
-                                                <a href="{{ route('laboratories.show', $subLab->id) }}" class="flex items-center justify-between px-2 py-0.5 text-xs text-slate-450 hover:text-white rounded hover:bg-slate-800/40 transition">
-                                                    <span class="flex items-center truncate">
-                                                        <svg class="w-3 h-3 mr-1 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                                        <span class="truncate">Lab: {{ $subLab->title }}</span>
-                                                        @if($subLab->isLiveLab())
-                                                            <span class="ml-1 px-1 py-0.2 text-[8px] font-mono rounded bg-red-500/10 text-red-400 border border-red-500/20 uppercase shrink-0 font-semibold">Live</span>
-                                                        @else
-                                                            <span class="ml-1 px-1 py-0.2 text-[8px] font-mono rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase shrink-0 font-semibold">Open</span>
-                                                        @endif
-                                                    </span>
-                                                    @if(auth()->user()->role === 'student')
-                                                        @if($subLabCompleted)
-                                                            <svg class="w-3 h-3 text-emerald-500 shrink-0 ml-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                                                        @else
-                                                            <span class="w-2 h-2 rounded-full border border-slate-600 shrink-0 ml-1"></span>
-                                                        @endif
-                                                    @endif
-                                                </a>
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endif
-                    </div>
-                </div>
-            @empty
-                <div class="p-4 rounded-lg bg-slate-900 border border-slate-800 text-center text-xs text-slate-500">
-                    No course modules uploaded.
-                </div>
-            @endforelse
-        </div>
-
-        <!-- Instructor Module Addition Controls -->
-        @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-            <div class="mt-4 pt-4 border-t border-slate-800/80 space-y-2 shrink-0">
-                <a href="{{ route('modules.create', $class->id) }}" class="block text-center w-full py-2 bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-mono font-medium rounded-[6px] text-[#ededed] border border-[#2e2e2e] transition">
-                    + Add New Module
-                </a>
-                <a href="{{ route('laboratories.create', $class->id) }}" class="block text-center py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition shadow-none">
-                    + Add Lab Exercise
-                </a>
+    {{-- Key facts --}}
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
+        @if ($isStaff)
+            <div class="flex items-center gap-2">
+                <span class="text-[#888888]">Join code</span>
+                <code class="font-mono text-[#ededed] tracking-wider">{{ $class->code }}</code>
+                <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2" data-copy="{{ $class->code }}" aria-label="Copy join code">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                    <span data-copy-label>Copy</span>
+                </button>
             </div>
+        @endif
+        <div><span class="text-[#888888]">Instructor</span> <span class="text-[#ededed]">{{ $class->instructor->name ?? 'Unassigned' }}</span></div>
+        <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}%</span></div>
+        @if ($class->scheduled_end_date)
+            <div><span class="text-[#888888]">{{ $isEnded ? 'Ended' : 'Ends' }}</span> <span class="text-[#ededed]">{{ $class->scheduled_end_date->format('M j, Y') }}</span></div>
+        @endif
+        @if ($isStaff)
+            <div><span class="text-[#888888]">Students</span> <span class="text-[#ededed]">{{ $enrolled->count() }}</span></div>
+        @endif
+        @if ($isEnded)
+            <span class="ui-badge">Class ended</span>
         @endif
     </div>
 
-    <!-- MAIN CENTER PANELS: Overview & Roster -->
-    <div class="flex-1 flex flex-col gap-6 focus:outline-none">
-        
-        <!-- Class Specification Card -->
-        <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
-            <div class="flex items-center justify-between">
-                <span class="px-2.5 py-0.5 rounded text-xs font-mono bg-slate-950 border border-slate-800 text-slate-400">
-                    Class Join Code: {{ $class->code }}
-                </span>
-                <div class="flex items-center space-x-3">
-                    @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                        @if($class->status !== 'completed')
-                            <form action="{{ route('classes.end', $class->id) }}" method="POST" onsubmit="return confirm('Conclude this course? All enrolled students at or above the passing threshold ({{ $class->passing_threshold ?? 75 }}%) will be automatically awarded their completion certificates.');" class="inline">
-                                @csrf
-                                <button type="submit" class="inline-flex items-center px-3 py-1 border border-emerald-500/30 text-xs font-bold rounded-lg text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
-                                    Conclude Course & Issue Certificates
-                                </button>
-                            </form>
-                        @else
-                            <span class="px-2.5 py-1 text-xs font-bold rounded-lg text-slate-400 bg-slate-800 border border-slate-700">
-                                Course Completed
-                            </span>
-                        @endif
-                    @endif
-                    <span class="text-xs text-slate-500">Passing: <strong class="text-white">{{ $class->passing_threshold ?? 75 }}%</strong></span>
-                    <span class="text-xs text-slate-500">Created: {{ $class->created_at->format('M d, Y') }}</span>
-                </div>
-            </div>
-            
-            <h1 class="text-xl font-bold text-white">{{ $class->name }}</h1>
-            <p class="text-xs text-slate-400 leading-relaxed">{{ $class->description ?? 'No course syllabus description provided.' }}</p>
-        </div>
-
-        <!-- Student Progress & Certificate Claims -->
-        @if(auth()->user()->role === 'student')
-            @php
-                $overallProgress = $class->getStudentProgress(auth()->user(), $completedLabIds ?? null);
-                $existingCertificate = $existingCertificate ?? auth()->user()->certificates()->where('class_id', $class->id)->first();
-                $passThreshold = $class->passing_threshold ?? 75;
-            @endphp
-            <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Your Academic Progress</span>
-                        <h3 class="text-sm font-bold text-white mt-0.5">Competency Accomplishments (Passing Goal: {{ $passThreshold }}%)</h3>
-                    </div>
-                    <span class="text-sm font-mono font-bold text-white">{{ $overallProgress['percent'] }}%</span>
-                </div>
-                
-                <div class="w-full bg-slate-900 rounded-full h-2.5 border border-slate-800 overflow-hidden">
-                    <div class="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style="width: {{ $overallProgress['percent'] }}%"></div>
-                </div>
-
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-2 gap-4">
-                    <span class="text-xs text-slate-400">
-                        Completed {{ $overallProgress['completed'] }} of {{ $overallProgress['total'] }} laboratory tasks.
-                    </span>
-                    @if($overallProgress['percent'] >= $passThreshold && $overallProgress['total'] > 0)
-                        @if($existingCertificate)
-                            <a href="{{ route('certificates.show', $existingCertificate->id) }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20">
-                                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                                View Earned Certificate
-                            </a>
-                        @else
-                            <form action="{{ route('classes.claim-certificate', $class->id) }}" method="POST" class="m-0">
-                                @csrf
-                                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-500/20">
-                                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
-                                    Claim Competency Certificate
-                                </button>
-                            </form>
-                        @endif
-                    @elseif($overallProgress['percent'] < $passThreshold)
-                        <button disabled class="inline-flex items-center px-4 py-2 border border-slate-800 text-xs font-semibold rounded-lg text-slate-500 bg-slate-900 cursor-not-allowed">
-                            Certificate Locked (Requires {{ $passThreshold }}% Labs)
-                        </button>
-                    @endif
-                </div>
-            </div>
-        @endif
-
-        <!-- Course Content & Analytics Overview Card -->
-        <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
-            <div>
-                <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Course Content & Activity</span>
-                <h3 class="text-sm font-bold text-white mt-0.5">Lessons & Labs Engagement</h3>
-            </div>
-            
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-800">
-                    <thead>
-                        <tr>
-                            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Item Title</th>
-                            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Type</th>
-                            @if(auth()->user()->role !== 'student')
-                                <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Views</th>
-                                <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Submissions</th>
-                            @endif
-                            @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                                <th class="px-4 py-2.5 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
-                            @endif
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-800 bg-transparent text-slate-300">
-                        @forelse($class->modules->where('parent_id', null)->sortBy('order_index') as $mod)
-                            <!-- Module Row -->
-                            <tr class="bg-slate-900/20 hover:bg-slate-900/40 transition-colors">
-                                <td class="px-4 py-3 whitespace-nowrap text-xs font-semibold text-white">
-                                    <a href="{{ route('modules.show', [$class->id, $mod->id]) }}" class="hover:text-blue-400 flex items-center">
-                                        <svg class="w-3.5 h-3.5 mr-1.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                                        {{ $mod->title }}
-                                    </a>
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-[10px] uppercase font-mono text-blue-400">Module</td>
-                                @if(auth()->user()->role !== 'student')
-                                    <td class="px-4 py-3 whitespace-nowrap text-xs font-mono text-slate-400">{{ $mod->views_count }} views</td>
-                                    <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-500 font-mono">-</td>
-                                @endif
-                                @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                                    <td class="px-4 py-3 whitespace-nowrap text-right text-xs space-x-2">
-                                        <a href="{{ route('modules.edit', [$class->id, $mod->id]) }}" class="text-indigo-400 hover:text-indigo-300 font-semibold">Edit</a>
-                                        <form action="{{ route('modules.destroy', [$class->id, $mod->id]) }}" method="POST" class="inline">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" onclick="return confirm('Are you sure you want to delete this module and its attachments?')" class="text-rose-400 hover:text-rose-350 font-semibold">Delete</button>
-                                        </form>
-                                    </td>
-                                @endif
-                            </tr>
-                            
-                            <!-- Lab Rows under this module -->
-                            @foreach($mod->laboratories as $lab)
-                                <tr class="hover:bg-slate-900/10 transition-colors">
-                                    <td class="px-4 py-2.5 whitespace-nowrap text-xs text-slate-300 pl-8">
-                                        <a href="{{ route('laboratories.show', $lab->id) }}" class="hover:text-emerald-400 flex items-center">
-                                            <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                            Lab: {{ $lab->title }}
-                                        </a>
-                                    </td>
-                                    <td class="px-4 py-2.5 whitespace-nowrap text-[10px] uppercase font-mono text-emerald-400 pl-4">Lab</td>
-                                    @if(auth()->user()->role !== 'student')
-                                        <td class="px-4 py-2.5 whitespace-nowrap text-xs font-mono text-slate-400">{{ $lab->views_count }} views</td>
-                                        <td class="px-4 py-2.5 whitespace-nowrap text-xs font-mono text-emerald-400 font-semibold">
-                                            {{ $lab->completed_count ?? $lab->labSessions->where('status', 'completed')->count() }} completed
-                                        </td>
-                                    @endif
-                                    @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                                        <td class="px-4 py-2.5 whitespace-nowrap text-right text-xs space-x-2">
-                                            <a href="{{ route('laboratories.edit', $lab->id) }}" class="text-indigo-400 hover:text-indigo-300 font-semibold">Edit</a>
-                                            <form action="{{ route('laboratories.destroy', $lab->id) }}" method="POST" class="inline">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" onclick="return confirm('Are you sure you want to delete this laboratory?')" class="text-rose-400 hover:text-rose-350 font-semibold">Delete</button>
-                                            </form>
-                                        </td>
-                                    @endif
-                                </tr>
-                            @endforeach
-
-                            <!-- Sub-modules under this parent module -->
-                            @foreach($mod->children->sortBy('order_index') as $subMod)
-                                <tr class="bg-slate-900/10 hover:bg-slate-900/30 transition-colors border-l-2 border-indigo-500/30">
-                                    <td class="px-4 py-2.5 whitespace-nowrap text-xs font-medium text-slate-300 pl-8">
-                                        <a href="{{ route('modules.show', [$class->id, $subMod->id]) }}" class="hover:text-blue-400 flex items-center">
-                                            <svg class="w-3.5 h-3.5 mr-1.5 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                                            Sub-Module: {{ $subMod->title }}
-                                        </a>
-                                    </td>
-                                    <td class="px-4 py-2.5 whitespace-nowrap text-[10px] uppercase font-mono text-indigo-400/80 pl-4">Sub-Module</td>
-                                    @if(auth()->user()->role !== 'student')
-                                        <td class="px-4 py-2.5 whitespace-nowrap text-xs font-mono text-slate-400">{{ $subMod->views_count }} views</td>
-                                        <td class="px-4 py-2.5 whitespace-nowrap text-xs text-slate-500 font-mono">-</td>
-                                    @endif
-                                    @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                                        <td class="px-4 py-2.5 whitespace-nowrap text-right text-xs space-x-2">
-                                            <a href="{{ route('modules.edit', [$class->id, $subMod->id]) }}" class="text-indigo-400 hover:text-indigo-300 font-semibold">Edit</a>
-                                            <form action="{{ route('modules.destroy', [$class->id, $subMod->id]) }}" method="POST" class="inline">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" onclick="return confirm('Are you sure you want to delete this sub-module and its attachments?')" class="text-rose-400 hover:text-rose-350 font-semibold">Delete</button>
-                                            </form>
-                                        </td>
-                                    @endif
-                                </tr>
-
-                                <!-- Lab Rows under this sub-module -->
-                                @foreach($subMod->laboratories as $subLab)
-                                    <tr class="hover:bg-slate-900/10 transition-colors border-l-2 border-indigo-500/30">
-                                        <td class="px-4 py-2 whitespace-nowrap text-xs text-slate-350 pl-14">
-                                            <a href="{{ route('laboratories.show', $subLab->id) }}" class="hover:text-emerald-400 flex items-center">
-                                                <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                                Lab: {{ $subLab->title }}
-                                            </a>
-                                        </td>
-                                        <td class="px-4 py-2 whitespace-nowrap text-[10px] uppercase font-mono text-emerald-400/80 pl-4">Lab</td>
-                                        @if(auth()->user()->role !== 'student')
-                                            <td class="px-4 py-2 whitespace-nowrap text-xs font-mono text-slate-400">{{ $subLab->views_count }} views</td>
-                                            <td class="px-4 py-2 whitespace-nowrap text-xs font-mono text-emerald-400 font-semibold">
-                                                {{ $subLab->completed_count ?? $subLab->labSessions->where('status', 'completed')->count() }} completed
-                                            </td>
-                                        @endif
-                                        @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                                            <td class="px-4 py-2 whitespace-nowrap text-right text-xs space-x-2">
-                                                <a href="{{ route('laboratories.edit', $subLab->id) }}" class="text-indigo-400 hover:text-indigo-300 font-semibold">Edit</a>
-                                                <form action="{{ route('laboratories.destroy', $subLab->id) }}" method="POST" class="inline">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" onclick="return confirm('Are you sure you want to delete this laboratory?')" class="text-rose-400 hover:text-rose-350 font-semibold">Delete</button>
-                                                </form>
-                                            </td>
-                                        @endif
-                                    </tr>
-                                @endforeach
-                            @endforeach
-                        @empty
-                            <tr>
-                                <td colspan="5" class="px-4 py-6 text-center text-xs text-slate-500">
-                                    No modules uploaded in this class yet.
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Invite Students Section -->
-            @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
-                    <div>
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Invite Roster</span>
-                        <h3 class="text-sm font-bold text-white mt-0.5">Invite Student by Email</h3>
-                    </div>
-                    <form action="{{ route('classes.invite', $class->id) }}" method="POST" class="space-y-3">
-                        @csrf
-                        <div>
-                            <label for="invite-email" class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Student Gmail Address</label>
-                            <input type="email" name="email" id="invite-email" required placeholder="student@gmail.com" 
-                                   class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500">
-                        </div>
-                        <button type="submit" class="w-full py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors shadow-none">
-                            Send Invitation &rarr;
-                        </button>
-                    </form>
-                    <p class="text-[10px] text-slate-500 leading-relaxed">
-                        Note: Once invited, this class will automatically populate inside the student's homepage dashboard upon their registration.
-                    </p>
-                </div>
-            @endif
-
-            <!-- Class Roster / Enrolled Student List -->
-            <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4 flex-1">
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+        {{-- Syllabus --}}
+        <section class="ui-card" aria-labelledby="syllabus-heading">
+            <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3 border-b border-[#232323]">
                 <div>
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Enrolled Roster</span>
-                    <h3 class="text-sm font-bold text-white mt-0.5">Enrolled Student Directory</h3>
+                    <h2 id="syllabus-heading" class="ui-card-title">Syllabus</h2>
+                    <p class="ui-card-subtitle">{{ $topModules->count() }} {{ \Illuminate\Support\Str::plural('module', $topModules->count()) }}{{ $isStaff ? ' · Views and Submissions per item' : '' }}</p>
                 </div>
-                <div class="space-y-3 max-h-48 overflow-y-auto divide-y divide-slate-800/60">
-                    @forelse($class->students as $student)
-                        <div class="flex items-center justify-between text-xs py-2 first:pt-0">
-                            <div class="flex items-center space-x-2">
-                                <div class="h-6 w-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-indigo-400 border border-slate-700 font-bold">
-                                    {{ strtoupper(substr($student->name, 0, 2)) }}
-                                </div>
-                                <span class="text-white font-medium">{{ $student->name }}</span>
-                            </div>
-                            <span class="px-2 py-0.5 rounded text-[10px] {{ $student->pivot->status === 'enrolled' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20' }}">
-                                {{ $student->pivot->status }}
-                            </span>
-                        </div>
-                    @empty
-                        <div class="p-3 text-center text-xs text-slate-500">
-                            No students enrolled in this class roster yet.
-                        </div>
-                    @endforelse
-                </div>
+                @if ($isStaff)
+                    <div class="flex items-center gap-2">
+                        <a href="{{ route('modules.create', $class->id) }}" class="ui-btn ui-btn-secondary ui-btn-sm">Add module</a>
+                        <a href="{{ route('laboratories.create', $class->id) }}" class="ui-btn ui-btn-primary ui-btn-sm">Add lab</a>
+                    </div>
+                @endif
             </div>
-        </div>
 
+            @if ($topModules->isEmpty())
+                <div class="px-5 py-14 text-center">
+                    <p class="text-sm font-medium text-[#ededed]">No modules yet</p>
+                    @if ($isStaff)
+                        <p class="text-sm text-[#888888] mt-1">Start with a module for your first lesson, then add labs to it.</p>
+                        <a href="{{ route('modules.create', $class->id) }}" class="ui-btn ui-btn-primary mt-4">Add the first module</a>
+                    @else
+                        <p class="text-sm text-[#888888] mt-1">Your instructor hasn't published any lessons yet.</p>
+                    @endif
+                </div>
+            @else
+                <ul role="list">
+                    @foreach ($topModules as $module)
+                        @include('classes._syllabus-module', ['module' => $module, 'depth' => 0])
+                    @endforeach
+                </ul>
+            @endif
+        </section>
+
+        {{-- Sidebar --}}
+        <aside class="space-y-6">
+            @if (!$isStaff)
+                @php
+                    $progress = $class->getStudentProgress($user, $completedLabIds ?? null);
+                    $certificate = $existingCertificate ?? null;
+                    $canClaim = $progress['total'] > 0 && $progress['percent'] >= $threshold;
+                @endphp
+                <section class="ui-card ui-card-body" aria-labelledby="progress-heading">
+                    <div class="flex items-baseline justify-between">
+                        <h2 id="progress-heading" class="ui-card-title">Your progress</h2>
+                        <span class="cc-display text-2xl font-bold tabular-nums text-[#ededed]">{{ $progress['percent'] }}%</span>
+                    </div>
+                    <div class="relative mt-4 h-2 rounded-full bg-[#232323]" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $progress['percent'] }}" aria-label="Labs done">
+                        <div class="h-2 rounded-full bg-[#3ecf8e] transition-all duration-500" style="width: {{ $progress['percent'] }}%"></div>
+                        <span class="absolute -top-1 h-4 w-0.5 rounded bg-[#ededed]/60" style="left: {{ $threshold }}%" title="Pass mark: {{ $threshold }}%" aria-hidden="true"></span>
+                    </div>
+                    <p class="mt-3 text-sm text-[#a3a3a3]">{{ $progress['completed'] }} of {{ $progress['total'] }} labs done. You need {{ $threshold }}% for a certificate.</p>
+
+                    <div class="mt-5">
+                        @if ($certificate)
+                            <a href="{{ route('certificates.show', $certificate->id) }}" class="ui-btn ui-btn-primary w-full">View your certificate</a>
+                        @elseif ($canClaim)
+                            <form action="{{ route('classes.claim-certificate', $class->id) }}" method="POST">
+                                @csrf
+                                <button type="submit" class="ui-btn ui-btn-primary w-full">Claim your certificate</button>
+                            </form>
+                        @else
+                            @php $labsNeeded = max(0, (int) ceil($progress['total'] * $threshold / 100) - $progress['completed']); @endphp
+                            <p class="rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 text-sm text-[#888888]">
+                                @if ($progress['total'] === 0)
+                                    Certificates unlock once this class has labs.
+                                @else
+                                    {{ $labsNeeded }} more {{ \Illuminate\Support\Str::plural('lab', $labsNeeded) }} to unlock your certificate.
+                                @endif
+                            </p>
+                        @endif
+                    </div>
+                </section>
+            @else
+                <section class="ui-card" aria-labelledby="invite-heading">
+                    <div class="ui-card-header">
+                        <h2 id="invite-heading" class="ui-card-title">Invite a student</h2>
+                        <p class="ui-card-subtitle">They need a Certicode account first. Or share the join code above.</p>
+                    </div>
+                    <form action="{{ route('classes.invite', $class->id) }}" method="POST" class="ui-card-body flex gap-2">
+                        @csrf
+                        <label for="invite-email" class="sr-only">Student email</label>
+                        <input type="email" name="email" id="invite-email" required placeholder="student@school.edu" class="ui-input flex-1 min-w-0" autocomplete="off">
+                        <button type="submit" class="ui-btn ui-btn-primary shrink-0">Invite</button>
+                    </form>
+                </section>
+
+                <section class="ui-card" aria-labelledby="roster-heading">
+                    <div class="flex items-baseline justify-between px-5 pt-5 pb-2">
+                        <h2 id="roster-heading" class="ui-card-title">Students</h2>
+                        <span class="text-xs text-[#888888]">{{ $enrolled->count() }} enrolled{{ $invited->isNotEmpty() ? ' · ' . $invited->count() . ' invited' : '' }}</span>
+                    </div>
+                    <ul class="max-h-80 overflow-y-auto px-2 pb-3" role="list">
+                        @forelse ($enrolled->concat($invited) as $student)
+                            <li class="flex items-center gap-3 rounded-lg px-3 py-2">
+                                <span class="h-8 w-8 shrink-0 rounded-full bg-[#3ecf8e]/10 border border-[#3ecf8e]/25 flex items-center justify-center text-[11px] font-semibold text-[#3ecf8e]" aria-hidden="true">{{ strtoupper(\Illuminate\Support\Str::substr($student->name, 0, 2)) }}</span>
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm text-[#ededed]">{{ $student->name }}</span>
+                                    <span class="block truncate text-xs text-[#888888]">{{ $student->email }}</span>
+                                </span>
+                                @if ($student->pivot->status === 'invited')
+                                    <span class="ui-badge ui-badge-warn shrink-0 text-[11px]">Invited</span>
+                                @endif
+                            </li>
+                        @empty
+                            <li class="px-3 py-6 text-center text-sm text-[#888888]">No students yet. Share the join code to get started.</li>
+                        @endforelse
+                    </ul>
+                </section>
+
+                @if ($class->status !== 'completed')
+                    <section class="ui-card ui-card-body" aria-labelledby="end-heading">
+                        <h2 id="end-heading" class="ui-card-title">End the class</h2>
+                        <p class="ui-card-subtitle">Closes the class and issues certificates to every student at or above {{ $threshold }}%. This can't be undone.</p>
+                        <form action="{{ route('classes.end', $class->id) }}" method="POST" class="mt-4"
+                              onsubmit="return confirm('End this class now? Students at or above {{ $threshold }}% get their certificates, and the class closes.');">
+                            @csrf
+                            <button type="submit" class="ui-btn ui-btn-danger w-full">End class and issue certificates</button>
+                        </form>
+                    </section>
+                @endif
+            @endif
+        </aside>
     </div>
 </div>
+@endsection
 
+@section('scripts')
+<script>
+    document.querySelectorAll('[data-copy]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const label = button.querySelector('[data-copy-label]');
+            try {
+                await navigator.clipboard.writeText(button.dataset.copy);
+                label.textContent = 'Copied';
+            } catch (e) {
+                label.textContent = 'Press Ctrl+C';
+            }
+            setTimeout(() => { label.textContent = 'Copy'; }, 1800);
+        });
+    });
+</script>
 @endsection

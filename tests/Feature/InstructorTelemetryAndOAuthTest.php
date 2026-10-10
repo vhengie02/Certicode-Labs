@@ -92,8 +92,8 @@ class InstructorTelemetryAndOAuthTest extends TestCase
             ->get("/classes/{$this->schoolClass->id}/telemetry");
 
         $response->assertStatus(200);
-        $response->assertSee('Telemetry & Integrity Dashboard');
-        $response->assertSee('excessive_tab_switch');
+        $response->assertSee('Monitoring');
+        $response->assertSee('excessive tab switch');
         $response->assertSee($this->student->name);
     }
 

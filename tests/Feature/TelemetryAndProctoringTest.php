@@ -251,10 +251,10 @@ class TelemetryAndProctoringTest extends TestCase
     {
         $this->actingAs($this->instructor);
 
-        $viewResponse = $this->get("/laboratories/{$this->laboratory->id}/monitoring");
+        $viewResponse = $this->followingRedirects()->get("/laboratories/{$this->laboratory->id}/monitoring");
         $viewResponse->assertStatus(200)
             ->assertDontSee('Live Telemetry')
-            ->assertSee('Telemetry Monitoring')
+            ->assertSee('All labs')
             ->assertSee('Alice Walker')
             ->assertSee('Bob Builder');
 

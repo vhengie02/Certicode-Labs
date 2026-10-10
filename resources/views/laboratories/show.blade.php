@@ -1,156 +1,218 @@
 @extends('layouts.app')
 
 @section('title', $laboratory->title)
-@section('page_header', 'Laboratory Exercise Specifications')
 
 @section('content')
 @php
-    $backUrl = route('classes.index');
-    if ($laboratory->module) {
-        $backUrl = route('modules.show', ['class_id' => $laboratory->module->class_id, 'module_id' => $laboratory->module->id]);
-    }
+    $user = auth()->user();
+    $isStudent = $user->role === 'student';
+    $module = $laboratory->module;
+    $backUrl = $module ? route('modules.show', ['class_id' => $module->class_id, 'module_id' => $module->id]) : route('classes.index');
+    $starterFiles = $laboratory->getStarterFilesList();
+    $tasks = $laboratory->tasks_definition ?? [];
+    $isLive = $laboratory->isLiveLab();
+    $minutes = $isLive ? ($laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60) : $laboratory->time_limit;
+    $liveLeft = $isLive ? max(0, (int) $laboratory->getRemainingLiveSeconds()) : 0;
 @endphp
-<div class="max-w-4xl mx-auto space-y-6">
-    <div class="p-8 rounded-xl bg-[#171717] border border-[#2e2e2e]">
-        <div class="flex items-center justify-between mb-6 flex-wrap gap-2">
-            <div class="flex items-center gap-2 flex-wrap">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider {{ $laboratory->is_group_lab ? 'bg-[#141414] text-[#ededed] border border-[#2e2e2e]' : 'bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30' }}">
-                    {{ $laboratory->is_group_lab ? 'Group Laboratory' : 'Individual Laboratory' }}
-                </span>
+<div class="space-y-6">
+    <x-page-header :back="$backUrl" :back-label="$module->title ?? 'Classes'" :title="$laboratory->title">
+        @unless ($isStudent)
+            <a href="{{ route('instructor.monitoring.show', $laboratory->id) }}" class="ui-btn ui-btn-secondary">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                Monitoring
+            </a>
+            <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="ui-btn ui-btn-secondary">Edit lab</a>
+        @endunless
+    </x-page-header>
 
-                @if($laboratory->isLiveLab())
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-[#3ecf8e]/10 text-[#3ecf8e] border border-[#3ecf8e]/30">
-                        Live Lab (Shared Countdown)
-                    </span>
-                    @if($laboratory->isLiveNotStarted())
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                            🔒 Locked / Not Started
-                        </span>
-                    @elseif($laboratory->isLiveActive())
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 animate-pulse">
-                            🔴 Countdown Active ({{ max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60)) }}m remaining)
-                        </span>
-                    @else
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/30">
-                            ⏹️ Closed / Expired
-                        </span>
-                    @endif
-                @else
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider bg-[#141414] text-[#a3a3a3] border border-[#2e2e2e]">
-                        Open Lab (Self-Paced)
-                    </span>
-                @endif
-            </div>
-            
-            <div class="flex items-center text-[#888888] text-xs font-mono">
-                <svg class="w-4 h-4 mr-1.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                {{ $laboratory->isLiveLab() ? 'DURATION WINDOW' : 'TIME LIMIT' }}: {{ $laboratory->isLiveLab() ? ($laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60) : $laboratory->time_limit }} MIN
-            </div>
-        </div>
+    {{-- At a glance --}}
+    <div class="flex flex-wrap items-center gap-2">
+        @if ($isLive)
+            @if ($laboratory->isLiveActive())
+                <span class="ui-badge ui-badge-brand"><span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e] animate-pulse" aria-hidden="true"></span>Live now &middot; {{ max(1, (int) ceil($liveLeft / 60)) }} min left</span>
+            @elseif ($laboratory->isLiveNotStarted())
+                <span class="ui-badge ui-badge-warn"><span class="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true"></span>Live lab &middot; not started</span>
+            @else
+                <span class="ui-badge ui-badge-danger"><span class="h-1.5 w-1.5 rounded-full bg-red-400" aria-hidden="true"></span>Live lab &middot; ended</span>
+            @endif
+        @else
+            <span class="ui-badge">Open lab &middot; self-paced</span>
+        @endif
+        <span class="ui-badge">{{ $laboratory->is_group_lab ? 'Group lab' : 'Individual' }}</span>
+        <span class="ui-badge">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+            {{ $minutes }} min {{ $isLive ? 'session' : 'time limit' }}
+        </span>
+        @if (count($tasks))
+            <span class="ui-badge">{{ count($tasks) }} {{ \Illuminate\Support\Str::plural('task', count($tasks)) }}</span>
+        @endif
+    </div>
 
-        <h1 class="text-2xl sm:text-3xl font-bold text-[#ededed] tracking-tight mb-4">{{ $laboratory->title }}</h1>
-        
-        <div class="prose prose-invert max-w-none text-[#a3a3a3] mb-8 leading-relaxed text-sm">
-            <h3 class="text-xs font-mono uppercase font-bold tracking-wider text-[#ededed] mb-2">Instructions</h3>
-            <p class="whitespace-pre-line">{{ $laboratory->description }}</p>
-        </div>
-
-        <!-- Starter Files Manifest Preview -->
-        @php
-            $starterFiles = $laboratory->getStarterFilesList();
-        @endphp
-        <div class="border-t border-[#232323] pt-6 mb-8" x-data="{ expandedFile: null }">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div>
-                    <h3 class="text-xs font-mono uppercase font-bold tracking-wider text-[#a3a3a3]">Starter Workspace Files</h3>
-                    <p class="text-[11px] text-[#666666] mt-0.5">Automatically provisioned in your VS Code workspace or downloadable directly.</p>
-                </div>
-                <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-[10px] font-mono text-[#3ecf8e] bg-[#141414] border border-[#3ecf8e]/30 px-2.5 py-1 rounded-full">
-                        {{ count($starterFiles) }} {{ count($starterFiles) === 1 ? 'FILE' : 'FILES' }}
-                    </span>
-                    @if(count($starterFiles) > 0)
-                        <a href="{{ route('laboratories.starter-files.download', $laboratory->id) }}" 
-                           class="inline-flex items-center gap-1.5 px-3 py-1 rounded-[6px] bg-[#1a1a1a] hover:bg-[#262626] border border-[#2e2e2e] hover:border-[#3ecf8e]/50 text-xs font-mono text-[#ededed] transition-colors shadow-sm"
-                           title="Download starter files directly">
-                            <svg class="w-3.5 h-3.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            <span>Download Starter {{ count($starterFiles) > 1 ? 'Files (.zip)' : 'File' }}</span>
-                        </a>
-                    @endif
-                </div>
-            </div>
-
-            <div class="space-y-3">
-                @foreach($starterFiles as $idx => $sfile)
-                    <div class="rounded-[6px] bg-[#141414] border border-[#2e2e2e] overflow-hidden">
-                        <div class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-[#1a1a1a] transition-colors"
-                             @click="expandedFile = expandedFile === {{ $idx }} ? null : {{ $idx }}">
-                            <div class="flex items-center space-x-3">
-                                <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                                <span class="text-xs font-mono font-bold text-[#ededed]">{{ $sfile['name'] }}</span>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                @if(!empty($sfile['is_primary']))
-                                    <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-[#3ecf8e]/10 text-[#3ecf8e] border border-[#3ecf8e]/20 font-bold">
-                                        Primary (Auto-Open)
+    @if ($isStudent)
+    <div class="space-y-6" x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">
+@endif
+    @if ($isStudent)
+                <!-- Persistent Live Browser Proctoring Monitor Card -->
+                <div x-show="browserProctorActive" x-cloak class="ui-card p-5 sm:p-6 !border-[#3ecf8e]/40">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#242424]">
+                        <div class="flex items-center gap-3">
+                            <span class="relative flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3 bg-[#3ecf8e]"></span>
+                            </span>
+                            <div>
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                                    Browser Camera Proctor Active
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-mono tracking-wider font-semibold"
+                                          :class="{
+                                              'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30': proctorStatus === 'normal',
+                                              'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse': proctorStatus === 'absence' || proctorStatus === 'disconnected',
+                                              'bg-amber-500/20 text-amber-400 border border-amber-500/30': proctorStatus === 'multiple_faces'
+                                          }"
+                                          x-text="proctorStatusText">
                                     </span>
-                                @endif
-                                @if(!empty($sfile['is_readonly']))
-                                    <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-[#2e2e2e] text-[#a3a3a3] border border-[#383838]">
-                                        Read-Only
-                                    </span>
-                                @endif
-                                <span class="text-[10px] font-mono text-[#888888]" x-text="expandedFile === {{ $idx }} ? '▲ Hide' : '▼ View Code'"></span>
+                                </h3>
+                                <p class="text-xs text-[#888888] mt-0.5">Webcam stays active in this tab while coding in VS Code. Telemetry is streamed to your instructor.</p>
                             </div>
                         </div>
 
-                        <div x-show="expandedFile === {{ $idx }}" x-collapse style="display: none;" class="border-t border-[#232323] p-3 bg-[#0d0d0d]">
-                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-[#1f1f1f]">
-                                <span class="text-[11px] font-mono text-[#666666]">{{ $sfile['name'] }}</span>
-                                <button type="button"
-                                        x-data="{ copied: false }"
-                                        @click="navigator.clipboard.writeText({{ json_encode($sfile['content'] ?? '') }}).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
-                                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono text-[#a3a3a3] hover:text-[#ededed] bg-[#171717] hover:bg-[#222222] border border-[#2e2e2e] transition-colors">
-                                    <svg class="w-3 h-3 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                                    <span x-text="copied ? 'Copied!' : 'Copy Code'"></span>
-                                </button>
-                            </div>
-                            <pre class="text-xs font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre"><code>{{ $sfile['content'] }}</code></pre>
+                        <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
+                            <button type="button" @click="leaveSessionAndStopProctoring()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition" title="Stop webcam camera and exit laboratory session">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                <span>Stop Camera &amp; Exit</span>
+                            </button>
+                            <button type="button" @click="reopenVsCode()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3ecf8e] hover:bg-[#00c573] text-[#0f0f0f] text-xs font-bold transition shadow-sm">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/>
+                                </svg>
+                                <span>Switch to VS Code Workspace</span>
+                            </button>
                         </div>
                     </div>
-                @endforeach
-            </div>
-        </div>
 
-        @if(!empty($laboratory->tasks_definition))
-            <div class="border-t border-[#232323] pt-6 mb-8">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xs font-mono uppercase font-bold tracking-wider text-[#a3a3a3]">Competency Tasks Checklist</h3>
-                    <span class="text-[10px] font-mono text-[#666666]">VERIFICATION SUITE</span>
-                </div>
-                <div class="space-y-3">
-                    @foreach($laboratory->tasks_definition as $task)
-                        <div class="p-4 rounded-[6px] bg-[#141414] border border-[#2e2e2e] flex items-start space-x-3.5 hover:border-[#3ecf8e]/35 transition-colors">
-                            <span class="h-6 w-6 rounded-[4px] bg-[#171717] flex items-center justify-center text-[#3ecf8e] font-mono font-bold text-xs flex-shrink-0 mt-0.5 border border-[#2e2e2e]">
-                                {{ $task['id'] }}
-                            </span>
-                            <div class="flex-1">
-                                <p class="text-xs sm:text-sm font-medium text-[#ededed]">{{ $task['task'] }}</p>
-                                @if(!empty($task['command']) && (auth()->user()->role === 'admin' || auth()->user()->role === 'instructor'))
-                                    <code class="text-[11px] bg-[#0f0f0f] border border-[#2e2e2e] text-[#3ecf8e] font-mono px-2 py-1 rounded mt-2 inline-block">
-                                        Validation: {{ $task['command'] }}
-                                    </code>
-                                @endif
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                        <!-- Compact Live Camera Viewport -->
+                        <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video flex items-center justify-center">
+                            <video x-ref="proctorLiveVideo" autoplay playsinline muted class="w-full h-full object-cover scale-x-[-1]"></video>
+                            <canvas x-ref="proctorCanvas" class="hidden"></canvas>
+                            <div class="absolute bottom-2 left-2 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 flex items-center gap-1.5 border border-emerald-500/30">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                <span>Face Track Active</span>
                             </div>
                         </div>
-                    @endforeach
+
+                        <!-- Instructions & Status Log -->
+                        <div class="md:col-span-2 space-y-2.5 text-xs text-[#a3a3a3]">
+                            <div class="p-3 rounded-lg bg-[#171717] border border-[#262626] space-y-1.5">
+                                <div class="flex items-center justify-between text-[11px] font-mono">
+                                    <span class="text-[#888888]">SESSION TELEMETRY &amp; HEARTBEAT:</span>
+                                    <span class="text-[#3ecf8e] flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse"></span>
+                                        Connected (<span x-text="pingCount"></span> pings sent)
+                                    </span>
+                                </div>
+                                <p class="text-xs text-[#d4d4d4] leading-relaxed">
+                                    Your webcam stream stays isolated to this browser window. When focus shifts to VS Code, periodic AI checks confirm presence and stream telemetry directly to your instructor's live panel.
+                                </p>
+                            </div>
+
+                            <div class="flex items-center gap-3 text-[11px] font-mono text-[#777777] flex-wrap">
+                                <span>Status: <strong class="text-white" x-text="proctorStatusText"></strong></span>
+                                <span>•</span>
+                                <span>Faces: <strong class="text-white" x-text="faceCount"></strong></span>
+                                <span>•</span>
+                                <span>Session ID: <strong class="text-[#3ecf8e]" x-text="activeSessionId || '{{ $activeSession ? $activeSession->id : 'Pending' }}'"></strong></span>
+                                <span>•</span>
+                                <span class="text-amber-400">Keep this tab open while you code</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        @endif
+    @endif
+
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+        <div class="min-w-0 space-y-6">
+            {{-- Instructions --}}
+            <section class="ui-card" aria-labelledby="instructions-heading">
+                <div class="ui-card-header">
+                    <h2 id="instructions-heading" class="ui-card-title">Instructions</h2>
+                </div>
+                <div class="ui-card-body">
+                    <p class="whitespace-pre-line text-[15px] leading-relaxed text-[#d4d4d4]">{{ $laboratory->description }}</p>
+                </div>
+            </section>
+
+            {{-- Starter files --}}
+            @if (count($starterFiles))
+                <section class="ui-card" aria-labelledby="files-heading" x-data="{ openFile: null }">
+                    <div class="flex flex-wrap items-start justify-between gap-3 px-6 pt-5 pb-3">
+                        <div>
+                            <h2 id="files-heading" class="ui-card-title">Starter files</h2>
+                            <p class="ui-card-subtitle">Created in your VS Code workspace when the lab starts.</p>
+                        </div>
+                        <a href="{{ route('laboratories.starter-files.download', $laboratory->id) }}" class="ui-btn ui-btn-secondary ui-btn-sm">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg>
+                            Download{{ count($starterFiles) > 1 ? ' .zip' : '' }}
+                        </a>
+                    </div>
+                    <ul class="px-3 pb-3 space-y-1.5" role="list">
+                        @foreach ($starterFiles as $idx => $sfile)
+                            <li class="rounded-lg border border-[#2e2e2e] bg-[#141414] overflow-hidden">
+                                <button type="button" class="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[#1a1a1a] transition-colors"
+                                        @click="openFile = openFile === {{ $idx }} ? null : {{ $idx }}" :aria-expanded="openFile === {{ $idx }}">
+                                    <svg class="w-4 h-4 shrink-0 text-[#888888]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z M14 3v5h5"/></svg>
+                                    <span class="min-w-0 flex-1 truncate font-mono text-[13px] text-[#ededed]">{{ $sfile['name'] }}</span>
+                                    @if (!empty($sfile['is_primary']))
+                                        <span class="ui-badge ui-badge-brand text-[11px]">Opens first</span>
+                                    @endif
+                                    @if (!empty($sfile['is_readonly']))
+                                        <span class="ui-badge text-[11px]">Read-only</span>
+                                    @endif
+                                    <svg class="w-4 h-4 shrink-0 text-[#888888] transition-transform" :class="openFile === {{ $idx }} && 'rotate-180'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+                                <div x-show="openFile === {{ $idx }}" x-collapse style="display: none;" class="border-t border-[#232323] bg-[#0f0f0f]">
+                                    <div class="flex justify-end px-3 pt-2">
+                                        <button type="button" x-data="{ copied: false }" class="ui-btn ui-btn-ghost ui-btn-sm"
+                                                @click="navigator.clipboard.writeText({{ \Illuminate\Support\Js::from($sfile['content'] ?? '') }}).then(() => { copied = true; setTimeout(() => copied = false, 2000); })">
+                                            <span x-text="copied ? 'Copied' : 'Copy code'">Copy code</span>
+                                        </button>
+                                    </div>
+                                    <pre class="overflow-x-auto px-4 pb-4 pt-1 font-mono text-[13px] leading-relaxed text-[#d4d4d4]"><code>{{ $sfile['content'] }}</code></pre>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
+
+            {{-- Tasks --}}
+            @if (count($tasks))
+                <section class="ui-card" aria-labelledby="tasks-heading">
+                    <div class="ui-card-header">
+                        <h2 id="tasks-heading" class="ui-card-title">Tasks</h2>
+                        <p class="ui-card-subtitle">{{ $isStudent ? 'What the grader checks in your code.' : 'What the grader checks in each student’s code.' }}</p>
+                    </div>
+                    <ol class="ui-card-body space-y-2" role="list">
+                        @foreach ($tasks as $i => $task)
+                            <li class="flex items-start gap-3 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3">
+                                <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#232323] font-mono text-xs text-[#a3a3a3]">{{ $i + 1 }}</span>
+                                <div class="min-w-0">
+                                    <p class="text-sm text-[#ededed]">{{ $task['task'] }}</p>
+                                    @if (!$isStudent && !empty($task['command']))
+                                        <p class="mt-1.5 text-xs text-[#888888]">Check: <code class="font-mono text-[#3ecf8e]">{{ $task['command'] }}</code></p>
+                                    @endif
+                                </div>
+                            </li>
+                        @endforeach
+                    </ol>
+                </section>
+            @endif
 
         <!-- Team Collaboration & Live Metrics (for Group Labs) -->
         @if($laboratory->is_group_lab && $activeSession)
-            <div class="border-t border-[#232323] pt-6 mb-8" 
+            <div class="ui-card ui-card-body"
                  x-data="{
                      activeTab: 'chat',
                      messages: [],
@@ -307,173 +369,35 @@
                 </div>
             </div>
         @endif
+        </div>
 
-        @if(auth()->user()->role === 'student')
-            <div x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">
-                <!-- Persistent Live Browser Proctoring Monitor Card -->
-                <div x-show="browserProctorActive" x-cloak class="p-5 sm:p-6 rounded-xl bg-[#141414] border-2 border-[#3ecf8e]/50 shadow-xl shadow-[#3ecf8e]/5 mb-6 transition-all">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#242424]">
-                        <div class="flex items-center gap-3">
-                            <span class="relative flex h-3 w-3">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-3 w-3 bg-[#3ecf8e]"></span>
-                            </span>
-                            <div>
-                                <h3 class="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-                                    Browser Camera Proctor Active
-                                    <span class="px-2 py-0.5 rounded text-[10px] font-mono tracking-wider font-semibold"
-                                          :class="{
-                                              'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30': proctorStatus === 'normal',
-                                              'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse': proctorStatus === 'absence' || proctorStatus === 'disconnected',
-                                              'bg-amber-500/20 text-amber-400 border border-amber-500/30': proctorStatus === 'multiple_faces'
-                                          }"
-                                          x-text="proctorStatusText">
-                                    </span>
-                                </h3>
-                                <p class="text-xs text-[#888888] mt-0.5">Webcam stays active in this tab while coding in VS Code. Telemetry is streamed to your instructor.</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
-                            <button type="button" @click="leaveSessionAndStopProctoring()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition" title="Stop webcam camera and exit laboratory session">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                </svg>
-                                <span>Stop Camera &amp; Exit</span>
+        <aside class="space-y-6 lg:sticky lg:top-2">
+            @if ($isStudent)
+                {{-- Start --}}
+                <section class="ui-card ui-card-body" aria-labelledby="start-heading">
+                    <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : 'Start the lab' }}</h2>
+                    @if ($isLive && $laboratory->isLiveNotStarted())
+                        <p class="ui-card-subtitle">Your instructor hasn't started this live lab yet. Refresh this page once they do.</p>
+                        <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Waiting for your instructor</button>
+                    @elseif ($isLive && $laboratory->isLiveClosed())
+                        <p class="ui-card-subtitle">This live lab has ended, so it can't be started any more.</p>
+                        <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Lab ended</button>
+                    @else
+                        <ol class="mt-3 space-y-2 text-[13px] text-[#a3a3a3]" role="list">
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span>A quick camera check confirms it's you.</li>
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span>VS Code opens with the starter files.</li>
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span>Keep this tab open while you code.</li>
+                        </ol>
+                        <form id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST" class="mt-5">
+                            @csrf
+                            <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
+                            <button type="button" @click="handleStartClick()" class="ui-btn ui-btn-primary w-full">
+                                {{ $activeSession ? 'Continue in VS Code' : 'Start lab' }}
                             </button>
-                            <button type="button" @click="reopenVsCode()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3ecf8e] hover:bg-[#00c573] text-[#0f0f0f] text-xs font-bold transition shadow-sm">
-                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/>
-                                </svg>
-                                <span>Switch to VS Code Workspace</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                        <!-- Compact Live Camera Viewport -->
-                        <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video flex items-center justify-center">
-                            <video x-ref="proctorLiveVideo" autoplay playsinline muted class="w-full h-full object-cover scale-x-[-1]"></video>
-                            <canvas x-ref="proctorCanvas" class="hidden"></canvas>
-                            <div class="absolute bottom-2 left-2 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 flex items-center gap-1.5 border border-emerald-500/30">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                <span>Face Track Active</span>
-                            </div>
-                        </div>
-
-                        <!-- Instructions & Status Log -->
-                        <div class="md:col-span-2 space-y-2.5 text-xs text-[#a3a3a3]">
-                            <div class="p-3 rounded-lg bg-[#171717] border border-[#262626] space-y-1.5">
-                                <div class="flex items-center justify-between text-[11px] font-mono">
-                                    <span class="text-[#888888]">SESSION TELEMETRY &amp; HEARTBEAT:</span>
-                                    <span class="text-[#3ecf8e] flex items-center gap-1">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse"></span>
-                                        Connected (<span x-text="pingCount"></span> pings sent)
-                                    </span>
-                                </div>
-                                <p class="text-xs text-[#d4d4d4] leading-relaxed">
-                                    Your webcam stream stays isolated to this browser window. When focus shifts to VS Code, periodic AI checks confirm presence and stream telemetry directly to your instructor's live panel.
-                                </p>
-                            </div>
-
-                            <div class="flex items-center gap-3 text-[11px] font-mono text-[#777777] flex-wrap">
-                                <span>Status: <strong class="text-white" x-text="proctorStatusText"></strong></span>
-                                <span>•</span>
-                                <span>Faces: <strong class="text-white" x-text="faceCount"></strong></span>
-                                <span>•</span>
-                                <span>Session ID: <strong class="text-[#3ecf8e]" x-text="activeSessionId || '{{ $activeSession ? $activeSession->id : 'Pending' }}'"></strong></span>
-                                <span>•</span>
-                                <span class="text-amber-400">⚠️ Keep this tab open while coding</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- VS Code Integration & Setup Card -->
-                <div class="border-t border-[#232323] pt-6 mb-6">
-                    <div class="p-5 rounded-[6px] bg-[#141414] border border-[#2e2e2e]">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            <div class="flex items-start space-x-3.5">
-                                <div class="p-2 rounded-[6px] bg-[#171717] border border-[#2e2e2e] text-[#3ecf8e] flex-shrink-0 mt-0.5">
-                                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h4 class="text-sm font-bold text-[#ededed] flex items-center gap-2">
-                                        Certicode Labs VS Code Extension
-                                        <span class="px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide rounded-full bg-[#171717] text-[#3ecf8e] border border-[#3ecf8e]/30">Official IDE</span>
-                                    </h4>
-                                    <p class="text-xs text-[#888888] mt-1 leading-relaxed">
-                                        Complete tasks with live timer synchronization, AI progress checks, and automated rubric evaluations directly inside Visual Studio Code.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div class="flex items-center gap-2.5 flex-shrink-0">
-                                <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="inline-flex items-center px-3.5 py-2 rounded-[6px] border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-semibold text-[#ededed] transition-colors">
-                                    <svg class="w-3.5 h-3.5 mr-1.5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                                    Download Extension (.vsix)
-                                </a>
-                            </div>
-                        </div>
-
-                        <!-- Quick Instructions Accordion -->
-                        <div class="mt-4 pt-3 border-t border-[#232323] flex flex-col md:flex-row gap-4 text-xs font-mono text-[#888888]">
-                            <div class="flex items-center space-x-2">
-                                <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">1</span>
-                                <span>Install: VS Code &rarr; Extensions (<kbd class="px-1 py-0.5 rounded bg-[#171717] text-[10px] border border-[#2e2e2e] text-[#ededed]">Ctrl+Shift+X</kbd>) &rarr; <strong class="text-[#ededed]">Install from VSIX</strong></span>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="w-4 h-4 rounded-[4px] bg-[#171717] border border-[#2e2e2e] text-[#ededed] font-bold flex items-center justify-center text-[10px]">2</span>
-                                <span>Launch: Connect automatically via <code class="text-[#3ecf8e]">vscode://</code> or click extension in sidebar</span>
-                            </div>
-                        </div>
-
-                        <div class="mt-3 p-3 rounded-[6px] bg-[#f8fafc] dark:bg-[#101010] border border-[#e2e8f0] dark:border-[#262626] text-[11px] font-mono text-[#334155] dark:text-[#a3a3a3] flex items-start gap-2.5">
-                            <svg class="w-4 h-4 text-[#059669] dark:text-[#3ecf8e] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            <span><strong class="text-[#0f172a] dark:text-[#ededed]">Workspace Tip:</strong> To persist your code on disk while working in VS Code, open an empty folder (<em class="text-[#0f172a] dark:text-[#ededed]">File &rarr; Open Folder</em>) before launching, or click any starter file in the CertiCode sidebar or use the <strong class="text-[#059669] dark:text-[#3ecf8e]">Download Starter File</strong> button above.</span>
-                        </div>
-
-                        @if($activeSession)
-                            <div class="mt-3 pt-3 border-t border-[#232323] text-[11px] font-mono text-[#888888] flex flex-wrap items-center gap-x-4 gap-y-1">
-                                <span class="text-[#666666]">Manual session fallback:</span>
-                                <span>Session ID: <strong class="text-[#3ecf8e]">{{ $activeSession->id }}</strong></span>
-                                <span>Endpoint: <strong class="text-[#ededed]">{{ request()->getSchemeAndHttpHost() }}</strong></span>
-                            </div>
+                        </form>
+                        @if ($isLive && $laboratory->isLiveActive())
+                            <p class="ui-hint text-center">Shared timer: {{ max(1, (int) ceil($liveLeft / 60)) }} min left. Work is submitted when it ends.</p>
                         @endif
-                    </div>
-                </div>
-
-                <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-4">
-                    <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
-                        &larr; Back to Module
-                    </a>
-
-                @if($laboratory->isLiveLab() && $laboratory->isLiveNotStarted())
-                    <div class="flex items-center gap-3">
-                        <span class="text-xs font-mono text-amber-400">🔒 Waiting for instructor to open session</span>
-                        <button type="button" disabled class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#262626] text-xs font-semibold text-[#666666] cursor-not-allowed border border-[#333]">
-                            Lab Locked &rarr;
-                        </button>
-                    </div>
-                @elseif($laboratory->isLiveLab() && $laboratory->isLiveClosed())
-                    <div class="flex items-center gap-3">
-                        <span class="text-xs font-mono text-red-400">⏱️ Live Countdown Expired</span>
-                        <button type="button" disabled class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#262626] text-xs font-semibold text-[#666666] cursor-not-allowed border border-[#333]">
-                            Session Closed &rarr;
-                        </button>
-                    </div>
-                @else
-                    <form id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST">
-                        @csrf
-                        <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
-                        <button type="button" 
-                                @click="handleStartClick()"
-                                class="inline-flex items-center px-6 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm cursor-pointer">
-                            <span>Start Lab &rarr;</span>
-                        </button>
-                    </form>
 
                     <!-- Pre-Lab Camera Permission & AI Presence Verification Modal -->
                     <div x-show="showModal" 
@@ -536,7 +460,7 @@
                                     </div>
                                     <div class="flex justify-end">
                                         <button type="button" @click="acceptLowLightPresence()" class="px-2.5 py-1 rounded bg-[#3ecf8e] text-[#0f0f0f] font-bold text-[11px] hover:bg-[#00c573] transition">
-                                            🌙 Proceed (Low Light Mode) &rarr;
+                                            Continue in low-light mode &rarr;
                                         </button>
                                     </div>
                                 </div>
@@ -548,12 +472,12 @@
                                         Camera lighting is low or backlit. You can proceed with low-light verified mode:
                                     </span>
                                     <button type="button" @click="acceptLowLightPresence()" class="mt-3 px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
-                                        🌙 Proceed (Low Light Mode) &rarr;
+                                        Continue in low-light mode &rarr;
                                     </button>
                                 </div>
 
                                 <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/90 border border-emerald-500/60 flex flex-col items-center justify-center p-4 text-center">
-                                    <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl font-bold mb-2">✓</div>
+                                    <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>
                                     <span class="text-xs font-bold text-emerald-200">AI Presence Verified</span>
                                     <span class="text-[11px] text-emerald-300/80 mt-1">Starting VS Code workspace...</span>
                                 </div>
@@ -584,7 +508,7 @@
                                             type="button" 
                                             @click="acceptLowLightPresence()" 
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition flex items-center gap-1.5 shadow-sm">
-                                        <span>🌙 Proceed (Low Light Mode) &rarr;</span>
+                                        <span>Continue in low-light mode &rarr;</span>
                                     </button>
 
                                     <button x-show="status === 'verified'"
@@ -631,11 +555,11 @@
                             <!-- Progress checklist -->
                             <div class="space-y-2.5 mb-6 text-left bg-[#0d0d0d] p-3.5 rounded-xl border border-[#222]">
                                 <div class="flex items-center gap-2.5 text-xs text-[#ededed]">
-                                    <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                                    <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>
                                     <span>Camera Presence Verified</span>
                                 </div>
                                 <div class="flex items-center gap-2.5 text-xs text-[#ededed]">
-                                    <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                                    <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>
                                     <span>Lab Session Initialized</span>
                                 </div>
                                 <div class="flex items-center gap-2.5 text-xs">
@@ -643,7 +567,7 @@
                                         <span class="w-4 h-4 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin"></span>
                                     </template>
                                     <template x-if="vscodeConnected">
-                                        <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                                        <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>
                                     </template>
                                     <span :class="vscodeConnected ? 'text-[#ededed]' : 'text-cyan-300 font-medium'">
                                         <span x-show="!vscodeConnected">Waiting for VS Code Extension Ping...</span>
@@ -662,68 +586,91 @@
                             </div>
                         </div>
                     </div>
-                @endif
-            </div>
-        </div>
-        @else
-            <!-- Instructor actions & Live Lab lifecycle controls (Feature 9) -->
-            <div class="border-t border-[#232323] pt-6 flex justify-between items-center flex-wrap gap-3">
-                <a href="{{ $backUrl }}" class="px-4 py-2.5 border border-[#2e2e2e] text-xs font-mono uppercase tracking-wider rounded-[6px] text-[#a3a3a3] bg-[#171717] hover:bg-[#222222] hover:text-[#ededed] transition-colors">
-                    &larr; Back to Course
-                </a>
-
-                <div class="flex items-center gap-3 flex-wrap">
-                    @if($laboratory->isLiveLab())
-                        @if($laboratory->isLiveNotStarted())
-                            <form action="{{ route('laboratories.open-live', $laboratory->id) }}" method="POST" class="inline-flex items-center gap-2">
-                                @csrf
-                                <div class="flex items-center gap-1.5 bg-[#141414] border border-[#2e2e2e] rounded-full px-3 py-1.5">
-                                    <span class="text-[11px] font-mono text-[#888]">Window:</span>
-                                    <input type="number" name="duration_minutes" value="{{ $laboratory->live_duration_minutes ?? $laboratory->time_limit ?? 60 }}" min="1" max="600" class="w-14 bg-transparent text-xs font-mono text-[#ededed] focus:outline-none" title="Duration in minutes">
-                                    <span class="text-[11px] font-mono text-[#888]">min</span>
-                                </div>
-                                <button type="submit" class="inline-flex items-center px-5 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition shadow-sm">
-                                    ▶️ Open Live Lab &rarr;
-                                </button>
-                            </form>
-                        @elseif($laboratory->isLiveActive())
-                            <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? All in-progress student workspaces will be auto-submitted and assessed.');">
-                                @csrf
-                                <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-full bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-xs font-semibold transition">
-                                    ⏹️ End Live Lab (Auto-Submit All)
-                                </button>
-                            </form>
-                        @else
-                            @if($laboratory->getRemainingLiveSeconds() > 0)
-                                <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST">
-                                    @csrf
-                                    <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition" title="Carries forward remaining time only">
-                                        🔄 Reopen Live Lab ({{ max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60)) }}m left)
-                                    </button>
-                                </form>
-                            @else
-                                <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST" class="inline-flex items-center gap-2">
-                                    @csrf
-                                    <input type="number" name="extend_minutes" value="15" min="1" max="180" class="w-16 px-2.5 py-1.5 bg-[#141414] border border-[#2e2e2e] text-xs font-mono rounded text-[#ededed]" title="Extend duration in minutes">
-                                    <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-full bg-[#1e1e1e] hover:bg-[#282828] text-xs text-[#ededed] border border-[#333] transition">
-                                        🔄 Extend & Reopen (+min)
-                                    </button>
-                                </form>
-                            @endif
-                        @endif
                     @endif
+                </section>
 
-                    <a href="{{ route('instructor.monitoring.show', $laboratory->id) }}" class="inline-flex items-center px-5 py-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition">
-                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-2"></span>
-                        Live Student Monitoring &rarr;
-                    </a>
-                    <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="inline-flex items-center px-5 py-2.5 rounded-full bg-[#3ecf8e] text-xs font-semibold text-[#0f0f0f] hover:bg-[#00c573] transition">
-                        Edit Specifications &rarr;
-                    </a>
-                </div>
-            </div>
-        @endif
+                {{-- VS Code setup --}}
+                <details class="ui-card group" {{ $activeSession ? '' : 'open' }}>
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4">
+                        <span class="flex items-center gap-2.5">
+                            <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .32 8.704l4.28 3.297-4.28 3.296a1 1 0 0 0 .007 1.443l1.322 1.203c.365.332.91.355 1.276.057l4.12-3.128 9.46 8.63c.47.43 1.15.56 1.705.29l4.94-2.377A1.5 1.5 0 0 0 24 19.985V4.015a1.5 1.5 0 0 0-.85-1.428zM18 17.57l-7.464-5.57L18 6.43v11.14z"/></svg>
+                            <span class="ui-card-title">Set up VS Code</span>
+                        </span>
+                        <svg class="w-4 h-4 text-[#888888] transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-6 pb-6 space-y-4">
+                        <p class="text-[13px] text-[#a3a3a3] leading-relaxed">You need the Certicode extension once. It syncs your timer, checks your progress and submits your work.</p>
+                        <ol class="space-y-2.5 text-[13px] text-[#a3a3a3]" role="list">
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span><span>Download the extension file below.</span></li>
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span><span>In VS Code open Extensions (<kbd class="rounded border border-[#2e2e2e] bg-[#141414] px-1 font-mono text-[11px] text-[#ededed]">Ctrl+Shift+X</kbd>), then the <strong class="text-[#ededed] font-medium">…</strong> menu, then <strong class="text-[#ededed] font-medium">Install from VSIX</strong>.</span></li>
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span><span>Open an empty folder first (File, Open Folder) so your code is saved to disk.</span></li>
+                        </ol>
+                        <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="ui-btn ui-btn-secondary w-full">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg>
+                            Download extension (.vsix)
+                        </a>
+                        @if ($activeSession)
+                            <div class="rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 text-xs text-[#888888] space-y-1">
+                                <p class="text-[#a3a3a3]">If VS Code doesn't connect on its own, enter these in the extension:</p>
+                                <p>Session <code class="font-mono text-[#3ecf8e]">{{ $activeSession->id }}</code></p>
+                                <p class="break-all">Server <code class="font-mono text-[#ededed]">{{ request()->getSchemeAndHttpHost() }}</code></p>
+                            </div>
+                        @endif
+                    </div>
+                </details>
+            @else
+                {{-- Staff: live controls --}}
+                <section class="ui-card ui-card-body" aria-labelledby="run-heading">
+                    <h2 id="run-heading" class="ui-card-title">{{ $isLive ? 'Run this live lab' : 'Open lab' }}</h2>
+                    @if (!$isLive)
+                        <p class="ui-card-subtitle">Students can start whenever they like. Watch their progress on the monitoring page.</p>
+                    @elseif ($laboratory->isLiveNotStarted())
+                        <p class="ui-card-subtitle">Students can't enter until you start it. Everyone then shares one countdown.</p>
+                        <form action="{{ route('laboratories.open-live', $laboratory->id) }}" method="POST" class="mt-4 space-y-3">
+                            @csrf
+                            <div>
+                                <label for="duration_minutes" class="ui-label">Session length</label>
+                                <div class="relative">
+                                    <input type="number" id="duration_minutes" name="duration_minutes" value="{{ $minutes }}" min="1" max="600" class="ui-input pr-14">
+                                    <span class="absolute inset-y-0 right-3 flex items-center text-sm text-[#888888] pointer-events-none" aria-hidden="true">min</span>
+                                </div>
+                            </div>
+                            <button type="submit" class="ui-btn ui-btn-primary w-full">Start live lab</button>
+                        </form>
+                    @elseif ($laboratory->isLiveActive())
+                        <p class="ui-card-subtitle">Running now with {{ max(1, (int) ceil($liveLeft / 60)) }} min left on the shared timer.</p>
+                        <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" class="mt-4"
+                              onsubmit="return confirm('End this live lab now? Every open student workspace will be submitted and graded.');">
+                            @csrf
+                            <button type="submit" class="ui-btn ui-btn-danger w-full">End lab now</button>
+                        </form>
+                    @else
+                        <p class="ui-card-subtitle">This live lab has ended.</p>
+                        <form action="{{ route('laboratories.reopen-live', $laboratory->id) }}" method="POST" class="mt-4 space-y-3">
+                            @csrf
+                            @if ($liveLeft > 0)
+                                <button type="submit" class="ui-btn ui-btn-secondary w-full">Reopen with {{ max(1, (int) ceil($liveLeft / 60)) }} min left</button>
+                            @else
+                                <div>
+                                    <label for="extend_minutes" class="ui-label">Extra time</label>
+                                    <div class="relative">
+                                        <input type="number" id="extend_minutes" name="extend_minutes" value="15" min="1" max="180" class="ui-input pr-14">
+                                        <span class="absolute inset-y-0 right-3 flex items-center text-sm text-[#888888] pointer-events-none" aria-hidden="true">min</span>
+                                    </div>
+                                </div>
+                                <button type="submit" class="ui-btn ui-btn-secondary w-full">Extend and reopen</button>
+                            @endif
+                        </form>
+                    @endif
+                    <a href="{{ route('instructor.monitoring.show', $laboratory->id) }}" class="ui-btn ui-btn-ghost w-full mt-3">Open monitoring</a>
+                </section>
+            @endif
+        </aside>
     </div>
+
+    @if ($isStudent)
+    </div>
+    @endif
 </div>
 
 <script src="{{ asset('js/face-api.min.js') }}"></script>

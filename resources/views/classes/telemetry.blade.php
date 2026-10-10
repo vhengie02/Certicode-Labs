@@ -1,187 +1,208 @@
 @extends('layouts.app')
 
-@section('title', 'Telemetry & Integrity Dashboard')
-@section('page_header', $class->name . ' - Telemetry Monitor')
+@section('title', ($selectedLab ? $selectedLab->title . ' · ' : '') . 'Monitoring · ' . $class->name)
 
 @section('content')
-<div class="max-w-7xl mx-auto space-y-6">
-    <!-- Back to Class View and Header Actions -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <a href="{{ route('classes.show', $class->id) }}" class="inline-flex items-center text-xs font-semibold text-slate-450 hover:text-white transition-colors">
-            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-            Back to Course Syllabus
+<div class="space-y-6">
+    {{-- Class header --}}
+    <header>
+        <a href="{{ route('classes.show', $class->id) }}" class="inline-flex items-center gap-1.5 text-sm text-[#888888] hover:text-[#ededed] transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+            {{ $class->name }}
         </a>
-    </div>
+        <h1 class="cc-display mt-2 text-3xl font-bold text-[#ededed]">Monitoring</h1>
+        <p class="mt-1 text-[15px] text-[#a3a3a3]">Integrity flags and student sessions across the class, or live detail for one lab.</p>
+    </header>
 
-    <!-- Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <!-- Stat 1 -->
-        <div class="glass-panel p-6 rounded-xl border border-slate-800">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Active Sessions</p>
-                    <h3 class="text-2xl font-bold text-white mt-2 font-mono">
-                        {{ $sessions->where('status', 'in_progress')->count() }}
-                    </h3>
-                </div>
-                <div class="h-10 w-10 rounded-lg bg-slate-950 flex items-center justify-center border border-slate-800">
-                    <svg class="w-5 h-5 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </div>
+    {{-- Lab switcher --}}
+    <nav class="monitor-tabs -mx-4 sm:mx-0 px-4 sm:px-0 flex items-center gap-1.5 overflow-x-auto border-b border-[#2e2e2e] pb-px" aria-label="Choose what to monitor">
+        <a href="{{ route('classes.telemetry', $class->id) }}" @if(!$selectedLab) aria-current="page" @endif
+           class="shrink-0 relative px-3 py-2.5 text-sm font-medium transition-colors {{ !$selectedLab ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]' }}">
+            All labs
+        </a>
+        @foreach ($labs as $lab)
+            @php
+                $isSelected = $selectedLab && $selectedLab->id === $lab->id;
+                $isLive = $lab->availability_mode === 'live' && $lab->live_status === 'active';
+            @endphp
+            <a href="{{ route('classes.telemetry', ['class_id' => $class->id, 'lab' => $lab->id]) }}" @if($isSelected) aria-current="page" @endif
+               class="shrink-0 relative inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors {{ $isSelected ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]' }}">
+                @if ($isLive)
+                    <span class="relative flex h-2 w-2" aria-hidden="true">
+                        <span class="absolute inline-flex h-full w-full rounded-full bg-[#3ecf8e] opacity-60 animate-ping"></span>
+                        <span class="relative inline-flex h-2 w-2 rounded-full bg-[#3ecf8e]"></span>
+                    </span>
+                    <span class="sr-only">Live now:</span>
+                @endif
+                <span class="max-w-[14rem] truncate">{{ $lab->title }}</span>
+            </a>
+        @endforeach
+    </nav>
+
+    @if ($selectedLab)
+        @include('instructor.monitoring._lab-panel')
+    @else
+        @php
+            $inProgressCount = $sessions->where('status', 'in_progress')->count();
+            $openFlags = $anomalies->where('resolved', false)->count();
+            $submittedCount = $sessions->where('status', 'completed')->count();
+            $scored = $sessions->where('status', 'completed')->filter(fn ($s) => $s->performance_score !== null);
+            $avgScore = $scored->isNotEmpty() ? round($scored->avg(fn ($s) => (float) $s->effective_score)) : null;
+            $severityStyle = fn ($severity) => [
+                'high' => 'bg-red-500/10 text-red-400 border-red-500/20',
+                'medium' => 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+            ][$severity] ?? 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+            $labLink = fn ($labId) => route('classes.telemetry', ['class_id' => $class->id, 'lab' => $labId]);
+        @endphp
+
+        <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                    In progress
+                    <x-info-tip align="left">Sessions that have started but haven't been submitted, across every lab in this class. It counts students whether or not they're connected right now; pick a lab above to see who is online.</x-info-tip>
+                </dt>
+                <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ $inProgressCount }}</dd>
             </div>
-            <p class="text-xs text-slate-500 mt-4">Active coding workspaces right now.</p>
-        </div>
-
-        <!-- Stat 2 -->
-        <div class="glass-panel p-6 rounded-xl border border-slate-800">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Anomalies</p>
-                    <h3 class="text-2xl font-bold mt-2 font-mono {{ $anomalies->where('resolved', false)->count() > 0 ? 'text-rose-400' : 'text-white' }}">
-                        {{ $anomalies->where('resolved', false)->count() }}
-                    </h3>
-                </div>
-                <div class="h-10 w-10 rounded-lg bg-slate-950 flex items-center justify-center border border-slate-800">
-                    <svg class="w-5 h-5 {{ $anomalies->where('resolved', false)->count() > 0 ? 'text-rose-500 animate-pulse' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                </div>
+            <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                    Open flags
+                    <x-info-tip>Integrity flags you haven't resolved yet: switching away from VS Code 3+ times in 2 minutes, suspicious pastes, the camera not seeing exactly one face, and long idle periods. Resolve a flag once you've reviewed it.</x-info-tip>
+                </dt>
+                <dd class="cc-display mt-2 text-3xl font-bold tabular-nums {{ $openFlags > 0 ? 'text-amber-400' : 'text-[#ededed]' }}">{{ $openFlags }}</dd>
             </div>
-            <p class="text-xs text-slate-500 mt-4">Integrity alerts flagged by telemetry core.</p>
-        </div>
-
-        <!-- Stat 3 -->
-        <div class="glass-panel p-6 rounded-xl border border-slate-800">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Completed Sessions</p>
-                    <h3 class="text-2xl font-bold text-white mt-2 font-mono">
-                        {{ $sessions->where('status', 'completed')->count() }}
-                    </h3>
-                </div>
-                <div class="h-10 w-10 rounded-lg bg-slate-950 flex items-center justify-center border border-slate-800">
-                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </div>
+            <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                    Submitted
+                    <x-info-tip>Sessions that are finished and graded, across every lab: submitted by the student, ended by you, or auto-submitted when a live lab's timer ran out.</x-info-tip>
+                </dt>
+                <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ $submittedCount }}</dd>
             </div>
-            <p class="text-xs text-slate-500 mt-4">Finished and successfully graded exercises.</p>
-        </div>
-    </div>
+            <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                    Average grade
+                    <x-info-tip align="right">The mean grade of submitted sessions. Where you've overridden a grade, your grade is used instead of the AI's.</x-info-tip>
+                </dt>
+                <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ $avgScore === null ? '—' : $avgScore . '%' }}</dd>
+            </div>
+        </dl>
 
-    <!-- Active Integrity & Anomaly Logs -->
-    <div class="glass-panel p-6 rounded-xl border border-slate-800">
-        <h3 class="text-sm font-bold text-white mb-4 uppercase tracking-wider text-slate-400">Integrity Violation Alerts</h3>
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-slate-800">
-                <thead>
-                    <tr>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Student</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Exercise</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Anomaly Type</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Severity</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Time</th>
-                        <th class="px-6 py-3.5 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Status / Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-800 bg-transparent text-slate-300">
-                    @forelse($anomalies as $anomaly)
-                        <tr class="{{ !$anomaly->resolved ? 'bg-rose-500/[0.02]' : '' }}">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">
-                                {{ $anomaly->labSession->user->name }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
-                                {{ $anomaly->labSession->laboratory->title }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold font-mono text-rose-400">
-                                {{ $anomaly->type }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {{ $anomaly->severity === 'high' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : ($anomaly->severity === 'medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20') }}">
-                                    {{ $anomaly->severity }}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 text-xs text-slate-400 leading-normal max-w-xs truncate" title="{{ $anomaly->description }}">
-                                {{ $anomaly->description }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-500 font-mono">
-                                {{ $anomaly->created_at->diffForHumans() }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                                @if($anomaly->resolved)
-                                    <span class="text-emerald-400 font-semibold flex items-center justify-end">
-                                        <svg class="w-4 h-4 mr-1 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        Resolved
-                                    </span>
-                                @else
-                                    <form action="{{ route('anomalies.resolve', $anomaly->id) }}" method="POST" class="inline-block m-0">
-                                        @csrf
-                                        <button type="submit" class="px-3 py-1 bg-slate-900 border border-slate-800 hover:border-emerald-500/40 text-xs font-semibold rounded text-slate-300 hover:text-white transition">
-                                            Resolve Anomaly
-                                        </button>
-                                    </form>
-                                @endif
-                            </td>
+        {{-- Integrity flags --}}
+        <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
+            <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+                <h2 id="flags-heading" class="text-sm font-semibold text-[#ededed]">Integrity flags</h2>
+                <span class="text-xs text-[#888888]">{{ $anomalies->count() }} total</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-y border-[#232323] text-left font-mono text-[11px] uppercase tracking-[0.12em] text-[#888888]">
+                            <th scope="col" class="px-5 py-2.5 font-medium">Student</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">Lab</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">What happened</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">Severity</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">When</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium text-right"><span class="sr-only">Status</span></th>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-sm text-slate-500">
-                                No anomalies logged in this class curriculum. Excellent integrity scores!
-                            </td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-    </div>
+                    </thead>
+                    <tbody class="divide-y divide-[#232323]">
+                        @forelse ($anomalies as $anomaly)
+                            @php $flagSession = $anomaly->labSession; @endphp
+                            <tr class="{{ $anomaly->resolved ? '' : 'bg-amber-400/[0.03]' }}">
+                                <td class="px-5 py-3 whitespace-nowrap font-medium text-[#ededed]">{{ $flagSession?->user?->name ?? 'Unknown' }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap">
+                                    @if ($flagSession?->laboratory)
+                                        <a href="{{ $labLink($flagSession->lab_id) }}" class="text-[#a3a3a3] hover:text-[#3ecf8e] hover:underline underline-offset-2">{{ $flagSession->laboratory->title }}</a>
+                                    @else
+                                        <span class="text-[#888888]">Removed lab</span>
+                                    @endif
+                                </td>
+                                <td class="px-5 py-3 max-w-xs">
+                                    <span class="block font-mono text-xs text-[#ededed]">{{ str_replace('_', ' ', $anomaly->type) }}</span>
+                                    <span class="block text-xs text-[#888888] truncate" title="{{ $anomaly->description }}">{{ $anomaly->description }}</span>
+                                </td>
+                                <td class="px-5 py-3 whitespace-nowrap">
+                                    <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] uppercase tracking-wider {{ $severityStyle($anomaly->severity) }}">{{ $anomaly->severity }}</span>
+                                </td>
+                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]" title="{{ $anomaly->created_at }}">{{ $anomaly->created_at?->diffForHumans() }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap text-right">
+                                    @if ($anomaly->resolved)
+                                        <span class="inline-flex items-center gap-1 text-xs text-[#888888]">
+                                            <svg class="w-3.5 h-3.5 text-[#3ecf8e]" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                            Resolved
+                                        </span>
+                                    @else
+                                        <form action="{{ route('anomalies.resolve', $anomaly->id) }}" method="POST" class="inline">
+                                            @csrf
+                                            <button type="submit" class="h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors">Resolve</button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="px-5 py-10 text-center text-sm text-[#888888]">No integrity flags in this class.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
-    <!-- Active and Completed Lab Workspaces sessions -->
-    <div class="glass-panel p-6 rounded-xl border border-slate-800">
-        <h3 class="text-sm font-bold text-white mb-4 uppercase tracking-wider text-slate-400">Class Workspace Sessions</h3>
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-slate-800">
-                <thead>
-                    <tr>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Session ID</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Student</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Laboratory Exercise</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Performance Score</th>
-                        <th class="px-6 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Timing Info</th>
-                        <th class="px-6 py-3.5 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Action</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-800 bg-transparent text-slate-300">
-                    @forelse($sessions as $sess)
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-450 font-mono">#SESS-{{ $sess->id }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">{{ $sess->user->name }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-350">{{ $sess->laboratory->title }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                <span class="px-2 py-0.5 rounded text-[11px] font-medium {{ $sess->status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30 animate-pulse' }}">
-                                    {{ $sess->status }}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-white">
-                                {{ $sess->performance_score }}%
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-450 leading-relaxed font-mono">
-                                <div>Start: {{ $sess->started_at ? \Carbon\Carbon::parse($sess->started_at)->format('M-d H:i') : '-' }}</div>
-                                <div>End: {{ $sess->ended_at ? \Carbon\Carbon::parse($sess->ended_at)->format('M-d H:i') : '-' }}</div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                                <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center px-3 py-1.5 bg-[#171717] border border-[#2e2e2e] hover:border-[#3ecf8e]/40 text-xs font-mono font-medium rounded-[6px] text-[#3ecf8e] hover:text-[#00c573] transition">
-                                    <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2"></path></svg>
-                                    View Log Timeline
-                                </a>
-                            </td>
+        {{-- Sessions --}}
+        <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="sessions-heading">
+            <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+                <h2 id="sessions-heading" class="text-sm font-semibold text-[#ededed]">Student sessions</h2>
+                <span class="text-xs text-[#888888]">{{ $sessions->count() }} total</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-y border-[#232323] text-left font-mono text-[11px] uppercase tracking-[0.12em] text-[#888888]">
+                            <th scope="col" class="px-5 py-2.5 font-medium">Student</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">Lab</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">Status</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">
+                                <span class="inline-flex items-center gap-1.5">Grade <x-info-tip>The AI grade for submitted sessions, or your override if you've set one. In-progress sessions show the score so far.</x-info-tip></span>
+                            </th>
+                            <th scope="col" class="px-5 py-2.5 font-medium">Started</th>
+                            <th scope="col" class="px-5 py-2.5 font-medium text-right"><span class="sr-only">Actions</span></th>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-sm text-slate-500">
-                                No workspace sessions started in this course yet.
-                            </td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-    </div>
+                    </thead>
+                    <tbody class="divide-y divide-[#232323]">
+                        @forelse ($sessions as $sess)
+                            @php
+                                $statusStyle = [
+                                    'completed' => 'text-[#3ecf8e] border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.06]',
+                                    'in_progress' => 'text-sky-400 border-sky-500/30 bg-sky-500/[0.06]',
+                                ][$sess->status] ?? 'text-[#888888] border-[#2e2e2e]';
+                            @endphp
+                            <tr>
+                                <td class="px-5 py-3 whitespace-nowrap font-medium text-[#ededed]">{{ $sess->user?->name ?? 'Unknown' }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap">
+                                    @if ($sess->laboratory)
+                                        <a href="{{ $labLink($sess->lab_id) }}" class="text-[#a3a3a3] hover:text-[#3ecf8e] hover:underline underline-offset-2">{{ $sess->laboratory->title }}</a>
+                                    @else
+                                        <span class="text-[#888888]">Removed lab</span>
+                                    @endif
+                                </td>
+                                <td class="px-5 py-3 whitespace-nowrap">
+                                    <span class="px-2 py-0.5 rounded-md border text-[11px] font-medium {{ $statusStyle }}">{{ str_replace('_', ' ', $sess->status) }}</span>
+                                </td>
+                                <td class="px-5 py-3 whitespace-nowrap font-mono tabular-nums text-[#ededed]">{{ round((float) $sess->effective_score) }}%</td>
+                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \Carbon\Carbon::parse($sess->started_at)->format('M j, H:i') : '—' }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap text-right">
+                                    <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors">Timeline</a>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="px-5 py-10 text-center text-sm text-[#888888]">No student has started a lab in this class yet.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    @endif
 </div>
 @endsection

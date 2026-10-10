@@ -30,6 +30,7 @@ class LabSessionAccessTest extends TestCase
         $this->bob = User::create(['name' => 'Bob', 'email' => 'bob@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
 
         $class = SchoolClass::create(['name' => 'CS 101', 'code' => 'CS101', 'instructor_id' => $this->instructor->id]);
+        $class->students()->attach([$this->alice->id => ['status' => 'enrolled'], $this->bob->id => ['status' => 'enrolled']]);
         $module = Module::create(['class_id' => $class->id, 'title' => 'Module 1', 'content' => 'Content', 'order_index' => 0]);
         $this->laboratory = Laboratory::create([
             'module_id' => $module->id,

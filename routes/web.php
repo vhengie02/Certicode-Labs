@@ -105,36 +105,8 @@ Route::post('/logout', LogoutController::class)->name('logout')->middleware('aut
 
 // Protected Routes
 Route::middleware('auth')->group(function () {
-    Route::get('/dashboard', function () {
-        /** @var \App\Models\User $user */
-        $user = auth()->user();
-        $cacheKey = "user_dashboard_data_{$user->id}_{$user->role}";
-
-        $dashboardData = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
-            if ($user->role === 'student') {
-                return [
-                    'activeLabSessionsCount' => $user->labSessions()->count(),
-                    'certificates' => $user->certificates()->with('schoolClass')->get(),
-                    'laboratoryCount' => 0,
-                    'recentAnomalies' => collect(),
-                ];
-            } else {
-                return [
-                    'activeLabSessionsCount' => 0,
-                    'certificates' => collect(),
-                    'laboratoryCount' => \App\Models\Laboratory::count(),
-                    // Instructors only see flags from their own classes; admins don't see this panel
-                    'recentAnomalies' => $user->role === 'instructor'
-                        ? \App\Models\Anomaly::withoutSnapshotData()
-                            ->whereHas('labSession.laboratory.module.schoolClass', fn ($q) => $q->where('instructor_id', $user->id))
-                            ->latest()->take(5)->get()
-                        : collect(),
-                ];
-            }
-        });
-
-        return view('dashboard', $dashboardData);
-    })->name('dashboard');
+    Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'show'])->name('dashboard');
+    Route::get('/dashboard/sections', [\App\Http\Controllers\DashboardController::class, 'sections'])->name('dashboard.sections');
 
     // Settings & Account preferences
     Route::get('/settings', [SettingsController::class, 'show'])->name('settings.show');
@@ -221,7 +193,7 @@ Route::middleware('auth')->group(function () {
                 return [
                     'id' => $notif->id,
                     'unread' => $notif->unread(),
-                    'url' => $notif->data['url'] ?? '#',
+                    'url' => \App\Support\InternalUrl::path($notif->data['url'] ?? null),
                     'title' => $notif->data['title'] ?? 'Notification',
                     'message' => $notif->data['message'] ?? '',
                     'type' => $notif->data['type'] ?? 'info',
@@ -251,7 +223,7 @@ Route::middleware('auth')->group(function () {
                 return [
                     'id' => $notif->id,
                     'unread' => false,
-                    'url' => $notif->data['url'] ?? '#',
+                    'url' => \App\Support\InternalUrl::path($notif->data['url'] ?? null),
                     'title' => $notif->data['title'] ?? 'Notification',
                     'message' => $notif->data['message'] ?? '',
                     'type' => $notif->data['type'] ?? 'info',

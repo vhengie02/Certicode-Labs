@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Laboratory;
 use App\Models\User;
+use App\Models\SchoolClass;
+use App\Models\Module;
 use App\Models\LabSession;
 use App\Models\TelemetryLog;
 use App\Models\Anomaly;
@@ -30,8 +32,13 @@ class LabSessionTest extends TestCase
             'github_username' => 'johndoe',
         ]);
 
-        // Create a laboratory exercise
+        // Create a laboratory exercise in a class the student is enrolled in
+        $instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
+        $class = SchoolClass::create(['name' => 'Linux 101', 'code' => 'LNX-101', 'instructor_id' => $instructor->id]);
+        $class->students()->attach($this->student->id, ['status' => 'enrolled']);
+        $module = Module::create(['class_id' => $class->id, 'title' => 'Module', 'content' => 'Content']);
         $this->laboratory = Laboratory::create([
+            'module_id' => $module->id,
             'title' => 'Linux CLI Introduction',
             'description' => 'Learn the basics of linux filesystem navigation.',
             'time_limit' => 45,

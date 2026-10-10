@@ -81,7 +81,7 @@ class LaboratoryCrudTest extends TestCase
             ->get("/classes/{$class->id}/laboratories/create");
 
         $response->assertStatus(200);
-        $response->assertSee('New Laboratory Specifications');
+        $response->assertSee('New lab');
     }
 
     /**

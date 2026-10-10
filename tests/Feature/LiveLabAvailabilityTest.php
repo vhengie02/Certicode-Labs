@@ -6,6 +6,7 @@ use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\SchoolClass;
 use App\Models\User;
+use App\Models\Module;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,6 +19,7 @@ class LiveLabAvailabilityTest extends TestCase
     protected User $student1;
     protected User $student2;
     protected SchoolClass $class;
+    protected Module $module;
 
     protected function setUp(): void
     {
@@ -50,6 +52,13 @@ class LiveLabAvailabilityTest extends TestCase
             'instructor_id' => $this->instructor->id,
             'description' => 'Operating Systems & Concurrency',
         ]);
+
+        // Labs live in a module of the class; students must be enrolled to start them
+        $this->module = Module::create(['class_id' => $this->class->id, 'title' => 'Unit 1', 'content' => 'Content']);
+        $this->class->students()->attach([
+            $this->student1->id => ['status' => 'enrolled'],
+            $this->student2->id => ['status' => 'enrolled'],
+        ]);
     }
 
     /**
@@ -58,7 +67,7 @@ class LiveLabAvailabilityTest extends TestCase
     public function test_open_lab_is_created_with_open_availability_mode(): void
     {
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Open Lab - Shell Basics',
             'description' => 'Work at your own pace',
             'time_limit' => 60,
@@ -90,7 +99,7 @@ class LiveLabAvailabilityTest extends TestCase
     public function test_live_lab_is_created_with_live_availability_mode_and_duration(): void
     {
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Live Lab - Final Exam',
             'description' => 'Synchronous 60-minute practical exam',
             'time_limit' => 60,
@@ -115,7 +124,7 @@ class LiveLabAvailabilityTest extends TestCase
     public function test_student_is_blocked_from_starting_live_lab_before_open(): void
     {
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Live Exam',
             'description' => 'Instructor must open first',
             'availability_mode' => 'live',
@@ -151,7 +160,7 @@ class LiveLabAvailabilityTest extends TestCase
     public function test_instructor_can_open_live_lab(): void
     {
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Live Lab - Midterm',
             'description' => 'Midterm examination lab',
             'availability_mode' => 'live',
@@ -185,7 +194,7 @@ class LiveLabAvailabilityTest extends TestCase
     public function test_student_cannot_open_live_lab(): void
     {
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Live Lab',
             'description' => 'Student should not open this',
             'availability_mode' => 'live',
@@ -206,7 +215,7 @@ class LiveLabAvailabilityTest extends TestCase
     {
         // 60-minute live lab
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Live Synchronous Challenge',
             'description' => 'A synchronous live lab challenge',
             'availability_mode' => 'live',
@@ -247,7 +256,7 @@ class LiveLabAvailabilityTest extends TestCase
     {
         // 30-minute live lab that started 35 minutes ago
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Expired Live Lab',
             'description' => 'Test expiry auto-close',
             'availability_mode' => 'live',
@@ -286,7 +295,7 @@ class LiveLabAvailabilityTest extends TestCase
     {
         // 10-minute lab started 15 minutes ago
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Expired Live Lab',
             'description' => 'Test late joiner block',
             'availability_mode' => 'live',
@@ -319,7 +328,7 @@ class LiveLabAvailabilityTest extends TestCase
     public function test_instructor_can_end_live_lab_early(): void
     {
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Early End Live Lab',
             'description' => 'Test ending early',
             'availability_mode' => 'live',
@@ -362,7 +371,7 @@ class LiveLabAvailabilityTest extends TestCase
     {
         // 60-minute lab paused after 20 minutes (1200 seconds)
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Reopenable Live Lab',
             'description' => 'Test reopening with leftover',
             'availability_mode' => 'live',
@@ -399,7 +408,7 @@ class LiveLabAvailabilityTest extends TestCase
     {
         // 30-minute lab that used all 1800 seconds
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Fully Expired Lab',
             'description' => 'Test expiring requires extension',
             'availability_mode' => 'live',
@@ -436,7 +445,7 @@ class LiveLabAvailabilityTest extends TestCase
     {
         // Expired live lab
         $lab = Laboratory::create([
-            'class_id' => $this->class->id,
+            'module_id' => $this->module->id,
             'title' => 'Artisan Close Lab',
             'description' => 'Test artisan command auto-close',
             'availability_mode' => 'live',

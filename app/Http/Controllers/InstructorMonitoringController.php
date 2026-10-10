@@ -12,24 +12,41 @@ use Illuminate\Support\Facades\Auth;
 
 class InstructorMonitoringController extends Controller
 {
+    use Concerns\AuthorizesClassAccess;
+
     /**
-     * Display live instructor monitoring dashboard for a laboratory.
+     * Lab monitoring now lives on the class monitoring page; keep old links working.
      */
     public function show(Request $request, int $labId)
     {
         $this->authorizeInstructor();
 
-        $laboratory = Laboratory::with('module.schoolClass')->findOrFail($labId);
+        $laboratory = Laboratory::with('module:id,class_id')->findOrFail($labId);
+        abort_unless($laboratory->module?->class_id, 404);
+        $this->authorizeClassManager($laboratory->module->class_id);
+
+        return redirect()->route('classes.telemetry', array_filter([
+            'class_id' => $laboratory->module->class_id,
+            'lab' => $laboratory->id,
+            'sort' => $request->query('sort'),
+        ]));
+    }
+
+    /**
+     * Everything the live lab panel shows: roster, KPIs and the cohort similarity analysis.
+     * Used by the class monitoring page when a lab is selected.
+     */
+    public function labPanelData(Request $request, Laboratory $laboratory): array
+    {
         $laboratory->checkAndAutoCloseLive();
         LabSession::autoExpireStaleSessions($laboratory->id);
         $schoolClass = $laboratory->module ? $laboratory->module->schoolClass : null;
 
         $sortBy = $laboratory->is_group_lab ? $request->query('sort', 'name') : 'name'; // 'name' or 'group'
 
-        $sessionsQuery = LabSession::with(['user', 'group', 'anomalies' => fn($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
-            ->where('lab_id', $laboratory->id);
-
-        $sessions = $sessionsQuery->get();
+        $sessions = LabSession::with(['user', 'group', 'anomalies' => fn($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
+            ->where('lab_id', $laboratory->id)
+            ->get();
 
         // Sort collection
         if ($sortBy === 'group') {
@@ -55,7 +72,7 @@ class InstructorMonitoringController extends Controller
         $similarityService = app(\App\Services\CodeSimilarityService::class);
         $plagiarismAnalysis = $similarityService->analyzeLabCohort($laboratory->id, 75.0, 50.0);
 
-        return view('instructor.monitoring.session', compact(
+        return compact(
             'laboratory',
             'schoolClass',
             'sessions',
@@ -66,7 +83,7 @@ class InstructorMonitoringController extends Controller
             'totalAnomalies',
             'avgWpm',
             'plagiarismAnalysis'
-        ));
+        );
     }
 
     /**
@@ -77,6 +94,7 @@ class InstructorMonitoringController extends Controller
         $this->authorizeInstructor();
 
         $laboratory = Laboratory::findOrFail($labId);
+        $this->authorizeLabManager($laboratory);
         $threshold = (float) $request->query('threshold', 75.0);
 
         $similarityService = app(\App\Services\CodeSimilarityService::class);
@@ -96,6 +114,7 @@ class InstructorMonitoringController extends Controller
         $this->authorizeInstructor();
 
         $laboratory = Laboratory::findOrFail($labId);
+        $this->authorizeLabManager($laboratory);
         $laboratory->checkAndAutoCloseLive();
         LabSession::autoExpireStaleSessions($laboratory->id);
 
@@ -181,6 +200,7 @@ class InstructorMonitoringController extends Controller
         $this->authorizeInstructor();
 
         $session = LabSession::with(['user', 'laboratory'])->findOrFail($id);
+        $this->authorizeSessionManager($session);
 
         $request->validate([
             'override_score' => 'required|numeric|min:0|max:100',

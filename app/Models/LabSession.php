@@ -94,7 +94,7 @@ class LabSession extends Model
 
     /**
      * Whether a user may act on this session: its owner, a teammate in the same group,
-     * or an instructor/admin.
+     * an admin, or the instructor who owns the class the lab belongs to.
      */
     public function isAccessibleBy(?User $user): bool
     {
@@ -102,8 +102,13 @@ class LabSession extends Model
             return false;
         }
 
-        if ((int) $this->user_id === (int) $user->id || in_array($user->role, ['instructor', 'admin'], true)) {
+        if ((int) $this->user_id === (int) $user->id || $user->role === 'admin') {
             return true;
+        }
+
+        if ($user->role === 'instructor') {
+            $classId = Module::whereKey(Laboratory::whereKey($this->lab_id)->value('module_id'))->value('class_id');
+            return $user->canManageClass($classId);
         }
 
         return $this->group_id

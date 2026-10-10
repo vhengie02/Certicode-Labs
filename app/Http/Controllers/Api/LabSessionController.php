@@ -15,6 +15,8 @@ use Illuminate\Support\Str;
 
 class LabSessionController extends Controller
 {
+    use \App\Http\Controllers\Concerns\AuthorizesClassAccess;
+
     protected SandboxExecutionService $sandboxService;
 
     public function __construct(SandboxExecutionService $sandboxService)
@@ -28,6 +30,7 @@ class LabSessionController extends Controller
     public function startSession(Request $request, int $labId)
     {
         $lab = Laboratory::findOrFail($labId);
+        $this->authorizeLabViewer($lab);
         $user = $request->user();
 
         // Feature 9: Live Lab availability gating
@@ -1286,6 +1289,7 @@ class LabSessionController extends Controller
         }
 
         $lab = Laboratory::findOrFail($labId);
+        $this->authorizeLabManager($lab);
         $duration = $request->input('duration_minutes') ? (int) $request->input('duration_minutes') : null;
         $lab->openLive($duration);
 
@@ -1310,6 +1314,7 @@ class LabSessionController extends Controller
         }
 
         $lab = Laboratory::findOrFail($labId);
+        $this->authorizeLabManager($lab);
         $lab->closeLive();
 
         return response()->json([
@@ -1332,6 +1337,7 @@ class LabSessionController extends Controller
         }
 
         $lab = Laboratory::findOrFail($labId);
+        $this->authorizeLabManager($lab);
         $extendMinutes = $request->input('extend_minutes') ?? $request->input('add_minutes');
         $extendMinutes = $extendMinutes ? (int) $extendMinutes : null;
         $success = $lab->reopenLive($extendMinutes);
@@ -1452,6 +1458,7 @@ class LabSessionController extends Controller
     public function verifyCameraLab(Request $request, int $labId)
     {
         $lab = Laboratory::findOrFail($labId);
+        $this->authorizeLabViewer($lab);
 
         $status = $request->input('status', 'granted'); // granted, denied, blocked
         $faceCount = (int) $request->input('face_count', 1);

@@ -14,6 +14,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        // First, so its numbers include session start and auth lookups
+        $middleware->prepend(\App\Http\Middleware\ServerTiming::class);
         $middleware->alias([
             'lab.session' => \App\Http\Middleware\AuthorizeLabSession::class,
             'admin' => \App\Http\Middleware\EnsureAdmin::class,

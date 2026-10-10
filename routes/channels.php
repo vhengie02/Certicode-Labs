@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\LabSession;
+use App\Models\Laboratory;
+use App\Models\Module;
 use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
@@ -13,14 +15,8 @@ Broadcast::channel('lab-session.{sessionId}', function ($user, $sessionId) {
     if (!$session) {
         return false;
     }
-    // Allow student owner, instructor/admin, or group teammates
-    if ((int) $user->id === (int) $session->user_id || in_array($user->role, ['instructor', 'admin'])) {
-        return true;
-    }
-    if ($session->group_id && LabSession::where('group_id', $session->group_id)->where('user_id', $user->id)->exists()) {
-        return true;
-    }
-    return false;
+    // The student, group teammates, an admin, or the instructor who owns the class
+    return $session->isAccessibleBy($user);
 });
 
 // Ephemeral team chat channel (students only - instructor strictly excluded per specification)
@@ -40,5 +36,6 @@ Broadcast::channel('lab-session.{sessionId}.chat', function ($user, $sessionId) 
 
 // Instructor live monitoring channel: one per lab (anomalies, diffs and leaderboard for every student)
 Broadcast::channel('instructor.lab.{labId}', function ($user, $labId) {
-    return in_array($user->role, ['instructor', 'admin']);
+    $classId = Module::whereKey(Laboratory::whereKey($labId)->value('module_id'))->value('class_id');
+    return $user->canManageClass($classId);
 });
