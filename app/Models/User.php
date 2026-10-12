@@ -158,6 +158,10 @@ class User extends Authenticatable
         if ($this->role !== 'student' || $this->instructor_requested_at) {
             return;
         }
+        // Admin > System can stop accepting instructor requests
+        if (!SystemSetting::read('instructor_requests_open')) {
+            return;
+        }
 
         $this->forceFill(['instructor_requested_at' => now()])->save();
 

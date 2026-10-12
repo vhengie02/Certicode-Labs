@@ -12,6 +12,7 @@ class Competency extends Model
     protected $fillable = [
         'name',
         'code',
+        'description',
     ];
 
     /**
@@ -20,5 +21,13 @@ class Competency extends Model
     public function studentCompetencies()
     {
         return $this->hasMany(StudentCompetency::class);
+    }
+
+    /**
+     * Labs that assess this competency.
+     */
+    public function laboratories()
+    {
+        return $this->belongsToMany(Laboratory::class, 'laboratory_competency');
     }
 }

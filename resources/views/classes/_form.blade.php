@@ -17,6 +17,25 @@
             @error('name') <p id="name-error" class="ui-error">{{ $message }}</p> @enderror
         </div>
 
+        @if ($class && auth()->user()->role === 'admin')
+            @php
+                $instructors = \App\Models\User::where('role', 'instructor')->orderBy('name')->get(['id', 'name', 'email']);
+            @endphp
+            <div>
+                <label for="instructor_id" class="ui-label">Instructor</label>
+                <select name="instructor_id" id="instructor_id" class="ui-input" aria-describedby="instructor-hint" @error('instructor_id') aria-invalid="true" @enderror>
+                    @foreach ($instructors as $instructor)
+                        <option value="{{ $instructor->id }}" @selected((int) old('instructor_id', $class->instructor_id) === $instructor->id)>{{ $instructor->name }} ({{ $instructor->email }})</option>
+                    @endforeach
+                    @if (!$instructors->contains('id', $class->instructor_id))
+                        <option value="" selected>{{ $class->instructor->name ?? 'Unassigned' }} (not an instructor)</option>
+                    @endif
+                </select>
+                <p id="instructor-hint" class="ui-hint">Only admins see this. The new instructor gets the class, its labs and its students' work.</p>
+                @error('instructor_id') <p class="ui-error">{{ $message }}</p> @enderror
+            </div>
+        @endif
+
         <div>
             <label for="description" class="ui-label">Description <span class="ui-optional">(optional)</span></label>
             <textarea name="description" id="description" rows="4" placeholder="What the class covers and how it's graded."
@@ -36,7 +55,7 @@
             <label for="passing_threshold" class="ui-label">Passing threshold</label>
             <div class="relative">
                 <input type="number" name="passing_threshold" id="passing_threshold" min="1" max="100" inputmode="numeric"
-                       value="{{ old('passing_threshold', $class?->passing_threshold ?? 75) }}"
+                       value="{{ old('passing_threshold', $class?->passing_threshold ?? \App\Models\SystemSetting::read('default_pass_mark')) }}"
                        class="ui-input pr-9" aria-describedby="threshold-hint" @error('passing_threshold') aria-invalid="true" @enderror>
                 <span class="absolute inset-y-0 right-3 flex items-center text-sm text-[#888888] pointer-events-none" aria-hidden="true">%</span>
             </div>

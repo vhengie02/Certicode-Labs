@@ -104,6 +104,21 @@ class Module extends Model
     }
 
     /**
+     * This module's id plus every section nested under it, at any depth.
+     */
+    public function subtreeIds(): array
+    {
+        $ids = [$this->id];
+        $frontier = [$this->id];
+        while ($frontier) {
+            $frontier = static::whereIn('parent_id', $frontier)->pluck('id')->all();
+            $ids = array_merge($ids, $frontier);
+        }
+
+        return $ids;
+    }
+
+    /**
      * Recursively collect all laboratory IDs for this module and its children.
      */
     public function getAllLaboratoryIds(): array

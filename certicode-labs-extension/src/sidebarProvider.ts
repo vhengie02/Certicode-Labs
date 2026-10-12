@@ -21,6 +21,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
     // Feature 1: Starter Files & Integrity
     private _starterFileSnapshots: Map<string, string> = new Map();
+    // Read-only starter files (document URI -> original content) and a re-entrancy flag for restoring them
+    private _readonlyFiles: Map<string, { name: string; content: string }> = new Map();
+    private _restoringReadonly = false;
     private _filesGenerated: boolean = false;
     private _fileWatcher?: vscode.FileSystemWatcher;
     private _missingFiles: string[] = [];
@@ -725,6 +728,58 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     /**
+     * Make the lab's read-only starter files read-only in the editor (files.readonlyInclude,
+     * VS Code 1.79+) and remember their original content so guardReadonlyFile can restore
+     * them if they change anyway (older VS Code, or edits that slip through).
+     */
+    private async applyReadonlyStarterFiles(
+        rootUri: vscode.Uri,
+        starterFiles: Array<{ name: string; content: string; is_readonly?: boolean }>
+    ) {
+        this._readonlyFiles.clear();
+        const patterns: Record<string, boolean> = {};
+
+        for (const file of starterFiles) {
+            if (!file.is_readonly) { continue; }
+            const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
+            if (!fileUri) { continue; }
+            this._readonlyFiles.set(fileUri.toString(), { name: file.name, content: file.content || '' });
+            patterns[String(file.name).replace(/\\/g, '/').replace(/^\.?\//, '')] = true;
+        }
+
+        if (Object.keys(patterns).length === 0) { return; }
+        try {
+            const config = vscode.workspace.getConfiguration('files', rootUri);
+            const current = config.get<Record<string, boolean>>('readonlyInclude') || {};
+            await config.update('readonlyInclude', { ...current, ...patterns }, vscode.ConfigurationTarget.Workspace);
+        } catch (e) {
+            // Older VS Code doesn't know the setting; the guard below still protects the files
+            console.warn('CertiCode: could not set files.readonlyInclude', e);
+        }
+    }
+
+    /**
+     * Undo any change to a read-only starter file by restoring its original content.
+     */
+    private async guardReadonlyFile(event: vscode.TextDocumentChangeEvent) {
+        if (this._restoringReadonly || event.contentChanges.length === 0) { return; }
+        const entry = this._readonlyFiles.get(event.document.uri.toString());
+        if (!entry || event.document.getText() === entry.content) { return; }
+
+        this._restoringReadonly = true;
+        try {
+            const doc = event.document;
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), entry.content);
+            await vscode.workspace.applyEdit(edit);
+            if (doc.isDirty) { await doc.save(); }
+        } finally {
+            this._restoringReadonly = false;
+        }
+        vscode.window.showWarningMessage(`CertiCode: "${entry.name}" is read-only for this lab, so your change was undone.`);
+    }
+
+    /**
      * Feature 1: Generate starter files in active workspace and open primary file.
      */
     private async provisionStarterFiles(starterFiles: Array<{ name: string; content: string; is_primary?: boolean; is_readonly?: boolean }>) {
@@ -796,6 +851,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }
         }
 
+        await this.applyReadonlyStarterFiles(rootUri, starterFiles);
+
         // Fallback to first file if none marked primary
         if (!primaryUri && starterFiles.length > 0) {
             primaryUri = this.resolveWorkspaceFile(rootUri, starterFiles[0].name) ?? null;
@@ -864,6 +921,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity()),
             // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
             vscode.workspace.onDidChangeTextDocument(event => this.handleDocumentChange(event)),
+            vscode.workspace.onDidChangeTextDocument(event => { void this.guardReadonlyFile(event); }),
             vscode.workspace.onDidSaveTextDocument(doc => {
                 if (this._sessionId && this._lastSessionData && this.isStudentDocument(doc)) {
                     this.computeAndSyncDiffs();
@@ -873,6 +931,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     private handleDocumentChange(event: vscode.TextDocumentChangeEvent) {
+        if (this._restoringReadonly) {
+            return;
+        }
         if (!this._sessionId || !this._lastSessionData) { return; }
         // Output panels, logs, settings and files outside the lab are not the student typing.
         if (!this.isStudentDocument(event.document) || event.contentChanges.length === 0) { return; }
@@ -2121,7 +2182,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             <div class="status-left">
                 <div class="status-dot"></div>
                 <span id="status-text">${initialStatusText}</span>
-                <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 6px; border-radius: 4px; background: rgba(62, 207, 142, 0.15); color: #3ecf8e; border: 1px solid rgba(62, 207, 142, 0.3);">🟢 Browser Proctor Active</span>
+                <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 6px; border-radius: 4px; background: rgba(62, 207, 142, 0.15); color: #3ecf8e; border: 1px solid rgba(62, 207, 142, 0.3);"><span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3ecf8e; margin-right: 4px; vertical-align: middle;"></span>Browser proctor active</span>
             </div>
             <div class="diff-pill" id="diff-counter-pill">
                 <span class="diff-added" id="pill-added">+0</span> / <span class="diff-deleted" id="pill-deleted">-0</span>
@@ -2130,7 +2191,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         <!-- Feature 1 Client-Side Integrity Warning -->
         <div id="integrity-alert" class="integrity-alert" style="display: none;">
-            <span>⚠️</span>
+            <span style="display: inline-flex; padding-top: 2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
             <div class="flex-1">
                 <span id="integrity-text">Missing required starter file.</span>
                 <div style="margin-top: 4px;">
@@ -2141,7 +2202,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         <!-- Feature 9 Live Lab State Alert -->
         <div id="live-lab-alert" class="integrity-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #fca5a5;">
-            <span>⏱️</span>
+            <span style="display: inline-flex; padding-top: 2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
             <div class="flex-1">
                 <span id="live-lab-alert-text" style="font-weight: bold;">Live Lab Alert</span>
             </div>
@@ -2274,7 +2335,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         <!-- Submission Completed Banner -->
         <div id="submission-complete-banner" style="display: none; padding: 12px; border-radius: 6px; background: rgba(62, 207, 142, 0.12); border: 1px solid rgba(62, 207, 142, 0.35); color: #3ecf8e; text-align: center; margin-bottom: 8px;">
-            <div style="font-weight: bold; font-size: 1.05em; margin-bottom: 4px;">🎉 Lab Submission Complete!</div>
+            <div style="font-weight: bold; font-size: 1.05em; margin-bottom: 4px;">Lab submitted</div>
             <div style="font-size: 0.9em; margin-bottom: 10px; color: #ededed;">Final Grade: <strong id="submission-final-score" style="color: #3ecf8e; font-size: 1.1em;">100%</strong></div>
             <button id="post-submit-exit-btn" class="btn-secondary" style="width: 100%; border-color: rgba(62, 207, 142, 0.4); color: #3ecf8e; cursor: pointer;">Exit Lab Workspace</button>
         </div>
@@ -2615,7 +2676,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                             const clockBanner = document.createElement('div');
                             clockBanner.style.cssText = 'padding: 6px 10px; background: rgba(62, 207, 142, 0.1); border: 1px solid rgba(62, 207, 142, 0.3); border-radius: 6px; font-size: 0.78em; color: #3ecf8e; font-weight: bold; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;';
                             clockBanner.innerHTML = \`
-                                <span>⏱️ Live Lab Shared Clock</span>
+                                <span>Live lab shared clock</span>
                                 <span style="font-family: monospace; font-size: 1.1em;">\${esc(message.shared_time_remaining_formatted || '00:00')} remaining</span>
                             \`;
                             leaderboardContainer.appendChild(clockBanner);
@@ -2706,7 +2767,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                             timerInterval = null;
                         }
                         timerLabel.innerText = 'Session Completed';
-                        submitBtn.innerText = '✅ Session Submitted';
+                        submitBtn.innerText = 'Session submitted';
 
                         const compBanner = document.getElementById('submission-complete-banner');
                         if (compBanner) {
@@ -2873,7 +2934,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
                     liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
                     liveLabAlert.style.color = '#fca5a5';
-                    liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                    liveLabAlertText.innerText = 'Live lab ended: the shared countdown is over and submissions are locked.';
                     checkProgressBtn.disabled = true;
                     submitBtn.disabled = true;
                 } else if (isLiveNotStarted) {
@@ -2881,7 +2942,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     liveLabAlert.style.background = 'rgba(245, 158, 11, 0.15)';
                     liveLabAlert.style.borderColor = 'rgba(245, 158, 11, 0.35)';
                     liveLabAlert.style.color = '#fcd34d';
-                    liveLabAlertText.innerText = '🔒 Live Lab Locked: Waiting for instructor to manually open the session window.';
+                    liveLabAlertText.innerText = 'Live lab locked: waiting for your instructor to start it.';
                     checkProgressBtn.disabled = true;
                     submitBtn.disabled = true;
                 } else {
@@ -2944,7 +3005,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                         liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
                         liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
                         liveLabAlert.style.color = '#fca5a5';
-                        liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                        liveLabAlertText.innerText = 'Live lab ended: the shared countdown is over and submissions are locked.';
                     }
                     if (checkProgressBtn) checkProgressBtn.disabled = true;
                     if (submitBtn) submitBtn.disabled = true;
@@ -2966,7 +3027,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                                 liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
                                 liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
                                 liveLabAlert.style.color = '#fca5a5';
-                                liveLabAlertText.innerText = '⏱️ Live Lab Expired: The shared countdown has ended. Submissions are locked.';
+                                liveLabAlertText.innerText = 'Live lab ended: the shared countdown is over and submissions are locked.';
                             }
                             if (checkProgressBtn) checkProgressBtn.disabled = true;
                             if (submitBtn) submitBtn.disabled = true;

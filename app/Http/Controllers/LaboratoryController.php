@@ -55,6 +55,8 @@ class LaboratoryController extends Controller
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
+            'competencies' => 'nullable|array',
+            'competencies.*' => 'integer|exists:competencies,id',
         ]);
 
         // Convert key-value tasks to JSON structures
@@ -111,6 +113,8 @@ class LaboratoryController extends Controller
             'tasks_definition' => $tasksDefinition,
             'starter_files' => !empty($starterFiles) ? $starterFiles : null,
         ]);
+
+        $lab->competencies()->sync($validated['competencies'] ?? []);
 
         // Send notifications to enrolled students
         $class = \App\Models\SchoolClass::findOrFail($module->class_id);
@@ -186,6 +190,8 @@ class LaboratoryController extends Controller
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
+            'competencies' => 'nullable|array',
+            'competencies.*' => 'integer|exists:competencies,id',
         ]);
 
         $tasksDefinition = [];
@@ -232,7 +238,8 @@ class LaboratoryController extends Controller
         $updateData = [
             'title' => $validated['title'],
             'description' => $validated['description'],
-            'github_repo_template' => $validated['github_repo_template'],
+            // No longer on the form; keep whatever was saved before
+            'github_repo_template' => $validated['github_repo_template'] ?? $laboratory->github_repo_template,
             'time_limit' => $validated['time_limit'],
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
@@ -247,6 +254,7 @@ class LaboratoryController extends Controller
         }
 
         $laboratory->update($updateData);
+        $laboratory->competencies()->sync($validated['competencies'] ?? []);
 
         return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.');
     }

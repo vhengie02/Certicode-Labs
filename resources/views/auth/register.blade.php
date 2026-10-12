@@ -18,6 +18,13 @@
 @endsection
 
 @section('content')
+@if (!\App\Models\SystemSetting::read('registration_open'))
+    <div class="cc-rise" style="--d:0">
+        <h2 class="cc-display text-[32px] leading-tight font-bold">Sign-ups are <span class="cc-serif font-normal text-[#3ecf8e]">closed.</span></h2>
+        <p class="mt-2 text-[15px] text-[var(--cc-text-dim)] cc-pretty">Certicode isn't accepting new accounts right now. If your class uses Certicode, ask your instructor or an admin.</p>
+        <a href="{{ route('login') }}" class="cc-btn cc-btn-brand w-full mt-8">Sign in to an existing account</a>
+    </div>
+@else
     <div class="cc-rise" style="--d:0">
         <h2 class="cc-display text-[32px] leading-tight font-bold">Create your <span class="cc-serif font-normal text-[#3ecf8e]">account.</span></h2>
         <p class="mt-2 text-[15px] text-[var(--cc-text-dim)] cc-pretty">Takes a minute. You can join a class right after.</p>
@@ -120,9 +127,11 @@
     <p class="mt-10 text-center text-[13px]">
         <a href="/" class="text-[var(--cc-text-faint)] hover:text-white transition-colors">&larr; Back to home</a>
     </p>
+@endif
 @endsection
 
 @push('scripts')
+    @if (\App\Models\SystemSetting::read('registration_open'))
     @include('auth.partials.password-toggle-script')
     <script>
         // Live password checklist (mirrors Password::defaults() on the server)
@@ -170,4 +179,5 @@
             }
         });
     </script>
+    @endif
 @endpush

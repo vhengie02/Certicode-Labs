@@ -201,7 +201,7 @@
                         <span class="w-9 h-9 rounded-lg border border-[var(--line-strong)] bg-[var(--ink-raised)] flex items-center justify-center group-hover:border-[#3ecf8e]/50 transition-colors">
                             <svg class="w-4 h-4 text-[#3ecf8e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
                         </span>
-                        <span><span class="link-underline text-[var(--text)]">Get the VS Code extension</span><span class="font-code text-xs text-[var(--text-faint)] ml-2">v1.4.0 &middot; .vsix</span></span>
+                        <span><span class="link-underline text-[var(--text)]">Get the VS Code extension</span><span class="font-code text-xs text-[var(--text-faint)] ml-2">v1.4.1 &middot; .vsix</span></span>
                     </a>
                 </div>
 

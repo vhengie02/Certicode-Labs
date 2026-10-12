@@ -163,7 +163,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
 
     // Student Profiles & Directory CRUD
-    Route::get('/students', [StudentProfileController::class, 'index'])->name('students.index');
+    // The student directory became Admin > Users; keep the old address working
+    Route::get('/students', fn () => redirect()->route('admin.users.index', ['role' => 'student']))->middleware('admin')->name('students.index');
     Route::get('/profiles/{id}/edit', [StudentProfileController::class, 'edit'])->name('profiles.edit');
     Route::put('/profiles/{id}', [StudentProfileController::class, 'update'])->name('profiles.update');
     Route::delete('/profiles/{id}', [StudentProfileController::class, 'destroy'])->name('profiles.destroy');
@@ -173,6 +174,21 @@ Route::middleware('auth')->group(function () {
         Route::get('/instructor-requests', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'index'])->name('instructor-requests.index');
         Route::post('/instructor-requests/{user}/approve', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'approve'])->name('instructor-requests.approve');
         Route::post('/instructor-requests/{user}/decline', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'decline'])->name('instructor-requests.decline');
+
+        Route::get('/users', [\App\Http\Controllers\Admin\UserController::class, 'index'])->name('users.index');
+        Route::patch('/users/{user}/role', [\App\Http\Controllers\Admin\UserController::class, 'updateRole'])->name('users.role');
+        Route::delete('/users/{user}', [\App\Http\Controllers\Admin\UserController::class, 'destroy'])->name('users.destroy');
+
+        Route::get('/competencies', [\App\Http\Controllers\Admin\CompetencyController::class, 'index'])->name('competencies.index');
+        Route::post('/competencies', [\App\Http\Controllers\Admin\CompetencyController::class, 'store'])->name('competencies.store');
+        Route::put('/competencies/{competency}', [\App\Http\Controllers\Admin\CompetencyController::class, 'update'])->name('competencies.update');
+        Route::delete('/competencies/{competency}', [\App\Http\Controllers\Admin\CompetencyController::class, 'destroy'])->name('competencies.destroy');
+
+        Route::get('/system', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'edit'])->name('system.edit');
+        Route::put('/system', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('system.update');
+
+        Route::get('/reports', [\App\Http\Controllers\Admin\ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/export/{type}', [\App\Http\Controllers\Admin\ReportController::class, 'export'])->name('reports.export');
     });
 
     // Global Search

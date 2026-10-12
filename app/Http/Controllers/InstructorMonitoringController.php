@@ -217,21 +217,8 @@ class InstructorMonitoringController extends Controller
             'overridden_by' => Auth::id(),
         ]);
 
-        // Update StudentCompetency to reflect overridden effective grade
-        if ($session->user) {
-            $competency = \App\Models\Competency::firstOrCreate([
-                'code' => 'COMP-JAVA-01',
-            ], [
-                'name' => 'Java OOP and Custom Exceptions Mastery',
-            ]);
-
-            \App\Models\StudentCompetency::updateOrCreate([
-                'user_id' => $session->user->id,
-                'competency_id' => $competency->id,
-            ], [
-                'score_achieved' => max($overrideScore, 0.0),
-            ]);
-        }
+        // Competency scores use the overridden grade from now on
+        \App\Models\StudentCompetency::refreshFor($session->user, $session->laboratory);
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,

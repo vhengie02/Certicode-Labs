@@ -1009,24 +1009,8 @@ class LabSessionController extends Controller
      */
     protected function mapCompetencies(LabSession $session, float $score)
     {
-        $user = $session->user;
-        if (!$user) {
-            return;
-        }
-
-        // Create/Update Java competency record
-        $competency = \App\Models\Competency::firstOrCreate([
-            'code' => 'COMP-JAVA-01',
-        ], [
-            'name' => 'Java OOP and Custom Exceptions Mastery',
-        ]);
-
-        \App\Models\StudentCompetency::updateOrCreate([
-            'user_id' => $user->id,
-            'competency_id' => $competency->id,
-        ], [
-            'score_achieved' => max($score, 0.0),
-        ]);
+        // Credit the competencies this lab assesses (none if the lab isn't tagged)
+        \App\Models\StudentCompetency::refreshFor($session->user, $session->laboratory);
     }
 
     /**

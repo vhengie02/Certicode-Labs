@@ -95,7 +95,7 @@
             <!-- Actions -->
             <div class="flex justify-end space-x-3 pt-6 border-t border-[#232323]">
                 @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                    <a href="{{ route('students.index') }}" class="px-4 py-2 border border-[#2e2e2e] text-xs font-mono font-medium rounded-[6px] text-[#a3a3a3] bg-[#141414] hover:bg-[#202020] hover:text-[#ededed] transition-colors">
+                    <a href="{{ route('admin.users.index') }}" class="px-4 py-2 border border-[#2e2e2e] text-xs font-mono font-medium rounded-[6px] text-[#a3a3a3] bg-[#141414] hover:bg-[#202020] hover:text-[#ededed] transition-colors">
                         &larr; Back to Directory
                     </a>
                 @else

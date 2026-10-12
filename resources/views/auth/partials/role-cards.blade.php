@@ -1,4 +1,7 @@
 {{-- Student/Instructor radio cards (name=role). Instructor access is granted by an admin. --}}
+@if (!\App\Models\SystemSetting::read('instructor_requests_open'))
+    <input type="hidden" name="role" value="student">
+@else
 <fieldset>
     <legend class="cc-label">I'm joining as</legend>
     <div class="grid grid-cols-2 gap-3">
@@ -21,3 +24,4 @@
         @endforeach
     </div>
 </fieldset>
+@endif

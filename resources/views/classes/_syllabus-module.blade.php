@@ -36,11 +36,19 @@
         @if ($isStaff)
             <div class="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
                 <a href="{{ route('modules.edit', [$class->id, $module->id]) }}" class="ui-btn ui-btn-ghost ui-btn-sm !px-2" aria-label="Edit {{ $module->title }}" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg></a>
+                @php $labsInside = count($module->getAllLaboratoryIds()); @endphp
                 <form action="{{ route('modules.destroy', [$class->id, $module->id]) }}" method="POST"
-                      onsubmit="return confirm('Delete the module “{{ addslashes($module->title) }}”? Its sections and attachments are deleted, and its labs are removed from the class so students can no longer open them.');">
+                      onsubmit="return confirm('Delete the module “{{ addslashes($module->title) }}” and its sections and attachments? This can\'t be undone.');">
                     @csrf
                     @method('DELETE')
-                    <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm !px-2 hover:!text-red-400" aria-label="Delete {{ $module->title }}" title="Delete"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V4h6v3m-7 0l1 13h6l1-13"/></svg></button>
+                    @if ($labsInside > 0)
+                        {{-- Deleting would detach the labs, so it's blocked until they're moved or deleted --}}
+                        <button type="button" disabled class="ui-btn ui-btn-ghost ui-btn-sm !px-2"
+                                aria-label="Can't delete {{ $module->title }}: move or delete its {{ $labsInside }} {{ \Illuminate\Support\Str::plural('lab', $labsInside) }} first"
+                                title="Move or delete its {{ $labsInside }} {{ \Illuminate\Support\Str::plural('lab', $labsInside) }} first"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V4h6v3m-7 0l1 13h6l1-13"/></svg></button>
+                    @else
+                        <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm !px-2 hover:!text-red-400" aria-label="Delete {{ $module->title }}" title="Delete"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V4h6v3m-7 0l1 13h6l1-13"/></svg></button>
+                    @endif
                 </form>
             </div>
         @endif

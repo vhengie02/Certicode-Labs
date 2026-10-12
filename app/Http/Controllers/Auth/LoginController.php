@@ -223,6 +223,10 @@ class LoginController extends Controller
             $password = $request->password ?: Str::random(16);
             $name = ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $gmail)[0]));
             
+            if (!\App\Models\SystemSetting::read('registration_open')) {
+                return redirect()->route('login')->withErrors(['email' => 'New sign-ups are closed right now. If you already have an account, sign in; otherwise ask your instructor or a Certicode admin.']);
+            }
+
             $newUser = User::create([
                 'name' => session('google_auth_name') ?: $name,
                 'email' => $gmail,

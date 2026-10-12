@@ -32,7 +32,8 @@
         <div class="flex flex-wrap items-center gap-2.5">
             @if ($role === 'admin')
                 <a href="{{ route('admin.instructor-requests.index') }}" class="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-colors">Review requests <span aria-hidden="true">&rarr;</span></a>
-                <a href="{{ route('students.index') }}" class="inline-flex items-center h-10 px-4 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm font-medium text-[#ededed] hover:border-[#383838] transition-colors">Student directory</a>
+                <a href="{{ route('admin.users.index') }}" class="inline-flex items-center h-10 px-4 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm font-medium text-[#ededed] hover:border-[#383838] transition-colors">Manage users</a>
+                <a href="{{ route('admin.reports.index') }}" class="inline-flex items-center h-10 px-4 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm font-medium text-[#ededed] hover:border-[#383838] transition-colors">Reports</a>
             @elseif ($role === 'instructor')
                 <a href="{{ route('classes.create') }}" class="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>

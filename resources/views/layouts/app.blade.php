@@ -536,6 +536,7 @@
         html:not(.dark) .app-flash-success { color: #047857 !important; background-color: #ecfdf5 !important; border-color: #a7f3d0 !important; }
         html:not(.dark) .app-flash-error { color: #b91c1c !important; background-color: #fef2f2 !important; border-color: #fecaca !important; }
         html:not(.dark) .app-flash-warning { color: #92400e !important; background-color: #fffbeb !important; border-color: #fde68a !important; }
+        html:not(.dark) .app-flash-info { color: #075985 !important; background-color: #f0f9ff !important; border-color: #bae6fd !important; }
         html:not(.dark) :focus-visible { outline-color: #059669; }
     </style>
 </head>
@@ -551,8 +552,10 @@
         $primaryNav = array_filter([
             ['label' => 'Dashboard', 'url' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
             ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'modules.*', 'instructor.*', 'certificates.*')],
-            $isAdmin ? ['label' => 'Students', 'url' => route('students.index'), 'active' => request()->routeIs('students.*', 'profiles.*')] : null,
-            $isAdmin ? ['label' => 'Requests', 'url' => route('admin.instructor-requests.index'), 'active' => request()->routeIs('admin.instructor-requests.*'), 'badge' => $pendingInstructorRequests] : null,
+            $isAdmin ? ['label' => 'Users', 'url' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*', 'admin.instructor-requests.*', 'students.*', 'profiles.*'), 'badge' => $pendingInstructorRequests] : null,
+            $isAdmin ? ['label' => 'Competencies', 'url' => route('admin.competencies.index'), 'active' => request()->routeIs('admin.competencies.*')] : null,
+            $isAdmin ? ['label' => 'Reports', 'url' => route('admin.reports.index'), 'active' => request()->routeIs('admin.reports.*')] : null,
+            $isAdmin ? ['label' => 'System', 'url' => route('admin.system.edit'), 'active' => request()->routeIs('admin.system.*')] : null,
         ]);
     @endphp
 
@@ -723,6 +726,14 @@
                         'warning' => 'border-amber-400/30 bg-amber-400/[0.06] text-amber-300',
                     ];
                 @endphp
+                @php $announcement = \App\Models\SystemSetting::read('announcement'); @endphp
+                @if ($announcement)
+                    <div class="app-flash-info mb-6 flex items-start gap-3 rounded-xl border border-sky-500/30 bg-sky-500/[0.06] px-4 py-3 text-sky-300" role="status">
+                        <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7"/></svg>
+                        <p class="text-sm font-medium">{{ $announcement }}</p>
+                    </div>
+                @endif
+
                 @foreach ($flashes as [$tone, $message])
                     <div class="app-flash app-flash-{{ $tone }} mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 {{ $flashStyles[$tone] }}" role="{{ $tone === 'error' ? 'alert' : 'status' }}">
                         @if ($tone === 'success')
@@ -972,7 +983,10 @@
                 navLinks.push({ label: 'Create a Class', url: "{{ route('classes.create') }}", type: 'Navigation', keywords: ['create a class', 'create class', 'new class', 'add class'] });
             }
             @if(auth()->user()->role === 'admin')
-                navLinks.push({ label: 'Student Directory', url: "{{ route('students.index') }}", type: 'Navigation', keywords: ['students', 'directory', 'users', 'profiles', 'student directory'] });
+                navLinks.push({ label: 'Users', url: "{{ route('admin.users.index') }}", type: 'Navigation', keywords: ['users', 'students', 'instructors', 'accounts', 'roles', 'directory'] });
+                navLinks.push({ label: 'Competencies', url: "{{ route('admin.competencies.index') }}", type: 'Navigation', keywords: ['competencies', 'skills', 'catalogue'] });
+                navLinks.push({ label: 'Reports', url: "{{ route('admin.reports.index') }}", type: 'Navigation', keywords: ['reports', 'analytics', 'export', 'csv', 'statistics'] });
+                navLinks.push({ label: 'System settings', url: "{{ route('admin.system.edit') }}", type: 'Navigation', keywords: ['system', 'settings', 'configuration', 'registration', 'announcement'] });
                 navLinks.push({ label: 'Instructor requests', url: "{{ route('admin.instructor-requests.index') }}", type: 'Navigation', keywords: ['requests', 'instructor', 'approve', 'admin'] });
             @endif
 

@@ -8,24 +8,6 @@ use Illuminate\Http\Request;
 class StudentProfileController extends Controller
 {
     /**
-     * Display a listing of students (Instructors/Admins only).
-     */
-    public function index()
-    {
-        $role = auth()->user()->role ?? 'student';
-        if ($role !== 'admin') {
-            abort(403, 'Unauthorized.');
-        }
-
-        // Show students with aggregated session counts and pagination (N+1 elimination)
-        $students = User::where('role', 'student')
-            ->withCount('labSessions')
-            ->latest()
-            ->paginate(15);
-        return view('profiles.index', compact('students'));
-    }
-
-    /**
      * Show the profile edit form.
      */
     public function edit(int $id)
@@ -80,7 +62,7 @@ class StudentProfileController extends Controller
         }
 
         if (auth()->user()->role === 'admin') {
-            return redirect()->route('students.index')->with('success', 'Profile updated successfully.');
+            return redirect()->route('admin.users.index')->with('success', 'Profile updated successfully.');
         }
 
         return redirect()->route('dashboard')->with('success', 'Profile updated successfully.');
@@ -95,9 +77,7 @@ class StudentProfileController extends Controller
             abort(403, 'Unauthorized.');
         }
 
-        $user = User::findOrFail($id);
-        $user->delete();
-
-        return redirect()->route('students.index')->with('success', 'User deleted successfully.');
+        // Same safeguards as Admin > Users (no self-delete, keep an admin, don't cascade classes)
+        return app(\App\Http\Controllers\Admin\UserController::class)->destroy(request(), User::findOrFail($id));
     }
 }

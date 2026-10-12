@@ -24,6 +24,10 @@ class RegisterController extends Controller
      */
     public function store(Request $request)
     {
+        if (!\App\Models\SystemSetting::read('registration_open')) {
+            return redirect()->route('login')->withErrors(['email' => 'New sign-ups are closed right now. If you already have an account, sign in; otherwise ask your instructor or a Certicode admin.']);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
@@ -40,13 +44,14 @@ class RegisterController extends Controller
             'role' => 'student',
         ]);
 
-        if ($validated['role'] === 'instructor') {
+        $requestedInstructor = $validated['role'] === 'instructor' && \App\Models\SystemSetting::read('instructor_requests_open');
+        if ($requestedInstructor) {
             $user->requestInstructorAccess();
         }
 
         Auth::login($user);
 
-        return redirect('/dashboard')->with('success', $validated['role'] === 'instructor'
+        return redirect('/dashboard')->with('success', $requestedInstructor
             ? 'Account created. Your instructor access is waiting for an admin to approve it; until then you can use Certicode as a student.'
             : 'Account created successfully!');
     }

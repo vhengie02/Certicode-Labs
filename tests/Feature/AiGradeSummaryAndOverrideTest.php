@@ -205,6 +205,10 @@ JAVA;
      */
     public function test_instructor_can_override_grade_and_both_records_persist_side_by_side(): void
     {
+        // The lab assesses one competency, so the override should flow into it
+        $competency = Competency::create(['code' => 'JAVA-OOP-01', 'name' => 'Object-oriented Java']);
+        $this->lab->competencies()->attach($competency->id);
+
         $this->session->update([
             'status' => 'completed',
             'performance_score' => 60.0,
@@ -242,9 +246,7 @@ JAVA;
         $this->assertEquals($this->instructor->id, $this->session->overridden_by);
         $this->assertNotNull($this->session->instructor_overridden_at);
 
-        // Verify StudentCompetency updated to effective override score
-        $competency = Competency::where('code', 'COMP-JAVA-01')->first();
-        $this->assertNotNull($competency);
+        // The competency score now uses the overridden grade
         $studentComp = StudentCompetency::where('user_id', $this->student->id)
             ->where('competency_id', $competency->id)
             ->first();

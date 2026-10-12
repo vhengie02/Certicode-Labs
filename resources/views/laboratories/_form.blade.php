@@ -34,6 +34,9 @@
         }
     }
     $selectedModule = old('module_id', $laboratory?->module_id ?? request('module'));
+
+    $allCompetencies = \App\Models\Competency::orderBy('code')->get(['id', 'code', 'name']);
+    $selectedCompetencies = array_map('intval', (array) old('competencies', $laboratory ? $laboratory->competencies()->pluck('competencies.id')->all() : []));
 @endphp
 
 <div class="space-y-5" x-data="labForm({{ \Illuminate\Support\Js::from($formState) }})">
@@ -123,7 +126,7 @@
                     <label for="time_limit" class="ui-label">Time per student</label>
                     <div class="relative">
                         <input type="number" name="time_limit" id="time_limit" required min="5" max="300" inputmode="numeric"
-                               value="{{ old('time_limit', $laboratory?->time_limit ?? 60) }}"
+                               value="{{ old('time_limit', $laboratory?->time_limit ?? \App\Models\SystemSetting::read('default_lab_minutes')) }}"
                                class="ui-input pr-14" @error('time_limit') aria-invalid="true" @enderror>
                         <span class="absolute inset-y-0 right-3 flex items-center text-sm text-[#888888] pointer-events-none" aria-hidden="true">min</span>
                     </div>
@@ -140,6 +143,40 @@
                     <span class="block mt-0.5 text-[13px] text-[#888888]">Students work in teams on one shared workspace, and you see each teammate's contribution.</span>
                 </span>
             </label>
+        </div>
+    </div>
+
+    {{-- Competencies --}}
+    <div class="ui-card">
+        <div class="ui-card-header">
+            <h2 class="ui-card-title">Competencies assessed</h2>
+            <p class="ui-card-subtitle">When a student finishes this lab, their grade counts toward each competency you tick.</p>
+        </div>
+        <div class="ui-card-body">
+            @if ($allCompetencies->isEmpty())
+                <p class="text-sm text-[#888888]">No competencies have been defined yet.{{ auth()->user()->role === 'admin' ? '' : ' Ask an admin to add them.' }}
+                    @if (auth()->user()->role === 'admin')
+                        <a href="{{ route('admin.competencies.index') }}" class="text-[#3ecf8e] hover:underline">Add competencies</a>.
+                    @endif
+                </p>
+            @else
+                <fieldset>
+                    <legend class="sr-only">Competencies</legend>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        @foreach ($allCompetencies as $competency)
+                            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-2.5 hover:border-[#383838] has-[:checked]:border-[#3ecf8e]/50 transition-colors">
+                                <input type="checkbox" name="competencies[]" value="{{ $competency->id }}" @checked(in_array($competency->id, $selectedCompetencies, true))
+                                       class="mt-0.5 h-4 w-4 rounded border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
+                                <span class="min-w-0">
+                                    <span class="block font-mono text-xs text-[#3ecf8e]">{{ $competency->code }}</span>
+                                    <span class="block text-sm text-[#ededed]">{{ $competency->name }}</span>
+                                </span>
+                            </label>
+                        @endforeach
+                    </div>
+                </fieldset>
+            @endif
+            @error('competencies.*') <p class="ui-error">{{ $message }}</p> @enderror
         </div>
     </div>
 
@@ -179,7 +216,7 @@
                               class="block w-full resize-y border-0 bg-[#101010] px-4 py-3 font-mono text-[13px] leading-relaxed text-[#ededed] placeholder-[#555555] focus:outline-none focus:ring-0"></textarea>
                 </div>
             </template>
-            <p class="ui-hint">"Opens first" is the file VS Code shows when the lab starts. "Read-only" labels a file students shouldn't change in their sidebar; it doesn't block edits.</p>
+            <p class="ui-hint">"Opens first" is the file VS Code shows when the lab starts. "Read-only" files open locked in VS Code (extension 1.4.1 or later), and any change to them is undone.</p>
         </div>
     </div>
 
@@ -224,21 +261,4 @@
         </div>
     </div>
 
-    {{-- Advanced --}}
-    <details class="ui-card group" @if(old('github_repo_template', $laboratory?->github_repo_template)) open @endif>
-        <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4">
-            <span>
-                <span class="ui-card-title">Advanced</span>
-                <span class="block ui-card-subtitle">GitHub template repository.</span>
-            </span>
-            <svg class="w-4 h-4 text-[#888888] transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-        </summary>
-        <div class="px-6 pb-6">
-            <label for="github_repo_template" class="ui-label">GitHub template <span class="ui-optional">(optional)</span></label>
-            <input type="text" name="github_repo_template" id="github_repo_template" placeholder="owner/repository"
-                   value="{{ old('github_repo_template', $laboratory?->github_repo_template) }}" class="ui-input ui-input-mono">
-            <p class="ui-hint">Saved with the lab for reference. Student workspaces are created from the starter files above, not from this repository.</p>
-            @error('github_repo_template') <p class="ui-error">{{ $message }}</p> @enderror
-        </div>
-    </details>
 </div>

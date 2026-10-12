@@ -32,8 +32,9 @@ class ClassController extends Controller
                 $classes = $user->classes()->with('instructor')->withCount('modules')->latest()->get();
                 $invitedClasses = $user->invitedClasses()->with('instructor')->withCount('modules')->latest()->get();
             } else {
-                // Instructor / Admin
-                $classes = SchoolClass::where('instructor_id', $user->id)
+                // Instructors see their own classes; admins see every class
+                $classes = SchoolClass::query()
+                    ->when($user->role !== 'admin', fn ($q) => $q->where('instructor_id', $user->id))
                     ->with('instructor')
                     ->withCount(['students', 'modules'])
                     ->latest()
@@ -173,10 +174,31 @@ class ClassController extends Controller
             'passing_threshold' => 'nullable|integer|min:1|max:100',
             'scheduled_end_date' => 'nullable|date',
             'status' => 'nullable|string|in:active,completed,closed',
+            'instructor_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('role', 'instructor')],
         ]);
+
+        $previousInstructorId = (int) $class->instructor_id;
+        if (Auth::user()->role !== 'admin' || empty($validated['instructor_id'])) {
+            unset($validated['instructor_id']);
+        }
 
         $class->update($validated);
         self::clearClassesCache((int) Auth::id());
+
+        if (isset($validated['instructor_id']) && (int) $validated['instructor_id'] !== $previousInstructorId) {
+            self::clearClassesCache($previousInstructorId);
+            self::clearClassesCache((int) $validated['instructor_id']);
+            try {
+                $class->refresh()->instructor?->notify(new \App\Notifications\ClassActivityNotification(
+                    "You now teach {$class->name}",
+                    "An admin made you the instructor of '{$class->name}'.",
+                    route('classes.show', $class->id),
+                    'class'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Class reassignment notification failed: ' . $e->getMessage());
+            }
+        }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Class updated successfully.');
     }
@@ -512,8 +534,21 @@ class ClassController extends Controller
         $this->authorizeClassManager($class_id);
         $module = Module::where('class_id', $class_id)->findOrFail($module_id);
 
-        // Delete associated files
-        foreach ($module->attachments as $attachment) {
+        // Sections are deleted with their module, so check the whole subtree
+        $moduleIds = $module->subtreeIds();
+
+        // Labs would be detached (module_id set to null) and then nobody but an admin could
+        // reach them, so they have to be moved or deleted first
+        $labCount = \App\Models\Laboratory::whereIn('module_id', $moduleIds)->count();
+        if ($labCount > 0) {
+            return redirect()->route('classes.show', $class_id)->with('error',
+                "“{$module->title}” still has {$labCount} " . Str::plural('lab', $labCount)
+                . '. Move ' . ($labCount === 1 ? 'it' : 'them') . ' to another module (Edit lab, then Module) or delete '
+                . ($labCount === 1 ? 'it' : 'them') . ' first.');
+        }
+
+        // Delete attachment files for the module and its sections
+        foreach (\App\Models\ModuleAttachment::whereIn('module_id', $moduleIds)->get() as $attachment) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
         }
 

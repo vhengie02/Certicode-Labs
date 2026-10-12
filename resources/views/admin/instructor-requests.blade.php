@@ -1,23 +1,12 @@
 @extends('layouts.app')
 
 @section('title', 'Instructor requests')
-@section('page_header', 'Admin')
 
 @section('content')
 <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-[#ededed]">Instructor requests</h1>
-            <p class="text-sm text-[#a3a3a3] mt-1 max-w-2xl">
-                People who signed up as instructors. They use Certicode as students until you approve them,
-                because instructors can see their students' sessions, telemetry and grades.
-            </p>
-        </div>
-        <span class="inline-flex items-center gap-2 self-start sm:self-auto px-3 py-1 rounded-full border border-[#2e2e2e] bg-[#141414] text-xs font-mono text-[#a3a3a3] whitespace-nowrap">
-            <span class="w-1.5 h-1.5 rounded-full {{ $pending->isEmpty() ? 'bg-[#555555]' : 'bg-[#3ecf8e]' }}" aria-hidden="true"></span>
-            {{ $pending->count() }} pending
-        </span>
-    </div>
+    <x-page-header title="Users" subtitle="People who signed up as instructors use Certicode as students until you approve them, because instructors can see their students' sessions, telemetry and grades." />
+
+    @include('admin._users-tabs', ['pendingRequests' => $pending->count()])
 
     @if ($pending->isEmpty())
         <div class="rounded-xl border border-dashed border-[#2e2e2e] bg-[#171717] px-6 py-16 flex flex-col items-center text-center">

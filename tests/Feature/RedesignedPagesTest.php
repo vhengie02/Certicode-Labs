@@ -86,6 +86,50 @@ class RedesignedPagesTest extends TestCase
         $this->actingAs($this->student)->get("/laboratories/{$this->lab->id}")->assertSee('Continue in VS Code');
     }
 
+    public function test_a_module_with_labs_cannot_be_deleted()
+    {
+        $path = "/classes/{$this->class->id}/modules/{$this->module->id}";
+
+        $this->actingAs($this->instructor)->delete($path)
+            ->assertRedirect("/classes/{$this->class->id}")
+            ->assertSessionHas('error');
+        $this->assertNotNull($this->module->fresh());
+        $this->assertSame($this->module->id, $this->lab->fresh()->module_id);
+
+        // The class page offers a disabled delete with the reason
+        $this->actingAs($this->instructor)->get("/classes/{$this->class->id}")->assertSee('Move or delete its 1 lab first');
+    }
+
+    public function test_labs_in_a_section_also_block_deleting_the_parent_module()
+    {
+        $section = Module::where('parent_id', $this->module->id)->firstOrFail();
+        $this->lab->update(['module_id' => $section->id]);
+
+        $this->actingAs($this->instructor)->delete("/classes/{$this->class->id}/modules/{$this->module->id}")->assertSessionHas('error');
+        $this->assertNotNull($section->fresh());
+    }
+
+    public function test_an_empty_module_can_be_deleted()
+    {
+        $empty = Module::create(['class_id' => $this->class->id, 'title' => 'Empty', 'content' => 'x']);
+
+        $this->actingAs($this->instructor)->delete("/classes/{$this->class->id}/modules/{$empty->id}")->assertSessionHas('success');
+        $this->assertNull($empty->fresh());
+    }
+
+    public function test_editing_a_lab_keeps_its_saved_github_template()
+    {
+        $this->lab->update(['github_repo_template' => 'owner/template']);
+
+        $this->actingAs($this->instructor)->put("/laboratories/{$this->lab->id}", [
+            'title' => 'FizzBuzz 2', 'description' => 'Print FizzBuzz', 'time_limit' => 30, 'module_id' => $this->module->id,
+            'tasks' => [['task' => 'Use a for loop', 'command' => '']],
+        ])->assertRedirect();
+
+        $this->assertSame('FizzBuzz 2', $this->lab->fresh()->title);
+        $this->assertSame('owner/template', $this->lab->fresh()->github_repo_template);
+    }
+
     public function test_lab_form_keeps_typed_tasks_after_a_validation_error()
     {
         $this->actingAs($this->instructor)

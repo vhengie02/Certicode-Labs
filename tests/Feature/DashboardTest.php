@@ -114,7 +114,7 @@ class DashboardTest extends TestCase
 
     public function test_main_menu_shows_admin_pages_only_to_admins()
     {
-        $adminLinks = [route('students.index'), route('admin.instructor-requests.index')];
+        $adminLinks = [route('admin.users.index'), route('admin.competencies.index'), route('admin.reports.index'), route('admin.system.edit')];
 
         $adminPage = $this->actingAs($this->user('admin@example.com', 'admin'))->get('/dashboard')->assertOk();
         foreach ($adminLinks as $link) {

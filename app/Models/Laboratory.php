@@ -197,22 +197,8 @@ class Laboratory extends Model
                 'performance_score' => $session->performance_score > 0 ? $session->performance_score : $score,
             ]);
 
-            // Map student competency
-            $user = $session->user;
-            if ($user) {
-                $competency = \App\Models\Competency::firstOrCreate([
-                    'code' => 'COMP-JAVA-01',
-                ], [
-                    'name' => 'Java OOP and Custom Exceptions Mastery',
-                ]);
-
-                \App\Models\StudentCompetency::updateOrCreate([
-                    'user_id' => $user->id,
-                    'competency_id' => $competency->id,
-                ], [
-                    'score_achieved' => max($session->performance_score, $score, 0.0),
-                ]);
-            }
+            // Credit the competencies this lab assesses
+            \App\Models\StudentCompetency::refreshFor($session->user, $this);
 
             // Purge ephemeral chat
             \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
@@ -258,6 +244,14 @@ class Laboratory extends Model
     /**
      * Get the module this laboratory belongs to.
      */
+    /**
+     * Competencies this lab assesses (managed by admins, chosen per lab by instructors).
+     */
+    public function competencies()
+    {
+        return $this->belongsToMany(Competency::class, 'laboratory_competency');
+    }
+
     public function module()
     {
         return $this->belongsTo(Module::class, 'module_id');

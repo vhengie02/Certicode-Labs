@@ -272,6 +272,11 @@ JAVA;
      */
     public function test_submit_session_completes_and_maps_competency(): void
     {
+        // Grading credits exactly the competencies the lab is tagged with
+        $competency = \App\Models\Competency::create(['code' => 'JAVA-EXC-01', 'name' => 'Custom exceptions in Java']);
+        $untagged = \App\Models\Competency::create(['code' => 'SQL-01', 'name' => 'SQL basics']);
+        $this->laboratory->competencies()->attach($competency->id);
+
         $session = LabSession::create([
             'lab_id' => $this->laboratory->id,
             'user_id' => $this->student->id,
@@ -305,11 +310,13 @@ JAVA;
         // Assert session status is completed
         $this->assertEquals('completed', $session->fresh()->status);
 
-        // Assert competency was registered
+        // The tagged competency is credited with the grade; the untagged one isn't touched
         $this->assertDatabaseHas('student_competencies', [
             'user_id' => $this->student->id,
+            'competency_id' => $competency->id,
             'score_achieved' => 100.0,
         ]);
+        $this->assertDatabaseMissing('student_competencies', ['competency_id' => $untagged->id]);
     }
 
     /**
