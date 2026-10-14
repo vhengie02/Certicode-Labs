@@ -160,7 +160,7 @@ class CertificatePortalTest extends TestCase
         $response = $this->get("/verify-certificate/CERT-VERIFIED");
 
         $response->assertStatus(200);
-        $response->assertSee('Certicode Verification Success');
+        $response->assertSee('This certificate is genuine');
         $response->assertSee('Alice Student');
         $response->assertSee('Cloud Architecture');
     }
@@ -172,8 +172,8 @@ class CertificatePortalTest extends TestCase
     {
         $response = $this->get("/verify-certificate/CERT-INVALIDCODE");
 
-        $response->assertStatus(200);
-        $response->assertSee('Invalid Certificate Hash');
+        $response->assertNotFound();
+        $response->assertSee("We couldn't find this certificate", false);
         $response->assertSee('CERT-INVALIDCODE');
     }
 }

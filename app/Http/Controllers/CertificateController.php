@@ -56,7 +56,7 @@ class CertificateController extends Controller
             try {
                 $user->notify(new \App\Notifications\ClassActivityNotification(
                     "Certificate Earned: {$class->name}",
-                    "Congratulations! You have completed all laboratories in '{$class->name}' and earned your verified competency certificate.",
+                    "Congratulations! You met the pass mark in '{$class->name}' and earned your certificate. Anyone can verify it with its QR code.",
                     route('certificates.show', $certificate->id),
                     'certificate'
                 ));
@@ -82,7 +82,7 @@ class CertificateController extends Controller
             abort(403, 'Unauthorized.');
         }
 
-        return view('certificates.show', compact('certificate'));
+        return view('certificates.show', ['certificate' => $certificate, 'record' => $certificate->record()]);
     }
 
     /**
@@ -90,14 +90,14 @@ class CertificateController extends Controller
      */
     public function verify($code)
     {
-        $certificate = Certificate::with(['user', 'schoolClass.modules.laboratories', 'schoolClass.instructor'])
-            ->where('verification_code', strtoupper($code))
+        $certificate = Certificate::with(['user', 'schoolClass.instructor'])
+            ->where('verification_code', strtoupper(trim((string) $code)))
             ->first();
 
-        if (!$certificate) {
-            return view('certificates.verify-failed', ['code' => $code]);
+        if (!$certificate || !$certificate->user || !$certificate->schoolClass) {
+            return response()->view('certificates.verify-failed', ['code' => mb_substr((string) $code, 0, 64)], 404);
         }
 
-        return view('certificates.verify-success', compact('certificate'));
+        return view('certificates.verify-success', ['certificate' => $certificate, 'record' => $certificate->record()]);
     }
 }

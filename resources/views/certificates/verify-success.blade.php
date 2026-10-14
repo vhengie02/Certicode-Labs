@@ -1,85 +1,45 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full bg-[#0f0f0f] text-[#ededed]">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify Certificate - Certicode Labs</title>
-    <!-- Google Fonts: Inter & Source Code Pro -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Vite Compiled Assets -->
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f0f0f;
-            color: #ededed;
-        }
-    </style>
-</head>
-<body class="min-h-full flex items-center justify-center p-6 bg-[#0f0f0f] selection:bg-[#3ecf8e]/20 selection:text-[#3ecf8e]">
-    <div class="max-w-xl w-full bg-[#171717] border border-[#2e2e2e] rounded-xl p-8 relative overflow-hidden space-y-6">
-        <!-- Success Seal -->
-        <div class="flex flex-col items-center text-center space-y-3">
-            <div class="h-14 w-14 rounded-full bg-[#141414] border border-[#3ecf8e]/40 flex items-center justify-center text-[#3ecf8e]">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                </svg>
-            </div>
-            <div>
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider bg-[#141414] text-[#3ecf8e] border border-[#3ecf8e]/30 uppercase">
-                    Authentic Credential Verified
-                </span>
-                <h1 class="text-xl font-bold text-[#ededed] mt-2">Certicode Verification Success</h1>
-            </div>
-        </div>
+@extends('layouts.public')
 
-        <!-- Core Details -->
-        <div class="border-t border-[#232323] pt-5 space-y-3 text-xs font-mono">
-            <div class="flex justify-between">
-                <span class="text-[#888888]">Student Name:</span>
-                <span class="text-[#ededed] font-sans font-semibold text-sm">{{ $certificate->user->name }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-[#888888]">Curriculum Completed:</span>
-                <span class="text-[#3ecf8e] font-semibold">{{ $certificate->schoolClass->name }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-[#888888]">Verification Code:</span>
-                <span class="text-[#3ecf8e] font-bold uppercase">{{ $certificate->verification_code }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-[#888888]">Issued Date:</span>
-                <span class="text-[#a3a3a3]">{{ $certificate->issued_at->format('M d, Y') }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-[#888888]">Instructor:</span>
-                <span class="text-[#a3a3a3]">{{ $certificate->schoolClass->instructor->name }}</span>
-            </div>
-        </div>
+@section('title', 'Verified certificate · ' . $certificate->user->name)
 
-        <!-- Completed Modules Section -->
-        <div class="bg-[#141414] rounded-[6px] border border-[#2e2e2e] p-4 space-y-3">
-            <h3 class="text-[11px] font-mono uppercase font-bold tracking-wider text-[#a3a3a3]">Curriculum Accomplishments Checkpoints</h3>
-            <div class="space-y-2 max-h-40 overflow-y-auto pr-1">
-                @foreach($certificate->schoolClass->modules as $module)
-                    <div class="flex items-center justify-between text-xs">
-                        <span class="text-[#ededed] truncate mr-2">{{ $module->title }}</span>
-                        <span class="text-[#3ecf8e] font-mono font-semibold flex items-center shrink-0">
-                            <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Verified
-                        </span>
-                    </div>
-                @endforeach
-            </div>
-        </div>
+@push('head')
+    @include('certificates._styles')
+@endpush
 
-        <div class="pt-4 text-center border-t border-[#232323]">
-            <a href="/" class="inline-flex items-center text-xs font-mono text-[#666666] hover:text-[#ededed] transition-colors">
-                &larr; Return to Certicode Labs
-            </a>
+@section('content')
+<div class="space-y-8">
+    {{-- Verdict --}}
+    <section class="flex flex-col sm:flex-row sm:items-center gap-4 rounded-2xl border border-[#3ecf8e]/35 bg-[#3ecf8e]/[0.06] p-5 sm:p-6" role="status">
+        <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#3ecf8e] text-[#06150e]" aria-hidden="true">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+        </span>
+        <div class="min-w-0">
+            <h1 class="text-xl sm:text-2xl font-bold text-[#ededed]">This certificate is genuine</h1>
+            <p class="mt-1 text-sm text-[#a3a3a3]">
+                Issued by Certicode Labs to <strong class="text-[#ededed] font-semibold">{{ $certificate->user->name }}</strong>
+                for <strong class="text-[#ededed] font-semibold">{{ $certificate->schoolClass->name }}</strong>
+                on {{ $certificate->issued_at->format('F j, Y') }}.
+                Checked {{ now()->format('M j, Y \a\t H:i') }} UTC.
+            </p>
         </div>
+        <span class="sm:ml-auto shrink-0 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3 py-1.5 font-mono text-xs text-[#3ecf8e]">{{ $certificate->verification_code }}</span>
+    </section>
+
+    @include('certificates._document')
+
+    <div>
+        <h2 class="text-lg font-semibold text-[#ededed]">Record behind this certificate</h2>
+        <p class="mt-1 mb-4 text-sm text-[#888888] max-w-3xl">Every grade below comes from the student's submitted code, graded by Certicode. Where an instructor adjusted a grade, it's marked. Students can't edit these records.</p>
+        @include('certificates._transcript')
     </div>
-</body>
-</html>
+
+    <section class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5 text-sm text-[#a3a3a3]">
+        <h2 class="font-semibold text-[#ededed]">How verification works</h2>
+        <ul class="mt-2 space-y-1.5 list-disc pl-5">
+            <li>This page is generated by Certicode from its own database each time it's opened, so it always shows the current record.</li>
+            <li>A copy of the certificate is only trustworthy if its verification code opens this page on <span class="font-mono text-[#ededed]">{{ request()->getHost() }}</span>.</li>
+            <li>Labs are taken in the Certicode VS Code extension with a camera presence check, and the instructor reviews integrity flags.</li>
+        </ul>
+    </section>
+</div>
+@endsection

@@ -1,55 +1,43 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full bg-[#0f0f0f] text-[#ededed]">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify Certificate - Failed</title>
-    <!-- Google Fonts: Inter & Source Code Pro -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Vite Compiled Assets -->
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f0f0f;
-            color: #ededed;
-        }
-    </style>
-</head>
-<body class="min-h-full flex items-center justify-center p-6 bg-[#0f0f0f] selection:bg-[#3ecf8e]/20 selection:text-[#3ecf8e]">
-    <div class="max-w-md w-full bg-[#171717] border border-[#2e2e2e] rounded-xl p-8 relative overflow-hidden space-y-6">
-        <!-- Failure Emblem -->
-        <div class="flex flex-col items-center text-center space-y-3">
-            <div class="h-14 w-14 rounded-full bg-[#141414] border border-red-500/30 flex items-center justify-center text-red-400">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
-            </div>
-            <div>
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider bg-[#141414] text-red-400 border border-red-500/30 uppercase">
-                    Verification Failed
-                </span>
-                <h1 class="text-xl font-bold text-[#ededed] mt-2">Invalid Certificate Hash</h1>
+@extends('layouts.public')
+
+@section('title', 'Certificate not found')
+
+@section('content')
+<div class="mx-auto max-w-xl space-y-6">
+    <section class="rounded-2xl border border-red-500/35 bg-red-500/[0.06] p-6" role="alert">
+        <div class="flex items-start gap-4">
+            <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-400" aria-hidden="true">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </span>
+            <div class="min-w-0">
+                <h1 class="text-xl font-bold text-[#ededed]">We couldn't find this certificate</h1>
+                <p class="mt-1 text-sm text-[#a3a3a3]">
+                    No Certicode certificate has the code <span class="font-mono text-red-300 break-all">{{ $code }}</span>.
+                    Treat a certificate with this code as not verified.
+                </p>
             </div>
         </div>
+    </section>
 
-        <!-- Details -->
-        <div class="border-t border-[#232323] pt-5 text-center text-xs space-y-3">
-            <p class="text-[#a3a3a3] leading-relaxed">
-                The verification code provided (<span class="font-mono text-red-400 font-bold uppercase">{{ $code }}</span>) is invalid or has not been logged in the Certicode ledger.
-            </p>
-            <p class="text-[#666666] font-mono">
-                Please check for typing errors or request a direct verification link from the student.
-            </p>
-        </div>
+    <section class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+        <h2 class="font-semibold text-[#ededed]">Check the code</h2>
+        <p class="mt-1 text-sm text-[#888888]">Codes look like <span class="font-mono text-[#a3a3a3]">CERT-7Q2LMX9KD3PA</span> and are printed at the top right of the certificate.</p>
+        <form id="verify-form" class="mt-4 flex flex-col sm:flex-row gap-2">
+            <label for="verify-code" class="sr-only">Verification code</label>
+            <input id="verify-code" name="code" required placeholder="CERT-…" autocomplete="off" spellcheck="false"
+                   class="flex-1 min-w-0 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3 py-2.5 font-mono text-sm uppercase text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e]">
+            <button type="submit" class="rounded-lg bg-[#3ecf8e] px-4 py-2.5 text-sm font-semibold text-[#06150e] hover:bg-[#00c573]">Verify</button>
+        </form>
+    </section>
+</div>
+@endsection
 
-        <div class="pt-4 text-center border-t border-[#232323]">
-            <a href="/" class="inline-flex items-center text-xs font-mono text-[#666666] hover:text-[#ededed] transition-colors">
-                &larr; Return to Certicode Labs
-            </a>
-        </div>
-    </div>
-</body>
-</html>
+@push('scripts')
+<script>
+    document.getElementById('verify-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const code = document.getElementById('verify-code').value.trim().toUpperCase();
+        if (code) window.location.href = @json(url('/verify-certificate')) + '/' + encodeURIComponent(code);
+    });
+</script>
+@endpush
