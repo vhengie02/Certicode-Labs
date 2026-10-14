@@ -267,7 +267,8 @@ class LoginController extends Controller
         // Graceful fallback to Mock Authentication if credentials are not configured in .env
         if (empty(config("services.{$provider}.client_id")) || empty(config("services.{$provider}.client_secret"))) {
             if ($provider === 'google') {
-                return redirect()->route('auth.google')->with('warning', 'Google OAuth not configured locally. Falling back to Mock authentication.');
+                // The email-code flow proves the address is theirs; admins see the missing keys on the System page
+                return redirect()->route('auth.google');
             }
             if ($provider === 'github') {
                 if (!$this->mockGithubAllowed()) {

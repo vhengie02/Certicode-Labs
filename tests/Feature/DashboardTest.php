@@ -48,6 +48,17 @@ class DashboardTest extends TestCase
             ->assertDontSee('some flag');
     }
 
+    public function test_signed_in_pages_are_not_kept_for_the_back_button()
+    {
+        $student = $this->user('kid@example.com', 'student');
+
+        $cacheControl = $this->actingAs($student)->get('/dashboard')->assertOk()->headers->get('Cache-Control');
+        $this->assertStringContainsString('no-store', $cacheControl);
+
+        $this->post('/logout');
+        $this->get('/dashboard')->assertRedirect('/login');
+    }
+
     public function test_greeting_skips_titles_in_the_name()
     {
         $user = User::create(['name' => 'Dr. Maria Santos', 'email' => 'dr@example.com', 'password' => bcrypt('x'), 'role' => 'instructor']);

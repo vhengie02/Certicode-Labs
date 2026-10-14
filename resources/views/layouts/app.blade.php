@@ -1309,5 +1309,9 @@
             </div>
         </div>
     </div>
+    <script>
+        // A page restored from the back/forward cache skips the server, so reload it and let auth decide
+        window.addEventListener('pageshow', (e) => { if (e.persisted) window.location.reload(); });
+    </script>
 </body>
 </html>
