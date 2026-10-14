@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 use App\Models\Laboratory;
 use App\Models\SchoolClass;
-use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -48,43 +47,7 @@ Artisan::command('certicode:auto-conclude-expired-classes', function () {
 
     $closedCount = 0;
     foreach ($expiredClasses as $class) {
-        $class->update(['status' => 'completed']);
-
-        $threshold = $class->passing_threshold ?? 75;
-        foreach ($class->students as $student) {
-            $progress = $class->getStudentProgress($student);
-            if ($progress['percent'] >= $threshold && $progress['total'] > 0) {
-                $existing = \App\Models\Certificate::where('user_id', $student->id)
-                    ->where('class_id', $class->id)
-                    ->first();
-
-                if (!$existing) {
-                    $code = 'CERT-' . strtoupper(Str::random(12));
-                    while (\App\Models\Certificate::where('verification_code', $code)->exists()) {
-                        $code = 'CERT-' . strtoupper(Str::random(12));
-                    }
-
-                    $cert = \App\Models\Certificate::create([
-                        'user_id' => $student->id,
-                        'class_id' => $class->id,
-                        'verification_code' => $code,
-                        'qr_code_path' => 'certificates/qr-' . $code . '.svg',
-                        'issued_at' => now(),
-                    ]);
-
-                    try {
-                        $student->notify(new \App\Notifications\ClassActivityNotification(
-                            "Course Completed: {$class->name}",
-                            "Congratulations! You completed '{$class->name}' with {$progress['percent']}% (threshold: {$threshold}%) and earned your official certificate.",
-                            route('certificates.show', $cert->id),
-                            'certificate'
-                        ));
-                    } catch (\Throwable $e) {
-                        \Illuminate\Support\Facades\Log::warning("Certificate notification failed: " . $e->getMessage());
-                    }
-                }
-            }
-        }
+        $class->concludeAndCertify();
         $closedCount++;
     }
 

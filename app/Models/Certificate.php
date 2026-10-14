@@ -42,6 +42,62 @@ class Certificate extends Model
     }
 
     /**
+     * Issue a student's certificate for a class if their progress meets the pass mark. The one
+     * place certificates are created: ending a class, the scheduled auto-conclude and the
+     * student's claim button all come through here. An existing certificate is returned, not
+     * duplicated. 'created' says whether this call made it, so callers notify only once.
+     *
+     * @return array{certificate: ?Certificate, created: bool, progress: array, threshold: int}
+     */
+    public static function issueFor(SchoolClass $class, User $student): array
+    {
+        $threshold = $class->passing_threshold ?? 75;
+        $progress = $class->getStudentProgress($student);
+        $result = ['certificate' => null, 'created' => false, 'progress' => $progress, 'threshold' => $threshold];
+
+        if ($progress['total'] === 0 || $progress['percent'] < $threshold) {
+            return $result;
+        }
+
+        $result['certificate'] = static::where('user_id', $student->id)->where('class_id', $class->id)->first();
+        if ($result['certificate']) {
+            return $result;
+        }
+
+        do {
+            $code = 'CERT-' . strtoupper(\Illuminate\Support\Str::random(12));
+        } while (static::where('verification_code', $code)->exists());
+
+        $result['certificate'] = static::create([
+            'user_id' => $student->id,
+            'class_id' => $class->id,
+            'verification_code' => $code,
+            'qr_code_path' => 'certificates/qr-' . $code . '.svg',
+            'issued_at' => now(),
+        ]);
+        $result['created'] = true;
+
+        return $result;
+    }
+
+    /**
+     * Tell the certificate's owner about it. A failed notification is logged, never fatal.
+     */
+    public function notifyOwner(string $title, string $message): void
+    {
+        try {
+            $this->user->notify(new \App\Notifications\ClassActivityNotification(
+                $title,
+                $message,
+                route('certificates.show', $this->id),
+                'certificate'
+            ));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Certificate notification failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Public page anyone can open (or reach by scanning the QR code) to confirm the certificate.
      */
     public function verificationUrl(): string

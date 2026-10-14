@@ -85,6 +85,30 @@ class SchoolClass extends Model
     }
 
     /**
+     * End the class and certify every enrolled student who meets the pass mark. Used by the
+     * instructor's "end class" action and the scheduled auto-conclude. Returns how many
+     * certificates were newly issued.
+     */
+    public function concludeAndCertify(): int
+    {
+        $this->update(['status' => 'completed']);
+
+        $issued = 0;
+        foreach ($this->students as $student) {
+            $result = Certificate::issueFor($this, $student);
+            if ($result['created']) {
+                $result['certificate']->notifyOwner(
+                    "Course Completed: {$this->name}",
+                    "Congratulations! You completed '{$this->name}' with {$result['progress']['percent']}% (threshold: {$result['threshold']}%) and earned your official certificate."
+                );
+                $issued++;
+            }
+        }
+
+        return $issued;
+    }
+
+    /**
      * Calculate aggregate student progress for the class.
      */
     public function getStudentProgress(User $student, ?array $completedLabIds = null)

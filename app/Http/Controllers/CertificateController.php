@@ -6,7 +6,6 @@ use App\Models\Certificate;
 use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class CertificateController extends Controller
 {
@@ -24,45 +23,17 @@ class CertificateController extends Controller
             abort(403, 'You are not enrolled in this class.');
         }
 
-        // Verify progress meets passing threshold
-        $threshold = $class->passing_threshold ?? 75;
-        $progress = $class->getStudentProgress($user);
-        if ($progress['percent'] < $threshold || $progress['total'] === 0) {
-            return redirect()->back()->with('error', "You must meet the course passing threshold ({$threshold}%) to claim a certificate. Current: {$progress['percent']}%.");
+        $result = Certificate::issueFor($class, $user);
+        $certificate = $result['certificate'];
+        if (!$certificate) {
+            return redirect()->back()->with('error', "You must meet the course passing threshold ({$result['threshold']}%) to claim a certificate. Current: {$result['progress']['percent']}%.");
         }
 
-        // Check if certificate already exists
-        $certificate = Certificate::where('user_id', $user->id)
-            ->where('class_id', $class->id)
-            ->first();
-
-        if (!$certificate) {
-            // Generate unique verification code
-            $code = 'CERT-' . strtoupper(Str::random(12));
-            while (Certificate::where('verification_code', $code)->exists()) {
-                $code = 'CERT-' . strtoupper(Str::random(12));
-            }
-
-            // Create certificate
-            $certificate = Certificate::create([
-                'user_id' => $user->id,
-                'class_id' => $class->id,
-                'verification_code' => $code,
-                'qr_code_path' => 'certificates/qr-' . $code . '.svg',
-                'issued_at' => now(),
-            ]);
-
-            // Notify user
-            try {
-                $user->notify(new \App\Notifications\ClassActivityNotification(
-                    "Certificate Earned: {$class->name}",
-                    "Congratulations! You met the pass mark in '{$class->name}' and earned your certificate. Anyone can verify it with its QR code.",
-                    route('certificates.show', $certificate->id),
-                    'certificate'
-                ));
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("Certificate claim notification failed: " . $e->getMessage());
-            }
+        if ($result['created']) {
+            $certificate->notifyOwner(
+                "Certificate Earned: {$class->name}",
+                "Congratulations! You met the pass mark in '{$class->name}' and earned your certificate. Anyone can verify it with its QR code."
+            );
         }
 
         return redirect()->route('certificates.show', $certificate->id)
