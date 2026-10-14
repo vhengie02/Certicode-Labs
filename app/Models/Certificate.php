@@ -146,10 +146,10 @@ class Certificate extends Model
             ->get(['id', 'lab_id', 'performance_score', 'instructor_grade_override', 'started_at', 'ended_at']);
 
         $bestByLab = $sessions->groupBy('lab_id')->map(function ($attempts) {
-            $best = $attempts->sortByDesc(fn ($s) => (float) ($s->instructor_grade_override ?? $s->performance_score ?? 0))->first();
+            $best = $attempts->sortByDesc(fn ($s) => $s->effective_score)->first();
 
             return [
-                'grade' => round((float) ($best->instructor_grade_override ?? $best->performance_score ?? 0), 1),
+                'grade' => round($best->effective_score, 1),
                 'overridden' => $best->instructor_grade_override !== null,
                 'completed_at' => $best->ended_at,
                 'attempts' => $attempts->count(),

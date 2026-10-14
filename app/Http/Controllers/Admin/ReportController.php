@@ -22,9 +22,6 @@ class ReportController extends Controller
 {
     public const PERIODS = ['7' => 'Last 7 days', '30' => 'Last 30 days', '90' => 'Last 90 days', '365' => 'Last 12 months', 'all' => 'All time'];
 
-    /** Grade of a session: the instructor's override when there is one, otherwise the AI grade */
-    private const GRADE_SQL = 'coalesce(lab_sessions.instructor_grade_override, lab_sessions.performance_score)';
-
     public function index(Request $request)
     {
         [$period, $since] = $this->period($request);
@@ -36,7 +33,7 @@ class ReportController extends Controller
             ['New accounts', User::query()->when($since, fn ($q) => $q->where('created_at', '>=', $since))->count(), 'Sign-ups in this period'],
             ['Lab sessions', (clone $sessionsInPeriod)->count(), 'Labs started in this period'],
             ['Submissions', (clone $completedInPeriod)->count(), 'Sessions finished and graded'],
-            ['Average grade', $this->roundOrNull((clone $completedInPeriod)->avg(DB::raw(self::GRADE_SQL))), 'Of submissions, overrides included'],
+            ['Average grade', $this->roundOrNull((clone $completedInPeriod)->avg(DB::raw(LabSession::effectiveGradeSql()))), 'Of submissions, overrides included'],
             ['Certificates', Certificate::query()->when($since, fn ($q) => $q->where('issued_at', '>=', $since))->count(), 'Issued in this period'],
             ['Integrity flags', Anomaly::query()->when($since, fn ($q) => $q->where('created_at', '>=', $since))->count(), Anomaly::whereRaw('resolved = false')->count() . ' still open overall'],
         ];
@@ -196,7 +193,7 @@ class ReportController extends Controller
             ->where('lab_sessions.status', 'completed')
             ->when($since, fn ($q) => $q->where('lab_sessions.created_at', '>=', $since))
             ->groupBy('modules.class_id')
-            ->selectRaw('modules.class_id, count(*) as submissions, avg(' . self::GRADE_SQL . ') as avg_grade')
+            ->selectRaw('modules.class_id, count(*) as submissions, avg(' . LabSession::effectiveGradeSql() . ') as avg_grade')
             ->get()->keyBy('class_id');
 
         $certificates = DB::table('certificates')->groupBy('class_id')

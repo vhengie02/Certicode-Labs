@@ -196,6 +196,16 @@ class LabSession extends Model
     }
 
     /**
+     * The grade rule in SQL, matching getEffectiveScoreAttribute: the instructor's override if
+     * set, else the AI score. Pass the table name or alias the query uses. Unlike the PHP form,
+     * a session with neither value stays NULL, so avg() and max() skip it.
+     */
+    public static function effectiveGradeSql(string $table = 'lab_sessions'): string
+    {
+        return "coalesce({$table}.instructor_grade_override, {$table}.performance_score)";
+    }
+
+    /**
      * Determine effective score (instructor override takes precedence over AI score).
      */
     public function getEffectiveScoreAttribute(): float

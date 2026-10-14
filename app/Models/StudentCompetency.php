@@ -58,7 +58,7 @@ class StudentCompetency extends Model
                 ->whereIn('lab_id', $labIds)
                 ->where('status', 'completed')
                 ->groupBy('lab_id')
-                ->selectRaw('lab_id, max(coalesce(instructor_grade_override, performance_score)) as best')
+                ->selectRaw('lab_id, max(' . LabSession::effectiveGradeSql() . ') as best')
                 ->pluck('best');
 
             if ($bestPerLab->isEmpty()) {
