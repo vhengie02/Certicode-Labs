@@ -53,5 +53,44 @@ Artisan::command('certicode:auto-conclude-expired-classes', function () {
     $this->info("Checked scheduled classes: {$closedCount} expired class(es) auto-concluded.");
 })->purpose('Auto-conclude classes whose scheduled end date has arrived and issue e-certificates');
 
+Artisan::command('certicode:refresh-competencies {--dry-run : Report what would change without saving}', function () {
+    $dryRun = (bool) $this->option('dry-run');
+    $totals = ['created' => 0, 'changed' => 0, 'removed' => 0, 'unchanged' => 0];
+
+    // Every (student, competency) pair that has completed tagged work or a stored score, once
+    // each: the first set finds missed credits, the second finds scores left stale by work
+    // that was later reopened
+    $withWork = \Illuminate\Support\Facades\DB::table('lab_sessions')
+        ->join('laboratory_competency', 'laboratory_competency.laboratory_id', '=', 'lab_sessions.lab_id')
+        ->where('lab_sessions.status', 'completed')
+        ->whereNotNull('lab_sessions.user_id')
+        ->select('lab_sessions.user_id', 'laboratory_competency.competency_id');
+    $pairs = \Illuminate\Support\Facades\DB::table('student_competencies')
+        ->select('user_id', 'competency_id')
+        ->union($withWork)
+        ->get();
+
+    $run = function () use ($pairs, &$totals) {
+        foreach ($pairs as $pair) {
+            $totals[\App\Models\StudentCompetency::refreshCompetency((int) $pair->user_id, (int) $pair->competency_id)]++;
+        }
+    };
+
+    if ($dryRun) {
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            $run();
+        } finally {
+            \Illuminate\Support\Facades\DB::rollBack();
+        }
+    } else {
+        $run();
+    }
+
+    $this->info(($dryRun ? '[dry run, nothing saved] ' : '')
+        . 'Checked ' . $pairs->count() . " student/competency pair(s): {$totals['created']} created, {$totals['changed']} changed, "
+        . "{$totals['removed']} removed, {$totals['unchanged']} unchanged.");
+})->purpose('Recalculate every competency score from completed lab sessions (run once after deploying the competency fix)');
+
 Schedule::command('certicode:close-expired-live-labs')->everyMinute();
 Schedule::command('certicode:auto-conclude-expired-classes')->everyMinute();

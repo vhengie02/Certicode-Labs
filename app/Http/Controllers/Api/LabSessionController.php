@@ -782,8 +782,7 @@ class LabSessionController extends Controller
             'submitted_files' => $request->input('files'),
         ]);
 
-        // Map competencies
-        $this->mapCompetencies($session, $finalScore);
+        // Competency scores follow from the update above (LabSession's save hook)
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,
@@ -1002,15 +1001,6 @@ class LabSessionController extends Controller
             'status' => 'success',
             'chat' => $chatPayload,
         ]);
-    }
-
-    /**
-     * Map completed lab tasks to student competencies.
-     */
-    protected function mapCompetencies(LabSession $session, float $score)
-    {
-        // Credit the competencies this lab assesses (none if the lab isn't tagged)
-        \App\Models\StudentCompetency::refreshFor($session->user, $session->laboratory);
     }
 
     /**

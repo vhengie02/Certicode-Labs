@@ -116,9 +116,12 @@ class LabSession extends Model
     }
 
     /**
-     * Invalidate cached progress whenever a session's completed state can have changed: on
-     * completion, when a completed session is reopened, and when a session is deleted.
-     * Certificate checks read the cached figure, so a stale one could issue a certificate.
+     * Keep figures derived from completed sessions in step with them, whichever path changed
+     * the session (extension, website, instructor, live-lab close, override):
+     * - cached progress is dropped whenever the completed state can have changed, since
+     *   certificate checks read it;
+     * - competency scores are recalculated whenever a completed session is created,
+     *   regraded, reopened or deleted.
      */
     protected static function booted()
     {
@@ -127,7 +130,45 @@ class LabSession extends Model
                 $session->forgetCachedProgress();
             }
         });
-        static::deleted(fn (LabSession $session) => $session->forgetCachedProgress());
+        static::created(function (LabSession $session) {
+            if ($session->status === 'completed') {
+                StudentCompetency::refreshFor($session->user, $session->laboratory);
+            }
+        });
+        static::updated(function (LabSession $session) {
+            if (!$session->changesCompetencyEvidence()) {
+                return;
+            }
+            // A session moved to another student or lab no longer counts for the old one either
+            if ($session->wasChanged(['user_id', 'lab_id'])) {
+                StudentCompetency::refreshFor(
+                    User::find($session->getOriginal('user_id')),
+                    Laboratory::find($session->getOriginal('lab_id'))
+                );
+                $session->unsetRelation('user')->unsetRelation('laboratory');
+            }
+            StudentCompetency::refreshFor($session->user, $session->laboratory);
+        });
+        static::deleted(function (LabSession $session) {
+            $session->forgetCachedProgress();
+            if ($session->status === 'completed') {
+                StudentCompetency::refreshFor($session->user, $session->laboratory);
+            }
+        });
+    }
+
+    /**
+     * Whether the update just made changes what competency scoring sees: the session is, or
+     * was until this update, completed, and its status or grade moved. (Called from the
+     * `updated` event, where getOriginal() still holds the values from before the update.)
+     */
+    private function changesCompetencyEvidence(): bool
+    {
+        if (!$this->wasChanged(['status', 'performance_score', 'instructor_grade_override', 'lab_id', 'user_id'])) {
+            return false;
+        }
+
+        return $this->status === 'completed' || $this->getOriginal('status') === 'completed';
     }
 
     private function forgetCachedProgress(): void

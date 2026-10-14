@@ -217,8 +217,7 @@ class InstructorMonitoringController extends Controller
             'overridden_by' => Auth::id(),
         ]);
 
-        // Competency scores use the overridden grade from now on
-        \App\Models\StudentCompetency::refreshFor($session->user, $session->laboratory);
+        // Competency scores pick up the override through LabSession's save hook
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,

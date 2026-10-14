@@ -184,8 +184,11 @@ class Laboratory extends Model
         $this->save();
 
         // Auto-close and assess all in-progress student sessions for this lab (Feature 7A sequence)
-        $inProgressSessions = $this->labSessions()->where('status', 'in_progress')->get();
+        // Users eager-loaded and the lab set directly, so the session's save hook (progress
+        // cache, competency scores) doesn't look either up again per student
+        $inProgressSessions = $this->labSessions()->where('status', 'in_progress')->with('user')->get();
         foreach ($inProgressSessions as $session) {
+            $session->setRelation('laboratory', $this);
             $completedCount = is_array($session->completed_tasks) ? count($session->completed_tasks) : 0;
             $tasksDef = is_array($this->tasks_definition) ? count($this->tasks_definition) : 1;
             $score = $tasksDef > 0 ? round(($completedCount / $tasksDef) * 100, 2) : 0.0;
@@ -196,9 +199,6 @@ class Laboratory extends Model
                 'closed_at' => now(),
                 'performance_score' => $session->performance_score > 0 ? $session->performance_score : $score,
             ]);
-
-            // Credit the competencies this lab assesses
-            \App\Models\StudentCompetency::refreshFor($session->user, $this);
 
             // Purge ephemeral chat
             \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
