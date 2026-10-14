@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\ClassController;
 use App\Http\Controllers\LaboratoryController;
+use App\Http\Controllers\LabAttemptController;
 use App\Http\Controllers\StudentProfileController;
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\SettingsController;
@@ -143,10 +144,10 @@ Route::middleware('auth')->group(function () {
     // Laboratory (Coding Challenge) CRUD & Workspace sessions
     Route::resource('laboratories', LaboratoryController::class)->except(['index', 'create']);
     Route::get('/classes/{class_id}/laboratories/create', [LaboratoryController::class, 'create'])->name('laboratories.create');
-    Route::get('/laboratories/{id}/starter-files/download', [LaboratoryController::class, 'downloadStarterFiles'])->name('laboratories.starter-files.download');
-    Route::post('/laboratories/{id}/start', [LaboratoryController::class, 'startSession'])->name('laboratories.start');
-    Route::get('/sessions/{id}', [LaboratoryController::class, 'showWorkspace'])->name('sessions.show');
-    Route::post('/sessions/{id}/complete', [LaboratoryController::class, 'completeSession'])->name('sessions.complete');
+    Route::get('/laboratories/{id}/starter-files/download', [LabAttemptController::class, 'downloadStarterFiles'])->name('laboratories.starter-files.download');
+    Route::post('/laboratories/{id}/start', [LabAttemptController::class, 'startSession'])->name('laboratories.start');
+    Route::get('/sessions/{id}', [LabAttemptController::class, 'showWorkspace'])->name('sessions.show');
+    Route::post('/sessions/{id}/complete', [LabAttemptController::class, 'completeSession'])->name('sessions.complete');
 
     // Live Lab Lifecycle Controls (Feature 9)
     Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');

@@ -266,6 +266,21 @@ class Laboratory extends Model
     }
 
     /**
+     * Count a student's first view of this lab. Staff views and repeat views aren't counted.
+     */
+    public function recordViewBy(?User $user): void
+    {
+        if (!$user || $user->role !== 'student') {
+            return;
+        }
+
+        $view = LaboratoryView::firstOrCreate(['laboratory_id' => $this->id, 'user_id' => $user->id]);
+        if ($view->wasRecentlyCreated) {
+            $this->increment('views_count');
+        }
+    }
+
+    /**
      * Get the lab sessions associated with this laboratory.
      */
     public function labSessions()
