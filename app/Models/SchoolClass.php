@@ -106,27 +106,14 @@ class SchoolClass extends Model
         }
 
         if ($completedLabIds !== null) {
-            $completedCount = count(array_intersect($labIds, array_keys($completedLabIds)));
-            return [
-                'completed' => $completedCount,
-                'total' => $totalLabs,
-                'percent' => round(($completedCount / $totalLabs) * 100),
-            ];
+            return LabSession::progressOver($labIds, $completedLabIds);
         }
 
         $cacheKey = "user_{$student->id}_class_{$this->id}_progress";
 
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, function () use ($student, $labIds, $totalLabs) {
-            $completedCount = \App\Models\LabSession::whereIn('lab_id', $labIds)
-                ->where('user_id', $student->id)
-                ->where('status', 'completed')
-                ->count();
-
-            return [
-                'completed' => $completedCount,
-                'total' => $totalLabs,
-                'percent' => round(($completedCount / $totalLabs) * 100),
-            ];
-        });
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, fn () => LabSession::progressOver(
+            $labIds,
+            LabSession::completedLabIdsFor($student->id, $labIds)
+        ));
     }
 }

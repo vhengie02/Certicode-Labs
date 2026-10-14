@@ -138,10 +138,7 @@ class ClassController extends Controller
         $completedLabIds = [];
         $existingCertificate = null;
         if ($user->role === 'student') {
-            $completedLabIds = \App\Models\LabSession::where('user_id', $user->id)
-                ->where('status', 'completed')
-                ->pluck('lab_id', 'lab_id')
-                ->toArray();
+            $completedLabIds = \App\Models\LabSession::completedLabIdsFor($user->id);
             $existingCertificate = $user->certificates()->where('class_id', $class->id)->first();
         }
 
@@ -435,10 +432,7 @@ class ClassController extends Controller
             }
 
             // One query for the whole outline instead of one progress count per module.
-            $completedLabIds = \App\Models\LabSession::where('user_id', $user->id)
-                ->where('status', 'completed')
-                ->pluck('lab_id', 'lab_id')
-                ->toArray();
+            $completedLabIds = \App\Models\LabSession::completedLabIdsFor($user->id);
         } else {
             $this->authorizeClassManager($class);
         }

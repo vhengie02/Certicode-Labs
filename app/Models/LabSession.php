@@ -206,6 +206,35 @@ class LabSession extends Model
     }
 
     /**
+     * The labs a student has completed at least once, keyed by lab id. A retaken lab appears
+     * once, so progress can't be pushed up by completing the same lab again.
+     */
+    public static function completedLabIdsFor(int $userId, ?array $labIds = null): array
+    {
+        return static::where('user_id', $userId)
+            ->where('status', 'completed')
+            ->when($labIds !== null, fn ($q) => $q->whereIn('lab_id', $labIds))
+            ->distinct()
+            ->pluck('lab_id', 'lab_id')
+            ->toArray();
+    }
+
+    /**
+     * Progress over a set of labs: how many of them are in $completedLabIds (keyed by lab id).
+     */
+    public static function progressOver(array $labIds, array $completedLabIds): array
+    {
+        $total = count($labIds);
+        $completed = count(array_intersect($labIds, array_keys($completedLabIds)));
+
+        return [
+            'completed' => $completed,
+            'total' => $total,
+            'percent' => $total > 0 ? round(($completed / $total) * 100) : 0,
+        ];
+    }
+
+    /**
      * Check if grade has been overridden by an instructor.
      */
     public function isGradeOverridden(): bool
