@@ -88,10 +88,47 @@ class LabProgressTest extends TestCase
     {
         $this->retakeLabATwice();
 
+        $page = $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertOk();
+        $gate = Certificate::issueFor($this->class->fresh(), $this->student)['progress'];
+
+        $this->assertSame(1, $gate['completed']);
+        $page->assertSee("{$gate['completed']} of {$gate['total']} labs done");
+    }
+
+    public function test_reopening_a_completed_session_drops_the_cached_progress()
+    {
+        $this->complete($this->labA);
+        $this->complete($this->labB);
+        $this->assertEquals(100, $this->class->fresh()->getStudentProgress($this->student)['percent']); // now cached
+
+        LabSession::where('lab_id', $this->labB->id)->first()->update(['status' => 'in_progress']);
+
         $this->actingAs($this->student)
-            ->get("/classes/{$this->class->id}")
-            ->assertOk()
-            ->assertSee('1 of 2 labs done');
+            ->post("/classes/{$this->class->id}/claim-certificate")
+            ->assertSessionHas('error');
+        $this->assertSame(0, Certificate::count());
+    }
+
+    public function test_deleting_a_completed_session_drops_the_cached_progress()
+    {
+        $this->complete($this->labA);
+        $this->complete($this->labB);
+        $this->assertEquals(100, $this->class->fresh()->getStudentProgress($this->student)['percent']);
+
+        LabSession::where('lab_id', $this->labB->id)->first()->delete();
+
+        $this->assertEquals(50, $this->class->fresh()->getStudentProgress($this->student)['percent']);
+    }
+
+    public function test_ending_a_class_only_certifies_enrolled_students()
+    {
+        $this->complete($this->labA);
+        $this->complete($this->labB);
+        $this->class->students()->updateExistingPivot($this->student->id, ['status' => 'invited']);
+
+        $this->actingAs($this->instructor)->post("/classes/{$this->class->id}/end")->assertRedirect();
+
+        $this->assertSame(0, Certificate::count());
     }
 
     public function test_retakes_do_not_earn_a_certificate_by_claiming()

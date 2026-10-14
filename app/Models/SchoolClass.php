@@ -92,9 +92,11 @@ class SchoolClass extends Model
     public function concludeAndCertify(): int
     {
         $this->update(['status' => 'completed']);
+        // Modules and labs in two queries, so each student's progress check walks the tree in memory
+        $this->loadModuleTree();
 
         $issued = 0;
-        foreach ($this->students as $student) {
+        foreach ($this->students()->wherePivot('status', 'enrolled')->get() as $student) {
             $result = Certificate::issueFor($this, $student);
             if ($result['created']) {
                 $result['certificate']->notifyOwner(

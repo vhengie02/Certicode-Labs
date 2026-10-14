@@ -116,27 +116,37 @@ class LabSession extends Model
     }
 
     /**
-     * Invalidate cached progress upon session completion.
+     * Invalidate cached progress whenever a session's completed state can have changed: on
+     * completion, when a completed session is reopened, and when a session is deleted.
+     * Certificate checks read the cached figure, so a stale one could issue a certificate.
      */
     protected static function booted()
     {
         static::saved(function (LabSession $session) {
-            if ($session->status === 'completed') {
-                $lab = $session->laboratory ?: Laboratory::find($session->lab_id);
-                if ($lab && $lab->module_id) {
-                    \Illuminate\Support\Facades\Cache::forget("user_{$session->user_id}_module_{$lab->module_id}_progress");
-                    $module = $lab->module ?: Module::find($lab->module_id);
-                    if ($module) {
-                        if ($module->parent_id) {
-                            \Illuminate\Support\Facades\Cache::forget("user_{$session->user_id}_module_{$module->parent_id}_progress");
-                        }
-                        if ($module->class_id) {
-                            \Illuminate\Support\Facades\Cache::forget("user_{$session->user_id}_class_{$module->class_id}_progress");
-                        }
-                    }
-                }
+            if ($session->status === 'completed' || $session->wasChanged('status')) {
+                $session->forgetCachedProgress();
             }
         });
+        static::deleted(fn (LabSession $session) => $session->forgetCachedProgress());
+    }
+
+    private function forgetCachedProgress(): void
+    {
+        $lab = $this->laboratory ?: Laboratory::find($this->lab_id);
+        if (!$lab || !$lab->module_id) {
+            return;
+        }
+
+        \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_module_{$lab->module_id}_progress");
+        $module = $lab->module ?: Module::find($lab->module_id);
+        if ($module) {
+            if ($module->parent_id) {
+                \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_module_{$module->parent_id}_progress");
+            }
+            if ($module->class_id) {
+                \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_class_{$module->class_id}_progress");
+            }
+        }
     }
 
     /**

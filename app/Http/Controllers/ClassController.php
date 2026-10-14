@@ -714,7 +714,7 @@ class ClassController extends Controller
     public function endClass(Request $request, int $id)
     {
         $this->authorizeInstructor();
-        $class = SchoolClass::with(['students', 'modules.laboratories'])->findOrFail($id);
+        $class = SchoolClass::findOrFail($id);
         $this->authorizeClassManager($class);
 
         $certifiedCount = $class->concludeAndCertify();

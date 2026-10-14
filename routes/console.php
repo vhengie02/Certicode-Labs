@@ -42,7 +42,6 @@ Artisan::command('certicode:auto-conclude-expired-classes', function () {
     $expiredClasses = SchoolClass::where('status', '!=', 'completed')
         ->whereNotNull('scheduled_end_date')
         ->where('scheduled_end_date', '<=', now())
-        ->with(['students', 'modules.laboratories'])
         ->get();
 
     $closedCount = 0;

@@ -59,25 +59,33 @@ class Certificate extends Model
             return $result;
         }
 
-        $result['certificate'] = static::where('user_id', $student->id)->where('class_id', $class->id)->first();
-        if ($result['certificate']) {
+        // Lock the student's enrollment row so a double-clicked claim, or a claim racing the
+        // class ending, can't both see "no certificate" and issue two
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($class, $student, $result) {
+            \Illuminate\Support\Facades\DB::table('class_student')
+                ->where('class_id', $class->id)->where('student_id', $student->id)
+                ->lockForUpdate()->first();
+
+            $result['certificate'] = static::where('user_id', $student->id)->where('class_id', $class->id)->first();
+            if ($result['certificate']) {
+                return $result;
+            }
+
+            do {
+                $code = 'CERT-' . strtoupper(\Illuminate\Support\Str::random(12));
+            } while (static::where('verification_code', $code)->exists());
+
+            $result['certificate'] = static::create([
+                'user_id' => $student->id,
+                'class_id' => $class->id,
+                'verification_code' => $code,
+                'qr_code_path' => 'certificates/qr-' . $code . '.svg',
+                'issued_at' => now(),
+            ]);
+            $result['created'] = true;
+
             return $result;
-        }
-
-        do {
-            $code = 'CERT-' . strtoupper(\Illuminate\Support\Str::random(12));
-        } while (static::where('verification_code', $code)->exists());
-
-        $result['certificate'] = static::create([
-            'user_id' => $student->id,
-            'class_id' => $class->id,
-            'verification_code' => $code,
-            'qr_code_path' => 'certificates/qr-' . $code . '.svg',
-            'issued_at' => now(),
-        ]);
-        $result['created'] = true;
-
-        return $result;
+        });
     }
 
     /**
