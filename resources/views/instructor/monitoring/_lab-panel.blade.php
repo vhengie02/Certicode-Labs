@@ -225,7 +225,7 @@
                     @endphp
                     <div class="p-5 hover:bg-slate-900/40 transition-colors" 
                          x-show="matchesSearch({{ \Illuminate\Support\Js::from(strtolower($user->name ?? '')) }}, {{ \Illuminate\Support\Js::from(strtolower($group->name ?? '')) }})">
-                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div class="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4">
                             <!-- Student / Team Identity (Fixed Width for Perfect Alignment) -->
                             <div class="flex items-center gap-3 w-full lg:w-64 xl:w-72 shrink-0 min-w-0">
                                 <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-sm text-slate-200 uppercase shrink-0">
@@ -309,8 +309,9 @@
                                 </div>
                             </div>
 
-                            <!-- Diff Tracking Pill & Action Buttons (Aligned to End) -->
-                            <div class="flex items-center gap-2.5 justify-start lg:justify-end shrink-0">
+                            <!-- Diff pill & actions: pushed to the right edge, so the stats start at the same x in every
+                                 row; they wrap onto their own line when the row is too narrow -->
+                            <div class="flex flex-wrap items-center gap-2.5 justify-start lg:justify-end lg:ml-auto">
                                 <!-- Diff Stats Pill -->
                                 <div class="text-[11px] font-mono bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 flex items-center gap-1.5 shrink-0" title="Line Diff Breakdown">
                                     <span class="text-[#3ecf8e] font-semibold">+{{ $diffStats['added'] ?? 0 }}</span>
