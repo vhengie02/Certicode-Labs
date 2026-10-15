@@ -283,7 +283,13 @@ This document outlines the final feature specifications, implementation tasks, a
   - Dispatches compressed static JPEG snapshot with `camera_absence` event on face absence.
 - [x] **Silent Student Proctoring & Instructor Telemetry ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
   - Mid-session checks never disrupt or block student coding activity.
-  - Persists flagged snapshot images to `storage/app/public/anomalies/{session_id}/...` and real-time broadcasts `AnomalyDetected` event to instructor live monitoring.
+  - Validates snapshots (JPEG/PNG, max 300 KB), keeps them in the anomaly's `metadata.image_base64`, and serves them only to the class instructor via `GET /anomalies/{id}/snapshot`. Broadcasts `AnomalyDetected` with the snapshot URL; the live alert shows a thumbnail.
+- [x] **Camera Flag De-duplication**:
+  - A disconnected camera is reported once by the lab page; the server drops repeat camera flags (5 min without a picture, 20 s with one).
+- [ ] **Follow-ups**:
+  - Notify the instructor (email or in-app) about camera flags when the monitoring page is closed.
+  - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
+  - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
   - Automated tests for permission denial, absence anomaly recording, multi-face detection, pre-lab 3-attempt failure reporting, and camera verification status persistence.
 
