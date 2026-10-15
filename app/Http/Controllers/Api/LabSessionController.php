@@ -9,6 +9,7 @@ use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
 use App\Models\Anomaly;
 use App\Services\SandboxExecutionService;
+use App\Support\WebcamSnapshot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -99,11 +100,15 @@ class LabSessionController extends Controller
             'payload' => 'nullable|array',
         ]);
 
-        // Create log record
+        // Create log record. A webcam snapshot is kept once, on the anomaly it proves.
+        $logPayload = $request->payload;
+        if (is_array($logPayload)) {
+            unset($logPayload['image_base64'], $logPayload['image_path']);
+        }
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $request->event_type,
-            'payload' => $request->payload,
+            'payload' => $logPayload,
         ]);
 
         // Smart anomaly checks
@@ -164,60 +169,35 @@ class LabSessionController extends Controller
         }
 
         if ($request->event_type === 'camera_absence') {
-            $imagePath = $this->storeSnapshotImage(
-                $session->id,
-                $request->payload['image_base64'] ?? null,
-                $request->payload['image_path'] ?? null
-            );
-
-            $this->recordAndBroadcastAnomaly($session, [
+            $this->recordCameraAnomaly($session, $request->payload, [
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Camera presence check failed during active lab session.',
-                'image_path' => $imagePath,
-                'metadata' => $request->payload,
             ]);
         }
 
         if ($request->event_type === 'prelab_verification_failed') {
-            $imagePath = $this->storeSnapshotImage(
-                $session->id,
-                $request->payload['image_base64'] ?? null,
-                $request->payload['image_path'] ?? null
-            );
-
-            $this->recordAndBroadcastAnomaly($session, [
+            $this->recordCameraAnomaly($session, $request->payload, [
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Pre-lab camera presence verification failed after 3 attempts: No face detected.',
-                'image_path' => $imagePath,
-                'metadata' => array_merge($request->payload ?? [], ['pre_lab' => true]),
-            ]);
+            ], ['pre_lab' => true]);
         }
 
         if ($request->event_type === 'webcam_check') {
-            $faceCount = $request->payload['face_count'] ?? 1;
-            $imagePath = $this->storeSnapshotImage(
-                $session->id,
-                $request->payload['image_base64'] ?? null,
-                $request->payload['image_path'] ?? null
-            );
+            $faceCount = (int) ($request->payload['face_count'] ?? 1);
 
             if ($faceCount === 0) {
-                $this->recordAndBroadcastAnomaly($session, [
+                $this->recordCameraAnomaly($session, $request->payload, [
                     'type' => 'no_face',
                     'severity' => 'high',
                     'description' => 'No face detected in front of the camera during webcam check.',
-                    'image_path' => $imagePath,
-                    'metadata' => $request->payload,
                 ]);
             } elseif ($faceCount > 1) {
-                $this->recordAndBroadcastAnomaly($session, [
+                $this->recordCameraAnomaly($session, $request->payload, [
                     'type' => 'multiple_faces',
                     'severity' => 'medium',
                     'description' => 'Multiple faces detected in front of the camera.',
-                    'image_path' => $imagePath,
-                    'metadata' => $request->payload,
                 ]);
             }
         }
@@ -242,7 +222,7 @@ class LabSessionController extends Controller
                 'type' => $anomaly->type,
                 'severity' => $anomaly->severity,
                 'description' => $anomaly->description,
-                'image_path' => $anomaly->image_path ? asset('storage/' . $anomaly->image_path) : null,
+                'snapshot_url' => $anomaly->snapshot_url,
                 'created_at' => $anomaly->created_at ? $anomaly->created_at->toIso8601String() : now()->toIso8601String(),
                 'user_id' => $session->user_id,
                 'student_name' => $session->user->name ?? 'Student',
@@ -251,6 +231,44 @@ class LabSessionController extends Controller
             \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
         }
         return $anomaly;
+    }
+
+    /**
+     * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
+     * a flag without a picture (e.g. the camera was unplugged) is raised once per
+     * 5 minutes, and one with a picture at most every 20 seconds.
+     */
+    protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
+    {
+        $attributes += $this->cameraSnapshotAttributes($payload, $extraMetadata);
+        $hasSnapshot = $attributes['image_path'] !== null;
+
+        $isRepeat = Anomaly::where('lab_session_id', $session->id)
+            ->where('type', $attributes['type'])
+            ->where('created_at', '>=', $hasSnapshot ? now()->subSeconds(20) : now()->subMinutes(5))
+            ->exists();
+
+        return $isRepeat ? null : $this->recordAndBroadcastAnomaly($session, $attributes);
+    }
+
+    /**
+     * Anomaly `image_path` and `metadata` for a camera payload. Only a real JPEG/PNG sent
+     * by the student is kept; a client-supplied path is never trusted.
+     */
+    protected function cameraSnapshotAttributes(?array $payload, array $extraMetadata = []): array
+    {
+        $payload = $payload ?? [];
+        $snapshot = WebcamSnapshot::normalize($payload['image_base64'] ?? null);
+        unset($payload['image_base64'], $payload['image_path']);
+
+        if ($snapshot) {
+            $payload['image_base64'] = $snapshot;
+        }
+
+        return [
+            'image_path' => $snapshot ? Anomaly::DB_SNAPSHOT : null,
+            'metadata' => array_merge($payload, $extraMetadata),
+        ];
     }
 
     /**
@@ -1361,16 +1379,12 @@ class LabSessionController extends Controller
         }
 
         if ($faceCount === 0) {
-            $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
-
             Anomaly::create([
                 'lab_session_id' => $session->id,
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Pre-lab facial verification failed: No face detected in frame.',
-                'image_path' => $imagePath,
-                'metadata' => ['pre_lab' => true],
-            ]);
+            ] + $this->cameraSnapshotAttributes(['image_base64' => $imageBase64], ['pre_lab' => true]));
 
             return response()->json([
                 'status' => 'error',
@@ -1381,16 +1395,12 @@ class LabSessionController extends Controller
         }
 
         if ($faceCount > 1) {
-            $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
-
             Anomaly::create([
                 'lab_session_id' => $session->id,
                 'type' => 'multiple_faces',
                 'severity' => 'medium',
                 'description' => 'Pre-lab facial verification failed: Multiple faces detected.',
-                'image_path' => $imagePath,
-                'metadata' => ['pre_lab' => true, 'face_count' => $faceCount],
-            ]);
+            ] + $this->cameraSnapshotAttributes(['image_base64' => $imageBase64], ['pre_lab' => true, 'face_count' => $faceCount]));
 
             return response()->json([
                 'status' => 'error',
@@ -1400,16 +1410,14 @@ class LabSessionController extends Controller
             ], 422);
         }
 
-        // Successfully verified
-        $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
-
+        // Successfully verified. The reference frame isn't kept: nothing reads it, and a
+        // webcam picture of a student who passed has no place in storage.
         TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => 'webcam_prelab_verification',
             'payload' => [
                 'verified' => true,
                 'face_count' => $faceCount,
-                'reference_image_path' => $imagePath,
                 'verified_at' => now()->toISOString(),
             ],
         ]);
@@ -1421,7 +1429,6 @@ class LabSessionController extends Controller
         return response()->json([
             'status' => 'success',
             'verified' => true,
-            'reference_image' => $imagePath,
             'message' => 'Camera permission and AI presence verified successfully. Workspace unlocked.',
         ]);
     }
@@ -1473,44 +1480,5 @@ class LabSessionController extends Controller
             'verified' => true,
             'message' => 'Camera permission and AI presence verified. Workspace unlocked.',
         ]);
-    }
-
-    /**
-     * Store anomaly snapshot image if base64 data is provided.
-     */
-    protected function storeSnapshotImage(int $sessionId, ?string $imageBase64, ?string $defaultPath = null): ?string
-    {
-        if (empty($imageBase64)) {
-            return $defaultPath;
-        }
-
-        try {
-            $type = 'jpg';
-            if (preg_match('/^data:image\/(\w+);base64,/', $imageBase64, $matches)) {
-                $imageBase64 = substr($imageBase64, strpos($imageBase64, ',') + 1);
-                $type = strtolower($matches[1]);
-            }
-
-            $decoded = base64_decode($imageBase64);
-            if ($decoded === false) {
-                return $defaultPath;
-            }
-
-            $extension = in_array($type, ['png', 'webp', 'jpeg']) ? ($type === 'jpeg' ? 'jpg' : $type) : 'jpg';
-            $filename = 'snapshot_' . time() . '_' . \Illuminate\Support\Str::random(6) . '.' . $extension;
-
-            $relativeDir = "anomalies/{$sessionId}";
-            $storageDir = storage_path("app/public/{$relativeDir}");
-
-            if (!file_exists($storageDir)) {
-                mkdir($storageDir, 0755, true);
-            }
-
-            file_put_contents("{$storageDir}/{$filename}", $decoded);
-
-            return "storage/{$relativeDir}/{$filename}";
-        } catch (\Throwable $e) {
-            return $defaultPath;
-        }
     }
 }

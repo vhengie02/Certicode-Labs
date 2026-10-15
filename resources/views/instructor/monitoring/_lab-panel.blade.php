@@ -106,9 +106,14 @@
 
     <!-- Live WebSocket Telemetry Alert Banner -->
     <div x-show="hasLiveUpdate" x-cloak class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-emerald-400 text-sm font-medium transition-all shadow-sm">
-        <div class="flex items-center gap-2.5">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span x-text="liveUpdateMessage"></span>
+        <div class="flex items-center gap-3 min-w-0">
+            <template x-if="liveAlertAnomaly && liveAlertAnomaly.snapshot_url">
+                <a :href="liveAlertAnomaly.snapshot_url" target="_blank" rel="noopener" class="shrink-0" title="Open the webcam snapshot">
+                    <img :src="liveAlertAnomaly.snapshot_url" class="h-12 w-16 object-cover rounded-md border border-emerald-500/30" alt="Webcam snapshot from the new flag">
+                </a>
+            </template>
+            <span x-show="!(liveAlertAnomaly && liveAlertAnomaly.snapshot_url)" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
+            <span class="min-w-0" x-text="liveUpdateMessage"></span>
         </div>
         <button @click="refreshData()" class="text-xs px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold transition-colors">
             Refresh
@@ -673,10 +678,12 @@
                         </template>
 
                         <!-- Camera Snapshot proof modal preview -->
-                        <template x-if="item.image_path">
+                        <template x-if="item.snapshot_url">
                             <div class="mt-2">
-                                <span class="text-[10px] text-neutral-400 uppercase font-bold block mb-1">Camera Absence Snapshot:</span>
-                                <img :src="'/' + item.image_path" class="w-48 h-auto rounded border border-neutral-700 hover:scale-105 transition-transform" alt="Anomaly Proof">
+                                <span class="text-xs text-neutral-400 block mb-1">Webcam snapshot</span>
+                                <a :href="item.snapshot_url" target="_blank" rel="noopener" class="inline-block" title="Open full size">
+                                    <img :src="item.snapshot_url" loading="lazy" class="w-48 h-auto rounded border border-neutral-700 hover:border-neutral-500 transition-colors" alt="Webcam snapshot taken when this flag was raised">
+                                </a>
                             </div>
                         </template>
 
@@ -899,6 +906,7 @@ function instructorMonitor() {
         isRefreshing: false,
         isModalOpen: false,
         hasLiveUpdate: false,
+        liveAlertAnomaly: null,
         liveUpdateMessage: '',
         selectedStudentName: '',
         selectedAnomalies: [],
@@ -1011,17 +1019,19 @@ function instructorMonitor() {
 
         initPolling() {
             // Fallback when live updates (Pusher) are not configured
-            const countAnomalies = (data) => (data.sessions || []).reduce((sum, s) => sum + (s.anomalies ? s.anomalies.length : 0), 0);
+            const newestAnomaly = (data) => (data.sessions || []).flatMap(s => (s.anomalies || []).map(a => ({ ...a, student_name: s.user_name })))
+                .reduce((latest, a) => (!latest || a.id > latest.id ? a : latest), null);
             setInterval(() => {
                 fetch('{{ route("instructor.monitoring.data", $laboratory->id) }}', { headers: { 'Accept': 'application/json' } })
                     .then(res => res.json())
                     .then(data => {
                         if (!data || !Array.isArray(data.sessions)) return;
-                        const total = countAnomalies(data);
-                        if (this.lastAnomalyCount !== undefined && total > this.lastAnomalyCount) {
-                            this.showLiveAlert('anomaly.detected');
+                        const newest = newestAnomaly(data);
+                        const newestId = newest ? newest.id : 0;
+                        if (this.lastAnomalyId !== undefined && newestId > this.lastAnomalyId) {
+                            this.showLiveAlert('anomaly.detected', newest);
                         }
-                        this.lastAnomalyCount = total;
+                        this.lastAnomalyId = newestId;
                     })
                     .catch(() => {});
             }, 10000);
@@ -1061,7 +1071,9 @@ function instructorMonitor() {
                     } else if (payload.event === 'pusher:ping') {
                         ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
                     } else if (['anomaly.detected', 'diff.updated', 'leaderboard.updated'].includes(payload.event)) {
-                        this.showLiveAlert(payload.event);
+                        let data = null;
+                        try { data = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data; } catch {}
+                        this.showLiveAlert(payload.event, data && data.anomaly);
                     }
                 };
                 ws.onclose = () => {
@@ -1075,11 +1087,20 @@ function instructorMonitor() {
             connect();
         },
 
-        showLiveAlert(eventType) {
+        showLiveAlert(eventType, anomaly = null) {
             this.hasLiveUpdate = true;
-            this.liveUpdateMessage = eventType === 'anomaly.detected'
-                ? 'New integrity flag from a student.'
-                : 'Student activity updated.';
+            if (eventType !== 'anomaly.detected') {
+                // Don't let a routine activity update hide an unseen flag.
+                if (!this.liveAlertAnomaly) this.liveUpdateMessage = 'Student activity updated.';
+                return;
+            }
+            this.liveAlertAnomaly = anomaly && anomaly.type ? anomaly : null;
+            if (!this.liveAlertAnomaly) {
+                this.liveUpdateMessage = 'New integrity flag from a student.';
+                return;
+            }
+            const label = String(anomaly.type).replace(/_/g, ' ');
+            this.liveUpdateMessage = `New flag from ${anomaly.student_name || 'a student'}: ${label.charAt(0).toUpperCase() + label.slice(1)}.`;
         },
 
         matchesSearch(name, group) {

@@ -702,6 +702,7 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodeUrl: '',
         pingCount: 0,
         absenceCount: 0,
+        cameraDisconnectReported: false,
         lastAbsenceAlertAt: 0,
         lastMultiFaceAlertAt: 0,
         proctorInterval: null,
@@ -1115,12 +1116,17 @@ function preLabCameraGate(labId, initialSessionId) {
             if (!this.stream || !this.stream.getVideoTracks().some(t => t.readyState === 'live')) {
                 this.proctorStatus = 'disconnected';
                 this.proctorStatusText = 'Camera Disconnected';
-                await this.logTelemetry('camera_absence', {
-                    reason: 'Webcam video track disconnected in browser',
-                    timestamp: new Date().toISOString()
-                });
+                // Report a disconnect once, not on every cycle until the camera returns.
+                if (!this.cameraDisconnectReported) {
+                    this.cameraDisconnectReported = true;
+                    await this.logTelemetry('camera_absence', {
+                        reason: 'Webcam video track disconnected in browser',
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 return;
             }
+            this.cameraDisconnectReported = false;
 
             const video = this.$refs.proctorLiveVideo || this.$refs.videoEl;
             if (!video || video.readyState < 2) return;

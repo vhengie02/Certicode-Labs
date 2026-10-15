@@ -336,14 +336,31 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
     }
 
-    public function test_prelab_camera_verification_succeeds_with_single_face_and_stores_reference_image()
+    /**
+     * A real 1x1 PNG, so the snapshot passes image validation.
+     */
+    protected function snapshotDataUri(): string
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('valid-face-snapshot-data');
+        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    }
 
+    protected function latestNoFaceAnomaly(): ?Anomaly
+    {
+        return Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'no_face')->latest('id')->first();
+    }
+
+    protected function publicSnapshotFiles(): array
+    {
+        return glob(storage_path('app/public/anomalies/*/*')) ?: [];
+    }
+
+    public function test_prelab_camera_verification_succeeds_with_single_face_without_keeping_the_picture()
+    {
+        $before = $this->publicSnapshotFiles();
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => $dummyBase64,
+            'image_base64' => $this->snapshotDataUri(),
         ]);
 
         $response->assertStatus(200)
@@ -351,30 +368,23 @@ class TelemetryAndProctoringTest extends TestCase
                 'status' => 'success',
                 'verified' => true,
             ]);
-
-        $refImage = $response->json('reference_image');
-        $this->assertNotNull($refImage);
-        $this->assertStringContainsString('storage/anomalies/', $refImage);
-
-        // Verify disk file actually written
-        $storageRelative = str_replace('storage/', '', $refImage);
-        $this->assertFileExists(storage_path('app/public/' . $storageRelative));
+        $this->assertNull($response->json('reference_image'));
 
         $this->assertDatabaseHas('telemetry_logs', [
             'lab_session_id' => $this->session1->id,
             'event_type' => 'webcam_prelab_verification',
         ]);
+        $this->assertSame($before, $this->publicSnapshotFiles());
     }
 
-    public function test_camera_absence_telemetry_creates_high_severity_anomaly_with_snapshot_file()
+    public function test_camera_absence_telemetry_creates_high_severity_anomaly_with_snapshot_in_the_database()
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('absence-snapshot-proof');
-
+        $before = $this->publicSnapshotFiles();
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'camera_absence',
             'payload' => [
                 'face_count' => 0,
-                'image_base64' => $dummyBase64,
+                'image_base64' => $this->snapshotDataUri(),
                 'timestamp' => now()->toISOString(),
             ],
         ]);
@@ -385,29 +395,91 @@ class TelemetryAndProctoringTest extends TestCase
         $this->session1->refresh();
         $this->assertEquals('in_progress', $this->session1->status);
 
-        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)
-            ->where('type', 'no_face')
-            ->latest()
-            ->first();
-
+        $anomaly = $this->latestNoFaceAnomaly();
         $this->assertNotNull($anomaly);
         $this->assertEquals('high', $anomaly->severity);
-        $this->assertNotNull($anomaly->image_path);
-        $this->assertStringContainsString('storage/anomalies/', $anomaly->image_path);
+        $this->assertSame(Anomaly::DB_SNAPSHOT, $anomaly->image_path);
+        $this->assertSame($this->snapshotDataUri(), $anomaly->metadata['image_base64']);
+        $this->assertSame("/anomalies/{$anomaly->id}/snapshot", $anomaly->snapshot_url);
 
-        $storageRelative = str_replace('storage/', '', $anomaly->image_path);
-        $this->assertFileExists(storage_path('app/public/' . $storageRelative));
+        // Nothing is written to public storage, and the telemetry log doesn't keep a second copy
+        $this->assertSame($before, $this->publicSnapshotFiles());
+        $log = TelemetryLog::where('lab_session_id', $this->session1->id)->where('event_type', 'camera_absence')->first();
+        $this->assertArrayNotHasKey('image_base64', $log->payload);
+    }
+
+    public function test_camera_absence_ignores_a_client_supplied_image_path_and_invalid_images()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => [
+                'image_path' => 'https://evil.example/pixel.gif',
+                'image_base64' => 'data:image/jpeg;base64,' . base64_encode('not really a jpeg'),
+            ],
+        ])->assertStatus(200);
+
+        $anomaly = $this->latestNoFaceAnomaly();
+        $this->assertNotNull($anomaly);
+        $this->assertNull($anomaly->image_path);
+        $this->assertNull($anomaly->snapshot_url);
+        $this->assertArrayNotHasKey('image_path', $anomaly->metadata);
+        $this->assertArrayNotHasKey('image_base64', $anomaly->metadata);
+    }
+
+    public function test_camera_absence_rejects_an_oversized_snapshot()
+    {
+        $huge = 'data:image/png;base64,' . base64_encode(str_repeat('a', \App\Support\WebcamSnapshot::MAX_BYTES + 1));
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['image_base64' => $huge],
+        ])->assertStatus(200);
+
+        $this->assertNull($this->latestNoFaceAnomaly()->image_path);
+    }
+
+    public function test_repeated_camera_disconnects_raise_one_flag()
+    {
+        foreach (range(1, 4) as $i) {
+            $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+                'event_type' => 'camera_absence',
+                'payload' => ['reason' => 'Webcam video track disconnected in browser'],
+            ])->assertStatus(200);
+        }
+
+        $this->assertSame(1, Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'no_face')->count());
+
+        // Five minutes on, a camera that is still missing is flagged again
+        $this->travel(6)->minutes();
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['reason' => 'Webcam video track disconnected in browser'],
+        ]);
+        $this->assertSame(2, Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'no_face')->count());
+    }
+
+    public function test_camera_flags_with_snapshots_are_kept_when_spaced_like_the_lab_page_sends_them()
+    {
+        $send = fn () => $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['image_base64' => $this->snapshotDataUri()],
+        ]);
+
+        $send();
+        $send(); // an immediate replay is dropped
+        $this->travel(35)->seconds();
+        $send();
+
+        $this->assertSame(2, Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'no_face')->count());
     }
 
     public function test_continuous_webcam_check_with_multiple_faces_creates_anomaly_and_preserves_student_session()
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('two-faces-captured');
-
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'webcam_check',
             'payload' => [
                 'face_count' => 3,
-                'image_base64' => $dummyBase64,
+                'image_base64' => $this->snapshotDataUri(),
             ],
         ]);
 
@@ -421,18 +493,17 @@ class TelemetryAndProctoringTest extends TestCase
             'lab_session_id' => $this->session1->id,
             'type' => 'multiple_faces',
             'severity' => 'medium',
+            'image_path' => Anomaly::DB_SNAPSHOT,
         ]);
     }
 
-    public function test_instructor_monitoring_streams_camera_absence_anomaly_with_image_path()
+    public function test_instructor_monitoring_streams_camera_absence_anomaly_with_snapshot_url()
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('instructor-alert-image');
-
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'camera_absence',
             'payload' => [
                 'face_count' => 0,
-                'image_base64' => $dummyBase64,
+                'image_base64' => $this->snapshotDataUri(),
             ],
         ]);
 
@@ -443,42 +514,88 @@ class TelemetryAndProctoringTest extends TestCase
         $sessionData = collect($response->json('sessions'))->firstWhere('id', $this->session1->id);
         $this->assertNotNull($sessionData);
 
-        $anomalies = collect($sessionData['anomalies']);
-        $noFaceAnomaly = $anomalies->firstWhere('type', 'no_face');
-
+        $noFaceAnomaly = collect($sessionData['anomalies'])->firstWhere('type', 'no_face');
         $this->assertNotNull($noFaceAnomaly);
-        $this->assertNotNull($noFaceAnomaly['image_path']);
-        $this->assertStringContainsString('storage/anomalies/', $noFaceAnomaly['image_path']);
+        $this->assertSame("/anomalies/{$noFaceAnomaly['id']}/snapshot", $noFaceAnomaly['snapshot_url']);
+
+        // The class monitoring page gives the flags modal the same link
+        $this->get("/classes/{$this->class->id}/telemetry?lab={$this->laboratory->id}")
+            ->assertOk()
+            ->assertSee('\\\\\\/anomalies\\\\\\/' . $noFaceAnomaly['id'] . '\\\\\\/snapshot', false);
+    }
+
+    public function test_camera_anomaly_broadcast_carries_the_snapshot_url()
+    {
+        \Illuminate\Support\Facades\Event::fake([\App\Events\AnomalyDetected::class]);
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['image_base64' => $this->snapshotDataUri()],
+        ]);
+
+        $anomaly = $this->latestNoFaceAnomaly();
+        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\AnomalyDetected::class, function ($event) use ($anomaly) {
+            $data = $event->broadcastWith()['anomaly'];
+            return $data['snapshot_url'] === "/anomalies/{$anomaly->id}/snapshot"
+                && $data['student_name'] === 'Alice Walker';
+        });
+    }
+
+    public function test_only_the_class_instructor_can_view_a_snapshot()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['image_base64' => $this->snapshotDataUri()],
+        ]);
+        $url = $this->latestNoFaceAnomaly()->snapshot_url;
+
+        $otherInstructor = User::create([
+            'name' => 'Dr. Okafor',
+            'email' => 'okafor@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'instructor',
+        ]);
+
+        $this->get($url)->assertRedirect();
+        $this->actingAs($this->student1)->get($url)->assertForbidden();
+        $this->actingAs($otherInstructor)->get($url)->assertForbidden();
+
+        $this->actingAs($this->instructor)->get($url)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    public function test_snapshot_route_returns_404_without_a_picture()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['reason' => 'Webcam video track disconnected in browser'],
+        ]);
+
+        $this->actingAs($this->instructor)->get("/anomalies/{$this->latestNoFaceAnomaly()->id}/snapshot")->assertNotFound();
     }
 
     public function test_prelab_verification_failed_after_three_attempts_records_high_severity_anomaly_with_snapshot()
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('prelab-failure-proof');
-
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'prelab_verification_failed',
             'payload' => [
                 'attempts' => 3,
                 'face_count' => 0,
-                'image_base64' => $dummyBase64,
+                'image_base64' => $this->snapshotDataUri(),
                 'timestamp' => now()->toISOString(),
             ],
         ]);
 
         $response->assertStatus(200);
 
-        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)
-            ->where('type', 'no_face')
-            ->latest()
-            ->first();
-
+        $anomaly = $this->latestNoFaceAnomaly();
         $this->assertNotNull($anomaly);
         $this->assertEquals('high', $anomaly->severity);
         $this->assertStringContainsString('Pre-lab camera presence verification failed after 3 attempts', $anomaly->description);
-        $this->assertNotNull($anomaly->image_path);
-
-        $storageRelative = str_replace('storage/', '', $anomaly->image_path);
-        $this->assertFileExists(storage_path('app/public/' . $storageRelative));
+        $this->assertSame(Anomaly::DB_SNAPSHOT, $anomaly->image_path);
+        $this->assertTrue($anomaly->metadata['pre_lab']);
     }
 
     public function test_get_session_reflects_camera_verified_state()

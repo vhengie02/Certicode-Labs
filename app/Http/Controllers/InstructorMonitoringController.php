@@ -175,7 +175,7 @@ class InstructorMonitoringController extends Controller
                             'severity' => $a->severity,
                             'description' => $a->description,
                             'metadata' => $a->metadata,
-                            'image_path' => $a->image_path,
+                            'snapshot_url' => $a->snapshot_url,
                             'created_at' => $a->created_at ? $a->created_at->diffForHumans() : '',
                         ];
                     }),

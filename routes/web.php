@@ -128,6 +128,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
+    Route::get('/anomalies/{id}/snapshot', \App\Http\Controllers\AnomalySnapshotController::class)->name('anomalies.snapshot');
     Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
     Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
     Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
