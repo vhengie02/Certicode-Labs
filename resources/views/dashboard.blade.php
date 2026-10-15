@@ -11,11 +11,16 @@
         array_shift($nameParts);
     }
     $firstName = $nameParts[0] ?? $user->name;
-    $intro = [
-        'student' => 'Pick up where you left off, or check on your certificates.',
-        'instructor' => "Here's what's happening across your classes.",
-        'admin' => 'Platform overview and people waiting for approval.',
-    ][$role] ?? '';
+    $intro = ($isNew ?? false)
+        ? [
+            'student' => "Here's how to get from your first class to a verified certificate.",
+            'instructor' => 'Set up your first class in a few steps. Each one ticks off as you go.',
+        ][$role] ?? ''
+        : [
+            'student' => 'Pick up where you left off, or check on your certificates.',
+            'instructor' => "Here's what's happening across your classes.",
+            'admin' => 'Platform overview and people waiting for approval.',
+        ][$role] ?? '';
 @endphp
 
 @section('content')
@@ -25,7 +30,7 @@
         <div>
             <p class="font-mono text-[11px] uppercase tracking-[0.16em] text-[#888888]">{{ $role }} dashboard</p>
             <h1 class="cc-display mt-2 text-3xl sm:text-4xl font-bold text-[#ededed]">
-                Welcome back, <span class="cc-serif text-[#3ecf8e] text-[1.08em]">{{ $firstName }}.</span>
+                {{ ($isNew ?? false) ? 'Welcome to Certicode,' : 'Welcome back,' }} <span class="cc-serif text-[#3ecf8e] text-[1.08em]">{{ $firstName }}.</span>
             </h1>
             <p class="mt-2 text-[15px] text-[#a3a3a3]">{{ $intro }}</p>
         </div>

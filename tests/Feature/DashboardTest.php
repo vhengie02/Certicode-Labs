@@ -66,6 +66,47 @@ class DashboardTest extends TestCase
         $this->actingAs($user)->get('/dashboard')->assertOk()->assertSee('Maria.')->assertDontSee('Dr..');
     }
 
+    public function test_new_accounts_are_welcomed_not_welcomed_back()
+    {
+        $student = $this->user('new@example.com', 'student');
+        $this->actingAs($student)->get('/dashboard')->assertSee('Welcome to Certicode,')->assertDontSee('Welcome back');
+
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->actingAs($instructor)->get('/dashboard')->assertSee('Welcome to Certicode,');
+        SchoolClass::create(['name' => 'Java', 'code' => 'JAVA-1', 'instructor_id' => $instructor->id]);
+        $this->actingAs($instructor)->get('/dashboard')->assertSee('Welcome back,');
+    }
+
+    public function test_getting_started_steps_follow_real_activity()
+    {
+        $student = $this->user('kid@example.com', 'student');
+        $this->sections($student)
+            ->assertSee('Your path to a certificate')
+            ->assertSee('0 of 4 done')
+            ->assertSee('Enter a class code');
+
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $class = SchoolClass::create(['name' => 'Java', 'code' => 'JAVA-1', 'instructor_id' => $instructor->id]);
+        $class->students()->attach($student->id, ['status' => 'enrolled']);
+        \Illuminate\Support\Facades\Cache::store('file')->flush();
+
+        $this->sections($student)->assertSee('1 of 4 done')->assertSee('Download the extension');
+        $this->sections($instructor)
+            ->assertSee('Set up your first class')
+            ->assertSee('2 of 5 done') // class created, student enrolled
+
+            ->assertSee('Add a module');
+    }
+
+    public function test_getting_started_disappears_once_everything_is_done()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
+        SchoolClass::first()->students()->attach(User::where('role', 'student')->first()->id, ['status' => 'enrolled']);
+
+        $this->sections($instructor)->assertDontSee('Set up your first class');
+    }
+
     public function test_sections_opened_directly_go_back_to_the_dashboard()
     {
         $this->actingAs($this->user('s@example.com', 'student'))->get('/dashboard/sections')

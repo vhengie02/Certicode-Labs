@@ -1,5 +1,62 @@
 {{-- Dashboard data, loaded into dashboard.blade.php after the page appears. No layout and no scripts. --}}
 <div class="space-y-8">
+    @php
+        $setup = $setup ?? [];
+        $setupDone = collect($setup)->where('done', true)->count();
+        $nextStep = collect($setup)->search(fn ($step) => !$step['done']);
+    @endphp
+    @if ($setup && $nextStep !== false)
+        {{-- Getting started: shown until every step is done, or until hidden (remembered in this browser) --}}
+        <section class="rounded-xl border border-[#3ecf8e]/25 bg-[#171717] p-5 sm:p-6" aria-labelledby="setup-heading"
+                 x-data="{
+                     key: 'cc-setup-hidden-{{ auth()->id() }}',
+                     hidden: false,
+                     init() { try { this.hidden = localStorage.getItem(this.key) === '1'; } catch (e) {} },
+                     hide() { this.hidden = true; try { localStorage.setItem(this.key, '1'); } catch (e) {} },
+                 }"
+                 x-bind:class="{ 'hidden': hidden }">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#3ecf8e]">Get started</p>
+                    <h2 id="setup-heading" class="mt-1 text-lg font-semibold text-[#ededed]">
+                        {{ $role === 'instructor' ? 'Set up your first class' : 'Your path to a certificate' }}
+                    </h2>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-xs text-[#888888] tabular-nums">{{ $setupDone }} of {{ count($setup) }} done</span>
+                    <button type="button" class="text-xs font-medium text-[#888888] hover:text-[#ededed] transition-colors"
+                            x-on:click="hide()">Hide</button>
+                </div>
+            </div>
+            <div class="mt-4 h-1.5 rounded-full bg-[#232323] overflow-hidden" role="progressbar" aria-label="Getting started progress" aria-valuemin="0" aria-valuemax="{{ count($setup) }}" aria-valuenow="{{ $setupDone }}">
+                <div class="h-full rounded-full bg-[#3ecf8e]" style="width: {{ round($setupDone / count($setup) * 100) }}%"></div>
+            </div>
+            <ol class="mt-5 grid gap-3 sm:grid-cols-2 {{ count($setup) > 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-4' }}">
+                @foreach ($setup as $i => $step)
+                    @php $isNext = $i === $nextStep; @endphp
+                    <li class="flex flex-col rounded-lg border p-4 {{ $isNext ? 'border-[#3ecf8e]/40 bg-[#3ecf8e]/[0.05]' : 'border-[#2e2e2e] bg-[#141414]' }}">
+                        <span class="flex items-center gap-2.5">
+                            @if ($step['done'])
+                                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3ecf8e] text-[#06150e]">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                    <span class="sr-only">Done:</span>
+                                </span>
+                            @else
+                                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] {{ $isNext ? 'border-[#3ecf8e] text-[#3ecf8e]' : 'border-[#3a3a3a] text-[#888888]' }}">{{ $i + 1 }}</span>
+                            @endif
+                            <span class="text-sm font-semibold {{ $step['done'] ? 'text-[#888888] line-through decoration-[#555555]' : 'text-[#ededed]' }}">{{ $step['title'] }}</span>
+                        </span>
+                        <span class="mt-2 text-xs leading-relaxed text-[#a3a3a3]">{{ $step['body'] }}</span>
+                        @if ($isNext)
+                            <a href="{{ $step['href'] }}" @if (!empty($step['download'])) download @endif
+                               class="mt-auto pt-3 text-sm font-semibold text-[#3ecf8e] hover:underline underline-offset-2">{{ $step['action'] }} &rarr;</a>
+                        @endif
+                    </li>
+                @endforeach
+            </ol>
+        </section>
+    @endif
+
     <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         @foreach ($stats as $stat)
             <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">

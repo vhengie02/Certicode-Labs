@@ -18,9 +18,22 @@ use Illuminate\Support\Facades\DB;
  */
 class DashboardController extends Controller
 {
-    public function show()
+    public function show(Request $request)
     {
-        return view('dashboard');
+        return view('dashboard', ['isNew' => $this->hasNotStarted($request->user())]);
+    }
+
+    /**
+     * True until the account has done anything, so the greeting says "Welcome", not "Welcome back".
+     * One cheap existence check; the full checklist is built in sections().
+     */
+    private function hasNotStarted(User $user): bool
+    {
+        return match ($user->role) {
+            'admin' => false,
+            'instructor' => !$user->instructedClasses()->exists(),
+            default => !$user->classes()->exists() && !$user->labSessions()->exists(),
+        };
     }
 
     public function sections(Request $request)
@@ -54,12 +67,23 @@ class DashboardController extends Controller
             ->selectRaw("count(case when status = 'in_progress' then 1 end) as in_progress")
             ->first();
 
+        $classCount = $user->classes()->count();
+        $certificateCount = $user->certificates()->count();
+        $completed = (int) $sessionCounts->completed;
+
         return [
             'stats' => [
-                ['label' => 'Classes', 'value' => $user->classes()->count(), 'hint' => 'enrolled'],
-                ['label' => 'Labs completed', 'value' => (int) $sessionCounts->completed, 'hint' => 'all time'],
+                ['label' => 'Classes', 'value' => $classCount, 'hint' => 'enrolled'],
+                ['label' => 'Labs completed', 'value' => $completed, 'hint' => 'all time'],
                 ['label' => 'In progress', 'value' => (int) $sessionCounts->in_progress, 'hint' => 'open sessions'],
-                ['label' => 'Certificates', 'value' => $user->certificates()->count(), 'hint' => 'earned'],
+                ['label' => 'Certificates', 'value' => $certificateCount, 'hint' => 'earned'],
+            ],
+            // Getting-started steps tick themselves off from real activity
+            'setup' => [
+                ['title' => 'Join a class', 'body' => 'Ask your instructor for the class code and enter it on the Classes page, or accept an invitation.', 'done' => $classCount > 0, 'action' => 'Enter a class code', 'href' => route('classes.index') . '#join_class_code'],
+                ['title' => 'Install the VS Code extension', 'body' => 'Labs run inside VS Code. Install the Certicode extension and sign in with this account.', 'done' => $user->labSessions()->exists(), 'action' => 'Download the extension', 'href' => asset('downloads/certicode-labs.vsix'), 'download' => true],
+                ['title' => 'Take your first lab', 'body' => 'Start a lab from your class. Your camera is checked while you work, and your code is graded when you submit.', 'done' => $completed > 0, 'action' => 'Open my classes', 'href' => route('classes.index')],
+                ['title' => 'Earn your certificate', 'body' => "Pass the class's labs above its pass mark, then claim a certificate anyone can verify with its QR code.", 'done' => $certificateCount > 0, 'action' => 'Open my classes', 'href' => route('classes.index')],
             ],
             'invitations' => $user->invitedClasses()->count(),
             'inProgress' => $user->labSessions()
@@ -79,7 +103,17 @@ class DashboardController extends Controller
         // behind Supabase's pooler), which sends `false` as 0, and Postgres rejects boolean = 0.
         $ownSessions = fn ($q) => $q->whereHas('laboratory.module', fn ($m) => $m->whereIn('class_id', $classIds));
 
+        $ownLabs = Laboratory::whereHas('module', fn ($m) => $m->whereIn('class_id', $classIds));
+        $classHref = $classIds->isNotEmpty() ? route('classes.show', $classIds->first()) : route('classes.create');
+
         return [
+            'setup' => [
+                ['title' => 'Create a class', 'body' => 'Give it a name and a pass mark. Certicode generates the code students join with.', 'done' => $classIds->isNotEmpty(), 'action' => 'New class', 'href' => route('classes.create')],
+                ['title' => 'Add a module', 'body' => 'Modules are the chapters of your class: readings, files and the labs that go with them.', 'done' => DB::table('modules')->whereIn('class_id', $classIds)->exists(), 'action' => 'Open your class', 'href' => $classHref],
+                ['title' => 'Create a lab', 'body' => "Write the task, add starter files and tests, and choose whether it runs live or on the student's own time.", 'done' => (clone $ownLabs)->exists(), 'action' => 'Open your class', 'href' => $classHref],
+                ['title' => 'Bring in your students', 'body' => 'Share the class code, or invite students by email from the class page.', 'done' => DB::table('class_student')->whereIn('class_id', $classIds)->where('status', 'enrolled')->exists(), 'action' => 'Open your class', 'href' => $classHref],
+                ['title' => 'Run a lab and review it', 'body' => 'Watch sessions on the monitoring page, check integrity flags and adjust grades where needed.', 'done' => LabSession::whereIn('lab_id', (clone $ownLabs)->select('id'))->exists(), 'action' => 'All classes', 'href' => route('classes.index')],
+            ],
             'stats' => [
                 ['label' => 'Active classes', 'value' => SchoolClass::whereIn('id', $classIds)->whereNotIn('status', ['completed', 'closed'])->count(), 'hint' => 'not yet ended'],
                 ['label' => 'Students', 'value' => DB::table('class_student')->whereIn('class_id', $classIds)->where('status', 'enrolled')->distinct()->count('student_id'), 'hint' => 'across your classes'],
