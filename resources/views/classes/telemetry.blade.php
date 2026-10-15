@@ -57,28 +57,28 @@
 
         <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                     In progress
                     <x-info-tip align="left">Sessions that have started but haven't been submitted, across every lab in this class. It counts students whether or not they're connected right now; pick a lab above to see who is online.</x-info-tip>
                 </dt>
                 <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ $inProgressCount }}</dd>
             </div>
             <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                     Open flags
                     <x-info-tip>Integrity flags you haven't resolved yet: switching away from VS Code 3+ times in 2 minutes, suspicious pastes, the camera not seeing exactly one face, and long idle periods. Resolve a flag once you've reviewed it.</x-info-tip>
                 </dt>
                 <dd class="cc-display mt-2 text-3xl font-bold tabular-nums {{ $openFlags > 0 ? 'text-amber-400' : 'text-[#ededed]' }}">{{ $openFlags }}</dd>
             </div>
             <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                     Submitted
                     <x-info-tip>Sessions that are finished and graded, across every lab: submitted by the student, ended by you, or auto-submitted when a live lab's timer ran out.</x-info-tip>
                 </dt>
                 <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ $submittedCount }}</dd>
             </div>
             <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-                <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+                <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                     Average grade
                     <x-info-tip align="right">The mean grade of submitted sessions. Where you've overridden a grade, your grade is used instead of the AI's.</x-info-tip>
                 </dt>
@@ -95,13 +95,13 @@
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead>
-                        <tr class="border-y border-[#232323] text-left font-mono text-[11px] uppercase tracking-[0.12em] text-[#888888]">
-                            <th scope="col" class="px-5 py-2.5 font-medium">Student</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">Lab</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">What happened</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">Severity</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">When</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium text-right"><span class="sr-only">Status</span></th>
+                        <tr class="border-y border-[#232323] text-left text-xs text-[#888888]">
+                            <th scope="col" class="px-5 py-2.5 font-normal">Student</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">Lab</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">What happened</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">Severity</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">When</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal text-right"><span class="sr-only">Status</span></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-[#232323]">
@@ -117,11 +117,11 @@
                                     @endif
                                 </td>
                                 <td class="px-5 py-3 max-w-xs">
-                                    <span class="block font-mono text-xs text-[#ededed]">{{ str_replace('_', ' ', $anomaly->type) }}</span>
+                                    <span class="block text-sm text-[#ededed]">{{ ucfirst(str_replace('_', ' ', $anomaly->type)) }}</span>
                                     <span class="block text-xs text-[#888888] truncate" title="{{ $anomaly->description }}">{{ $anomaly->description }}</span>
                                 </td>
                                 <td class="px-5 py-3 whitespace-nowrap">
-                                    <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] uppercase tracking-wider {{ $severityStyle($anomaly->severity) }}">{{ $anomaly->severity }}</span>
+                                    <span class="px-2 py-0.5 rounded-md border text-xs {{ $severityStyle($anomaly->severity) }}">{{ ucfirst($anomaly->severity) }}</span>
                                 </td>
                                 <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]" title="{{ $anomaly->created_at }}">{{ $anomaly->created_at?->diffForHumans() }}</td>
                                 <td class="px-5 py-3 whitespace-nowrap text-right">
@@ -157,24 +157,25 @@
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead>
-                        <tr class="border-y border-[#232323] text-left font-mono text-[11px] uppercase tracking-[0.12em] text-[#888888]">
-                            <th scope="col" class="px-5 py-2.5 font-medium">Student</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">Lab</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">Status</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">
-                                <span class="inline-flex items-center gap-1.5">Grade <x-info-tip>The AI grade for submitted sessions, or your override if you've set one. In-progress sessions show the score so far.</x-info-tip></span>
+                        <tr class="border-y border-[#232323] text-left text-xs text-[#888888]">
+                            <th scope="col" class="px-5 py-2.5 font-normal">Student</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">Lab</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">Status</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">
+                                <span class="inline-flex items-center gap-1.5">Grade <x-info-tip>The AI grade for submitted sessions, or your override if you've set one.</x-info-tip></span>
                             </th>
-                            <th scope="col" class="px-5 py-2.5 font-medium">Started</th>
-                            <th scope="col" class="px-5 py-2.5 font-medium text-right"><span class="sr-only">Actions</span></th>
+                            <th scope="col" class="px-5 py-2.5 font-normal">Started</th>
+                            <th scope="col" class="px-5 py-2.5 font-normal text-right"><span class="sr-only">Actions</span></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-[#232323]">
-                        @forelse ($sessions as $sess)
+                        @forelse ($sessions->sortByDesc(fn ($s) => $s->started_at) as $sess)
                             @php
-                                $statusStyle = [
-                                    'completed' => 'text-[#3ecf8e] border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.06]',
-                                    'in_progress' => 'text-sky-400 border-sky-500/30 bg-sky-500/[0.06]',
-                                ][$sess->status] ?? 'text-[#888888] border-[#2e2e2e]';
+                                [$statusLabel, $statusDot] = [
+                                    'completed' => ['Submitted', 'bg-[#3ecf8e]/60'],
+                                    'in_progress' => ['In progress', 'bg-[#3ecf8e]'],
+                                    'abandoned' => ['Timed out', 'bg-red-400/70'],
+                                ][$sess->status] ?? [ucfirst(str_replace('_', ' ', $sess->status)), 'bg-[#666666]'];
                             @endphp
                             <tr>
                                 <td class="px-5 py-3 whitespace-nowrap font-medium text-[#ededed]">{{ $sess->user?->name ?? 'Unknown' }}</td>
@@ -186,12 +187,18 @@
                                     @endif
                                 </td>
                                 <td class="px-5 py-3 whitespace-nowrap">
-                                    <span class="px-2 py-0.5 rounded-md border text-[11px] font-medium {{ $statusStyle }}">{{ str_replace('_', ' ', $sess->status) }}</span>
+                                    <span class="inline-flex items-center gap-2 text-sm text-[#a3a3a3]"><span class="w-2 h-2 rounded-full {{ $statusDot }}" aria-hidden="true"></span>{{ $statusLabel }}</span>
                                 </td>
-                                <td class="px-5 py-3 whitespace-nowrap font-mono tabular-nums text-[#ededed]">{{ round((float) $sess->effective_score) }}%</td>
-                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \Carbon\Carbon::parse($sess->started_at)->format('M j, H:i') : '—' }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap tabular-nums">
+                                    @if ($sess->status === 'completed')
+                                        <span class="text-[#ededed]">{{ rtrim(rtrim(number_format((float) $sess->effective_score, 1), '0'), '.') }}%</span>
+                                    @else
+                                        <span class="text-xs text-[#888888]">Not submitted</span>
+                                    @endif
+                                </td>
+                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \Carbon\Carbon::parse($sess->started_at)->format('M j, H:i') : 'Not started' }}</td>
                                 <td class="px-5 py-3 whitespace-nowrap text-right">
-                                    <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors">Timeline</a>
+                                    <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors">Timeline</a>
                                 </td>
                             </tr>
                         @empty

@@ -189,7 +189,7 @@ JAVA;
         $viewResponse = $this->actingAs($this->instructor)->followingRedirects()->get("/laboratories/{$this->lab->id}/monitoring");
         $viewResponse->assertOk()
             ->assertSee('AI Grade Assessment &amp; Explanation', false)
-            ->assertSee('Grade: 85%');
+            ->assertSee('85%');
 
         // JSON telemetry stream
         $dataResponse = $this->actingAs($this->instructor)->getJson("/laboratories/{$this->lab->id}/monitoring/data");

@@ -93,7 +93,7 @@ class InstructorTelemetryAndOAuthTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertSee('Monitoring');
-        $response->assertSee('excessive tab switch');
+        $response->assertSee('Excessive tab switch');
         $response->assertSee($this->student->name);
     }
 
