@@ -545,10 +545,10 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertNotNull($noFaceAnomaly);
         $this->assertSame("/anomalies/{$noFaceAnomaly['id']}/snapshot", $noFaceAnomaly['snapshot_url']);
 
-        // The class monitoring page gives the flags modal the same link
+        // The class monitoring page gives the student drawer the same link
         $this->get("/classes/{$this->class->id}/telemetry?lab={$this->laboratory->id}")
             ->assertOk()
-            ->assertSee('\\\\\\/anomalies\\\\\\/' . $noFaceAnomaly['id'] . '\\\\\\/snapshot', false);
+            ->assertSee('\\/anomalies\\/' . $noFaceAnomaly['id'] . '\\/snapshot', false);
     }
 
     public function test_camera_anomaly_broadcast_carries_the_snapshot_url()
