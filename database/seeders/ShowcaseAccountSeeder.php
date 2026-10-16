@@ -439,6 +439,95 @@ class ShowcaseAccountSeeder extends Seeder
             ]);
         }
 
+        // Module 1.4: Practice labs (open, 5 attempts each, not started)
+        $mod1_4 = Module::updateOrCreate(
+            ['class_id' => $class1->id, 'order_index' => 4],
+            [
+                'title' => 'Java Practice Labs',
+                'description' => 'Short open labs to practise core Java. Each one allows 5 attempts.',
+                'content' => "# Practice Labs\n\nRetake each lab up to 5 times. Your best attempt counts.",
+                'views_count' => 12,
+            ]
+        );
+
+        $practiceLabs = [
+            [
+                'title' => 'Practice: String Reversal & Palindromes',
+                'description' => 'Write `reverse(String)` and `isPalindrome(String)` in `Strings.java`, ignoring case and spaces.',
+                'tasks' => [
+                    ['task' => 'Implement reverse using StringBuilder', 'command' => 'regex:new\\s+StringBuilder'],
+                    ['task' => 'Implement isPalindrome returning boolean', 'command' => 'regex:boolean\\s+isPalindrome\\s*\\('],
+                    ['task' => 'Normalise case before comparing', 'command' => 'regex:toLowerCase\\(\\)'],
+                ],
+                'file' => 'Strings.java',
+                'starter' => "public class Strings {\n    public static String reverse(String s) {\n        // TODO\n        return s;\n    }\n\n    public static boolean isPalindrome(String s) {\n        // TODO\n        return false;\n    }\n}\n",
+            ],
+            [
+                'title' => 'Practice: FizzBuzz with Streams',
+                'description' => 'Print FizzBuzz from 1 to 100 using `IntStream.rangeClosed` and `mapToObj`.',
+                'tasks' => [
+                    ['task' => 'Generate 1..100 with IntStream.rangeClosed', 'command' => 'regex:IntStream\\.rangeClosed\\(\\s*1\\s*,\\s*100\\s*\\)'],
+                    ['task' => 'Map each number with mapToObj', 'command' => 'regex:mapToObj'],
+                    ['task' => 'Handle the FizzBuzz case', 'command' => 'regex:"FizzBuzz"'],
+                ],
+                'file' => 'Main.java',
+                'starter' => "import java.util.stream.IntStream;\n\npublic class Main {\n    public static void main(String[] args) {\n        // TODO: FizzBuzz 1..100 with streams\n    }\n}\n",
+            ],
+            [
+                'title' => 'Practice: Bank Account Encapsulation',
+                'description' => 'Build a `BankAccount` with a private balance, `deposit`, and a `withdraw` that rejects overdrafts with `IllegalArgumentException`.',
+                'tasks' => [
+                    ['task' => 'Keep balance private', 'command' => 'regex:private\\s+double\\s+balance'],
+                    ['task' => 'Implement deposit', 'command' => 'regex:void\\s+deposit\\s*\\('],
+                    ['task' => 'Reject overdrafts in withdraw', 'command' => 'regex:throw\\s+new\\s+IllegalArgumentException'],
+                ],
+                'file' => 'BankAccount.java',
+                'starter' => "public class BankAccount {\n    // TODO: private balance, deposit, withdraw\n}\n",
+            ],
+            [
+                'title' => 'Practice: Word Frequency with HashMap',
+                'description' => 'Count how often each word appears in a sentence using `HashMap<String, Integer>` and `merge`.',
+                'tasks' => [
+                    ['task' => 'Declare a HashMap<String, Integer>', 'command' => 'regex:Map<String,\\s*Integer>'],
+                    ['task' => 'Split the sentence on whitespace', 'command' => 'regex:\\.split\\('],
+                    ['task' => 'Count with Map.merge', 'command' => 'regex:\\.merge\\('],
+                ],
+                'file' => 'WordCount.java',
+                'starter' => "import java.util.*;\n\npublic class WordCount {\n    public static Map<String, Integer> count(String sentence) {\n        // TODO\n        return new HashMap<>();\n    }\n}\n",
+            ],
+            [
+                'title' => 'Practice: Interfaces & Polymorphism',
+                'description' => 'Define a `Shape` interface with `area()`, implement `Circle` and `Rectangle`, and sum the areas of a `List<Shape>`.',
+                'tasks' => [
+                    ['task' => 'Define the Shape interface', 'command' => 'regex:interface\\s+Shape'],
+                    ['task' => 'Implement Shape in Circle', 'command' => 'regex:class\\s+Circle\\s+implements\\s+Shape'],
+                    ['task' => 'Implement Shape in Rectangle', 'command' => 'regex:class\\s+Rectangle\\s+implements\\s+Shape'],
+                ],
+                'file' => 'Shapes.java',
+                'starter' => "import java.util.List;\n\n// TODO: Shape interface, Circle, Rectangle\npublic class Shapes {\n    public static double totalArea(List<?> shapes) {\n        return 0;\n    }\n}\n",
+            ],
+        ];
+
+        foreach ($practiceLabs as $practice) {
+            Laboratory::updateOrCreate(
+                ['module_id' => $mod1_4->id, 'title' => $practice['title']],
+                [
+                    'description' => $practice['description'],
+                    'tasks_definition' => collect($practice['tasks'])->map(fn ($t, $i) => ['id' => $i + 1] + $t)->all(),
+                    'rubric' => "1. All tasks pass.\n2. Code compiles and is readable.",
+                    'test_cases' => [],
+                    'starter_files' => [
+                        ['name' => $practice['file'], 'content' => $practice['starter'], 'is_primary' => true, 'is_readonly' => false],
+                    ],
+                    'time_limit' => 30,
+                    'is_group_lab' => false,
+                    'availability_mode' => 'open',
+                    'max_attempts' => 5,
+                    'views_count' => 0,
+                ]
+            );
+        }
+
         // =============================================================
         // CLASS 2: Data Structures & Algorithms (CS201) - IN PROGRESS (50%)
         // =============================================================

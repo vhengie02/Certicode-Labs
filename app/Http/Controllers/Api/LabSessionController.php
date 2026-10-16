@@ -72,6 +72,13 @@ class LabSessionController extends Controller
             }
         }
 
+        if (!$session && !$lab->canStartNewAttempt($user)) {
+            return response()->json([
+                'error' => 'attempts_exhausted',
+                'message' => 'You have used all your attempts for this lab. Ask your instructor if you need another one.',
+            ], 403);
+        }
+
         if (!$session) {
             $session = LabSession::create([
                 'lab_id' => $lab->id,

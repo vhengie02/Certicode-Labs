@@ -133,6 +133,18 @@
                     <p class="ui-hint">How long each student's session can run, 5 to 300 minutes.</p>
                     @error('time_limit') <p class="ui-error">{{ $message }}</p> @enderror
                 </div>
+                <div>
+                    @php $attempts = (int) old('max_attempts', $laboratory?->max_attempts ?? 1); @endphp
+                    <label for="max_attempts" class="ui-label">Attempts allowed</label>
+                    <select name="max_attempts" id="max_attempts" class="ui-input" @error('max_attempts') aria-invalid="true" @enderror>
+                        @foreach ([1, 2, 3, 4, 5, 10] as $n)
+                            <option value="{{ $n }}" @selected($attempts === $n)>{{ $n === 1 ? '1 (no retakes)' : $n }}</option>
+                        @endforeach
+                        <option value="0" @selected($attempts === 0)>Unlimited</option>
+                    </select>
+                    <p class="ui-hint">How many times each student can start this lab. A session that runs out of time counts as an attempt; their best grade is kept.</p>
+                    @error('max_attempts') <p class="ui-error">{{ $message }}</p> @enderror
+                </div>
             </div>
 
             <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-[#2e2e2e] bg-[#141414] p-4 hover:border-[#383838] transition-colors">

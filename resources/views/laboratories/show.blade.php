@@ -375,8 +375,19 @@
             @if ($isStudent)
                 {{-- Start --}}
                 <section class="ui-card ui-card-body" aria-labelledby="start-heading">
-                    <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : 'Start the lab' }}</h2>
-                    @if ($isLive && $laboratory->isLiveNotStarted())
+                    @php
+                        // Students only: retakes depend on the attempts the instructor allows
+                        $outOfAttempts = !$activeSession && $attempts && !$attempts['canStart'];
+                        $isRetake = !$activeSession && $attempts && $attempts['used'] > 0;
+                    @endphp
+                    <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : ($outOfAttempts ? 'No attempts left' : ($isRetake ? 'Retake the lab' : 'Start the lab')) }}</h2>
+                    @if ($outOfAttempts)
+                        <p class="ui-card-subtitle">
+                            You've used {{ $attempts['used'] === 1 ? 'your only attempt' : "all {$attempts['used']} attempts" }} at this lab, and your best grade counts.
+                            Ask your instructor if you need another try.
+                        </p>
+                        <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">No attempts left</button>
+                    @elseif ($isLive && $laboratory->isLiveNotStarted())
                         <p class="ui-card-subtitle">Your instructor hasn't started this live lab yet. Refresh this page once they do.</p>
                         <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Waiting for your instructor</button>
                     @elseif ($isLive && $laboratory->isLiveClosed())
@@ -392,9 +403,20 @@
                             @csrf
                             <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
                             <button type="button" @click="handleStartClick()" class="ui-btn ui-btn-primary w-full">
-                                {{ $activeSession ? 'Continue in VS Code' : 'Start lab' }}
+                                {{ $activeSession ? 'Continue in VS Code' : ($isRetake ? 'Retake lab' : 'Start lab') }}
                             </button>
                         </form>
+                        @if ($attempts && !$activeSession)
+                            <p class="ui-hint text-center">
+                                @if ($attempts['limit'] === null)
+                                    Unlimited attempts. Your best grade counts.
+                                @elseif ($attempts['limit'] === 1)
+                                    You get one attempt at this lab, so start when you're ready.
+                                @else
+                                    This will be attempt {{ $attempts['used'] + 1 }} of {{ $attempts['limit'] }}. Your best grade counts.
+                                @endif
+                            </p>
+                        @endif
                         @if ($isLive && $laboratory->isLiveActive())
                             <p class="ui-hint text-center">Shared timer: {{ max(1, (int) ceil($liveLeft / 60)) }} min left. Work is submitted when it ends.</p>
                         @endif

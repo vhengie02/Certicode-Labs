@@ -27,9 +27,11 @@ class Laboratory extends Model
         'live_status',
         'live_started_at',
         'live_elapsed_seconds',
+        'max_attempts',
     ];
 
     protected $casts = [
+        'max_attempts' => 'integer',
         'tasks_definition' => 'array',
         'test_cases' => 'array',
         'is_group_lab' => 'boolean',
@@ -286,6 +288,43 @@ class Laboratory extends Model
     public function labSessions()
     {
         return $this->hasMany(LabSession::class, 'lab_id');
+    }
+
+    /**
+     * Sessions a student may start on this lab; null means unlimited. Stored as 0 for unlimited,
+     * and a lab saved before the column existed allows one.
+     */
+    public function attemptLimit(): ?int
+    {
+        $limit = $this->max_attempts ?? 1;
+
+        return $limit > 0 ? $limit : null;
+    }
+
+    /**
+     * Every session the student has started counts, whether it was finished, timed out or
+     * left: otherwise abandoning a lab would be a free retake.
+     */
+    public function attemptsUsedBy(User $user): int
+    {
+        return $this->labSessions()->where('user_id', $user->id)->count();
+    }
+
+    /** Remaining new sessions for the student, or null when unlimited. */
+    public function attemptsLeftFor(User $user): ?int
+    {
+        $limit = $this->attemptLimit();
+
+        return $limit === null ? null : max(0, $limit - $this->attemptsUsedBy($user));
+    }
+
+    /**
+     * Whether the user may start a fresh session (resuming an unfinished one is always allowed).
+     * Only students are limited; instructors and admins can try their own labs freely.
+     */
+    public function canStartNewAttempt(User $user): bool
+    {
+        return $user->role !== 'student' || $this->attemptsLeftFor($user) !== 0;
     }
 
     /**
