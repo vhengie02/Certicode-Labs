@@ -571,11 +571,26 @@
                                 </div>
                             </div>
 
-                            <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : 'Starting Lab in VS Code...'"></h3>
-                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...'"></p>
+                            <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : (vscodeNotDetected ? 'Certicode extension not detected' : 'Starting Lab in VS Code...')"></h3>
+                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : (vscodeNotDetected ? 'VS Code has not answered yet. The Certicode extension is probably not installed. Follow these steps, then open the lab again.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...')"></p>
+
+                            <!-- Extension not detected: install instructions -->
+                            <div x-show="vscodeNotDetected && !vscodeConnected" x-cloak class="mb-6 text-left bg-[#0d0d0d] p-4 rounded-xl border border-amber-500/30 space-y-3">
+                                <ol class="space-y-2.5 text-xs text-[#a3a3a3]" role="list">
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span><span>Did VS Code open? If not, install <a href="https://code.visualstudio.com/download" target="_blank" rel="noopener" class="text-[#3ecf8e] hover:underline">VS Code</a>, and allow your browser to open it when asked.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span><span>Download the Certicode extension file with the button below.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span><span>In VS Code open Extensions (<kbd class="rounded border border-[#2e2e2e] bg-[#141414] px-1 font-mono text-[11px] text-[#ededed]">Ctrl+Shift+X</kbd>), then the <strong class="text-[#ededed] font-medium">…</strong> menu, then <strong class="text-[#ededed] font-medium">Install from VSIX</strong>, and pick the downloaded file.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">4</span><span>If VS Code asks whether to trust this Certicode server, choose to trust it.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">5</span><span>Click <strong class="text-[#ededed] font-medium">Open lab again</strong>. This page keeps checking and continues on its own once the extension answers.</span></li>
+                                </ol>
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="ui-btn ui-btn-secondary flex-1 text-xs">Download extension (.vsix)</a>
+                                    <button type="button" @click="reopenVsCode()" class="ui-btn ui-btn-primary flex-1 text-xs">Open lab again</button>
+                                </div>
+                            </div>
 
                             <!-- Progress checklist -->
-                            <div class="space-y-2.5 mb-6 text-left bg-[#0d0d0d] p-3.5 rounded-xl border border-[#222]">
+                            <div x-show="!vscodeNotDetected || vscodeConnected" class="space-y-2.5 mb-6 text-left bg-[#0d0d0d] p-3.5 rounded-xl border border-[#222]">
                                 <div class="flex items-center gap-2.5 text-xs text-[#ededed]">
                                     <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>
                                     <span>Camera Presence Verified</span>
@@ -712,6 +727,11 @@ function preLabCameraGate(labId, initialSessionId) {
         launchingVsCode: false,
         vscodeConnected: false,
         vscodePollInterval: null,
+        // Set when the extension has not pinged within vscodeDetectTimeoutMs of launch,
+        // which usually means it is not installed. Polling keeps going so a late ping still connects.
+        vscodeNotDetected: false,
+        vscodeDetectTimer: null,
+        vscodeDetectTimeoutMs: 25000,
         lowLightingDetected: false,
         isLowLightMode: false,
         // Small luminance grid of the frame the student verified with in low-light mode.
@@ -1097,6 +1117,14 @@ function preLabCameraGate(labId, initialSessionId) {
             }
             if (!this.activeSessionId) return;
 
+            this.vscodeNotDetected = false;
+            clearTimeout(this.vscodeDetectTimer);
+            this.vscodeDetectTimer = setTimeout(() => {
+                if (!this.vscodeConnected) {
+                    this.vscodeNotDetected = true;
+                }
+            }, this.vscodeDetectTimeoutMs);
+
             const checkPing = async () => {
                 try {
                     const res = await fetch(`/v1/sessions/${this.activeSessionId}`);
@@ -1104,6 +1132,8 @@ function preLabCameraGate(labId, initialSessionId) {
                         const data = await res.json();
                         if (data && data.vscode_connected === true) {
                             this.vscodeConnected = true;
+                            this.vscodeNotDetected = false;
+                            clearTimeout(this.vscodeDetectTimer);
                             if (this.vscodePollInterval) {
                                 clearInterval(this.vscodePollInterval);
                                 this.vscodePollInterval = null;
@@ -1454,6 +1484,8 @@ function preLabCameraGate(labId, initialSessionId) {
         reopenVsCode() {
             if (this.vscodeUrl) {
                 window.location.href = this.vscodeUrl;
+                // Restart detection so the student gets a fresh wait after installing the extension.
+                this.pollForVsCodePing();
             }
         },
 
@@ -1462,6 +1494,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 clearInterval(this.vscodePollInterval);
                 this.vscodePollInterval = null;
             }
+            clearTimeout(this.vscodeDetectTimer);
+            this.vscodeNotDetected = false;
             if (this.proctorInterval) {
                 clearInterval(this.proctorInterval);
                 this.proctorInterval = null;
@@ -1487,6 +1521,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 clearInterval(this.vscodePollInterval);
                 this.vscodePollInterval = null;
             }
+            clearTimeout(this.vscodeDetectTimer);
+            this.vscodeNotDetected = false;
             this.showModal = false;
             this.launchingVsCode = false;
         }
