@@ -286,10 +286,16 @@ This document outlines the final feature specifications, implementation tasks, a
   - Validates snapshots (JPEG/PNG, max 300 KB), keeps them in the anomaly's `metadata.image_base64`, and serves them only to the class instructor via `GET /anomalies/{id}/snapshot`. Broadcasts `AnomalyDetected` with the snapshot URL; the live alert shows a thumbnail.
 - [x] **Camera Flag De-duplication**:
   - A disconnected camera is reported once by the lab page; the server drops repeat camera flags (5 min without a picture, 20 s with one).
+- [x] **Leave the lab when VS Code closes**:
+  - Extension 1.6.0 reports its window closing (`POST /sessions/{id}/vscode-disconnect`); the lab page stops the camera and returns to the lab view. A crash is caught after two missed extension pings (~40 s). The session stays in progress.
+- [x] **Extension version check**:
+  - The extension sends `X-Extension-Version`; builds below `services.vscode_extension.min_version` (or sending none) get an update banner on the lab page and a warning in VS Code.
 - [ ] **Follow-ups**:
   - Notify the instructor (email or in-app) about camera flags when the monitoring page is closed.
   - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
+  - Reloading the VS Code window also fires `deactivate()` and exits the lab; tell a reload apart from a close.
+  - Show instructors on the monitoring page which students run an outdated extension.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
   - Automated tests for permission denial, absence anomaly recording, multi-face detection, pre-lab 3-attempt failure reporting, and camera verification status persistence.
 
