@@ -19,7 +19,7 @@
                 <div>
                     <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#3ecf8e]">Get started</p>
                     <h2 id="setup-heading" class="mt-1 text-lg font-semibold text-[#ededed]">
-                        {{ $role === 'instructor' ? 'Set up your first class' : 'Your path to a certificate' }}
+                        {{ $role === 'instructor' ? 'Set up your first class' : 'Get ready for your first lab' }}
                     </h2>
                 </div>
                 <div class="flex items-center gap-4">
@@ -31,7 +31,7 @@
             <div class="mt-4 h-1.5 rounded-full bg-[#232323] overflow-hidden" role="progressbar" aria-label="Getting started progress" aria-valuemin="0" aria-valuemax="{{ count($setup) }}" aria-valuenow="{{ $setupDone }}">
                 <div class="h-full rounded-full bg-[#3ecf8e]" style="width: {{ round($setupDone / count($setup) * 100) }}%"></div>
             </div>
-            <ol class="mt-5 grid gap-3 sm:grid-cols-2 {{ count($setup) > 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-4' }}">
+            <ol class="mt-5 grid gap-3 sm:grid-cols-2 {{ ['lg:grid-cols-3', 'lg:grid-cols-4', 'lg:grid-cols-5'][min(max(count($setup), 3), 5) - 3] }}">
                 @foreach ($setup as $i => $step)
                     @php $isNext = $i === $nextStep; @endphp
                     <li class="flex flex-col rounded-lg border p-4 {{ $isNext ? 'border-[#3ecf8e]/40 bg-[#3ecf8e]/[0.05]' : 'border-[#2e2e2e] bg-[#141414]' }}">

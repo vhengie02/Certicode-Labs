@@ -81,16 +81,17 @@ class DashboardTest extends TestCase
     {
         $student = $this->user('kid@example.com', 'student');
         $this->sections($student)
-            ->assertSee('Your path to a certificate')
-            ->assertSee('0 of 4 done')
-            ->assertSee('Enter a class code');
+            ->assertSee('Get ready for your first lab')
+            ->assertSee('0 of 3 done')
+            ->assertSee('Enter a class code')
+            ->assertDontSee('Earn your certificate');
 
         $instructor = $this->user('prof@example.com', 'instructor');
         $class = SchoolClass::create(['name' => 'Java', 'code' => 'JAVA-1', 'instructor_id' => $instructor->id]);
         $class->students()->attach($student->id, ['status' => 'enrolled']);
         \Illuminate\Support\Facades\Cache::store('file')->flush();
 
-        $this->sections($student)->assertSee('1 of 4 done')->assertSee('Download the extension');
+        $this->sections($student)->assertSee('1 of 3 done')->assertSee('Download the extension');
         $this->sections($instructor)
             ->assertSee('Set up your first class')
             ->assertSee('2 of 5 done') // class created, student enrolled
