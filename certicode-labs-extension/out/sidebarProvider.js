@@ -30,6 +30,8 @@ const https = __importStar(require("https"));
 const url_1 = require("url");
 const crypto = __importStar(require("crypto"));
 const API_PREFIX = '/api/v1';
+// Sent with every request so the server can tell students running an outdated build.
+const EXTENSION_VERSION = vscode.extensions.getExtension('certicode.certicode-labs')?.packageJSON?.version ?? '0.0.0';
 // Check progress and submit run the code and then grade it with Claude on the server
 // (up to ~25 s + 45 s, capped at 60 s on Vercel), so they get more than the default 15 s.
 const GRADING_TIMEOUT_MS = 90000;
@@ -332,6 +334,25 @@ class SidebarProvider {
             // Heartbeat warning ignored
         }
     }
+    /**
+     * Tell the server this VS Code window is closing, so the browser page leaves
+     * camera mode now instead of waiting for the heartbeat to go stale.
+     */
+    async notifyVsCodeClosed() {
+        if (!this._sessionId) {
+            return;
+        }
+        try {
+            await this.makeRequest('POST', `${API_PREFIX}/sessions/${this._sessionId}/vscode-disconnect`, {
+                source: 'vscode',
+                client: 'vscode_extension',
+                timestamp: new Date().toISOString()
+            }, 3000);
+        }
+        catch (err) {
+            // Best effort: the browser falls back to the stale heartbeat
+        }
+    }
     startMonitoring() {
         if (this._pingInterval) {
             clearInterval(this._pingInterval);
@@ -541,6 +562,21 @@ class SidebarProvider {
             unreadCount: this._unreadChatCount
         });
     }
+    /**
+     * Ask once per session to install the latest build when the server says this one is too old.
+     */
+    warnIfOutdated(data) {
+        if (!data?.extension_outdated || this._outdatedWarnedSessionId === this._sessionId) {
+            return;
+        }
+        this._outdatedWarnedSessionId = this._sessionId;
+        const required = data.extension_min_version ? ` ${data.extension_min_version}` : '';
+        vscode.window.showWarningMessage(`CertiCode: this extension (v${EXTENSION_VERSION}) is outdated. Install version${required} or newer so your lab works correctly.`, 'Download update').then(choice => {
+            if (choice === 'Download update' && data.extension_download_url) {
+                vscode.env.openExternal(vscode.Uri.parse(data.extension_download_url));
+            }
+        });
+    }
     async syncSessionState() {
         if (!this._sessionId) {
             return;
@@ -555,6 +591,7 @@ class SidebarProvider {
                 this._isReconnecting = false;
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
+                this.warnIfOutdated(data);
                 if (data.realtime && !this._ws && !this._wsReconnectTimer) {
                     this.connectWebSocket();
                 }
@@ -1514,6 +1551,7 @@ class SidebarProvider {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-Client': 'vscode',
+                    'X-Extension-Version': EXTENSION_VERSION,
                 };
                 if (this._apiToken) {
                     // Per-session secret from the vscode:// deep link; scoped to this session only.

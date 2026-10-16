@@ -3,8 +3,11 @@ import { SidebarProvider } from './sidebarProvider';
 import { URLSearchParams } from 'url';
 
 
+let activeSidebarProvider: SidebarProvider | undefined;
+
 export function activate(context: vscode.ExtensionContext) {
     const sidebarProvider = new SidebarProvider(context.extensionUri, context.globalState);
+    activeSidebarProvider = sidebarProvider;
     context.subscriptions.push(sidebarProvider);
 
     context.subscriptions.push(
@@ -44,4 +47,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-export function deactivate() {}
+// Runs when the VS Code window closes. Returning the promise makes VS Code wait for the request.
+export function deactivate(): Promise<void> | undefined {
+    return activeSidebarProvider?.notifyVsCodeClosed();
+}

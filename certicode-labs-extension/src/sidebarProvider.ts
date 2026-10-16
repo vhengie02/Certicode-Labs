@@ -5,6 +5,8 @@ import { URL } from 'url';
 import * as crypto from 'crypto';
 
 const API_PREFIX = '/api/v1';
+// Sent with every request so the server can tell students running an outdated build.
+const EXTENSION_VERSION: string = vscode.extensions.getExtension('certicode.certicode-labs')?.packageJSON?.version ?? '0.0.0';
 // Check progress and submit run the code and then grade it with Claude on the server
 // (up to ~25 s + 45 s, capped at 60 s on Vercel), so they get more than the default 15 s.
 const GRADING_TIMEOUT_MS = 90000;
@@ -78,6 +80,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     private _lastChatCount: number = 0;
     // Workspace-wide listeners, registered once and disposed with the provider.
     private _workspaceDisposables: vscode.Disposable[] = [];
+    private _outdatedWarnedSessionId: number | undefined;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -345,6 +348,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         }
     }
 
+    /**
+     * Tell the server this VS Code window is closing, so the browser page leaves
+     * camera mode now instead of waiting for the heartbeat to go stale.
+     */
+    public async notifyVsCodeClosed() {
+        if (!this._sessionId) {
+            return;
+        }
+        try {
+            await this.makeRequest('POST', `${API_PREFIX}/sessions/${this._sessionId}/vscode-disconnect`, {
+                source: 'vscode',
+                client: 'vscode_extension',
+                timestamp: new Date().toISOString()
+            }, 3000);
+        } catch (err) {
+            // Best effort: the browser falls back to the stale heartbeat
+        }
+    }
+
     private startMonitoring() {
         if (this._pingInterval) {
             clearInterval(this._pingInterval);
@@ -565,6 +587,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         });
     }
 
+    /**
+     * Ask once per session to install the latest build when the server says this one is too old.
+     */
+    private warnIfOutdated(data: any) {
+        if (!data?.extension_outdated || this._outdatedWarnedSessionId === this._sessionId) {
+            return;
+        }
+        this._outdatedWarnedSessionId = this._sessionId;
+        const required = data.extension_min_version ? ` ${data.extension_min_version}` : '';
+        vscode.window.showWarningMessage(
+            `CertiCode: this extension (v${EXTENSION_VERSION}) is outdated. Install version${required} or newer so your lab works correctly.`,
+            'Download update'
+        ).then(choice => {
+            if (choice === 'Download update' && data.extension_download_url) {
+                vscode.env.openExternal(vscode.Uri.parse(data.extension_download_url));
+            }
+        });
+    }
+
     private async syncSessionState() {
         if (!this._sessionId) {
             return;
@@ -582,6 +623,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 this._isReconnecting = false;
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
+                this.warnIfOutdated(data);
 
                 if (data.realtime && !this._ws && !this._wsReconnectTimer) {
                     this.connectWebSocket();
@@ -1604,6 +1646,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-Client': 'vscode',
+                    'X-Extension-Version': EXTENSION_VERSION,
                 };
 
                 if (this._apiToken) {
