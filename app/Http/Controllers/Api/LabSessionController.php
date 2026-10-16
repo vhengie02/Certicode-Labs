@@ -589,6 +589,8 @@ class LabSessionController extends Controller
 
         if ($isVscodeSource) {
             \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
+            \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_disconnected");
+            $this->recordExtensionVersion($request, $session->id);
             $session->update(['last_ping_at' => now()]);
             TelemetryLog::create([
                 'lab_session_id' => $session->id,
@@ -607,7 +609,10 @@ class LabSessionController extends Controller
             ->where('event_type', 'vscode_ping')
             ->where('created_at', '>=', now()->subSeconds(45))
             ->exists();
-        $isVscodeConnected = (bool) ($hasRecentVscodePing || $hasTelemetryVscodePing || ($session->last_ping_at && ($session->wpm > 0 || $session->keystroke_count > 0) && $session->last_ping_at->diffInSeconds(now()) < 30));
+        // Only extension pings count. The browser page pings last_ping_at too, so it can't
+        // tell us whether VS Code is still open. A clean shutdown reports itself right away.
+        $vscodeDisconnected = \Illuminate\Support\Facades\Cache::has("lab_session_{$session->id}_vscode_disconnected");
+        $isVscodeConnected = !$vscodeDisconnected && ($hasRecentVscodePing || $hasTelemetryVscodePing);
 
         $isCameraVerified = TelemetryLog::where('lab_session_id', $session->id)
             ->where('event_type', 'webcam_prelab_verification')
@@ -619,6 +624,10 @@ class LabSessionController extends Controller
             'camera_verified' => $isCameraVerified,
             'last_ping_at' => $session->last_ping_at ? $session->last_ping_at->toIso8601String() : null,
             'vscode_connected' => $isVscodeConnected,
+            'vscode_closed' => $vscodeDisconnected,
+            // Server-side age so the browser needn't trust its own clock. The extension pings every 15s.
+            'vscode_ping_age_seconds' => $vscodePing ? (int) \Carbon\Carbon::parse($vscodePing)->diffInSeconds(now(), true) : null,
+            ...$this->extensionVersionStatus($session->id),
             'vscode_last_ping_at' => $vscodePing ?: null,
             'started_at' => $session->started_at,
             'elapsed_seconds' => $elapsedSeconds,
@@ -1245,6 +1254,8 @@ class LabSessionController extends Controller
 
         if ($isVscode) {
             \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
+            \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_disconnected");
+            $this->recordExtensionVersion($request, $session->id);
             TelemetryLog::create([
                 'lab_session_id' => $session->id,
                 'event_type' => 'vscode_ping',
@@ -1277,7 +1288,63 @@ class LabSessionController extends Controller
             'is_active' => true,
             'time_remaining_seconds' => $remainingSeconds,
             'timestamp' => now()->toIso8601String(),
+            ...$this->extensionVersionStatus($session->id),
         ]);
+    }
+
+    /**
+     * Remember which extension build is talking to this session. Builds before
+     * version reporting send no header, which is recorded as an empty version.
+     */
+    private function recordExtensionVersion(Request $request, int $sessionId): void
+    {
+        $version = trim((string) $request->header('X-Extension-Version', ''));
+        if (!preg_match('/^\d+(\.\d+){0,3}$/', $version)) {
+            $version = '';
+        }
+        \Illuminate\Support\Facades\Cache::put("lab_session_{$sessionId}_extension_version", $version, 86400);
+    }
+
+    /**
+     * Whether the extension connected to this session is older than the minimum supported build.
+     * Null until the extension has pinged at least once.
+     */
+    private function extensionVersionStatus(int $sessionId): array
+    {
+        $minVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
+        $version = \Illuminate\Support\Facades\Cache::get("lab_session_{$sessionId}_extension_version");
+
+        return [
+            'extension_version' => $version ?: null,
+            'extension_min_version' => $minVersion,
+            'extension_outdated' => $version === null ? null : ($version === '' || version_compare($version, $minVersion, '<')),
+            'extension_download_url' => asset(config('services.vscode_extension.download_path')),
+        ];
+    }
+
+    /**
+     * The VS Code extension reports that its window is closing, so the browser page
+     * can leave camera mode without waiting for the ping to go stale.
+     */
+    public function vscodeDisconnect(int $sessionId)
+    {
+        $session = LabSession::find($sessionId);
+        if (!$session) {
+            return response()->json(['error' => 'Session not found'], 404);
+        }
+
+        \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_ping");
+        \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_disconnected", now()->toIso8601String(), 600);
+        TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'vscode_disconnected',
+            'payload' => [
+                'source' => 'vscode',
+                'timestamp' => now()->toIso8601String(),
+            ],
+        ]);
+
+        return response()->json(['status' => 'success', 'vscode_connected' => false]);
     }
 
     /**

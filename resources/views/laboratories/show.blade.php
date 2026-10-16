@@ -92,6 +92,16 @@
                         </div>
                     </div>
 
+                    <!-- Outdated extension: an old build misses fixes the lab page relies on -->
+                    <div x-show="extensionOutdated" x-cloak class="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                        <p class="flex-1 text-xs text-amber-200 leading-relaxed">
+                            <strong class="font-semibold">Your Certicode extension is out of date</strong>
+                            <span x-text="extensionVersion ? '(v' + extensionVersion + ').' : '(older build).'"></span>
+                            Install version <span class="font-mono" x-text="extensionMinVersion"></span> or newer: download it, then in VS Code open Extensions, the … menu, <strong class="font-semibold">Install from VSIX</strong>, and reload VS Code.
+                        </p>
+                        <a :href="extensionDownloadUrl" download class="ui-btn ui-btn-secondary text-xs shrink-0">Download update (.vsix)</a>
+                    </div>
+
                     <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                         <!-- Compact Live Camera Viewport -->
                         <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video flex items-center justify-center">
@@ -732,6 +742,16 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodeNotDetected: false,
         vscodeDetectTimer: null,
         vscodeDetectTimeoutMs: 25000,
+        // After connecting, how often the page checks VS Code is still open.
+        vscodeWatchInterval: null,
+        vscodeWatchIntervalMs: 5000,
+        vscodeStaleAfterSeconds: 32,
+        // Version reported by the connected extension, checked against the server's minimum.
+        extensionOutdated: false,
+        extensionVersion: null,
+        extensionMinVersion: '',
+        extensionDownloadUrl: @js(asset(config('services.vscode_extension.download_path'))),
+        leavingAfterVsCodeClosed: false,
         lowLightingDetected: false,
         isLowLightMode: false,
         // Small luminance grid of the frame the student verified with in low-light mode.
@@ -1130,6 +1150,7 @@ function preLabCameraGate(labId, initialSessionId) {
                     const res = await fetch(`/v1/sessions/${this.activeSessionId}`);
                     if (res.ok) {
                         const data = await res.json();
+                        this.applyExtensionStatus(data);
                         if (data && data.vscode_connected === true) {
                             this.vscodeConnected = true;
                             this.vscodeNotDetected = false;
@@ -1142,6 +1163,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             setTimeout(() => {
                                 this.launchingVsCode = false;
                             }, 800);
+                            this.watchVsCodeConnection();
                         }
                     }
                 } catch (e) {
@@ -1151,6 +1173,62 @@ function preLabCameraGate(labId, initialSessionId) {
 
             setTimeout(checkPing, 800);
             this.vscodePollInterval = setInterval(checkPing, 1200);
+        },
+
+        // Once VS Code is connected, keep checking it is still open. When the student
+        // closes VS Code, leave camera mode and the lab and go back to the lab view.
+        watchVsCodeConnection() {
+            clearInterval(this.vscodeWatchInterval);
+            let missedChecks = 0;
+
+            const check = async () => {
+                if (!this.browserProctorActive || !this.activeSessionId) return;
+                try {
+                    const res = await fetch(`/v1/sessions/${this.activeSessionId}`, { headers: { 'Accept': 'application/json' } });
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    this.applyExtensionStatus(data);
+                    if (data.status && data.status !== 'in_progress') {
+                        this.leaveLabAfterVsCodeClosed('session_ended');
+                        return;
+                    }
+                    if (data.vscode_closed === true) {
+                        this.leaveLabAfterVsCodeClosed('vscode_closed');
+                        return;
+                    }
+                    // No clean shutdown report (old extension, crash, killed process): the extension
+                    // pings every 15s, so two missed pings means VS Code is gone.
+                    const pingAge = data.vscode_ping_age_seconds;
+                    const stale = data.vscode_connected !== true
+                        || (typeof pingAge === 'number' && pingAge > this.vscodeStaleAfterSeconds);
+                    missedChecks = stale ? missedChecks + 1 : 0;
+                    if (missedChecks >= 2) {
+                        this.leaveLabAfterVsCodeClosed('vscode_heartbeat_lost');
+                    }
+                } catch (e) {
+                    // Network blip in the browser, not proof VS Code closed.
+                }
+            };
+
+            this.vscodeWatchInterval = setInterval(check, this.vscodeWatchIntervalMs);
+        },
+
+        applyExtensionStatus(data) {
+            if (!data) return;
+            this.extensionOutdated = data.extension_outdated === true;
+            this.extensionVersion = data.extension_version || null;
+            this.extensionMinVersion = data.extension_min_version || '';
+            if (data.extension_download_url) this.extensionDownloadUrl = data.extension_download_url;
+        },
+
+        async leaveLabAfterVsCodeClosed(reason) {
+            if (this.leavingAfterVsCodeClosed) return;
+            this.leavingAfterVsCodeClosed = true;
+            await this.logTelemetry('vscode_closed_exit', { reason: reason, timestamp: new Date().toISOString() });
+            this.stopProctoring();
+            this.proctorStatus = 'disconnected';
+            this.proctorStatusText = 'VS Code closed';
+            window.location.reload();
         },
 
         startContinuousProctoring() {
@@ -1495,6 +1573,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.vscodePollInterval = null;
             }
             clearTimeout(this.vscodeDetectTimer);
+            clearInterval(this.vscodeWatchInterval);
+            this.vscodeWatchInterval = null;
             this.vscodeNotDetected = false;
             if (this.proctorInterval) {
                 clearInterval(this.proctorInterval);

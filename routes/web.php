@@ -280,6 +280,7 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
+        Route::post('/sessions/{sessionId}/vscode-disconnect', [LabSessionController::class, 'vscodeDisconnect']);
         Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
         Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
         Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
