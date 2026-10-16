@@ -30,6 +30,9 @@ const https = __importStar(require("https"));
 const url_1 = require("url");
 const crypto = __importStar(require("crypto"));
 const API_PREFIX = '/api/v1';
+// Check progress and submit run the code and then grade it with Claude on the server
+// (up to ~25 s + 45 s, capped at 60 s on Vercel), so they get more than the default 15 s.
+const GRADING_TIMEOUT_MS = 90000;
 const TRUSTED_BACKENDS_KEY = 'certicode.trustedBackends';
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
@@ -214,22 +217,6 @@ class SidebarProvider {
                     }
                     break;
                 }
-                case 'connect': {
-                    const sessionId = parseInt(data.sessionId, 10);
-                    if (isNaN(sessionId)) {
-                        vscode.window.showErrorMessage('CertiCode: Enter a numeric Lab Session ID.');
-                        break;
-                    }
-                    const origin = await this.ensureTrustedBackend(String(data.backendUrl || ''));
-                    if (!origin) {
-                        break;
-                    }
-                    this._backendUrl = origin;
-                    this._sessionId = sessionId;
-                    this._apiToken = data.apiToken || undefined;
-                    this.startMonitoring();
-                    break;
-                }
                 case 'checkProgress': {
                     this.handleCheckProgress();
                     break;
@@ -306,40 +293,8 @@ class SidebarProvider {
         this.setupWorkspaceWatchers();
     }
     /**
-     * Shows an input prompt to connect from VS Code commands palette
-     */
-    async connectSessionPrompt() {
-        const url = await vscode.window.showInputBox({
-            prompt: 'Enter CertiCode Backend URL',
-            value: this._backendUrl
-        });
-        if (!url) {
-            return;
-        }
-        const session = await vscode.window.showInputBox({
-            prompt: 'Enter Lab Session ID',
-            placeHolder: 'e.g. 1',
-            validateInput: value => /^\d+$/.test(value.trim()) ? undefined : 'Enter a numeric session ID.'
-        });
-        if (!session) {
-            return;
-        }
-        const origin = await this.ensureTrustedBackend(url);
-        if (!origin) {
-            return;
-        }
-        this._backendUrl = origin;
-        this._sessionId = parseInt(session, 10);
-        this._apiToken = undefined;
-        this._view?.webview.postMessage({
-            type: 'prefill',
-            backendUrl: this._backendUrl,
-            sessionId: this._sessionId
-        });
-        this.startMonitoring();
-    }
-    /**
-     * Connect directly to a session (called via deep-linking custom URI handler)
+     * Connect directly to a session (called via deep-linking custom URI handler).
+     * This is the only way in: students start labs from the website, never by typing session details.
      */
     async connectToSession(backendUrl, sessionId, apiToken) {
         const origin = await this.ensureTrustedBackend(backendUrl);
@@ -630,9 +585,9 @@ class SidebarProvider {
                 this.stopSessionTimers();
                 this._view?.webview.postMessage({
                     type: 'error',
-                    message: 'This lab session needs its secure link. Open the lab on the CertiCode website and click "Open in VS Code".'
+                    message: 'This lab needs to be opened from the website. Open it on Certicode and click "Continue in VS Code".'
                 });
-                vscode.window.showErrorMessage('CertiCode: Not authorized for this lab session. Reopen it from the CertiCode website using "Open in VS Code".');
+                vscode.window.showErrorMessage('CertiCode: Not authorized for this lab session. Open the lab on the Certicode website and click "Continue in VS Code".');
             }
             else if (result.status === 403) {
                 this._isReconnecting = false;
@@ -1426,7 +1381,7 @@ class SidebarProvider {
                 files: filesPayload,
                 language: detectedLang,
                 diagnostics: collectedDiagnostics
-            });
+            }, GRADING_TIMEOUT_MS);
             if (result.status === 200) {
                 this._isReconnecting = false;
                 const responseData = JSON.parse(result.body);
@@ -1481,7 +1436,7 @@ class SidebarProvider {
                 files: filesPayload,
                 language: detectedLang,
                 diagnostics: collectedDiagnostics
-            });
+            }, GRADING_TIMEOUT_MS);
             if (result.status === 200) {
                 const responseData = JSON.parse(result.body);
                 const score = responseData.performance_score ?? 0;
@@ -1551,7 +1506,7 @@ class SidebarProvider {
     /**
      * Native HTTP/HTTPS client requests.
      */
-    makeRequest(method, path, bodyData) {
+    makeRequest(method, path, bodyData, timeoutMs = 15000) {
         return new Promise((resolve, reject) => {
             try {
                 const targetUrl = new url_1.URL(`${this._backendUrl}${path}`);
@@ -1586,8 +1541,8 @@ class SidebarProvider {
                 const req = targetUrl.protocol === 'https:'
                     ? https.request(options, handleResponse)
                     : http.request(options, handleResponse);
-                req.setTimeout(15000, () => {
-                    req.destroy(new Error('Request timed out after 15 seconds'));
+                req.setTimeout(timeoutMs, () => {
+                    req.destroy(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`));
                 });
                 req.on('error', (err) => {
                     reject(err);
@@ -1616,7 +1571,6 @@ class SidebarProvider {
         const sessionScreenStyle = showSessionDirectly ? 'display: flex;' : 'display: none;';
         const initialStatusText = this._lastSessionData ? 'Connected' : (this._sessionId ? `Connecting to Session #${this._sessionId}...` : 'Connected');
         const initialStatusClass = this._lastSessionData ? 'status-connected' : 'status-reconnecting';
-        const backendVal = this._backendUrl || 'http://127.0.0.1:8000';
         const nonce = crypto.randomBytes(16).toString('base64');
         const csp = [
             "default-src 'none'",
@@ -1626,7 +1580,6 @@ class SidebarProvider {
             `font-src ${webview.cspSource}`,
             `connect-src ${webview.cspSource}`,
         ].join('; ');
-        const sessionVal = this._sessionId ? String(this._sessionId) : '';
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1636,616 +1589,533 @@ class SidebarProvider {
     <title>CertiCode Labs IDE</title>
     <script nonce="${nonce}" src="${faceApiScriptUri}"></script>
     <style>
+        /* Everything maps to VS Code theme tokens, so the panel follows light, dark and high-contrast themes. */
+        :root {
+            --fg: var(--vscode-foreground);
+            --muted: var(--vscode-descriptionForeground);
+            --bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+            --surface: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+            --hover: var(--vscode-list-hoverBackground);
+            --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.28)));
+            --hc: var(--vscode-contrastBorder, transparent);
+            --focus: var(--vscode-focusBorder);
+            --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+            --ok: var(--vscode-charts-green, #3ecf8e);
+            --danger: var(--vscode-charts-red, #f14c4c);
+            --warn: var(--vscode-charts-yellow, #cca700);
+            --changed: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+            --ok-soft: rgba(62, 207, 142, 0.12);
+            --danger-soft: rgba(241, 76, 76, 0.12);
+            --warn-soft: rgba(204, 167, 0, 0.14);
+            --track: rgba(128, 128, 128, 0.22);
+            --r-sm: 3px;
+            --r-md: 6px;
+        }
+        @supports (color: color-mix(in srgb, red 50%, transparent)) {
+            :root {
+                --ok-soft: color-mix(in srgb, var(--ok) 14%, transparent);
+                --danger-soft: color-mix(in srgb, var(--danger) 14%, transparent);
+                --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
+                --track: color-mix(in srgb, var(--fg) 12%, transparent);
+            }
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
         body {
-            font-family: var(--vscode-font-family, sans-serif);
-            font-size: var(--vscode-font-size, 13px);
-            color: var(--vscode-foreground);
-            background-color: var(--vscode-sideBar-background);
-            padding: 8px;
             margin: 0;
-            box-sizing: border-box;
+            padding: 0;
+            font-family: var(--vscode-font-family, system-ui, sans-serif);
+            font-size: var(--vscode-font-size, 13px);
+            line-height: 1.45;
+            color: var(--fg);
+            background: var(--bg);
         }
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .header {
-            font-weight: bold;
-            font-size: 1.15em;
-            margin-bottom: 4px;
-            color: var(--vscode-sideBarTitle-foreground);
-        }
-        .sub-header {
-            color: var(--vscode-descriptionForeground);
-            font-size: 0.9em;
-            line-height: 1.35;
-        }
-        .connection-status {
-            padding: 5px 8px;
-            font-size: 0.85em;
-            border-radius: 3px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .status-left {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-        .status-connected {
-            background-color: rgba(62, 207, 142, 0.12);
-            color: #3ecf8e;
-            border: 1px solid rgba(62, 207, 142, 0.25);
-        }
-        .status-connected .status-dot {
-            background-color: #3ecf8e;
-        }
-        .status-reconnecting {
-            background-color: rgba(245, 166, 35, 0.15);
-            color: #f5a623;
-            border: 1px solid rgba(245, 166, 35, 0.3);
-            animation: pulse 1.5s infinite;
-        }
-        .status-reconnecting .status-dot {
-            background-color: #f5a623;
-        }
-        .diff-pill {
-            font-size: 0.8em;
-            font-family: var(--vscode-editor-font-family, monospace);
-            padding: 2px 6px;
-            border-radius: 10px;
-            background: rgba(0,0,0,0.3);
-            border: 1px solid var(--vscode-panel-border);
-        }
-        .diff-added { color: #3ecf8e; }
-        .diff-deleted { color: #f87171; }
+        [hidden] { display: none !important; }
+        .muted { color: var(--muted); }
+        .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+        svg.icon { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
-        /* Feature 1 Integrity Warning Banner */
-        .integrity-alert {
-            background-color: rgba(248, 113, 113, 0.12);
-            border: 1px solid rgba(248, 113, 113, 0.3);
-            color: #fca5a5;
-            padding: 8px 10px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            line-height: 1.35;
-        }
-        .integrity-alert strong { color: #f87171; }
+        :focus { outline: none; }
+        :focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
 
-        /* Navigation Tabs */
-        .tabs-nav {
-            display: flex;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            gap: 2px;
-            margin-top: 4px;
-        }
-        .tab-btn {
-            background: none;
-            border: none;
-            border-bottom: 2px solid transparent;
-            color: var(--vscode-descriptionForeground);
-            padding: 6px 10px;
-            font-size: 0.85em;
-            font-family: inherit;
-            cursor: pointer;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            transition: all 0.2s;
-        }
-        .tab-btn:hover {
-            color: var(--vscode-foreground);
-        }
-        .tab-btn.active {
-            color: #3ecf8e;
-            border-bottom: 2px solid #3ecf8e;
-        }
-        .tab-badge {
-            font-size: 0.75em;
-            background-color: #3ecf8e;
-            color: #0f0f0f;
-            border-radius: 8px;
-            padding: 1px 5px;
-            font-weight: bold;
-        }
+        /* Screens */
+        .screen { min-height: 100%; flex-direction: column; }
+        #connection-screen { display: flex; padding: 20px 14px; gap: 14px; }
+        #session-screen { display: flex; }
 
-        .tab-content {
-            display: none;
-            flex-direction: column;
-            gap: 10px;
+        /* Connect screen */
+        .brand-mark { width: 28px; height: 28px; color: var(--ok); }
+        .brand-mark svg { width: 100%; height: 100%; fill: currentColor; }
+        .connect-title { margin: 2px 0 0; font-size: 1.25em; font-weight: 600; letter-spacing: -0.01em; }
+        .connect-lede { margin: 0; color: var(--muted); max-width: 34em; text-wrap: pretty; }
+        .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+        .steps li { display: flex; gap: 10px; align-items: flex-start; }
+        .steps strong, .field-hint strong { font-weight: 600; }
+        .step-num {
+            width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.85em; font-weight: 600; font-variant-numeric: tabular-nums;
+            border: 1px solid var(--border); color: var(--muted);
         }
-        .tab-content.active {
-            display: flex;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        label {
-            font-weight: 600;
-            font-size: 0.85em;
-        }
+        .field-hint { font-size: 0.88em; color: var(--muted); }
         input, textarea {
-            background-color: var(--vscode-input-background);
+            width: 100%;
+            background: var(--vscode-input-background);
             color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border, transparent);
+            border: 1px solid var(--vscode-input-border, var(--border));
+            border-radius: var(--r-sm);
             padding: 6px 8px;
-            border-radius: 2px;
-            font-family: inherit;
-            font-size: 0.9em;
+            font: inherit;
         }
-        input:focus, textarea:focus {
-            outline: 1px solid var(--vscode-focusBorder);
-        }
-        button {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            padding: 7px 12px;
-            border-radius: 2px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9em;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: opacity 0.2s;
-        }
-        button:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-        .btn-secondary {
-            background-color: var(--vscode-button-secondaryBackground, #3a3a3a);
-            color: var(--vscode-button-secondaryForeground, #ffffff);
-        }
-        .btn-secondary:hover {
-            background-color: var(--vscode-button-secondaryHoverBackground, #4a4a4a);
-        }
-        .timer-box {
-            font-size: 1.25em;
-            font-weight: bold;
-            text-align: center;
-            padding: 8px;
-            background-color: var(--vscode-editor-background);
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 4px;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .timer-label {
-            font-size: 0.65em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--vscode-descriptionForeground);
-        }
-        .card {
-            background-color: var(--vscode-editor-background);
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 4px;
-            padding: 8px 10px;
-        }
-        .leaderboard-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 7px 9px;
-            border-radius: 4px;
-            background: var(--vscode-sideBar-background);
-            border: 1px solid var(--vscode-panel-border);
-            font-size: 0.85em;
-            gap: 6px;
-        }
-        .leaderboard-row.current-user {
-            border-color: #3ecf8e;
-            background: rgba(62, 207, 142, 0.08);
-        }
-        .rank-badge {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
+        input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
+        input:focus, textarea:focus { outline: 1px solid var(--focus); outline-offset: -1px; border-color: var(--focus); }
+        textarea { resize: vertical; font-family: var(--mono); font-size: 0.92em; }
+
+        /* Buttons */
+        button { font: inherit; cursor: pointer; }
+        button:disabled { cursor: not-allowed; opacity: 0.5; }
+        .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
-            font-size: 0.75em;
-            background: var(--vscode-panel-border);
-            color: var(--vscode-foreground);
-            flex-shrink: 0;
-        }
-        .rank-1 { background: #f59e0b; color: #000; }
-        .rank-2 { background: #94a3b8; color: #000; }
-        .rank-3 { background: #b45309; color: #fff; }
-        .task-list {
-            display: flex;
-            flex-direction: column;
             gap: 6px;
-        }
-        .task-item {
-            display: flex;
-            flex-direction: column;
-            padding: 7px;
-            border-radius: 3px;
-            border: 1px solid var(--vscode-panel-border);
-            background-color: var(--vscode-sideBar-background);
-        }
-        .task-header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 6px;
-        }
-        .task-title {
+            padding: 6px 12px;
+            border: 1px solid var(--vscode-button-border, transparent);
+            border-radius: var(--r-sm);
             font-weight: 500;
-            line-height: 1.3;
-            font-size: 0.92em;
+            transition: background-color 120ms ease, transform 80ms ease;
         }
-        .task-badge {
-            font-size: 0.75em;
-            padding: 2px 6px;
-            border-radius: 8px;
-            font-weight: bold;
+        .btn:active:not(:disabled) { transform: translateY(1px); }
+        .btn-block { width: 100%; }
+        .btn-primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+        .btn-primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+        .btn-secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+        .btn-secondary:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+        .btn-ghost { background: transparent; color: var(--muted); border-color: transparent; }
+        .btn-ghost:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
+        .icon-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px; padding: 0;
+            background: transparent; color: var(--muted);
+            border: 1px solid transparent; border-radius: var(--r-sm);
+        }
+        .icon-btn:hover:not(:disabled), .icon-btn[aria-pressed="true"] { background: var(--vscode-toolbar-hoverBackground, var(--hover)); color: var(--fg); }
+        .link-btn { background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; }
+        .link-btn:hover { color: var(--vscode-textLink-activeForeground); }
+
+        /* Session header */
+        .session-head { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border); }
+        .connection-status { display: flex; align-items: center; gap: 8px; font-size: 0.9em; min-height: 20px; }
+        .status-left { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+        .status-connected .status-dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+        .status-reconnecting .status-dot { background: var(--warn); animation: pulse 1.4s ease-in-out infinite; }
+        .status-reconnecting .status-left { color: var(--warn); }
+        .tag {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 0.85em; padding: 0 6px; line-height: 18px;
+            border-radius: var(--r-sm);
+            background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
             white-space: nowrap;
         }
-        .badge-pending {
-            background-color: rgba(245, 166, 35, 0.15);
-            color: #f5a623;
-            border: 1px solid rgba(245, 166, 35, 0.3);
+        .tag-quiet { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+        .tag-ok { background: var(--ok-soft); color: var(--ok); }
+        .diff-pill { margin-left: auto; display: inline-flex; gap: 6px; font-family: var(--mono); font-size: 0.88em; font-variant-numeric: tabular-nums; }
+        .diff-added { color: var(--ok); }
+        .diff-deleted { color: var(--danger); }
+        .diff-modified { color: var(--changed); }
+
+        .lab-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+        .lab-heading-text { min-width: 0; }
+        .eyebrow { display: block; font-size: 0.85em; color: var(--muted); }
+        .lab-title { margin: 1px 0 0; font-size: 1.15em; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; overflow-wrap: anywhere; }
+        .timer { text-align: right; flex-shrink: 0; }
+        .timer-value { display: block; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.55em; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; }
+        .timer.timer-low .timer-value { color: var(--warn); }
+        .timer.timer-done .timer-value { color: var(--muted); }
+
+        /* Notices */
+        .notices { display: flex; flex-direction: column; gap: 8px; padding: 0 12px; }
+        .notices:not(:empty) { padding-top: 10px; }
+        .notice {
+            display: flex; gap: 8px; align-items: flex-start;
+            padding: 8px 10px;
+            border-radius: var(--r-md);
+            border: 1px solid var(--hc);
+            border-left: 3px solid var(--muted);
+            background: var(--surface);
+            font-size: 0.95em;
         }
-        .badge-complete {
-            background-color: rgba(62, 207, 142, 0.15);
-            color: #3ecf8e;
-            border: 1px solid rgba(62, 207, 142, 0.3);
+        .notice .icon { margin-top: 2px; }
+        .notice-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .notice-body strong { font-weight: 600; }
+        .notice-close { margin: -3px -4px 0 0; width: 22px; height: 22px; }
+        .notice[data-tone="danger"] { border-left-color: var(--danger); background: var(--danger-soft); }
+        .notice[data-tone="danger"] > .icon { color: var(--danger); }
+        .notice[data-tone="warn"] { border-left-color: var(--warn); background: var(--warn-soft); }
+        .notice[data-tone="warn"] > .icon { color: var(--warn); }
+        .notice[data-tone="ok"] { border-left-color: var(--ok); background: var(--ok-soft); }
+        .notice[data-tone="ok"] > .icon { color: var(--ok); }
+
+        /* Tabs, styled like VS Code's own panel tabs */
+        .tabs-nav {
+            display: flex;
+            gap: 0;
+            padding: 0 6px;
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+            scrollbar-width: none;
+            position: sticky; top: 0; z-index: 2;
+            background: var(--bg);
         }
-        .task-feedback {
-            font-size: 0.85em;
-            color: var(--vscode-descriptionForeground);
-            margin-top: 5px;
-            border-top: 1px dashed var(--vscode-panel-border);
-            padding-top: 5px;
+        .tabs-nav::-webkit-scrollbar { display: none; }
+        .tab-btn {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 8px 5px 7px;
+            background: none; border: 0; border-bottom: 1px solid transparent; margin-bottom: -1px;
+            color: var(--vscode-panelTitle-inactiveForeground, var(--muted));
+            white-space: nowrap;
         }
-        .feedback-box {
-            font-style: italic;
-            color: var(--vscode-descriptionForeground);
-            padding: 8px;
-            border-radius: 3px;
-            background-color: rgba(255, 255, 255, 0.03);
-            border-left: 3px solid #3ecf8e;
+        .tab-btn:hover { color: var(--fg); }
+        .tab-btn.active { color: var(--vscode-panelTitle-activeForeground, var(--fg)); border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--focus)); }
+        .tab-badge {
+            min-width: 16px; padding: 0 4px; line-height: 16px; text-align: center;
+            border-radius: 8px; font-size: 0.8em; font-weight: 600;
+            background: var(--vscode-activityBarBadge-background, var(--vscode-badge-background));
+            color: var(--vscode-activityBarBadge-foreground, var(--vscode-badge-foreground));
         }
+
+        .tab-content { display: none; flex-direction: column; gap: 16px; padding: 12px; flex: 1; }
+        .tab-content.active { display: flex; }
+
+        .section { display: flex; flex-direction: column; gap: 6px; }
+        .section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+        .section-title { margin: 0; font-size: 0.92em; font-weight: 600; }
+        .section-note { font-size: 0.88em; color: var(--muted); }
+
+        .lab-desc { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); max-width: 60em; }
+        .lab-desc.is-clamped { max-height: 9.5em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 70%, transparent); -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent); }
+
+        /* List rows (files, diffs, leaderboard) */
+        .list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+        .list > * + * { border-top: 1px solid var(--border); }
+        .row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; min-height: 30px; }
+        .row-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .row-sub { display: block; font-size: 0.86em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+        button.row { width: 100%; background: none; border: 0; color: inherit; text-align: left; transition: background-color 120ms ease; }
+        button.row:hover { background: var(--hover); }
+        button.row:focus-visible { outline-offset: -1px; }
+        .file-name { font-family: var(--mono); font-size: 0.95em; }
+        .empty { padding: 18px 12px; text-align: center; color: var(--muted); font-size: 0.95em; text-wrap: balance; }
+        .list > .empty { border: 0; }
+
+        /* Tasks */
+        .progress { display: flex; flex-direction: column; gap: 6px; }
+        .progress-label { display: flex; justify-content: space-between; font-size: 0.92em; }
+        .progress-track { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+        .progress-fill { height: 100%; width: 0; background: var(--ok); border-radius: 2px; transition: width 300ms ease; }
+        .task-list { display: flex; flex-direction: column; gap: 2px; }
+        .task-item { display: flex; gap: 8px; padding: 7px 8px; border-radius: var(--r-md); }
+        .task-item:hover { background: var(--hover); }
+        .task-check { width: 16px; height: 16px; margin-top: 1px; color: var(--muted); flex-shrink: 0; }
+        .task-check svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+        .task-check .tick { display: none; }
+        .task-item.is-done .task-check { color: var(--ok); }
+        .task-item.is-done .task-check .tick { display: inline; }
+        .task-body { flex: 1; min-width: 0; }
+        .task-title { overflow-wrap: anywhere; }
+        .task-item.is-done .task-title { color: var(--muted); }
+        .task-badge { font-size: 0.82em; color: var(--muted); white-space: nowrap; margin-top: 1px; }
+        .badge-complete { color: var(--ok); }
+        .task-feedback { margin-top: 4px; font-size: 0.92em; color: var(--muted); overflow-wrap: anywhere; }
+
+        .feedback-box { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+        .score { font-size: 1.35em; font-weight: 600; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+        .feedback-sub { padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.95em; }
         .console-output {
-            background-color: #141414;
-            color: #ededed;
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: 0.85em;
-            padding: 8px;
-            border-radius: 3px;
-            white-space: pre-wrap;
-            max-height: 120px;
-            overflow-y: auto;
-            border: 1px solid var(--vscode-panel-border);
+            margin: 0;
+            padding: 8px 10px;
+            border-radius: var(--r-md);
+            border: 1px solid var(--border);
+            background: var(--vscode-terminal-background, var(--vscode-editor-background));
+            color: var(--vscode-terminal-foreground, var(--fg));
+            font-family: var(--mono); font-size: 0.92em;
+            white-space: pre-wrap; overflow-wrap: anywhere;
+            max-height: 180px; overflow-y: auto;
+        }
+        .console-output.has-error { border-left: 3px solid var(--danger); }
+
+        /* Leaderboard */
+        .rank { width: 22px; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); flex-shrink: 0; }
+        .rank-top { color: var(--fg); font-weight: 600; }
+        .leaderboard-row.current-user { background: var(--vscode-list-inactiveSelectionBackground, var(--hover)); box-shadow: inset 2px 0 0 var(--ok); }
+        .score-chip { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.92em; flex-shrink: 0; }
+        .live-clock { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-size: 0.92em; background: var(--ok-soft); }
+
+        /* Changes */
+        .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: var(--r-md); }
+        .stat { padding: 8px 10px; }
+        .stat + .stat { border-left: 1px solid var(--border); }
+        .stat-value { display: block; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.25em; font-weight: 600; line-height: 1.25; }
+        .stat-label { font-size: 0.86em; color: var(--muted); }
+        .diff-bar { display: flex; width: 48px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--track); flex-shrink: 0; }
+        .diff-bar span { height: 100%; }
+        .diff-bar .add { background: var(--ok); }
+        .diff-bar .del { background: var(--danger); }
+        .diff-nums { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.9em; display: inline-flex; gap: 6px; flex-shrink: 0; }
+        .avatar {
+            width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.72em; font-weight: 700; color: #fff; text-transform: uppercase;
         }
 
-        /* Starter files list styling */
-        .file-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 6px 10px;
-            border-radius: 4px;
-            background: var(--vscode-sideBar-background);
-            border: 1px solid var(--vscode-panel-border);
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: 0.85em;
-            cursor: pointer;
-            user-select: none;
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-        }
-        .file-item:hover {
-            background-color: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
-            border-color: #3ecf8e;
-        }
-        .file-item:active {
-            opacity: 0.8;
-        }
-        .file-badge {
-            font-size: 0.75em;
-            padding: 1px 5px;
-            border-radius: 6px;
-        }
-
-        /* Feature 3: Team Chat Styles */
-        .chat-feed {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            height: 220px;
-            overflow-y: auto;
-            padding: 4px;
-            background-color: var(--vscode-editor-background);
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 4px;
-        }
-        .chat-msg {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            padding: 6px 8px;
-            border-radius: 4px;
-            background-color: var(--vscode-sideBar-background);
-            border: 1px solid var(--vscode-panel-border);
-        }
-        .chat-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 0.8em;
-        }
-        .chat-author {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-weight: bold;
-        }
-        .chat-avatar {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-        .chat-time {
-            color: var(--vscode-descriptionForeground);
-            font-size: 0.85em;
-        }
-        .chat-text {
-            font-size: 0.9em;
-            word-break: break-word;
-        }
+        /* Chat */
+        #tab-chat { gap: 8px; }
+        .chat-feed { flex: 1; min-height: 200px; max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+        .chat-msg { display: flex; gap: 8px; }
+        .chat-body { flex: 1; min-width: 0; }
+        .chat-header { display: flex; align-items: baseline; gap: 6px; font-size: 0.92em; }
+        .chat-author { font-weight: 600; }
+        .chat-time { color: var(--muted); font-size: 0.92em; }
+        .chat-text { overflow-wrap: anywhere; white-space: pre-wrap; }
         .chat-snippet {
-            margin-top: 4px;
-            padding: 4px 6px;
-            background-color: #0e0e0e;
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 2px;
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: 0.82em;
-            color: #3ecf8e;
-            white-space: pre-wrap;
-            max-height: 80px;
-            overflow-y: auto;
+            margin: 4px 0 0; padding: 6px 8px;
+            border-radius: var(--r-sm); border: 1px solid var(--border);
+            background: var(--vscode-textCodeBlock-background, var(--surface));
+            font-family: var(--mono); font-size: 0.9em;
+            white-space: pre; overflow: auto; max-height: 140px;
         }
-        .chat-input-row {
-            display: flex;
-            gap: 4px;
-        }
+        .composer { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+        .chat-input-row { display: flex; gap: 4px; align-items: center; }
+        .chat-input-row input { flex: 1; min-width: 0; }
 
-        /* Actions */
+        /* Status line and submission result */
+        .loader-status { margin: 0 12px; padding: 6px 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.95em; }
+        .loader-status::before {
+            content: ''; width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%;
+            border: 1.5px solid var(--track); border-top-color: var(--focus);
+            animation: spin 800ms linear infinite;
+        }
+        .result-panel { margin: 0 12px 4px; padding: 12px; border-radius: var(--r-md); background: var(--ok-soft); border: 1px solid var(--hc); display: flex; flex-direction: column; gap: 10px; }
+        .result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+        .result-title { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--ok); }
+        .result-score { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.4em; font-weight: 600; }
+
+        /* Actions stay pinned to the bottom of the view */
         .actions {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            margin-top: 6px;
+            position: sticky; bottom: 0; z-index: 2;
+            margin-top: auto;
+            padding: 10px 12px 12px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+            background: var(--bg);
+            border-top: 1px solid var(--border);
         }
-        .loader-status {
-            font-style: italic;
-            color: var(--vscode-descriptionForeground);
-            text-align: center;
-            margin-top: 6px;
-            font-size: 0.88em;
-            animation: pulse 1.5s infinite;
-        }
-        @keyframes pulse {
-            0% { opacity: 0.6; }
-            50% { opacity: 1; }
-            100% { opacity: 0.6; }
+        .actions .btn-ghost { grid-column: 1 / -1; padding: 3px 8px; font-size: 0.95em; }
+        @media (max-width: 220px) { .actions { grid-template-columns: 1fr; } }
+
+        /* High-contrast themes: draw every edge with the contrast border */
+        body.vscode-high-contrast .list,
+        body.vscode-high-contrast .stat-grid,
+        body.vscode-high-contrast .feedback-box,
+        body.vscode-high-contrast .notice { border-color: var(--hc); }
+        body.vscode-high-contrast .tab-btn.active { border-bottom-width: 2px; }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
         }
     </style>
 </head>
 <body>
-    <div id="connection-screen" class="container" style="${connScreenStyle}">
-        <div class="header">Connect to Lab Session</div>
-        <div class="sub-header">Enter details below to establish connection with CertiCode Labs platform.</div>
-        
-        <div class="form-group">
-            <label for="backend-url">Backend Endpoint</label>
-            <input type="text" id="backend-url" value="${backendVal}">
+    <main id="connection-screen" class="screen" style="${connScreenStyle}">
+        <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 256 256"><path d="M156 39.84A96 96 0 1 0 156 216.16L156 163.50A52 52 0 1 1 156 92.50Z"/><rect x="170" y="198" width="66" height="26"/></svg>
         </div>
-        
-        <div class="form-group">
-            <label for="session-id">Lab Session ID</label>
-            <input type="text" id="session-id" placeholder="e.g. 1" value="${sessionVal}">
-        </div>
-        
-        <button id="connect-btn">Connect Session</button>
-    </div>
-
-    <div id="session-screen" class="container" style="${sessionScreenStyle}">
-        <!-- Connection & Live Diff Status -->
-        <div id="status-banner" class="connection-status ${initialStatusClass}">
-            <div class="status-left">
-                <div class="status-dot"></div>
-                <span id="status-text">${initialStatusText}</span>
-                <span id="proctor-badge" style="font-size: 0.72em; padding: 1px 6px; border-radius: 4px; background: rgba(62, 207, 142, 0.15); color: #3ecf8e; border: 1px solid rgba(62, 207, 142, 0.3);"><span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3ecf8e; margin-right: 4px; vertical-align: middle;"></span>Browser proctor active</span>
-            </div>
-            <div class="diff-pill" id="diff-counter-pill">
-                <span class="diff-added" id="pill-added">+0</span> / <span class="diff-deleted" id="pill-deleted">-0</span>
-            </div>
+        <div>
+            <h1 class="connect-title">Start your lab in the browser</h1>
+            <p class="connect-lede">Labs open from the Certicode website. This panel fills in once your lab starts.</p>
         </div>
 
-        <!-- Feature 1 Client-Side Integrity Warning -->
-        <div id="integrity-alert" class="integrity-alert" style="display: none;">
-            <span style="display: inline-flex; padding-top: 2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
-            <div class="flex-1">
-                <span id="integrity-text">Missing required starter file.</span>
-                <div style="margin-top: 4px;">
-                    <a href="#" id="regenerate-files-link" style="color: #3ecf8e; text-decoration: underline; font-size: 0.9em;">Re-generate missing starter files</a>
+        <ol class="steps">
+            <li><span class="step-num">1</span><span>Open your lab on the Certicode website.</span></li>
+            <li><span class="step-num">2</span><span>Click <strong>Start lab</strong> and finish the camera check.</span></li>
+            <li><span class="step-num">3</span><span>When your browser asks, allow it to open VS Code. Your starter files appear here.</span></li>
+        </ol>
+
+        <p class="field-hint">Keep the lab tab open while you code. If VS Code doesn't connect, click <strong>Continue in VS Code</strong> on the lab page.</p>
+
+        <div id="connect-error" class="notice" data-tone="danger" role="alert" hidden>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+            <div class="notice-body" id="connect-error-text"></div>
+        </div>
+    </main>
+
+    <div id="session-screen" class="screen" style="${sessionScreenStyle}">
+        <header class="session-head">
+            <div id="status-banner" class="connection-status ${initialStatusClass}" role="status">
+                <span class="status-left"><span class="status-dot"></span><span id="status-text">${initialStatusText}</span></span>
+                <span class="diff-pill" id="diff-counter-pill" title="Lines added and deleted since the starter files">
+                    <span class="diff-added" id="pill-added">+0</span><span class="diff-deleted" id="pill-deleted">-0</span>
+                </span>
+            </div>
+
+            <div class="lab-heading">
+                <div class="lab-heading-text">
+                    <span class="eyebrow">Lab</span>
+                    <h1 class="lab-title" id="lab-title">Loading lab…</h1>
+                </div>
+                <div class="timer" id="timer-box">
+                    <span id="timer-label" class="eyebrow">Time remaining</span>
+                    <span id="timer-display" class="timer-value" role="timer">00:00</span>
                 </div>
             </div>
-        </div>
+        </header>
 
-        <!-- Feature 9 Live Lab State Alert -->
-        <div id="live-lab-alert" class="integrity-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #fca5a5;">
-            <span style="display: inline-flex; padding-top: 2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-            <div class="flex-1">
-                <span id="live-lab-alert-text" style="font-weight: bold;">Live Lab Alert</span>
-            </div>
-        </div>
-
-        <!-- Timer -->
-        <div class="timer-box">
-            <span id="timer-display">00:00</span>
-            <span id="timer-label" class="timer-label">Time Remaining</span>
-        </div>
-
-        <!-- Tabbed Navigation -->
-        <div class="tabs-nav">
-            <button class="tab-btn active" data-tab="tab-instructions">Instructions</button>
-            <button class="tab-btn" data-tab="tab-tasks">Tasks</button>
-            <button class="tab-btn" data-tab="tab-leaderboard" id="tab-leaderboard-btn">Leaderboard</button>
-            <button class="tab-btn" data-tab="tab-diff">Diff View</button>
-            <button class="tab-btn" data-tab="tab-chat" id="tab-chat-btn">
-                Team Chat
-                <span class="tab-badge" id="chat-badge" style="display: none;">0</span>
-            </button>
-        </div>
-
-        <!-- TAB 1: Instructions & Starter Files -->
-        <div id="tab-instructions" class="tab-content active">
-            <div class="card">
-                <div class="header" id="lab-title">Lab Title</div>
-                <div class="sub-header" id="lab-desc" style="max-height: 120px; overflow-y: auto;">Lab description...</div>
-            </div>
-
-            <div class="card">
-                <label style="margin-bottom: 6px; display: block;">Starter Workspace Files</label>
-                <div id="starter-files-list" style="display: flex; flex-direction: column; gap: 4px;">
-                    <!-- Starter files populated dynamically -->
+        <div class="notices" id="notices">
+            <div id="integrity-alert" class="notice" data-tone="danger" role="alert" hidden>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17v.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                <div class="notice-body">
+                    <div id="integrity-text">A required starter file is missing.</div>
+                    <button type="button" id="regenerate-files-link" class="link-btn">Restore missing files</button>
                 </div>
             </div>
-        </div>
 
-        <!-- TAB 2: Tasks Checklist & Evaluation -->
-        <div id="tab-tasks" class="tab-content">
-            <div class="task-list" id="tasks-container">
-                <!-- Tasks populated dynamically -->
+            <div id="live-lab-alert" class="notice" data-tone="danger" role="alert" hidden>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <div class="notice-body" id="live-lab-alert-text">Live lab alert</div>
             </div>
 
-            <div id="llm-feedback-section" style="display: none;">
-                <label style="margin-bottom: 4px; display: block;">AI Rubric Feedback</label>
+            <div id="app-notice" class="notice" role="alert" hidden>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+                <div class="notice-body" id="app-notice-text"></div>
+                <button type="button" class="icon-btn notice-close" id="app-notice-close" aria-label="Dismiss">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <nav class="tabs-nav" role="tablist" aria-label="Lab sections">
+            <button class="tab-btn active" role="tab" aria-selected="true" data-tab="tab-instructions">Overview</button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-tasks">Tasks <span class="tab-badge" id="tasks-count-badge" hidden></span></button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-leaderboard" id="tab-leaderboard-btn">Standings</button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-diff">Changes</button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-chat" id="tab-chat-btn">Chat <span class="tab-badge" id="chat-badge" hidden>0</span></button>
+        </nav>
+
+        <!-- Overview: brief and starter files -->
+        <section id="tab-instructions" class="tab-content active" role="tabpanel">
+            <div class="section">
+                <div class="section-head"><h2 class="section-title">Brief</h2><button type="button" class="link-btn" id="lab-desc-toggle" hidden>Show all</button></div>
+                <p class="lab-desc" id="lab-desc"></p>
+            </div>
+
+            <div class="section">
+                <div class="section-head"><h2 class="section-title">Starter files</h2><span class="section-note">Click to open</span></div>
+                <div class="list" id="starter-files-list">
+                    <div class="empty">Starter files appear here once the lab loads.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tasks and evaluation -->
+        <section id="tab-tasks" class="tab-content" role="tabpanel">
+            <div class="progress">
+                <div class="progress-label"><span id="task-progress-text">No tasks yet</span><span class="muted num" id="task-progress-pct"></span></div>
+                <div class="progress-track"><div class="progress-fill" id="task-progress-bar"></div></div>
+            </div>
+
+            <div class="task-list" id="tasks-container"></div>
+
+            <div id="llm-feedback-section" class="section" hidden>
+                <h2 class="section-title">AI feedback</h2>
                 <div class="feedback-box" id="llm-feedback-text"></div>
             </div>
 
-            <div id="console-output-section" style="display: none;">
-                <label style="margin-bottom: 4px; display: block;">Console Output</label>
-                <div class="console-output" id="console-output-text"></div>
+            <div id="console-output-section" class="section" hidden>
+                <h2 class="section-title">Console output</h2>
+                <pre class="console-output" id="console-output-text"></pre>
             </div>
-        </div>
+        </section>
 
-        <!-- TAB: Live Leaderboard (Feature 5) -->
-        <div id="tab-leaderboard" class="tab-content">
-            <div class="card">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 0.75em; font-weight: bold; text-transform: uppercase; color: var(--vscode-descriptionForeground);">Live Leaderboard</span>
-                    <button id="leaderboard-refresh-btn" style="background: none; border: 1px solid var(--vscode-panel-border); padding: 2px 8px; border-radius: 4px; color: #3ecf8e; cursor: pointer; font-size: 0.75em;">
-                        Refresh
+        <!-- Live leaderboard -->
+        <section id="tab-leaderboard" class="tab-content" role="tabpanel">
+            <div class="section">
+                <div class="section-head">
+                    <h2 class="section-title">Standings</h2>
+                    <button type="button" id="leaderboard-refresh-btn" class="icon-btn" title="Refresh standings" aria-label="Refresh standings">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
                     </button>
                 </div>
-                <div style="font-size: 0.72em; color: var(--vscode-descriptionForeground); margin-top: 4px;">
-                    Ranked by tasks completed, with elapsed time tiebreaker.
+                <span class="section-note">Ranked by tasks done. Ties go to whoever took less time.</span>
+            </div>
+            <div class="list" id="leaderboard-container">
+                <div class="empty">Loading standings…</div>
+            </div>
+        </section>
+
+        <!-- Code changes -->
+        <section id="tab-diff" class="tab-content" role="tabpanel">
+            <div class="stat-grid">
+                <div class="stat"><span class="stat-value diff-added" id="diff-total-added">+0</span><span class="stat-label">Added</span></div>
+                <div class="stat"><span class="stat-value diff-deleted" id="diff-total-deleted">-0</span><span class="stat-label">Deleted</span></div>
+                <div class="stat"><span class="stat-value diff-modified" id="diff-total-modified">~0</span><span class="stat-label">Modified</span></div>
+            </div>
+
+            <div class="section">
+                <h2 class="section-title">By file</h2>
+                <div class="list" id="diff-files-container">
+                    <div class="empty">No changes yet. Edits to the starter files show up here.</div>
                 </div>
             </div>
 
-            <div id="leaderboard-container" style="display: flex; flex-direction: column; gap: 5px;">
-                <div style="text-align: center; color: var(--vscode-descriptionForeground); padding: 16px; font-size: 0.85em;">
-                    Loading session standings...
-                </div>
+            <div class="section" id="teammates-card" hidden>
+                <h2 class="section-title">Team contributions</h2>
+                <div class="list" id="teammates-breakdown"></div>
             </div>
-        </div>
+        </section>
 
-        <!-- TAB 3: Code Change Tracking & Diff View -->
-        <div id="tab-diff" class="tab-content">
-            <div class="card" style="display: flex; justify-content: space-around; text-align: center;">
-                <div>
-                    <div style="font-size: 1.2em; font-weight: bold; color: #3ecf8e;" id="diff-total-added">+0</div>
-                    <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">Lines Added</div>
-                </div>
-                <div>
-                    <div style="font-size: 1.2em; font-weight: bold; color: #f87171;" id="diff-total-deleted">-0</div>
-                    <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">Lines Deleted</div>
-                </div>
-                <div>
-                    <div style="font-size: 1.2em; font-weight: bold; color: #38bdf8;" id="diff-total-modified">~0</div>
-                    <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">Modified</div>
-                </div>
+        <!-- Team chat -->
+        <section id="tab-chat" class="tab-content" role="tabpanel">
+            <div class="chat-feed" id="chat-messages-container" aria-live="polite">
+                <div class="empty">Only your teammates in this session can see these messages.</div>
             </div>
 
-            <div class="card">
-                <label style="margin-bottom: 6px; display: block;">File Change Breakdown</label>
-                <div id="diff-files-container" style="display: flex; flex-direction: column; gap: 5px;">
-                    <div style="color: var(--vscode-descriptionForeground); font-size: 0.85em; text-align: center; padding: 10px;">
-                        No file changes detected yet. Start coding to track diffs!
-                    </div>
-                </div>
-            </div>
-
-            <div class="card" id="teammates-card" style="display: none;">
-                <label style="margin-bottom: 6px; display: block;">Teammate Contributions</label>
-                <div id="teammates-breakdown" style="display: flex; flex-direction: column; gap: 6px;"></div>
-            </div>
-        </div>
-
-        <!-- TAB 4: Team Chat -->
-        <div id="tab-chat" class="tab-content">
-            <div class="chat-feed" id="chat-messages-container">
-                <div style="text-align: center; color: var(--vscode-descriptionForeground); padding: 20px; font-size: 0.85em;">
-                    Private team chat. Messages are shared only among teammates for this active session.
-                </div>
-            </div>
-
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div id="snippet-container" style="display: none;">
-                    <textarea id="chat-snippet-input" placeholder="// Optional code snippet..." rows="2" style="font-family: monospace; font-size: 0.82em; width: 100%; box-sizing: border-box;"></textarea>
+            <div class="composer">
+                <div id="snippet-container" hidden>
+                    <textarea id="chat-snippet-input" placeholder="Paste a code snippet" rows="3" spellcheck="false"></textarea>
                 </div>
                 <div class="chat-input-row">
-                    <button id="snippet-toggle-btn" class="btn-secondary" style="padding: 4px 8px; font-size: 0.8em;" title="Attach code snippet">&lt;/&gt;</button>
-                    <input type="text" id="chat-input" placeholder="Type a message..." style="flex: 1;">
-                    <button id="chat-send-btn" style="padding: 4px 10px;">Send</button>
+                    <button type="button" id="snippet-toggle-btn" class="icon-btn" title="Attach a code snippet" aria-label="Attach a code snippet" aria-pressed="false">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg>
+                    </button>
+                    <input type="text" id="chat-input" placeholder="Message your team" aria-label="Message">
+                    <button type="button" id="chat-send-btn" class="icon-btn" title="Send (Enter)" aria-label="Send">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                    </button>
                 </div>
             </div>
+        </section>
+
+        <div id="action-status" class="loader-status" role="status" hidden></div>
+
+        <div id="submission-complete-banner" class="result-panel" hidden>
+            <div class="result-head">
+                <span class="result-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                    Lab submitted
+                </span>
+                <span class="result-score" id="submission-final-score">0%</span>
+            </div>
+            <button id="post-submit-exit-btn" class="btn btn-secondary btn-block">Close lab workspace</button>
         </div>
 
-        <div id="action-status" class="loader-status" style="display: none;"></div>
-
-        <!-- Submission Completed Banner -->
-        <div id="submission-complete-banner" style="display: none; padding: 12px; border-radius: 6px; background: rgba(62, 207, 142, 0.12); border: 1px solid rgba(62, 207, 142, 0.35); color: #3ecf8e; text-align: center; margin-bottom: 8px;">
-            <div style="font-weight: bold; font-size: 1.05em; margin-bottom: 4px;">Lab submitted</div>
-            <div style="font-size: 0.9em; margin-bottom: 10px; color: #ededed;">Final Grade: <strong id="submission-final-score" style="color: #3ecf8e; font-size: 1.1em;">100%</strong></div>
-            <button id="post-submit-exit-btn" class="btn-secondary" style="width: 100%; border-color: rgba(62, 207, 142, 0.4); color: #3ecf8e; cursor: pointer;">Exit Lab Workspace</button>
-        </div>
-
-        <!-- Actions CTA -->
-        <div class="actions">
-            <button id="check-progress-btn">Check Progress (AI)</button>
-            <button id="submit-btn">Submit Lab (Finalize)</button>
-            <button id="exit-btn" class="btn-secondary">Exit Session</button>
-        </div>
+        <footer class="actions">
+            <button id="check-progress-btn" class="btn btn-secondary" title="Have the AI grader check your work without submitting">Check progress</button>
+            <button id="submit-btn" class="btn btn-primary" title="Submit your final work for grading">Submit lab</button>
+            <button id="exit-btn" class="btn btn-ghost">Leave session</button>
+        </footer>
     </div>
 
     <script nonce="${nonce}">
@@ -2258,141 +2128,182 @@ class SidebarProvider {
 
         // Colors land in style attributes, so only plain hex colors are allowed.
         function safeColor(value) {
-            return /^#[0-9a-fA-F]{3,8}$/.test(String(value || '')) ? value : '#3ecf8e';
+            return /^#[0-9a-fA-F]{3,8}$/.test(String(value || '')) ? value : '#2f9e6e';
         }
+
+        function initial(name) {
+            const ch = String(name || '?').trim().charAt(0);
+            return esc(ch || '?');
+        }
+
         const MODELS_BASE_PATH = "${modelsUri}";
         const INITIAL_SESSION_ID = ${initialSessionId};
         const INITIAL_BACKEND_URL = ${initialBackendUrl};
         const INITIAL_API_TOKEN = ${initialApiToken};
         const INITIAL_SESSION_DATA = ${initialSessionData};
-        
-        const connectionScreen = document.getElementById('connection-screen');
-        const sessionScreen = document.getElementById('session-screen');
-        
-        // Form fields
-        const backendUrlInput = document.getElementById('backend-url');
-        const sessionIdInput = document.getElementById('session-id');
-        const connectBtn = document.getElementById('connect-btn');
-        
+
+        const $ = (id) => document.getElementById(id);
+        const show = (el, visible = true) => { if (el) el.hidden = !visible; };
+
+        const connectionScreen = $('connection-screen');
+        const sessionScreen = $('session-screen');
+
+        // Labs start from the website's deep link, so the connect screen only shows instructions and errors
+        const connectError = $('connect-error');
+        const connectErrorText = $('connect-error-text');
+
         // Session status & timer
-        const statusBanner = document.getElementById('status-banner');
-        const statusText = document.getElementById('status-text');
-        const timerDisplay = document.getElementById('timer-display');
-        const timerLabel = document.getElementById('timer-label');
-        const labTitle = document.getElementById('lab-title');
-        const labDesc = document.getElementById('lab-desc');
-        const starterFilesList = document.getElementById('starter-files-list');
-        const tasksContainer = document.getElementById('tasks-container');
-        const actionStatus = document.getElementById('action-status');
+        const statusBanner = $('status-banner');
+        const statusText = $('status-text');
+        const timerBox = $('timer-box');
+        const timerDisplay = $('timer-display');
+        const timerLabel = $('timer-label');
+        const labTitle = $('lab-title');
+        const labDesc = $('lab-desc');
+        const labDescToggle = $('lab-desc-toggle');
+        const starterFilesList = $('starter-files-list');
+        const tasksContainer = $('tasks-container');
+        const tasksCountBadge = $('tasks-count-badge');
+        const taskProgressText = $('task-progress-text');
+        const taskProgressPct = $('task-progress-pct');
+        const taskProgressBar = $('task-progress-bar');
+        const actionStatus = $('action-status');
 
-        // Feature 1 Integrity
-        const integrityAlert = document.getElementById('integrity-alert');
-        const integrityText = document.getElementById('integrity-text');
-        const regenerateFilesLink = document.getElementById('regenerate-files-link');
+        // Notices
+        const integrityAlert = $('integrity-alert');
+        const integrityText = $('integrity-text');
+        const regenerateFilesLink = $('regenerate-files-link');
+        const liveLabAlert = $('live-lab-alert');
+        const liveLabAlertText = $('live-lab-alert-text');
+        const appNotice = $('app-notice');
+        const appNoticeText = $('app-notice-text');
 
-        // Feature 9 Live Lab Alert
-        const liveLabAlert = document.getElementById('live-lab-alert');
-        const liveLabAlertText = document.getElementById('live-lab-alert-text');
+        // Diff UI
+        const pillAdded = $('pill-added');
+        const pillDeleted = $('pill-deleted');
+        const diffTotalAdded = $('diff-total-added');
+        const diffTotalDeleted = $('diff-total-deleted');
+        const diffTotalModified = $('diff-total-modified');
+        const diffFilesContainer = $('diff-files-container');
+        const teammatesCard = $('teammates-card');
+        const teammatesBreakdown = $('teammates-breakdown');
 
-        // Feature 2 Diff UI
-        const pillAdded = document.getElementById('pill-added');
-        const pillDeleted = document.getElementById('pill-deleted');
-        const diffTotalAdded = document.getElementById('diff-total-added');
-        const diffTotalDeleted = document.getElementById('diff-total-deleted');
-        const diffTotalModified = document.getElementById('diff-total-modified');
-        const diffFilesContainer = document.getElementById('diff-files-container');
-        const teammatesCard = document.getElementById('teammates-card');
-        const teammatesBreakdown = document.getElementById('teammates-breakdown');
+        // Team chat UI
+        const chatBadge = $('chat-badge');
+        const chatMessagesContainer = $('chat-messages-container');
+        const chatInput = $('chat-input');
+        const chatSnippetInput = $('chat-snippet-input');
+        const chatSendBtn = $('chat-send-btn');
+        const snippetToggleBtn = $('snippet-toggle-btn');
+        const snippetContainer = $('snippet-container');
 
-        // Feature 3 Team Chat UI
-        const tabChatBtn = document.getElementById('tab-chat-btn');
-        const chatBadge = document.getElementById('chat-badge');
-        const chatMessagesContainer = document.getElementById('chat-messages-container');
-        const chatInput = document.getElementById('chat-input');
-        const chatSnippetInput = document.getElementById('chat-snippet-input');
-        const chatSendBtn = document.getElementById('chat-send-btn');
-        const snippetToggleBtn = document.getElementById('snippet-toggle-btn');
-        const snippetContainer = document.getElementById('snippet-container');
-        
-        // Feedback & Console
-        const llmFeedbackSection = document.getElementById('llm-feedback-section');
-        const llmFeedbackText = document.getElementById('llm-feedback-text');
-        const consoleOutputSection = document.getElementById('console-output-section');
-        const consoleOutputText = document.getElementById('console-output-text');
-        
+        // Feedback & console
+        const llmFeedbackSection = $('llm-feedback-section');
+        const llmFeedbackText = $('llm-feedback-text');
+        const consoleOutputSection = $('console-output-section');
+        const consoleOutputText = $('console-output-text');
+
         // Buttons
-        const checkProgressBtn = document.getElementById('check-progress-btn');
-        const submitBtn = document.getElementById('submit-btn');
-        const exitBtn = document.getElementById('exit-btn');
-        
+        const checkProgressBtn = $('check-progress-btn');
+        const submitBtn = $('submit-btn');
+        const exitBtn = $('exit-btn');
+        const submissionBanner = $('submission-complete-banner');
+
         let timerVal = 0;
         let timerInterval = null;
         let isCountDown = true;
         let isIntegrityValid = true;
         let taskFeedbackMap = {};
+        let chatHasMessages = false;
 
-        // Camera proctoring runs in the browser tab, keeping the extension lean and unrestricted
+        const ICON_TICK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path class="tick" d="M8.5 12.25l2.5 2.5 4.5-5"/></svg>';
+        const ICON_FILE = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/></svg>';
 
-        // Tabs Logic
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                
-                btn.classList.add('active');
-                const targetId = btn.getAttribute('data-tab');
-                const targetEl = document.getElementById(targetId);
-                if (targetEl) targetEl.classList.add('active');
+        // Webviews block window.alert(), so errors show as an inline notice instead.
+        function showNotice(text, tone = 'danger') {
+            appNoticeText.textContent = text;
+            appNotice.dataset.tone = tone;
+            show(appNotice);
+        }
+        $('app-notice-close').addEventListener('click', () => show(appNotice, false));
 
-                // Notify extension about chat tab state
-                const isChat = targetId === 'tab-chat';
-                vscode.postMessage({ type: 'setChatTabActive', active: isChat });
-                if (isChat) {
-                    chatBadge.style.display = 'none';
-                    chatBadge.innerText = '0';
-                }
+        function setLiveAlert(tone, text) {
+            if (!liveLabAlert || !liveLabAlertText) return;
+            if (!tone) { show(liveLabAlert, false); return; }
+            liveLabAlert.dataset.tone = tone;
+            liveLabAlertText.textContent = text;
+            show(liveLabAlert);
+        }
 
-                // Fetch leaderboard on tab focus
-                if (targetId === 'tab-leaderboard') {
-                    vscode.postMessage({ type: 'getLeaderboard' });
-                }
+        function setActionsLocked(locked) {
+            checkProgressBtn.disabled = locked;
+            submitBtn.disabled = locked || !isIntegrityValid;
+        }
+
+        function setStatus(state, text) {
+            statusBanner.className = 'connection-status ' + (state === 'connected' ? 'status-connected' : 'status-reconnecting');
+            statusText.textContent = text;
+        }
+
+        function setChatBadge(count) {
+            const n = Number(count) || 0;
+            chatBadge.textContent = String(n);
+            show(chatBadge, n > 0);
+        }
+
+        // Tabs
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        function activateTab(btn) {
+            tabButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            btn.setAttribute('aria-selected', 'true');
+            const targetId = btn.getAttribute('data-tab');
+            const targetEl = $(targetId);
+            if (targetEl) targetEl.classList.add('active');
+
+            // Tell the extension whether chat is on screen, so it can count unread messages
+            const isChat = targetId === 'tab-chat';
+            vscode.postMessage({ type: 'setChatTabActive', active: isChat });
+            if (isChat) {
+                setChatBadge(0);
+                chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+            }
+
+            if (targetId === 'tab-leaderboard') {
+                vscode.postMessage({ type: 'getLeaderboard' });
+            }
+        }
+        tabButtons.forEach((btn, i) => {
+            btn.addEventListener('click', () => activateTab(btn));
+            btn.addEventListener('keydown', (e) => {
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                e.preventDefault();
+                const next = tabButtons[(i + (e.key === 'ArrowRight' ? 1 : tabButtons.length - 1)) % tabButtons.length];
+                next.focus();
+                activateTab(next);
             });
         });
 
-        const leaderboardRefreshBtn = document.getElementById('leaderboard-refresh-btn');
-        if (leaderboardRefreshBtn) {
-            leaderboardRefreshBtn.addEventListener('click', () => {
-                vscode.postMessage({ type: 'getLeaderboard' });
-            });
-        }
+        $('leaderboard-refresh-btn').addEventListener('click', () => {
+            vscode.postMessage({ type: 'getLeaderboard' });
+        });
 
-        regenerateFilesLink.addEventListener('click', (e) => {
-            e.preventDefault();
+        regenerateFilesLink.addEventListener('click', () => {
             vscode.postMessage({ type: 'retryFileGeneration' });
         });
 
-        snippetToggleBtn.addEventListener('click', () => {
-            snippetContainer.style.display = snippetContainer.style.display === 'none' ? 'block' : 'none';
+        labDescToggle.addEventListener('click', () => {
+            const clamped = labDesc.classList.toggle('is-clamped');
+            labDescToggle.textContent = clamped ? 'Show all' : 'Show less';
         });
 
-        connectBtn.addEventListener('click', () => {
-            const backendUrl = backendUrlInput.value.trim();
-            const sessionId = sessionIdInput.value.trim();
-            
-            if (!backendUrl || !sessionId) {
-                alert('Please enter both Backend URL and Session ID.');
-                return;
-            }
-            
-            actionStatus.innerText = 'Connecting to backend...';
-            actionStatus.style.display = 'block';
-            
-            vscode.postMessage({
-                type: 'connect',
-                backendUrl,
-                sessionId,
-                apiToken: null
-            });
+        snippetToggleBtn.addEventListener('click', () => {
+            const open = snippetContainer.hidden;
+            show(snippetContainer, open);
+            snippetToggleBtn.setAttribute('aria-pressed', String(open));
+            if (open) chatSnippetInput.focus();
         });
 
         checkProgressBtn.addEventListener('click', () => {
@@ -2401,7 +2312,7 @@ class SidebarProvider {
 
         submitBtn.addEventListener('click', () => {
             if (!isIntegrityValid) {
-                alert('Submission blocked: One or more required starter files are missing from your workspace.');
+                showNotice('You can\\'t submit yet: a required starter file is missing from your workspace.');
                 return;
             }
             vscode.postMessage({ type: 'submit' });
@@ -2411,12 +2322,9 @@ class SidebarProvider {
             vscode.postMessage({ type: 'exit' });
         });
 
-        const postSubmitExitBtn = document.getElementById('post-submit-exit-btn');
-        if (postSubmitExitBtn) {
-            postSubmitExitBtn.addEventListener('click', () => {
-                vscode.postMessage({ type: 'exit', skipConfirm: true });
-            });
-        }
+        $('post-submit-exit-btn').addEventListener('click', () => {
+            vscode.postMessage({ type: 'exit', skipConfirm: true });
+        });
 
         chatSendBtn.addEventListener('click', sendChatMessage);
         chatInput.addEventListener('keydown', (e) => {
@@ -2439,420 +2347,389 @@ class SidebarProvider {
 
             chatInput.value = '';
             chatSnippetInput.value = '';
-            snippetContainer.style.display = 'none';
+            show(snippetContainer, false);
+            snippetToggleBtn.setAttribute('aria-pressed', 'false');
+        }
+
+        function renderChatMessage(c) {
+            const el = document.createElement('div');
+            el.className = 'chat-msg';
+            el.innerHTML = \`
+                <span class="avatar" style="background-color: \${safeColor(c.avatar_color)};" aria-hidden="true">\${initial(c.user_name)}</span>
+                <div class="chat-body">
+                    <div class="chat-header">
+                        <span class="chat-author">\${esc(c.user_name)}</span>
+                        <span class="chat-time">\${esc(c.time)}</span>
+                    </div>
+                    <div class="chat-text">\${esc(c.message)}</div>
+                    \${c.code_snippet ? \`<pre class="chat-snippet">\${esc(c.code_snippet)}</pre>\` : ''}
+                </div>
+            \`;
+            return el;
+        }
+
+        function appendChat(c) {
+            if (!chatHasMessages) {
+                chatMessagesContainer.innerHTML = '';
+                chatHasMessages = true;
+            }
+            chatMessagesContainer.appendChild(renderChatMessage(c));
+            chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+        }
+
+        function markTask(id, done) {
+            const badgeEl = $(\`badge-task-\${id}\`);
+            if (!badgeEl) return;
+            badgeEl.className = 'task-badge ' + (done ? 'badge-complete' : 'badge-pending');
+            badgeEl.textContent = done ? 'Done' : 'To do';
+            const item = badgeEl.closest('.task-item');
+            if (item) item.classList.toggle('is-done', done);
+        }
+
+        function updateTaskProgress() {
+            const total = tasksContainer.querySelectorAll('.task-item').length;
+            const done = tasksContainer.querySelectorAll('.task-item.is-done').length;
+            const pct = total ? Math.round((done / total) * 100) : 0;
+            taskProgressText.textContent = total ? \`\${done} of \${total} tasks done\` : 'This lab has no tasks';
+            taskProgressPct.textContent = total ? pct + '%' : '';
+            taskProgressBar.style.width = pct + '%';
+            tasksCountBadge.textContent = total ? \`\${done}/\${total}\` : '';
+            show(tasksCountBadge, total > 0);
         }
 
         // Handle incoming extension messages
         window.addEventListener('message', event => {
             const message = event.data;
             switch (message.type) {
-                case 'prefill':
-                    if (message.backendUrl) backendUrlInput.value = message.backendUrl;
-                    if (message.sessionId) sessionIdInput.value = message.sessionId;
-                    if (message.autoConnect || message.sessionId) {
-                        connectionScreen.style.display = 'none';
-                        sessionScreen.style.display = 'flex';
-                        statusBanner.className = 'connection-status status-reconnecting';
-                        statusText.innerText = 'Connecting...';
-                    }
-                    break;
-                    
                 case 'status':
-                    actionStatus.innerText = message.message;
-                    actionStatus.style.display = 'block';
+                    actionStatus.textContent = message.message;
+                    show(actionStatus);
                     checkProgressBtn.disabled = true;
                     submitBtn.disabled = true;
                     break;
-                    
+
                 case 'error':
-                    actionStatus.style.display = 'none';
+                    show(actionStatus, false);
                     checkProgressBtn.disabled = false;
                     submitBtn.disabled = !isIntegrityValid;
-                    alert(message.message);
+                    if (connectionScreen.style.display !== 'none') {
+                        connectErrorText.textContent = message.message;
+                        show(connectError);
+                    } else {
+                        showNotice(message.message);
+                    }
+                    break;
+
+                case 'idleAlert':
+                    showNotice(\`No activity for \${Number(message.idleMinutes) || 0} minutes. Idle time is visible to your instructor.\`, 'warn');
+                    break;
+
+                case 'unreadReset':
+                    setChatBadge(0);
                     break;
 
                 case 'integrityStatus':
                     isIntegrityValid = message.valid;
                     if (message.valid) {
-                        integrityAlert.style.display = 'none';
+                        show(integrityAlert, false);
                         submitBtn.disabled = false;
                     } else {
-                        integrityAlert.style.display = 'flex';
-                        integrityText.innerHTML = \`<strong>Missing:</strong> \${esc(message.missing.join(', '))} — this file is required for submission.\`;
+                        integrityText.innerHTML = \`<strong>Missing \${esc(message.missing.join(', '))}.</strong> You need this file to submit.\`;
+                        show(integrityAlert);
                         submitBtn.disabled = true;
                     }
                     break;
 
-                case 'diffUpdate':
+                case 'diffUpdate': {
                     const ds = message.diffStats || {};
                     const add = ds.lines_added || 0;
                     const del = ds.lines_deleted || 0;
                     const mod = ds.lines_modified || 0;
 
-                    pillAdded.innerText = \`+\${add}\`;
-                    pillDeleted.innerText = \`-\${del}\`;
-                    diffTotalAdded.innerText = \`+\${add}\`;
-                    diffTotalDeleted.innerText = \`-\${del}\`;
-                    diffTotalModified.innerText = \`~\${mod}\`;
+                    pillAdded.textContent = \`+\${add}\`;
+                    pillDeleted.textContent = \`-\${del}\`;
+                    diffTotalAdded.textContent = \`+\${add}\`;
+                    diffTotalDeleted.textContent = \`-\${del}\`;
+                    diffTotalModified.textContent = \`~\${mod}\`;
 
                     if (ds.files && ds.files.length > 0) {
                         diffFilesContainer.innerHTML = '';
                         ds.files.forEach(f => {
+                            const a = Number(f.added) || 0;
+                            const d = Number(f.deleted) || 0;
+                            const sum = a + d;
+                            const addPct = sum ? Math.round((a / sum) * 100) : 0;
                             const item = document.createElement('div');
-                            item.className = 'file-item';
+                            item.className = 'row';
                             item.innerHTML = \`
-                                <span>\${esc(f.name)}</span>
-                                <span style="font-size:0.85em;">
-                                    <span class="diff-added">+\${esc(f.added)}</span> / <span class="diff-deleted">-\${esc(f.deleted)}</span>
-                                </span>
+                                <span class="row-main file-name" title="\${esc(f.name)}">\${esc(f.name)}</span>
+                                <span class="diff-nums"><span class="diff-added">+\${a}</span><span class="diff-deleted">-\${d}</span></span>
+                                <span class="diff-bar" aria-hidden="true"><span class="add" style="width: \${addPct}%;"></span><span class="del" style="width: \${sum ? 100 - addPct : 0}%;"></span></span>
                             \`;
                             diffFilesContainer.appendChild(item);
                         });
                     }
                     break;
+                }
 
-                case 'chatUpdate':
+                case 'chatUpdate': {
                     const chats = message.chats || [];
                     if (chats.length > 0) {
                         chatMessagesContainer.innerHTML = '';
-                        chats.forEach(c => {
-                            const el = document.createElement('div');
-                            el.className = 'chat-msg';
-                            el.innerHTML = \`
-                                <div class="chat-header">
-                                    <div class="chat-author">
-                                        <span class="chat-avatar" style="background-color: \${safeColor(c.avatar_color)};"></span>
-                                        <span>\${esc(c.user_name)}</span>
-                                    </div>
-                                    <span class="chat-time">\${esc(c.time)}</span>
-                                </div>
-                                <div class="chat-text">\${esc(c.message)}</div>
-                                \${c.code_snippet ? \`<pre class="chat-snippet">\${esc(c.code_snippet)}</pre>\` : ''}
-                            \`;
-                            chatMessagesContainer.appendChild(el);
-                        });
+                        chatHasMessages = true;
+                        chats.forEach(c => chatMessagesContainer.appendChild(renderChatMessage(c)));
                         chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
                     }
-
-                    if (message.unreadCount > 0) {
-                        chatBadge.innerText = message.unreadCount;
-                        chatBadge.style.display = 'inline-block';
-                    }
+                    if (message.unreadCount > 0) setChatBadge(message.unreadCount);
                     break;
+                }
 
                 case 'chatAppend':
-                    const singleMsg = message.chat;
-                    if (singleMsg) {
-                        const el = document.createElement('div');
-                        el.className = 'chat-msg';
-                        el.innerHTML = \`
-                            <div class="chat-header">
-                                <div class="chat-author">
-                                    <span class="chat-avatar" style="background-color: \${safeColor(singleMsg.avatar_color)};"></span>
-                                    <span>\${esc(singleMsg.user_name)}</span>
-                                </div>
-                                <span class="chat-time">\${esc(singleMsg.time)}</span>
-                            </div>
-                            <div class="chat-text">\${esc(singleMsg.message)}</div>
-                            \${singleMsg.code_snippet ? \`<pre class="chat-snippet">\${esc(singleMsg.code_snippet)}</pre>\` : ''}
-                        \`;
-                        chatMessagesContainer.appendChild(el);
-                        chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
-                    }
-                    if (message.unreadCount > 0) {
-                        chatBadge.innerText = message.unreadCount;
-                        chatBadge.style.display = 'inline-block';
-                    }
+                    if (message.chat) appendChat(message.chat);
+                    if (message.unreadCount > 0) setChatBadge(message.unreadCount);
                     break;
 
-                case 'leaderboardData':
+                case 'leaderboardData': {
                     const list = message.leaderboard || [];
-                    const leaderboardContainer = document.getElementById('leaderboard-container');
-                    if (leaderboardContainer) {
-                        leaderboardContainer.innerHTML = '';
+                    const leaderboardContainer = $('leaderboard-container');
+                    if (!leaderboardContainer) break;
+                    leaderboardContainer.innerHTML = '';
 
-                        // Feature 9: Live Lab shared clock indicator on leaderboard
-                        if (message.availability_mode === 'live') {
-                            const clockBanner = document.createElement('div');
-                            clockBanner.style.cssText = 'padding: 6px 10px; background: rgba(62, 207, 142, 0.1); border: 1px solid rgba(62, 207, 142, 0.3); border-radius: 6px; font-size: 0.78em; color: #3ecf8e; font-weight: bold; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;';
-                            clockBanner.innerHTML = \`
-                                <span>Live lab shared clock</span>
-                                <span style="font-family: monospace; font-size: 1.1em;">\${esc(message.shared_time_remaining_formatted || '00:00')} remaining</span>
+                    // Live labs share one clock across the class
+                    if (message.availability_mode === 'live') {
+                        const clock = document.createElement('div');
+                        clock.className = 'live-clock';
+                        clock.innerHTML = \`
+                            <span>Shared live clock</span>
+                            <span class="num">\${esc(message.shared_time_remaining_formatted || '00:00')} left</span>
+                        \`;
+                        leaderboardContainer.appendChild(clock);
+                    }
+
+                    if (list.length === 0) {
+                        const emptyEl = document.createElement('div');
+                        emptyEl.className = 'empty';
+                        emptyEl.textContent = 'Nobody is ranked yet. Standings appear once someone finishes a task.';
+                        leaderboardContainer.appendChild(emptyEl);
+                    } else {
+                        list.forEach(item => {
+                            const row = document.createElement('div');
+                            row.className = 'row leaderboard-row' + (item.is_current ? ' current-user' : '');
+                            const sub = (item.is_team && item.group_name ? esc(item.group_name) + ' · ' : '') + esc(item.elapsed_time);
+                            row.innerHTML = \`
+                                <span class="rank\${item.rank <= 3 ? ' rank-top' : ''}">\${esc(item.rank)}</span>
+                                <span class="row-main">
+                                    \${esc(item.name)}\${item.is_current ? ' <span class="muted">(you)</span>' : ''}
+                                    <span class="row-sub num">\${sub}</span>
+                                </span>
+                                <span class="score-chip" title="Tasks done">\${esc(item.tasks_completed)} done</span>
                             \`;
-                            leaderboardContainer.appendChild(clockBanner);
-                        }
-
-                        if (list.length === 0) {
-                            const emptyEl = document.createElement('div');
-                            emptyEl.style.cssText = 'text-align: center; color: var(--vscode-descriptionForeground); padding: 16px; font-size: 0.85em;';
-                            emptyEl.innerText = 'No active competitors or teams ranked yet.';
-                            leaderboardContainer.appendChild(emptyEl);
-                        } else {
-                            list.forEach(item => {
-                                const row = document.createElement('div');
-                                row.className = 'leaderboard-row' + (item.is_current ? ' current-user' : '');
-                                const rankClass = item.rank <= 3 ? (' rank-' + item.rank) : '';
-                                row.innerHTML = \`
-                                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                                        <span class="rank-badge\${rankClass}">#\${esc(item.rank)}</span>
-                                        <div style="min-width: 0;">
-                                            <div style="font-weight: 600; color: var(--vscode-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                                \${esc(item.name)}\${item.is_current ? ' (You)' : ''}
-                                            </div>
-                                            <div style="font-size: 0.75em; color: var(--vscode-descriptionForeground);">
-                                                \${item.is_team && item.group_name ? esc(item.group_name) + ' • ' : ''}\${esc(item.elapsed_time)}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div style="text-align: right; flex-shrink: 0;">
-                                        <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; font-weight: bold; background: rgba(62, 207, 142, 0.15); color: #3ecf8e;">
-                                            \${esc(item.tasks_completed)} done
-                                        </span>
-                                    </div>
-                                \`;
-                                leaderboardContainer.appendChild(row);
-                            });
-                        }
+                            leaderboardContainer.appendChild(row);
+                        });
                     }
                     break;
+                }
 
                 case 'liveLabBlocked':
-                    if (liveLabAlert && liveLabAlertText) {
-                        liveLabAlert.style.display = 'flex';
-                        liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                        liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                        liveLabAlert.style.color = '#fca5a5';
-                        liveLabAlertText.innerText = message.message || 'Access blocked for this Live Lab.';
-                    }
-                    if (checkProgressBtn) checkProgressBtn.disabled = true;
-                    if (submitBtn) submitBtn.disabled = true;
+                    setLiveAlert('danger', message.message || 'This live lab is closed to you right now.');
+                    checkProgressBtn.disabled = true;
+                    submitBtn.disabled = true;
                     if (timerInterval) {
                         clearInterval(timerInterval);
                         timerInterval = null;
                     }
-                    timerLabel.innerText = message.error === 'live_not_started' ? 'Live Lab Locked' : 'Live Lab Expired';
+                    timerLabel.textContent = message.error === 'live_not_started' ? 'Not started' : 'Live lab ended';
+                    timerBox.className = 'timer timer-done';
                     break;
 
                 case 'reconnecting':
-                    statusBanner.className = 'connection-status status-reconnecting';
-                    statusText.innerText = 'Reconnecting...';
+                    setStatus('reconnecting', 'Reconnecting…');
                     break;
-                    
+
                 case 'disconnected':
                     if (timerInterval) clearInterval(timerInterval);
                     timerInterval = null;
                     connectionScreen.style.display = 'flex';
                     sessionScreen.style.display = 'none';
-                    actionStatus.style.display = 'none';
+                    show(actionStatus, false);
                     checkProgressBtn.disabled = false;
                     submitBtn.disabled = false;
-                    submitBtn.innerText = 'Submit Lab (Finalize)';
-                    const bannerEl = document.getElementById('submission-complete-banner');
-                    if (bannerEl) bannerEl.style.display = 'none';
+                    submitBtn.textContent = 'Submit lab';
+                    show(submissionBanner, false);
                     break;
-                    
+
                 case 'update':
                     handleSessionUpdate(message.data);
                     break;
-                    
+
                 case 'checkResult':
-                case 'submitResult':
-                    actionStatus.style.display = 'none';
+                case 'submitResult': {
+                    show(actionStatus, false);
                     checkProgressBtn.disabled = message.type === 'submitResult';
                     submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
-                    
+
                     if (message.type === 'submitResult') {
                         if (timerInterval) {
                             clearInterval(timerInterval);
                             timerInterval = null;
                         }
-                        timerLabel.innerText = 'Session Completed';
-                        submitBtn.innerText = 'Session submitted';
-
-                        const compBanner = document.getElementById('submission-complete-banner');
-                        if (compBanner) {
-                            compBanner.style.display = 'block';
-                            const scoreEl = document.getElementById('submission-final-score');
-                            if (scoreEl) {
-                                scoreEl.innerText = (message.data.performance_score || 0) + '%';
-                            }
-                        }
+                        timerLabel.textContent = 'Submitted';
+                        timerBox.className = 'timer timer-done';
+                        submitBtn.textContent = 'Submitted';
+                        $('submission-final-score').textContent = (message.data.performance_score || 0) + '%';
+                        show(submissionBanner);
                     }
-                    
+
                     const evalData = message.data.evaluation || {};
                     const execData = message.data.execution || {};
-                    
-                    // Display task feedback and update badges from evaluation
+
+                    // Task feedback and status from the evaluation
                     if (evalData.tasks && Array.isArray(evalData.tasks)) {
                         evalData.tasks.forEach(taskEval => {
-                            taskFeedbackMap[taskEval.id] = taskEval.feedback || 'Evaluated successfully.';
-                            const feedbackEl = document.getElementById(\`feedback-task-\${taskEval.id}\`);
+                            taskFeedbackMap[taskEval.id] = taskEval.feedback || 'Evaluated.';
+                            const feedbackEl = $(\`feedback-task-\${taskEval.id}\`);
                             if (feedbackEl) {
-                                feedbackEl.innerText = taskEval.feedback || 'Evaluated successfully.';
-                                feedbackEl.style.display = 'block';
+                                feedbackEl.textContent = taskFeedbackMap[taskEval.id];
+                                show(feedbackEl);
                             }
-                            const badgeEl = document.getElementById(\`badge-task-\${taskEval.id}\`);
-                            if (badgeEl) {
-                                if (taskEval.completed) {
-                                    badgeEl.className = 'task-badge badge-complete';
-                                    badgeEl.innerText = 'Completed';
-                                } else {
-                                    badgeEl.className = 'task-badge badge-pending';
-                                    badgeEl.innerText = 'Pending';
-                                }
-                            }
+                            markTask(taskEval.id, !!taskEval.completed);
                         });
                     }
 
                     if (Array.isArray(message.data.completed_tasks)) {
-                        message.data.completed_tasks.forEach(cid => {
-                            const badgeEl = document.getElementById(\`badge-task-\${cid}\`);
-                            if (badgeEl) {
-                                badgeEl.className = 'task-badge badge-complete';
-                                badgeEl.innerText = 'Completed';
-                            }
-                        });
+                        message.data.completed_tasks.forEach(cid => markTask(cid, true));
                     }
-                    
-                    // Display Overall feedback
+                    updateTaskProgress();
+
                     if (evalData.overall_feedback) {
-                        llmFeedbackSection.style.display = 'block';
                         llmFeedbackText.innerHTML = \`
-                            <div style="font-weight:bold; margin-bottom:4px;">Score: \${esc(evalData.correctness_score ?? 0)}%</div>
+                            <div><span class="eyebrow">Correctness</span><span class="score">\${esc(evalData.correctness_score ?? 0)}%</span></div>
                             <div>\${esc(evalData.overall_feedback)}</div>
-                            <div style="margin-top:6px; font-size:0.9em; border-top:1px solid rgba(255,255,255,0.05); padding-top:4px;">
-                                <strong>Code Quality:</strong> \${esc(evalData.code_quality_feedback || 'N/A')}
-                            </div>
+                            <div class="feedback-sub"><span class="eyebrow">Code quality</span>\${esc(evalData.code_quality_feedback || 'No notes.')}</div>
                         \`;
+                        show(llmFeedbackSection);
                     }
-                    
-                    // Display Console output if available
+
                     if (execData && (execData.output || execData.errors)) {
-                        consoleOutputSection.style.display = 'block';
-                        consoleOutputText.innerText = execData.errors 
-                            ? \`Compilation/Runtime Error:\\n\${execData.errors}\` 
-                            : execData.output || 'Execution completed with no output.';
+                        consoleOutputText.textContent = execData.errors
+                            ? \`Compile or runtime error:\\n\${execData.errors}\`
+                            : execData.output || 'Ran with no output.';
+                        consoleOutputText.classList.toggle('has-error', !!execData.errors);
+                        show(consoleOutputSection);
                     } else {
-                        consoleOutputSection.style.display = 'none';
+                        show(consoleOutputSection, false);
                     }
-                    
                     break;
+                }
             }
         });
-        
+
         function handleSessionUpdate(session) {
             if (!session || !session.laboratory) return;
             if (connectionScreen.style.display !== 'none' && !INITIAL_SESSION_ID) return;
 
-            actionStatus.style.display = 'none';
+            show(actionStatus, false);
+            show(connectError, false);
             checkProgressBtn.disabled = false;
             submitBtn.disabled = !isIntegrityValid;
-            
+
             connectionScreen.style.display = 'none';
             sessionScreen.style.display = 'flex';
-            
-            statusBanner.className = 'connection-status status-connected';
-            statusText.innerText = 'Connected';
-            
-            labTitle.innerText = session.laboratory.title || 'Laboratory';
-            labDesc.innerText = session.laboratory.description || '';
 
-            // Render Starter Files
+            setStatus('connected', 'Connected');
+
+            labTitle.textContent = session.laboratory.title || 'Lab';
+            labDesc.textContent = session.laboratory.description || 'Your instructor did not add a brief for this lab.';
+            labDesc.classList.add('is-clamped');
+            labDescToggle.textContent = 'Show all';
+            requestAnimationFrame(() => {
+                const overflows = labDesc.scrollHeight > labDesc.clientHeight + 2;
+                show(labDescToggle, overflows);
+                if (!overflows) labDesc.classList.remove('is-clamped');
+            });
+
+            // Starter files
             starterFilesList.innerHTML = '';
             const starterFiles = session.laboratory.starter_files || [];
+            if (starterFiles.length === 0) {
+                starterFilesList.innerHTML = '<div class="empty">This lab has no starter files.</div>';
+            }
             starterFiles.forEach(f => {
-                const row = document.createElement('div');
-                row.className = 'file-item';
-                row.title = 'Click to open ' + f.name;
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'row';
+                row.title = 'Open ' + f.name;
                 row.onclick = () => {
                     vscode.postMessage({ type: 'openFile', name: f.name });
                 };
                 row.innerHTML = \`
-                    <span style="display:flex; align-items:center; gap:6px;">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                        <span>\${esc(f.name)}</span>
-                    </span>
-                    <span>
-                        \${f.is_primary ? '<span class="file-badge badge-complete">Primary</span>' : ''}
-                        \${f.is_readonly ? '<span class="file-badge" style="background:#333;">Read-Only</span>' : ''}
-                    </span>
+                    \${ICON_FILE}
+                    <span class="row-main file-name">\${esc(f.name)}</span>
+                    \${f.is_primary ? '<span class="tag tag-ok">Main</span>' : ''}
+                    \${f.is_readonly ? '<span class="tag tag-quiet">Read-only</span>' : ''}
                 \`;
                 starterFilesList.appendChild(row);
             });
 
             // Teammate breakdown for team labs
             if (session.is_group_lab && session.teammates && session.teammates.length > 0) {
-                teammatesCard.style.display = 'block';
                 teammatesBreakdown.innerHTML = '';
                 session.teammates.forEach(tm => {
                     const row = document.createElement('div');
-                    row.style.cssText = 'display:flex; justify-content:space-between; font-size:0.85em; padding:3px 0;';
+                    row.className = 'row';
                     row.innerHTML = \`
-                        <div style="display:flex; align-items:center; gap:5px;">
-                            <span style="width:8px; height:8px; border-radius:50%; background-color:\${safeColor(tm.avatar_color)};"></span>
-                            <span>\${esc(tm.name)}</span>
-                        </div>
-                        <span style="font-weight:bold; color:#3ecf8e;">\${esc(tm.contribution_score || 0)}%</span>
+                        <span class="avatar" style="background-color: \${safeColor(tm.avatar_color)};" aria-hidden="true">\${initial(tm.name)}</span>
+                        <span class="row-main">\${esc(tm.name)}</span>
+                        <span class="num">\${esc(tm.contribution_score || 0)}%</span>
                     \`;
                     teammatesBreakdown.appendChild(row);
                 });
+                show(teammatesCard);
             } else {
-                teammatesCard.style.display = 'none';
+                show(teammatesCard, false);
             }
-            
-            // Render Tasks list
+
+            // Tasks
             tasksContainer.innerHTML = '';
             const tasksDef = session.laboratory.tasks_definition || [];
             const completedIds = session.completed_tasks || [];
-            
+
             tasksDef.forEach(task => {
-                const isCompleted = (completedIds || []).some(id => String(id) === String(task.id));
+                const isCompleted = completedIds.some(id => String(id) === String(task.id));
                 const taskItem = document.createElement('div');
-                taskItem.className = 'task-item';
+                taskItem.className = 'task-item' + (isCompleted ? ' is-done' : '');
                 const cachedFeedback = taskFeedbackMap[task.id];
-                
+
                 taskItem.innerHTML = \`
-                    <div class="task-header">
-                        <span class="task-title">\${esc(task.task)}</span>
-                        <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" id="badge-task-\${esc(task.id)}">
-                            \${isCompleted ? 'Completed' : 'Pending'}
-                        </span>
+                    <span class="task-check">\${ICON_TICK}</span>
+                    <div class="task-body">
+                        <div class="task-title">\${esc(task.task)}</div>
+                        <div class="task-feedback" id="feedback-task-\${esc(task.id)}" \${cachedFeedback ? '' : 'hidden'}>\${esc(cachedFeedback)}</div>
                     </div>
-                    <div class="task-feedback" id="feedback-task-\${esc(task.id)}" style="\${cachedFeedback ? 'display:block;' : 'display:none;'}">\${esc(cachedFeedback)}</div>
+                    <span class="task-badge \${isCompleted ? 'badge-complete' : 'badge-pending'}" id="badge-task-\${esc(task.id)}">\${isCompleted ? 'Done' : 'To do'}</span>
                 \`;
                 tasksContainer.appendChild(taskItem);
             });
-            
-            // Feature 9: Live Lab state evaluation & alerts
+            updateTaskProgress();
+
+            // Live lab state
             const isLive = session.availability_mode === 'live';
             const isLiveExpired = session.is_live_expired || (isLive && session.live_status === 'closed');
             const isLiveNotStarted = isLive && session.live_status === 'not_started';
 
-            if (liveLabAlert && liveLabAlertText) {
-                if (isLiveExpired) {
-                    liveLabAlert.style.display = 'flex';
-                    liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                    liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                    liveLabAlert.style.color = '#fca5a5';
-                    liveLabAlertText.innerText = 'Live lab ended: the shared countdown is over and submissions are locked.';
-                    checkProgressBtn.disabled = true;
-                    submitBtn.disabled = true;
-                } else if (isLiveNotStarted) {
-                    liveLabAlert.style.display = 'flex';
-                    liveLabAlert.style.background = 'rgba(245, 158, 11, 0.15)';
-                    liveLabAlert.style.borderColor = 'rgba(245, 158, 11, 0.35)';
-                    liveLabAlert.style.color = '#fcd34d';
-                    liveLabAlertText.innerText = 'Live lab locked: waiting for your instructor to start it.';
-                    checkProgressBtn.disabled = true;
-                    submitBtn.disabled = true;
-                } else {
-                    liveLabAlert.style.display = 'none';
-                    if (checkProgressBtn) checkProgressBtn.disabled = false;
-                    if (submitBtn) submitBtn.disabled = !isIntegrityValid;
-                }
+            if (isLiveExpired) {
+                setLiveAlert('danger', 'This live lab has ended. The shared clock ran out and submissions are closed.');
+                setActionsLocked(true);
+            } else if (isLiveNotStarted) {
+                setLiveAlert('warn', 'This live lab hasn\\'t started. It unlocks when your instructor starts the clock.');
+                setActionsLocked(true);
+            } else {
+                setLiveAlert(null);
+                setActionsLocked(false);
             }
 
-            // Setup timer
+            // Timer
+            timerBox.className = 'timer';
             if (session.status === 'completed' || isLiveExpired) {
                 if (timerInterval) {
                     clearInterval(timerInterval);
@@ -2863,56 +2740,57 @@ class SidebarProvider {
                 } else {
                     timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
                 }
+                isCountDown = false;
                 updateTimerDisplay();
-                timerLabel.innerText = isLiveExpired ? 'Live Lab Expired' : 'Session Completed';
+                timerLabel.textContent = isLiveExpired ? 'Live lab ended' : 'Submitted';
+                timerBox.className = 'timer timer-done';
             } else if (isLiveNotStarted) {
                 if (timerInterval) {
                     clearInterval(timerInterval);
                     timerInterval = null;
                 }
                 timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || (session.live_duration_minutes * 60) || 0));
+                isCountDown = false;
                 updateTimerDisplay();
-                timerLabel.innerText = 'Live Lab Locked';
+                timerLabel.textContent = 'Not started';
+                timerBox.className = 'timer timer-done';
             } else {
                 if (isLive || session.time_limit_minutes > 0) {
                     timerVal = Math.max(0, Math.floor(Number(session.time_remaining_seconds) || 0));
                     isCountDown = true;
-                    timerLabel.innerText = isLive
-                        ? (timerVal > 0 ? 'Live Lab Countdown (Shared)' : 'Live Lab Expired')
-                        : (timerVal > 0 ? 'Time Remaining' : 'Time Expired');
+                    timerLabel.textContent = timerVal > 0 ? (isLive ? 'Shared clock' : 'Time remaining') : (isLive ? 'Live lab ended' : 'Time is up');
                 } else {
                     timerVal = Math.max(0, Math.floor(Number(session.elapsed_seconds) || 0));
                     isCountDown = false;
-                    timerLabel.innerText = 'Session Elapsed';
+                    timerLabel.textContent = 'Elapsed';
                 }
                 startLocalTimer(isLive);
             }
         }
-        
+
+        function onCountdownEnded(isLive) {
+            timerLabel.textContent = isLive ? 'Live lab ended' : 'Time is up';
+            timerBox.className = 'timer timer-done';
+            if (isLive) {
+                setLiveAlert('danger', 'This live lab has ended. The shared clock ran out and submissions are closed.');
+                checkProgressBtn.disabled = true;
+                submitBtn.disabled = true;
+            }
+        }
+
         function startLocalTimer(isLive = false) {
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
-            
+
             updateTimerDisplay();
-            
+
             if (isCountDown && timerVal <= 0) {
-                timerLabel.innerText = isLive ? 'Live Lab Expired' : 'Time Expired';
-                if (isLive) {
-                    if (liveLabAlert && liveLabAlertText) {
-                        liveLabAlert.style.display = 'flex';
-                        liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                        liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                        liveLabAlert.style.color = '#fca5a5';
-                        liveLabAlertText.innerText = 'Live lab ended: the shared countdown is over and submissions are locked.';
-                    }
-                    if (checkProgressBtn) checkProgressBtn.disabled = true;
-                    if (submitBtn) submitBtn.disabled = true;
-                }
+                onCountdownEnded(isLive);
                 return;
             }
-            
+
             timerInterval = setInterval(() => {
                 if (isCountDown) {
                     if (timerVal > 0) {
@@ -2920,58 +2798,43 @@ class SidebarProvider {
                     } else {
                         clearInterval(timerInterval);
                         timerInterval = null;
-                        timerLabel.innerText = isLive ? 'Live Lab Expired' : 'Time Expired';
-                        if (isLive) {
-                            if (liveLabAlert && liveLabAlertText) {
-                                liveLabAlert.style.display = 'flex';
-                                liveLabAlert.style.background = 'rgba(239, 68, 68, 0.15)';
-                                liveLabAlert.style.borderColor = 'rgba(239, 68, 68, 0.35)';
-                                liveLabAlert.style.color = '#fca5a5';
-                                liveLabAlertText.innerText = 'Live lab ended: the shared countdown is over and submissions are locked.';
-                            }
-                            if (checkProgressBtn) checkProgressBtn.disabled = true;
-                            if (submitBtn) submitBtn.disabled = true;
-                        }
+                        onCountdownEnded(isLive);
                     }
                 } else {
                     timerVal++;
                 }
                 updateTimerDisplay();
             }, 1000);
+            updateTimerDisplay();
         }
-        
+
         function updateTimerDisplay() {
             const totalSeconds = Math.max(0, Math.floor(Number(timerVal) || 0));
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
-            
+
             const paddedSeconds = seconds.toString().padStart(2, '0');
             const paddedMinutes = minutes.toString().padStart(2, '0');
 
             if (hours > 0) {
                 const paddedHours = hours.toString().padStart(2, '0');
-                timerDisplay.innerText = \`\${paddedHours}:\${paddedMinutes}:\${paddedSeconds}\`;
+                timerDisplay.textContent = \`\${paddedHours}:\${paddedMinutes}:\${paddedSeconds}\`;
             } else {
-                timerDisplay.innerText = \`\${paddedMinutes}:\${paddedSeconds}\`;
+                timerDisplay.textContent = \`\${paddedMinutes}:\${paddedSeconds}\`;
             }
+
+            // Last five minutes of a running countdown turn the clock amber
+            timerBox.classList.toggle('timer-low', !!timerInterval && isCountDown && totalSeconds <= 300);
         }
 
         // Auto-connect and state restoration on load
-        if (INITIAL_BACKEND_URL) {
-            backendUrlInput.value = INITIAL_BACKEND_URL;
-        }
-        if (INITIAL_SESSION_ID) {
-            sessionIdInput.value = INITIAL_SESSION_ID;
-        }
-
         if (INITIAL_SESSION_DATA) {
             handleSessionUpdate(INITIAL_SESSION_DATA);
         } else if (INITIAL_SESSION_ID && INITIAL_BACKEND_URL) {
             connectionScreen.style.display = 'none';
             sessionScreen.style.display = 'flex';
-            statusBanner.className = 'connection-status status-reconnecting';
-            statusText.innerText = 'Connecting...';
+            setStatus('reconnecting', 'Connecting…');
         }
 
         // Inform extension host that webview is mounted and ready for session sync

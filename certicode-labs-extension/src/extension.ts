@@ -19,12 +19,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    context.subscriptions.push(
-        vscode.commands.registerCommand("certicode-labs.connectSession", () => {
-            sidebarProvider.connectSessionPrompt();
-        })
-    );
-
     // Register URI Handler for deep linking (vscode://certicode.certicode-labs/connect)
     context.subscriptions.push(
         vscode.window.registerUriHandler({

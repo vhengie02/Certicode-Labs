@@ -633,9 +633,7 @@
                         </a>
                         @if ($activeSession)
                             <div class="rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 text-xs text-[#888888] space-y-1">
-                                <p class="text-[#a3a3a3]">If VS Code doesn't connect on its own, enter these in the extension:</p>
-                                <p>Session <code class="font-mono text-[#3ecf8e]">{{ $activeSession->id }}</code></p>
-                                <p class="break-all">Server <code class="font-mono text-[#ededed]">{{ request()->getSchemeAndHttpHost() }}</code></p>
+                                <p class="text-[#a3a3a3]">If VS Code doesn't connect on its own, click <strong class="text-[#ededed] font-medium">Continue in VS Code</strong> above and allow your browser to open it.</p>
                             </div>
                         @endif
                     </div>
