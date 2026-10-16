@@ -176,10 +176,15 @@ class LabSessionController extends Controller
         }
 
         if ($request->event_type === 'camera_absence') {
+            // In low-light mode the check is a brightness comparison, not face detection,
+            // so a miss is less certain and the instructor should see why.
+            $lowLight = (bool) ($request->payload['low_light'] ?? false);
             $this->recordCameraAnomaly($session, $request->payload, [
                 'type' => 'no_face',
-                'severity' => 'high',
-                'description' => 'Camera presence check failed during active lab session.',
+                'severity' => $lowLight ? 'medium' : 'high',
+                'description' => $lowLight
+                    ? 'Camera presence check failed during active lab session (low-light mode).'
+                    : 'Camera presence check failed during active lab session.',
             ]);
         }
 
@@ -1425,6 +1430,7 @@ class LabSessionController extends Controller
             'payload' => [
                 'verified' => true,
                 'face_count' => $faceCount,
+                'low_light' => $request->boolean('low_light'),
                 'verified_at' => now()->toISOString(),
             ],
         ]);

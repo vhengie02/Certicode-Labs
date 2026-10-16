@@ -714,6 +714,9 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodePollInterval: null,
         lowLightingDetected: false,
         isLowLightMode: false,
+        // Small luminance grid of the frame the student verified with in low-light mode.
+        // In-lab checks compare against it, since face detection is unreliable in the dark.
+        lowLightReference: null,
 
         // Continuous in-browser proctoring & heartbeat states
         browserProctorActive: false,
@@ -1021,6 +1024,9 @@ function preLabCameraGate(labId, initialSessionId) {
             this.status = 'verified';
             this.cameraVerified = true;
             this.isLowLightMode = isLowLight;
+            if (isLowLight && this.$refs.videoEl) {
+                this.lowLightReference = this.luminanceGrid(this.$refs.videoEl);
+            }
             setTimeout(() => {
                 this.launchLab();
             }, 600);
@@ -1151,6 +1157,21 @@ function preLabCameraGate(labId, initialSessionId) {
             const video = this.$refs.proctorLiveVideo || this.$refs.videoEl;
             if (!video || video.readyState < 2) return;
 
+            // Students who verified in low-light mode, or whose room has gone dark since,
+            // get the low-light check instead of normal face detection.
+            const grid = this.luminanceGrid(video);
+            const avgLuminance = grid ? grid.reduce((a, b) => a + b, 0) / grid.length : 100;
+            this.lowLightingDetected = avgLuminance < 75;
+            const lowLight = this.isLowLightMode || this.lowLightingDetected;
+
+            const detectedFaces = lowLight
+                ? await this.detectFacesLowLight(video, grid)
+                : await this.detectFacesNormal(video);
+
+            await this.applyProctorResult(video, detectedFaces, lowLight);
+        },
+
+        async detectFacesNormal(video) {
             let detectedFaces = 0;
 
             // Strategy 1: SsdMobilenetv1 on raw video
@@ -1212,20 +1233,61 @@ function preLabCameraGate(labId, initialSessionId) {
                 } catch (e) {}
             }
 
-            // Strategy 5: Low-light presence check (silhouette/center mass analysis for dark or backlit rooms)
-            if (detectedFaces === 0 && (this.lowLightingDetected || this.isLowLightMode)) {
-                if (this.checkLowLightPresence(video)) {
-                    detectedFaces = 1;
-                }
+            return detectedFaces;
+        },
+
+        async detectFacesLowLight(video, grid) {
+            // Boost the frame first: raw detection mostly misses faces in the dark
+            if (window.faceapi && this.modelLoaded) {
+                try {
+                    const canvas = this.$refs.proctorCanvas || document.createElement('canvas');
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.filter = 'brightness(2.4) contrast(1.6)';
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    ctx.filter = 'none';
+
+                    let detections = [];
+                    if (window.faceapi.nets.tinyFaceDetector?.isLoaded) {
+                        detections = await window.faceapi.detectAllFaces(
+                            canvas,
+                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
+                        );
+                    }
+                    if (detections.length === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
+                        detections = await window.faceapi.detectAllFaces(
+                            canvas,
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
+                        );
+                    }
+                    if (detections.length > 0) {
+                        // Thresholds this low pick up shadows as extra faces, so only
+                        // confident detections count towards "multiple faces".
+                        const confident = detections.filter(d => (d.score ?? d.classScore ?? 0) >= 0.5).length;
+                        return Math.max(1, confident);
+                    }
+                } catch (e) {}
             }
 
+            if ('FaceDetector' in window) {
+                try {
+                    const faces = await new window.FaceDetector({ fastMode: true }).detect(video);
+                    if (faces.length > 0) return faces.length;
+                } catch (e) {}
+            }
+
+            return this.checkLowLightPresence(grid) ? 1 : 0;
+        },
+
+        async applyProctorResult(video, detectedFaces, lowLight) {
             this.faceCount = detectedFaces;
             const nowTime = Date.now();
 
             if (detectedFaces === 1) {
                 this.absenceCount = 0;
                 this.proctorStatus = 'normal';
-                this.proctorStatusText = 'Face Present (Normal)';
+                this.proctorStatusText = lowLight ? 'Present (Low-light mode)' : 'Face Present (Normal)';
             } else if (detectedFaces === 0) {
                 this.absenceCount++;
                 this.proctorStatus = 'absence';
@@ -1238,6 +1300,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         image_base64: snapshot,
                         face_count: 0,
                         consecutive_absences: this.absenceCount,
+                        low_light: lowLight,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -1252,49 +1315,65 @@ function preLabCameraGate(labId, initialSessionId) {
                     await this.logTelemetry('webcam_check', {
                         image_base64: snapshot,
                         face_count: detectedFaces,
+                        low_light: lowLight,
                         timestamp: new Date().toISOString()
                     });
                 }
             }
         },
 
-        checkLowLightPresence(video) {
+        // 40x30 luminance values for the current frame, or null if the frame can't be read.
+        luminanceGrid(video) {
             try {
                 const canvas = document.createElement('canvas');
-                canvas.width = 160;
-                canvas.height = 120;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imgData = ctx.getImageData(0, 0, 160, 120);
-                const data = imgData.data;
+                canvas.width = 40;
+                canvas.height = 30;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(video, 0, 0, 40, 30);
+                const data = ctx.getImageData(0, 0, 40, 30).data;
+                const grid = new Array(40 * 30);
+                for (let i = 0; i < grid.length; i++) {
+                    grid[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+                }
+                return grid;
+            } catch (e) {
+                return null;
+            }
+        },
 
-                let centerLum = 0, centerCount = 0;
-                let borderLum = 0, borderCount = 0;
+        checkLowLightPresence(grid) {
+            if (!grid) return false;
 
-                for (let y = 0; y < 120; y += 4) {
-                    for (let x = 0; x < 160; x += 4) {
-                        const idx = (y * 160 + x) * 4;
-                        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-                        if (x >= 40 && x <= 120 && y >= 20 && y <= 100) {
-                            centerLum += lum;
-                            centerCount++;
-                        } else {
-                            borderLum += lum;
-                            borderCount++;
-                        }
+            let centerLum = 0, centerCount = 0;
+            let borderLum = 0, borderCount = 0;
+            let refDiff = 0;
+            const ref = this.lowLightReference;
+
+            for (let y = 0; y < 30; y++) {
+                for (let x = 0; x < 40; x++) {
+                    const i = y * 40 + x;
+                    if (x >= 10 && x < 30 && y >= 5 && y < 25) {
+                        centerLum += grid[i];
+                        centerCount++;
+                        if (ref) refDiff += Math.abs(grid[i] - ref[i]);
+                    } else {
+                        borderLum += grid[i];
+                        borderCount++;
                     }
                 }
-
-                const avgCenter = centerLum / (centerCount || 1);
-                const avgBorder = borderLum / (borderCount || 1);
-
-                // Silhouette in backlit/dark room: head is darker than surroundings, or non-black center
-                const hasContrast = Math.abs(avgBorder - avgCenter) > 6;
-                const notPitchBlack = avgCenter > 8;
-                return hasContrast && notPitchBlack;
-            } catch (e) {
-                return false;
             }
+
+            const avgCenter = centerLum / centerCount;
+            const avgBorder = borderLum / borderCount;
+
+            // A covered or switched-off camera is never "present"
+            if (avgCenter <= 4) return false;
+
+            // The middle of the frame still looks like it did when the student verified
+            if (ref && refDiff / centerCount < 14) return true;
+
+            // Silhouette: head darker (backlit) or lighter (screen glow) than the room around it
+            return Math.abs(avgBorder - avgCenter) > 6;
         },
 
         captureSnapshot(video) {

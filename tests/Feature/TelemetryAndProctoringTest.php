@@ -408,6 +408,33 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertArrayNotHasKey('image_base64', $log->payload);
     }
 
+    public function test_camera_absence_in_low_light_mode_is_medium_severity_and_labelled()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => true],
+        ])->assertStatus(200);
+
+        $anomaly = $this->latestNoFaceAnomaly();
+        $this->assertNotNull($anomaly);
+        $this->assertEquals('medium', $anomaly->severity);
+        $this->assertStringContainsString('low-light mode', $anomaly->description);
+        $this->assertTrue($anomaly->metadata['low_light']);
+    }
+
+    public function test_low_light_pre_lab_verification_is_recorded()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
+            'status' => 'granted',
+            'face_count' => 1,
+            'low_light' => true,
+        ])->assertStatus(200);
+
+        $log = TelemetryLog::where('lab_session_id', $this->session1->id)
+            ->where('event_type', 'webcam_prelab_verification')->first();
+        $this->assertTrue($log->payload['low_light']);
+    }
+
     public function test_camera_absence_ignores_a_client_supplied_image_path_and_invalid_images()
     {
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
