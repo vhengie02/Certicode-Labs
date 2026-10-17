@@ -206,7 +206,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Integrity Flag Triage ([`ClassController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/ClassController.php))**:
   - The class telemetry flags table sorts by student, lab, type, severity, time or status (`?sort=&dir=`, newest first by default).
   - `POST /classes/{class_id}/anomalies/resolve` resolves several open flags at once; IDs outside the class are ignored.
-  - A daily `model:prune` deletes resolved flags older than `ANOMALY_RETENTION_DAYS` (default 90). Open flags are never pruned.
+  - A daily `model:prune` deletes resolved flags older than `ANOMALY_RETENTION_DAYS` (default 90). Open flags are never pruned. On Vercel it runs from `/api/cron/tick` (`CronController`), because the Laravel scheduler doesn't run there.
   - Covered by [`IntegrityFlagsTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/IntegrityFlagsTest.php).
 
 ---
