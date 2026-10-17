@@ -794,15 +794,6 @@ function preLabCameraGate(labId, initialSessionId) {
                     }
                 }
             });
-
-            // Prevent accidental tab closing during live proctored lab
-            window.addEventListener('beforeunload', (e) => {
-                if (this.browserProctorActive) {
-                    e.preventDefault();
-                    e.returnValue = 'Live camera proctoring is active for your laboratory session. Leaving or closing this tab will disconnect camera proctoring and notify your instructor.';
-                    return e.returnValue;
-                }
-            });
         },
 
         async leaveSessionAndStopProctoring() {

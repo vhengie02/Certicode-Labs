@@ -165,6 +165,22 @@ class DashboardTest extends TestCase
             ->assertDontSee('some flag');
     }
 
+    public function test_timed_out_sessions_are_not_offered_to_continue()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
+        $student = User::where('email', 'student-CLASS-A@example.com')->firstOrFail();
+        // Started yesterday on a 60-minute lab, never closed
+        $session = LabSession::firstOrFail();
+        $session->forceFill(['started_at' => now()->subDay(), 'last_ping_at' => now()->subDay()])->save();
+
+        $this->sections($student)
+            ->assertOk()
+            ->assertSee('No labs in progress')
+            ->assertDontSee('Resume');
+        $this->assertSame('abandoned', $session->fresh()->status);
+    }
+
     public function test_main_menu_shows_admin_pages_only_to_admins()
     {
         $adminLinks = [route('admin.users.index'), route('admin.competencies.index'), route('admin.reports.index'), route('admin.system.edit')];

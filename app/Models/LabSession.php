@@ -381,11 +381,14 @@ class LabSession extends Model
     /**
      * Automatically sweep and expire abandoned or time-limit-exceeded in-progress sessions.
      */
-    public static function autoExpireStaleSessions(?int $labId = null): int
+    public static function autoExpireStaleSessions(?int $labId = null, ?int $userId = null): int
     {
         $query = static::where('status', 'in_progress')->with('laboratory');
         if ($labId) {
             $query->where('lab_id', $labId);
+        }
+        if ($userId) {
+            $query->where('user_id', $userId);
         }
 
         $sessions = $query->get();

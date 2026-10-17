@@ -62,6 +62,9 @@ class DashboardController extends Controller
 
     private function studentData(User $user): array
     {
+        // Close timed-out or silent sessions first, so "Continue" never offers a lab that can't resume
+        LabSession::autoExpireStaleSessions(userId: $user->id);
+
         $sessionCounts = $user->labSessions()
             ->selectRaw("count(distinct case when status = 'completed' then lab_id end) as completed")
             ->selectRaw("count(case when status = 'in_progress' then 1 end) as in_progress")

@@ -146,7 +146,8 @@ class LaboratoryController extends Controller
         $laboratory->recordViewBy(auth()->user());
         $laboratory->load(['module.schoolClass']);
 
-        // Check if student already has a session
+        // Check if student already has a session (stale ones are closed first)
+        \App\Models\LabSession::autoExpireStaleSessions($laboratory->id, auth()->id());
         $activeSession = $laboratory->labSessions()
             ->where('user_id', auth()->id())
             ->where('status', 'in_progress')
