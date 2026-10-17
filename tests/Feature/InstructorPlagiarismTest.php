@@ -111,7 +111,7 @@ class InstructorPlagiarismTest extends TestCase
         $response = $this->actingAs($this->instructor)->followingRedirects()->get(route('instructor.monitoring.show', $this->lab->id));
         $response->assertStatus(200);
         $response->assertSee('Similar code');
-        $response->assertSee('In-Session Cohort Plagiarism Detector');
+        $response->assertSee('Similar submissions');
     }
 
     public function test_monitoring_view_removes_live_telemetry_badge_and_has_telemetry_button(): void
@@ -131,8 +131,8 @@ class InstructorPlagiarismTest extends TestCase
         $response = $this->actingAs($this->instructor)->followingRedirects()->get(route('instructor.monitoring.show', $this->lab->id));
         $response->assertStatus(200);
         $response->assertDontSee('By team');
-        $response->assertSee('Active Student Workspaces');
-        $response->assertSee('Filter by student name...');
+        $response->assertSee('Search students');
+        $response->assertDontSee('Students and teams');
     }
 
     public function test_monitoring_view_for_group_lab_shows_group_controls(): void
@@ -142,8 +142,8 @@ class InstructorPlagiarismTest extends TestCase
         $response = $this->actingAs($this->instructor)->followingRedirects()->get(route('instructor.monitoring.show', $this->lab->id));
         $response->assertStatus(200);
         $response->assertSee('By team');
-        $response->assertSee('Active Student / Team Workspaces');
-        $response->assertSee('Filter by student or team...');
+        $response->assertSee('Students and teams');
+        $response->assertSee('Search student or team');
     }
 
     public function test_monitoring_view_suppresses_websocket_when_broadcast_connection_is_log(): void
@@ -178,7 +178,7 @@ class InstructorPlagiarismTest extends TestCase
         $this->actingAs($this->instructor)->get(route('classes.telemetry', ['class_id' => $classId, 'lab' => $this->lab->id]))
             ->assertOk()
             ->assertSee('Connected now')
-            ->assertSee('In-Session Cohort Plagiarism Detector');
+            ->assertSee('Similar submissions');
     }
 
     public function test_class_monitoring_rejects_a_lab_from_another_class(): void

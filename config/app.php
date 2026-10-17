@@ -88,6 +88,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Integrity Flag Retention
+    |--------------------------------------------------------------------------
+    |
+    | Resolved anomalies older than this many days are deleted by the daily
+    | `model:prune` run. Open (unresolved) anomalies are always kept.
+    |
+    */
+
+    'anomaly_retention_days' => (int) env('ANOMALY_RETENTION_DAYS', 90),
+
+    /*
+    |--------------------------------------------------------------------------
     | Encryption Key
     |--------------------------------------------------------------------------
     |

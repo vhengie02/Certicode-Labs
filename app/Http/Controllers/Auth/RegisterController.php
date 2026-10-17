@@ -33,6 +33,8 @@ class RegisterController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => 'required|string|in:student,instructor',
+        ], [
+            'email.unique' => 'An account with this email already exists. Sign in instead, or use Continue with Google to get a sign-in code by email.',
         ]);
 
         // Instructors see every student's work, so that role needs an admin's approval:

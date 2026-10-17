@@ -63,4 +63,12 @@ return [
         'rapidapi_host' => env('JUDGE0_RAPIDAPI_HOST'),
     ],
 
+    // Certicode VS Code extension. Builds older than min_version (or old builds that send
+    // no version) are flagged as outdated to the student. Bump it with every release that
+    // the web app depends on.
+    'vscode_extension' => [
+        'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.6.0'),
+        'download_path' => 'downloads/certicode-labs.vsix',
+    ],
+
 ];

@@ -89,15 +89,6 @@
                 @endif
             @endif
 
-            @if($laboratory->is_group_lab)
-                <div class="flex items-center h-10 rounded-lg bg-[#171717] border border-[#2e2e2e] p-1 text-xs" role="group" aria-label="Sort roster">
-                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'name']) }}" @if($sortBy !== 'group') aria-current="true" @endif
-                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy !== 'group' ? 'bg-[#3ecf8e] text-[#06150e] font-semibold' : 'text-[#888888] hover:text-[#ededed]' }}">By student</a>
-                    <a href="{{ request()->fullUrlWithQuery(['sort' => 'group']) }}" @if($sortBy === 'group') aria-current="true" @endif
-                       class="px-3 py-1.5 rounded-md font-medium transition-colors {{ $sortBy === 'group' ? 'bg-[#3ecf8e] text-[#06150e] font-semibold' : 'text-[#888888] hover:text-[#ededed]' }}">By team</a>
-                </div>
-            @endif
-
             <button type="button" @click="refreshData()" class="inline-flex items-center justify-center h-10 w-10 rounded-lg bg-[#171717] border border-[#2e2e2e] text-[#a3a3a3] hover:text-[#ededed] hover:border-[#383838] transition-colors" aria-label="Refresh live data" title="Refresh">
                 <svg class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             </button>
@@ -105,414 +96,492 @@
     </div>
 
     <!-- Live WebSocket Telemetry Alert Banner -->
-    <div x-show="hasLiveUpdate" x-cloak class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-emerald-400 text-sm font-medium transition-all shadow-sm">
-        <div class="flex items-center gap-2.5">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span x-text="liveUpdateMessage"></span>
+    <div x-show="hasLiveUpdate" x-cloak role="status"
+         x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
+         class="flex items-center justify-between gap-3 p-3 pl-4 rounded-xl border text-sm"
+         :class="liveAlertAnomaly ? 'border-amber-400/30 bg-amber-400/[0.06] text-amber-100' : 'border-[#2e2e2e] bg-[#171717] text-[#ededed]'">
+        <div class="flex items-center gap-3 min-w-0">
+            <template x-if="liveAlertAnomaly && liveAlertAnomaly.snapshot_url">
+                <a :href="liveAlertAnomaly.snapshot_url" target="_blank" rel="noopener" class="shrink-0" title="Open the webcam snapshot">
+                    <img :src="liveAlertAnomaly.snapshot_url" class="h-12 w-16 object-cover rounded-md border border-amber-400/30" alt="Webcam snapshot from the new flag">
+                </a>
+            </template>
+            <span x-show="!(liveAlertAnomaly && liveAlertAnomaly.snapshot_url)" class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                <span class="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping motion-reduce:animate-none" :class="liveAlertAnomaly ? 'bg-amber-400' : 'bg-[#3ecf8e]'"></span>
+                <span class="relative inline-flex h-2 w-2 rounded-full" :class="liveAlertAnomaly ? 'bg-amber-400' : 'bg-[#3ecf8e]'"></span>
+            </span>
+            <span class="min-w-0" x-text="liveUpdateMessage"></span>
         </div>
-        <button @click="refreshData()" class="text-xs px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold transition-colors">
-            Refresh Panel &rarr;
-        </button>
+        <div class="flex items-center gap-1 shrink-0">
+            <button type="button" @click="refreshData()" class="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/10 text-xs font-medium transition-colors active:scale-[0.98]">
+                Load changes
+            </button>
+            <button type="button" @click="hasLiveUpdate = false; liveAlertAnomaly = null" class="h-8 w-8 inline-flex items-center justify-center rounded-lg text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors" aria-label="Dismiss">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" d="M6 18 18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
     </div>
 
 
-    {{-- KPI Metrics --}}
+    {{-- KPI strip: one panel, five cells --}}
     @php
         $flaggedPairs = $plagiarismAnalysis['flagged_pairs_count'] ?? 0;
+        $openFlagTotal = $sessions->sum(fn ($s) => $s->anomalies->where('resolved', false)->count());
+        $connectedPct = $totalStudents > 0 ? round(($activeSessions / $totalStudents) * 100) : 0;
+        $submittedPct = $totalStudents > 0 ? round(($completedSessions / $totalStudents) * 100) : 0;
     @endphp
-    <dl class="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+    <dl class="grid grid-cols-2 lg:grid-cols-5 rounded-xl border border-[#2e2e2e] bg-[#171717] [&>div]:border-[#2e2e2e] [&>div:nth-child(odd)]:border-r lg:[&>div]:border-r [&>div:last-child]:border-r-0 [&>div:nth-child(-n+4)]:border-b lg:[&>div:nth-child(n)]:border-b-0">
+        <div class="p-4 sm:p-5">
+            <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                 Connected now
                 <x-info-tip align="left">Students whose VS Code extension checked in during the last 75 seconds, out of everyone who has opened this lab. The extension checks in every 15–20 seconds, so a student who closes VS Code drops off within about a minute.</x-info-tip>
             </dt>
             <dd class="mt-2 flex items-baseline gap-1.5">
-                <span class="cc-display text-3xl font-bold tabular-nums text-[#ededed]">{{ $activeSessions }}</span>
+                <span class="cc-display text-3xl font-bold tabular-nums tracking-tight text-[#ededed]">{{ $activeSessions }}</span>
                 <span class="text-xs text-[#888888]">of {{ $totalStudents }}</span>
             </dd>
-            <dd class="mt-3 h-1.5 w-full rounded-full bg-[#232323] overflow-hidden" aria-hidden="true">
-                <span class="block h-full rounded-full bg-[#3ecf8e]" style="width: {{ $totalStudents > 0 ? round(($activeSessions / $totalStudents) * 100) : 0 }}%"></span>
+            <dd class="mt-3 h-1 w-full rounded-full bg-[#2e2e2e] overflow-hidden" aria-hidden="true">
+                <span class="block h-full rounded-full bg-[#3ecf8e] transition-[width] duration-500" style="width: {{ $connectedPct }}%"></span>
             </dd>
         </div>
 
-        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
-                Avg typing speed
-                <x-info-tip>Average words per minute across everyone in this lab, counting 5 keystrokes as one word. Students who haven't typed yet count as 0, so the average starts low and rises as people work.</x-info-tip>
-            </dt>
-            <dd class="mt-2 flex items-baseline gap-1.5">
-                <span class="cc-display text-3xl font-bold tabular-nums text-[#ededed]">{{ $avgWpm }}</span>
-                <span class="text-xs text-[#888888]">wpm</span>
-            </dd>
-        </div>
-
-        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
-                Integrity flags
-                <x-info-tip>Every flag raised in this lab, including ones you've resolved: switching away from VS Code 3+ times in 2 minutes, suspicious pastes, the camera not seeing exactly one face, and long idle periods. Open a student's "Anomalies" to see each one.</x-info-tip>
-            </dt>
-            <dd class="mt-2 flex items-baseline gap-1.5">
-                <span class="cc-display text-3xl font-bold tabular-nums {{ $totalAnomalies > 0 ? 'text-amber-400' : 'text-[#ededed]' }}">{{ $totalAnomalies }}</span>
-                <span class="text-xs text-[#888888]">events</span>
-            </dd>
-        </div>
-
-        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
+        <div class="p-4 sm:p-5">
+            <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                 Submitted
                 <x-info-tip>Sessions that are finished and graded: submitted by the student, ended by you, or auto-submitted when a live lab's timer ran out.</x-info-tip>
             </dt>
             <dd class="mt-2 flex items-baseline gap-1.5">
-                <span class="cc-display text-3xl font-bold tabular-nums text-[#ededed]">{{ $completedSessions }}</span>
+                <span class="cc-display text-3xl font-bold tabular-nums tracking-tight text-[#ededed]">{{ $completedSessions }}</span>
                 <span class="text-xs text-[#888888]">of {{ $totalStudents }}</span>
+            </dd>
+            <dd class="mt-3 h-1 w-full rounded-full bg-[#2e2e2e] overflow-hidden" aria-hidden="true">
+                <span class="block h-full rounded-full bg-[#3ecf8e]/60 transition-[width] duration-500" style="width: {{ $submittedPct }}%"></span>
             </dd>
         </div>
 
-        <div class="col-span-2 lg:col-span-1 rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-            <dt class="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">
-                Similar code
-                <x-info-tip align="right">Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
+        <div class="p-4 sm:p-5">
+            <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
+                Open flags
+                <x-info-tip>Flags you haven't resolved yet: switching away from VS Code 3+ times in 2 minutes, suspicious pastes, the camera not seeing exactly one face, and long idle periods. Open a student to review and resolve each one.</x-info-tip>
             </dt>
             <dd class="mt-2 flex items-baseline gap-1.5">
-                <span class="cc-display text-3xl font-bold tabular-nums {{ $flaggedPairs > 0 ? 'text-red-400' : 'text-[#ededed]' }}" x-text="plagiarism.flagged_pairs_count ?? {{ (int) $flaggedPairs }}">{{ $flaggedPairs }}</span>
+                <span class="cc-display text-3xl font-bold tabular-nums tracking-tight {{ $openFlagTotal > 0 ? 'text-amber-400' : 'text-[#ededed]' }}">{{ $openFlagTotal }}</span>
+                <span class="text-xs text-[#888888]">of {{ $totalAnomalies }} raised</span>
+            </dd>
+            @if($openFlagTotal > 0)
+                <dd class="mt-2"><button type="button" @click="statusFilter = 'attention'; $nextTick(() => document.getElementById('roster-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))" class="text-xs font-medium text-amber-300 hover:underline underline-offset-2">Show who needs attention</button></dd>
+            @endif
+        </div>
+
+        <div class="p-4 sm:p-5">
+            <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
+                Similar code
+                <x-info-tip>Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums tracking-tight {{ $flaggedPairs > 0 ? 'text-red-400' : 'text-[#ededed]' }}" x-text="plagiarism.flagged_pairs_count ?? {{ (int) $flaggedPairs }}">{{ $flaggedPairs }}</span>
                 <span class="text-xs text-[#888888]">flagged pairs</span>
             </dd>
-            <dd class="mt-1"><a href="#plagiarism-section" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">Compare code &darr;</a></dd>
+            <dd class="mt-2"><a href="#plagiarism-section" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">Compare code</a></dd>
+        </div>
+
+        <div class="col-span-2 lg:col-span-1 p-4 sm:p-5">
+            <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
+                Avg typing speed
+                <x-info-tip align="right">Average words per minute across everyone in this lab, counting 5 keystrokes as one word. Students who haven't typed yet count as 0, so the average starts low and rises as people work.</x-info-tip>
+            </dt>
+            <dd class="mt-2 flex items-baseline gap-1.5">
+                <span class="cc-display text-3xl font-bold tabular-nums tracking-tight text-[#ededed]">{{ $avgWpm }}</span>
+                <span class="text-xs text-[#888888]">wpm</span>
+            </dd>
         </div>
     </dl>
 
-    <!-- Student & Team Monitoring Roster -->
-    <div class="glass-panel rounded-xl border border-slate-800">
-        <div class="p-4 rounded-t-xl border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-                <h3 class="font-bold text-white text-sm">{{ $laboratory->is_group_lab ? 'Active Student / Team Workspaces' : 'Active Student Workspaces' }}</h3>
-                <p class="text-xs text-slate-400 mt-0.5">Real-time status, WPM tracking, task progress, and anomaly audit trails.</p>
+    {{-- Roster: one row per student, sortable and filterable in the browser --}}
+    @php
+        $taskTotal = count($laboratory->tasks_definition ?? []);
+        $stateLabels = ['active' => 'Active', 'idle' => 'Idle', 'offline' => 'Offline', 'completed' => 'Submitted', 'abandoned' => 'Timed out'];
+        $rosterIndex = $sessions->map(function ($s) use ($taskTotal) {
+            $state = $s->getConnectionState();
+            $openFlags = $s->anomalies->where('resolved', false)->count();
+            $done = is_array($s->completed_tasks) ? count($s->completed_tasks) : 0;
+            return [
+                'id' => $s->id,
+                'name' => strtolower($s->user->name ?? ''),
+                'group' => strtolower($s->group->name ?? ''),
+                'state' => $state,
+                // Higher means look sooner: open flags first, then students who dropped off, then warning counts
+                'attention' => $openFlags * 3 + (in_array($state, ['idle', 'offline'], true) ? 2 : 0)
+                    + (($s->focus_lost_count ?? 0) > 2 ? 1 : 0) + (($s->paste_anomaly_count ?? 0) > 0 ? 1 : 0),
+                'progress' => $taskTotal > 0 ? $done / $taskTotal : 0,
+                'wpm' => (int) ($s->wpm ?? 0),
+            ];
+        })->values();
+        // Everything the student drawer shows, keyed by session id
+        $studentDetails = $sessions->mapWithKeys(function ($s) use ($taskTotal, $stateLabels) {
+            $state = $s->getConnectionState();
+            $diff = $s->diff_stats ?? [];
+            return [$s->id => [
+                'id' => $s->id,
+                'name' => $s->user->name ?? 'Unknown Student',
+                'email' => $s->user->email ?? '',
+                'initials' => strtoupper(substr($s->user->name ?? 'S', 0, 2)),
+                'team_name' => $s->group->name ?? null,
+                'state' => $state,
+                'state_label' => $stateLabels[$state] ?? ucfirst($state),
+                'status' => $s->status,
+                'last_seen' => $s->last_ping_at?->diffForHumans() ?? $s->started_at?->diffForHumans(),
+                'started_at' => $s->started_at?->format('M j, H:i'),
+                'tasks_done' => is_array($s->completed_tasks) ? count($s->completed_tasks) : 0,
+                'task_total' => $taskTotal,
+                'wpm' => (int) ($s->wpm ?? 0),
+                'keystrokes' => (int) ($s->keystroke_count ?? 0),
+                'focus_lost' => (int) ($s->focus_lost_count ?? 0),
+                'pastes' => (int) ($s->paste_anomaly_count ?? 0),
+                'lines_added' => (int) ($diff['lines_added'] ?? 0),
+                'lines_deleted' => (int) ($diff['lines_deleted'] ?? 0),
+                'contributions' => array_values($s->code_contributions ?? []),
+                'anomalies' => $s->anomalies->sortByDesc('id')->values(),
+                'timeline_url' => route('sessions.telemetry-timeline', $s->id),
+                'is_team' => (bool) $s->group_id,
+                'performance_score' => (float) ($s->performance_score ?? 0),
+                'instructor_grade_override' => $s->instructor_grade_override,
+                'effective_score' => (float) ($s->effective_score ?? 0),
+                'is_overridden' => $s->isGradeOverridden(),
+                'instructor_override_reason' => $s->instructor_override_reason,
+                'instructor_overridden_at' => $s->instructor_overridden_at?->diffForHumans(),
+                'overridden_by_name' => $s->overriddenByUser->name ?? null,
+                'ai_grade_summary' => $s->ai_grade_summary,
+            ]];
+        });
+        $filters = ['all' => 'All', 'attention' => 'Needs attention', 'active' => 'Active', 'idle' => 'Idle', 'offline' => 'Offline', 'completed' => 'Submitted'];
+    @endphp
+    <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="roster-heading">
+        <div class="p-4 sm:p-5 border-b border-[#2e2e2e] space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <h3 id="roster-heading" class="text-base font-semibold text-[#ededed]">
+                    {{ $laboratory->is_group_lab ? 'Students and teams' : 'Students' }}
+                    <span class="ml-1.5 text-sm font-normal text-[#888888] tabular-nums">{{ $sessions->count() }}</span>
+                </h3>
+                <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <label class="relative block">
+                        <span class="sr-only">Search students</span>
+                        <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#666666]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5"/></svg>
+                        <input type="search" id="monitoring-search-query" name="search_query" x-model="searchQuery"
+                               placeholder="{{ $laboratory->is_group_lab ? 'Search student or team' : 'Search students' }}"
+                               class="block h-9 w-full sm:w-56 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] pl-8 pr-3 text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e]/60 focus:ring-2 focus:ring-[#3ecf8e]/15 transition-colors">
+                    </label>
+                    <label class="flex items-center gap-2 h-9 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] pl-3 pr-2 text-sm text-[#888888]">
+                        Sort
+                        <select x-model="sortKey" class="bg-transparent text-[#ededed] focus:outline-none pr-1 cursor-pointer">
+                            <option value="attention" class="bg-[#171717]">Needs attention first</option>
+                            <option value="name" class="bg-[#171717]">Name</option>
+                            <option value="progress" class="bg-[#171717]">Most tasks done</option>
+                            <option value="wpm" class="bg-[#171717]">Typing speed</option>
+                        </select>
+                    </label>
+                    @if($laboratory->is_group_lab)
+                        <div class="flex items-center h-9 rounded-lg bg-[#0f0f0f] border border-[#2e2e2e] p-1 text-xs" role="group" aria-label="Group rows">
+                            <a href="{{ request()->fullUrlWithQuery(['sort' => 'name']) }}" @if($sortBy !== 'group') aria-current="true" @endif
+                               class="px-2.5 py-1 rounded-md transition-colors {{ $sortBy !== 'group' ? 'bg-[#2e2e2e] text-[#ededed]' : 'text-[#888888] hover:text-[#ededed]' }}">By student</a>
+                            <a href="{{ request()->fullUrlWithQuery(['sort' => 'group']) }}" @if($sortBy === 'group') aria-current="true" @endif
+                               class="px-2.5 py-1 rounded-md transition-colors {{ $sortBy === 'group' ? 'bg-[#2e2e2e] text-[#ededed]' : 'text-[#888888] hover:text-[#ededed]' }}">By team</a>
+                        </div>
+                    @endif
+                </div>
             </div>
-            <input type="text" id="monitoring-search-query" name="search_query" x-model="searchQuery" placeholder="{{ $laboratory->is_group_lab ? 'Filter by student or team...' : 'Filter by student name...' }}" 
-                   class="bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#3ecf8e] w-full sm:w-64">
+
+            @if($sessions->isNotEmpty())
+                <div class="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5" role="tablist" aria-label="Filter students by state">
+                    @foreach($filters as $key => $label)
+                        <button type="button" role="tab" @click="statusFilter = '{{ $key }}'" :aria-selected="statusFilter === '{{ $key }}'"
+                                x-show="'{{ $key }}' === 'all' || filterCount('{{ $key }}') > 0"
+                                class="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-colors active:scale-[0.98]"
+                                :class="statusFilter === '{{ $key }}' ? 'border-[#3ecf8e]/50 bg-[#3ecf8e]/10 text-[#ededed]' : 'border-[#2e2e2e] text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e]'">
+                            {{ $label }}
+                            <span class="tabular-nums {{ $key === 'attention' ? 'text-amber-300' : 'text-[#888888]' }}" x-text="filterCount('{{ $key }}')"></span>
+                        </button>
+                    @endforeach
+                </div>
+            @endif
         </div>
 
         @if($sessions->isEmpty())
-            <div class="p-12 text-center text-slate-500">
-                <svg class="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                <p class="text-sm font-medium text-slate-400">No active student sessions found for this laboratory.</p>
-                <p class="text-xs text-slate-500 mt-1">Students will appear here immediately upon launching the VS Code extension.</p>
+            <div class="px-6 py-14 text-center">
+                <p class="text-sm font-medium text-[#ededed]">No one has started this lab yet</p>
+                <p class="mt-1.5 text-sm text-[#888888] max-w-sm mx-auto">Students show up here as soon as they open the lab in VS Code.</p>
             </div>
         @else
-            <div class="divide-y divide-slate-800/80">
+            {{-- Column headings (desktop) --}}
+            <div class="hidden lg:grid lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_6rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
+                <span>Student</span>
+                <span>Status</span>
+                <span>Tasks</span>
+                <span class="text-right">Typing</span>
+                <span class="text-right" title="Times VS Code lost focus">Focus lost</span>
+                <span class="text-right" title="Suspicious pastes">Pastes</span>
+                <span>Flags</span>
+                <span>Grade</span>
+                <span class="sr-only">Actions</span>
+            </div>
+
+            <div class="flex flex-col divide-y divide-[#2e2e2e]">
                 @foreach($sessions as $session)
                     @php
                         $user = $session->user;
                         $group = $session->group;
                         $tasksCount = is_array($session->completed_tasks) ? count($session->completed_tasks) : 0;
                         $anomaliesList = $session->anomalies;
-                        $diffStats = $session->diff_stats ?? ['added' => 0, 'deleted' => 0];
-                        $gradeSessionPayload = [
-                            'id' => $session->id,
-                            'student_name' => $user->name ?? 'Unknown Student',
-                            'is_team' => (bool) $session->group_id,
-                            'team_name' => $group->name ?? null,
-                            'status' => $session->status,
-                            'performance_score' => (float) ($session->performance_score ?? 0),
-                            'instructor_grade_override' => $session->instructor_grade_override,
-                            'effective_score' => (float) ($session->effective_score ?? 0),
-                            'is_overridden' => $session->isGradeOverridden(),
-                            'instructor_override_reason' => $session->instructor_override_reason,
-                            'instructor_overridden_at' => $session->instructor_overridden_at ? $session->instructor_overridden_at->diffForHumans() : null,
-                            'overridden_by_name' => $session->overriddenByUser->name ?? null,
-                            'ai_grade_summary' => $session->ai_grade_summary,
-                        ];
+                        $openFlags = $anomaliesList->where('resolved', false)->count();
+                        $diffStats = $session->diff_stats ?? [];
+                        $linesAdded = (int) ($diffStats['lines_added'] ?? 0);
+                        $linesDeleted = (int) ($diffStats['lines_deleted'] ?? 0);
+                        $state = $session->getConnectionState();
+                        $focusLost = (int) ($session->focus_lost_count ?? 0);
+                        $pastes = (int) ($session->paste_anomaly_count ?? 0);
+                        $wpm = (int) ($session->wpm ?? 0);
+                        $isGraded = $session->status === 'completed';
+                        $stateStyles = [
+                            'active' => ['dot' => 'bg-[#3ecf8e]', 'text' => 'text-[#ededed]'],
+                            'idle' => ['dot' => 'bg-amber-400', 'text' => 'text-amber-200'],
+                            'offline' => ['dot' => 'bg-[#666666]', 'text' => 'text-[#a3a3a3]'],
+                            'completed' => ['dot' => 'bg-[#3ecf8e]/50', 'text' => 'text-[#a3a3a3]'],
+                            'abandoned' => ['dot' => 'bg-red-400/70', 'text' => 'text-[#a3a3a3]'],
+                        ][$state] ?? ['dot' => 'bg-[#666666]', 'text' => 'text-[#a3a3a3]'];
                     @endphp
-                    <div class="p-5 hover:bg-slate-900/40 transition-colors" 
-                         x-show="matchesSearch({{ \Illuminate\Support\Js::from(strtolower($user->name ?? '')) }}, {{ \Illuminate\Support\Js::from(strtolower($group->name ?? '')) }})">
-                        <div class="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4">
-                            <!-- Student / Team Identity (Fixed Width for Perfect Alignment) -->
-                            <div class="flex items-center gap-3 w-full lg:w-64 xl:w-72 shrink-0 min-w-0">
-                                <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-sm text-slate-200 uppercase shrink-0">
-                                    {{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex items-center gap-2">
-                                        <span class="font-bold text-white text-sm truncate" title="{{ $user->name ?? 'Unknown Student' }}">{{ $user->name ?? 'Unknown Student' }}</span>
-                                        @if($session->status === 'in_progress')
-                                            @if($session->isActivelyConnected())
-                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shrink-0">
-                                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                                    Active
-                                                </span>
-                                            @elseif($session->isIdle())
-                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 shrink-0" title="No heartbeat recently">
-                                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                                                    Idle
-                                                </span>
-                                            @else
-                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 shrink-0" title="Disconnected - no active heartbeat">
-                                                    <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
-                                                    Offline
-                                                </span>
-                                            @endif
-                                        @elseif($session->status === 'abandoned')
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 shrink-0" title="Session timed out or abandoned">
-                                                Abandoned
-                                            </span>
-                                        @else
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
-                                                Completed
-                                            </span>
-                                        @endif
-                                    </div>
-                                    <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 truncate">
-                                        <span class="truncate" title="{{ $user->email ?? 'No email' }}">{{ $user->email ?? 'No email' }}</span>
+                    <div class="roster-row group/row px-4 sm:px-5 py-3.5 transition-colors hover:bg-white/[0.02] {{ $openFlags > 0 ? 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.7)]' : '' }}"
+                         x-show="showRow({{ $session->id }})" :style="{ order: rowOrder({{ $session->id }}) }">
+                        <div class="grid grid-cols-3 lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_6rem] items-center gap-x-4 gap-y-3">
+                            {{-- Student --}}
+                            <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 lg:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
+                                <span class="w-9 h-9 rounded-lg bg-[#232323] border border-[#2e2e2e] flex items-center justify-center text-xs font-semibold text-[#a3a3a3] shrink-0 transition-colors group-hover/row:border-[#3e3e3e]" aria-hidden="true">{{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}</span>
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium text-[#ededed] truncate group-hover/row:underline underline-offset-2 decoration-[#3e3e3e]">{{ $user->name ?? 'Unknown Student' }}</p>
+                                    <p class="text-xs text-[#888888] truncate">
                                         @if($laboratory->is_group_lab && $group)
-                                            <span class="text-slate-600 shrink-0">•</span>
-                                            <span class="text-[#3ecf8e] font-semibold flex items-center gap-1 shrink-0 truncate" title="{{ $group->name }}">
-                                                <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                                                <span class="truncate">{{ $group->name }}</span>
-                                            </span>
+                                            <span class="text-[#3ecf8e]">{{ $group->name }}</span> <span aria-hidden="true">&middot;</span>
                                         @endif
-                                    </div>
+                                        <span>{{ $user->email ?? 'No email' }}</span>
+                                    </p>
+                                </div>
+                            </button>
+
+                            {{-- Status --}}
+                            <div class="flex items-center justify-end lg:justify-start gap-2 text-sm {{ $stateStyles['text'] }}" title="{{ ['active' => 'Heartbeat in the last 75 seconds', 'idle' => 'No heartbeat for over a minute', 'offline' => 'No heartbeat for over 5 minutes', 'completed' => 'Finished and graded', 'abandoned' => 'Ran out of time without submitting'][$state] ?? '' }}">
+                                <span class="w-2 h-2 rounded-full shrink-0 {{ $stateStyles['dot'] }} {{ $state === 'active' ? 'animate-pulse motion-reduce:animate-none' : '' }}" aria-hidden="true"></span>
+                                {{ $stateLabels[$state] ?? ucfirst($state) }}
+                            </div>
+
+                            {{-- Tasks --}}
+                            <div class="col-span-3 lg:col-span-1 min-w-0">
+                                <div class="flex items-baseline justify-between gap-2 text-sm">
+                                    <span class="lg:hidden text-xs text-[#888888]">Tasks</span>
+                                    <span class="tabular-nums text-[#ededed]">{{ $tasksCount }}<span class="text-[#666666]">/{{ $taskTotal }}</span></span>
+                                    @if($linesAdded || $linesDeleted)
+                                        <span class="font-mono text-[11px] text-[#666666]" title="Lines added and removed since the starter code"><span class="text-[#3ecf8e]/80">+{{ $linesAdded }}</span> <span class="text-red-400/70">&minus;{{ $linesDeleted }}</span></span>
+                                    @endif
+                                </div>
+                                <div class="mt-1.5 h-1 rounded-full bg-[#2e2e2e] overflow-hidden" aria-hidden="true">
+                                    <span class="block h-full rounded-full bg-[#3ecf8e]" style="width: {{ $taskTotal > 0 ? round(min(1, $tasksCount / $taskTotal) * 100) : 0 }}%"></span>
                                 </div>
                             </div>
 
-                            {{-- Workspace Stats (Fixed Grid & Width for Vertical Alignment) --}}
-                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 text-xs w-full lg:w-[440px] xl:w-[480px] shrink-0">
-                                <!-- WPM Widget -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Live WPM</span><x-info-tip align="left" class="shrink-0">This student's typing speed in words per minute, as reported by the extension (5 keystrokes = 1 word).</x-info-tip></span>
-                                    <span class="text-base font-mono font-bold text-sky-400 my-0.5">{{ $session->wpm ?? 0 }}</span>
-                                    <span class="text-[10px] text-slate-500 block truncate">words/min</span>
-                                </div>
-
-                                <!-- Tasks Completed -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Tasks Done</span><x-info-tip align="center" class="shrink-0">Lab tasks this student's code has passed so far. Tasks are checked each time they run their code.</x-info-tip></span>
-                                    <span class="text-base font-mono font-bold text-emerald-400 my-0.5">{{ $tasksCount }}</span>
-                                    <span class="text-[10px] text-slate-500 block truncate">completed</span>
-                                </div>
-
-                                <!-- Focus Losses -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Focus Lost</span><x-info-tip align="center" class="shrink-0">How many times VS Code lost focus, for example switching to a browser. Turns amber above 2; 3 or more within 2 minutes raises an integrity flag.</x-info-tip></span>
-                                    <span class="text-base font-mono font-bold my-0.5 {{ ($session->focus_lost_count ?? 0) > 2 ? 'text-amber-400' : 'text-slate-300' }}">
-                                        {{ $session->focus_lost_count ?? 0 }}
-                                    </span>
-                                    <span class="text-[10px] text-slate-500 block truncate">window switches</span>
-                                </div>
-
-                                <!-- Paste Anomalies -->
-                                <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center flex flex-col justify-center min-h-[64px]">
-                                    <span class="flex items-center justify-center gap-1 min-w-0"><span class="text-slate-500 text-[10px] uppercase font-bold truncate">Paste Flags</span><x-info-tip align="right" class="shrink-0">Pastes of 25+ characters that include a line break or more than 3 words. Pastes of the student's own starter code or of snippets from the lab chat are not counted.</x-info-tip></span>
-                                    <span class="text-base font-mono font-bold my-0.5 {{ ($session->paste_anomaly_count ?? 0) > 0 ? 'text-rose-400 font-semibold' : 'text-slate-300' }}">
-                                        {{ $session->paste_anomaly_count ?? 0 }}
-                                    </span>
-                                    <span class="text-[10px] text-slate-500 block truncate">injections</span>
-                                </div>
+                            {{-- Typing / focus / pastes --}}
+                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
+                                <span class="lg:hidden text-xs text-[#888888]">Typing</span>
+                                <span class="{{ $wpm > 0 ? 'text-[#ededed]' : 'text-[#666666]' }}">{{ $wpm }}<span class="text-xs text-[#666666] ml-0.5">wpm</span></span>
+                            </div>
+                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
+                                <span class="lg:hidden text-xs text-[#888888]">Focus lost</span>
+                                <span class="{{ $focusLost > 2 ? 'text-amber-300 font-medium' : ($focusLost > 0 ? 'text-[#ededed]' : 'text-[#666666]') }}">{{ $focusLost }}</span>
+                            </div>
+                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
+                                <span class="lg:hidden text-xs text-[#888888]">Pastes</span>
+                                <span class="{{ $pastes > 0 ? 'text-red-300 font-medium' : 'text-[#666666]' }}">{{ $pastes }}</span>
                             </div>
 
-                            <!-- Diff pill & actions: pushed to the right edge, so the stats start at the same x in every
-                                 row; they wrap onto their own line when the row is too narrow -->
-                            <div class="flex flex-wrap items-center gap-2.5 justify-start lg:justify-end lg:ml-auto">
-                                <!-- Diff Stats Pill -->
-                                <div class="text-[11px] font-mono bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 flex items-center gap-1.5 shrink-0" title="Line Diff Breakdown">
-                                    <span class="text-[#3ecf8e] font-semibold">+{{ $diffStats['added'] ?? 0 }}</span>
-                                    <span class="text-slate-600">/</span>
-                                    <span class="text-rose-400 font-semibold">-{{ $diffStats['deleted'] ?? 0 }}</span>
-                                </div>
+                            {{-- Flags --}}
+                            <div>
+                                <button type="button" @click="openStudent({{ $session->id }}, 'flags')"
+                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors active:scale-[0.98] {{ $openFlags > 0 ? 'bg-amber-400/10 text-amber-200 border border-amber-400/30 hover:bg-amber-400/15' : 'text-[#888888] border border-transparent hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
+                                        title="Review this student's flags">
+                                    @if($openFlags > 0)
+                                        {{ $openFlags }} open
+                                    @elseif($anomaliesList->count() > 0)
+                                        {{ $anomaliesList->count() }} resolved
+                                    @else
+                                        None
+                                    @endif
+                                </button>
+                            </div>
 
-                                <!-- Grade & AI Summary Button (Feature 10) -->
-                                <button @click="openGradeModal({{ \Illuminate\Support\Js::from($gradeSessionPayload) }})"
-                                        class="px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 {{ $session->isGradeOverridden() ? 'border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200' }}"
-                                        title="View AI Grade Explanation & Manual Override">
-                                    <svg class="w-3.5 h-3.5 {{ $session->isGradeOverridden() ? 'text-purple-400' : 'text-[#3ecf8e]' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>
-                                    <span>
+                            {{-- Grade --}}
+                            <div>
+                                <button type="button" @click="openStudent({{ $session->id }}, 'grade')"
+                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors active:scale-[0.98] border {{ $isGraded ? 'border-[#2e2e2e] text-[#ededed] hover:border-[#3e3e3e]' : 'border-transparent text-[#888888] hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
+                                        title="See how the AI graded this and change the grade">
+                                    @if($isGraded)
+                                        <span class="tabular-nums">{{ rtrim(rtrim(number_format($session->effective_score, 1), '0'), '.') }}%</span>
                                         @if($session->isGradeOverridden())
-                                            Grade: {{ $session->effective_score }}% (Overridden)
-                                        @else
-                                            Grade: {{ $session->performance_score ?? 0 }}%
+                                            <span class="text-[10px] text-[#3ecf8e]">edited</span>
                                         @endif
-                                    </span>
+                                    @else
+                                        Not submitted
+                                    @endif
                                 </button>
+                            </div>
 
-                                <!-- Anomaly History Modal Toggle -->
-                                <button @click="openAnomalyModal({{ $session->id }}, {{ \Illuminate\Support\Js::from($user->name ?? 'Student') }}, {{ \Illuminate\Support\Js::from($anomaliesList) }})"
-                                        class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors flex items-center gap-1.5 shrink-0">
-                                    <svg class="w-3.5 h-3.5 {{ $anomaliesList->count() > 0 ? 'text-amber-400' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                                    <span>Anomalies ({{ $anomaliesList->count() }})</span>
-                                </button>
-
-                                <!-- End / Reopen Session Form with consistent button width -->
+                            {{-- End / reopen --}}
+                            <div class="flex justify-end">
                                 @if($session->status === 'in_progress')
-                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student session? Their code will be auto-submitted and evaluated.');" class="shrink-0">
+                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student\'s session? Their code is submitted and graded now.');">
                                         @csrf
-                                        <button type="submit" class="w-24 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-colors text-center">
-                                            End Session
-                                        </button>
+                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-colors active:scale-[0.98]">End session</button>
                                     </form>
                                 @else
-                                    <form action="{{ route('instructor.sessions.reopen', $session->id) }}" method="POST" class="shrink-0">
+                                    <form action="{{ route('instructor.sessions.reopen', $session->id) }}" method="POST">
                                         @csrf
-                                        <button type="submit" class="w-24 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-colors text-center">
-                                            Reopen
-                                        </button>
+                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors active:scale-[0.98]">Reopen</button>
                                     </form>
                                 @endif
                             </div>
                         </div>
 
-                        <!-- Team Contribution Drill-Down (Feature 1 & Feature 6) -->
+                        {{-- Team contribution (group labs) --}}
                         @if($laboratory->is_group_lab && $session->code_contributions && count($session->code_contributions) > 0)
-                            <div class="mt-3 pt-3 border-t border-slate-800/60 text-xs">
-                                <span class="text-slate-400 font-semibold text-[11px] uppercase tracking-wider block mb-1.5">Teammate Contributions</span>
-                                <div class="flex flex-wrap gap-2">
-                                    @foreach($session->code_contributions as $contrib)
-                                        <div class="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 flex items-center gap-2">
-                                            <span class="w-2 h-2 rounded-full" style="background-color: {{ $contrib['color'] ?? '#3ecf8e' }}"></span>
-                                            <span class="text-white font-medium">{{ $contrib['user_name'] ?? 'Teammate' }}</span>
-                                            <span class="text-emerald-400 font-mono">+{{ $contrib['lines_added'] ?? 0 }}</span>
-                                            <span class="text-rose-400 font-mono">-{{ $contrib['lines_deleted'] ?? 0 }}</span>
-                                            <span class="text-slate-500">({{ $contrib['percentage'] ?? 0 }}%)</span>
-                                        </div>
-                                    @endforeach
-                                </div>
+                            <div class="mt-3 flex flex-wrap gap-2 text-xs lg:pl-12">
+                                @foreach($session->code_contributions as $contrib)
+                                    <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0f0f0f] border border-[#2e2e2e]">
+                                        <span class="w-2 h-2 rounded-full" style="background-color: {{ preg_match('/^#[0-9a-fA-F]{3,8}$/', $contrib['avatar_color'] ?? '') ? $contrib['avatar_color'] : '#3ecf8e' }}"></span>
+                                        <span class="text-[#ededed]">{{ $contrib['name'] ?? $contrib['user_name'] ?? 'Teammate' }}</span>
+                                        <span class="font-mono text-[#3ecf8e]/80">+{{ $contrib['lines_added'] ?? 0 }}</span>
+                                        <span class="font-mono text-red-400/70">&minus;{{ $contrib['lines_deleted'] ?? 0 }}</span>
+                                        <span class="text-[#888888]">{{ $contrib['percentage'] ?? 0 }}%</span>
+                                    </span>
+                                @endforeach
                             </div>
                         @endif
                     </div>
                 @endforeach
             </div>
-        @endif
-    </div>
 
-    <!-- Cohort Code Similarity & Plagiarism Detector (Item 2) -->
-    <div id="plagiarism-section" class="glass-panel rounded-xl border border-slate-800 overflow-hidden space-y-4 p-6 bg-slate-950/40">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
-            <div>
-                <div class="flex items-center gap-2.5">
-                    <span class="w-2.5 h-2.5 rounded-full" :class="(plagiarism.flagged_pairs_count || 0) > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-400'"></span>
-                    <h3 class="font-bold text-white text-base">In-Session Cohort Plagiarism Detector</h3>
-                    <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700" x-text="(plagiarism.total_students_with_code || 0) + ' submissions analyzed'"></span>
-                </div>
-                <p class="text-xs text-slate-400 mt-1">Lightweight AST and token n-gram similarity engine checking student submissions for unauthorized collaboration.</p>
+            <p x-show="visibleCount() === 0" x-cloak class="px-6 py-10 text-center text-sm text-[#888888]">
+                No students match. <button type="button" class="text-[#3ecf8e] hover:underline underline-offset-2" @click="statusFilter = 'all'; searchQuery = ''">Show everyone</button>
+            </p>
+        @endif
+    </section>
+
+    {{-- Similar submissions: flagged pairs first, the full grid on demand --}}
+    <section id="plagiarism-section" class="rounded-xl border border-[#2e2e2e] bg-[#171717] scroll-mt-20" aria-labelledby="similar-heading">
+        <div class="p-4 sm:p-5 border-b border-[#2e2e2e] flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div class="min-w-0">
+                <h3 id="similar-heading" class="text-base font-semibold text-[#ededed]">
+                    Similar submissions
+                    <span class="ml-1.5 text-sm font-normal text-[#888888] tabular-nums" x-text="(plagiarism.total_students_with_code || 0) + ' compared'"></span>
+                </h3>
+                <p class="text-sm text-[#888888] mt-1 max-w-[65ch] text-pretty">Every pair of submitted solutions, compared by structure. Renamed variables don&rsquo;t hide a match, but shared starter code can raise a score, so check the code before acting.</p>
             </div>
-            
-            <div class="flex items-center gap-2">
-                <button @click="showSimilarityMatrix = !showSimilarityMatrix" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
-                    <span x-text="showSimilarityMatrix ? 'Hide Matrix' : 'Show Matrix (Heatmap)'"></span>
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" @click="showSimilarityMatrix = !showSimilarityMatrix" :aria-expanded="showSimilarityMatrix.toString()"
+                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e] transition-colors active:scale-[0.98]">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+                    <span x-text="showSimilarityMatrix ? 'Hide grid' : 'Show every pair'"></span>
                 </button>
-                <button @click="runPlagiarismScan()" :disabled="isScanningPlagiarism" class="px-3.5 py-1.5 rounded-lg bg-[#3ecf8e] hover:bg-[#00c573] text-slate-950 font-bold text-xs transition flex items-center gap-1.5 shadow-sm disabled:opacity-50">
-                    <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': isScanningPlagiarism }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    <span x-text="isScanningPlagiarism ? 'Scanning...' : 'Re-Scan Submissions'"></span>
+                <button type="button" @click="runPlagiarismScan()" :disabled="isScanningPlagiarism"
+                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50">
+                    <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': isScanningPlagiarism }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    <span x-text="isScanningPlagiarism ? 'Comparing…' : 'Compare again'"></span>
                 </button>
             </div>
         </div>
 
-        <!-- Clean Cohort Banner -->
+        {{-- No flagged pairs --}}
         <template x-if="!plagiarism.flagged_pairs || plagiarism.flagged_pairs.length === 0">
-            <div class="py-8 px-4 rounded-xl border border-slate-800/80 bg-slate-900/30 text-center">
-                <div class="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center mb-2.5">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                </div>
-                <h4 class="text-sm font-semibold text-white">No Suspicious Code Duplication Detected</h4>
-                <p class="text-xs text-slate-400 mt-1 max-w-md mx-auto">All student code submissions exhibit distinct structural token distributions with similarity scores below the alert threshold.</p>
+            <div class="px-6 py-10 flex flex-col items-center text-center">
+                <span class="w-9 h-9 rounded-lg border border-[#3ecf8e]/25 bg-[#3ecf8e]/[0.06] text-[#3ecf8e] flex items-center justify-center" aria-hidden="true">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                </span>
+                <p class="mt-3 text-sm font-medium text-[#ededed]">No similar submissions</p>
+                <p class="mt-1 text-sm text-[#888888]">Every pair of submissions is less than 50% alike.</p>
             </div>
         </template>
 
-        <!-- Flagged Pairs Table -->
+        {{-- Flagged pairs, highest first --}}
         <template x-if="plagiarism.flagged_pairs && plagiarism.flagged_pairs.length > 0">
-            <div class="space-y-3">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                        Flagged Cohort Pairs (<span x-text="plagiarism.flagged_pairs.length"></span>)
-                    </span>
-                    <span class="text-xs text-rose-400 font-medium">Review the matching code below</span>
+            <div>
+                <div class="hidden md:grid md:grid-cols-[minmax(0,1.4fr)_10rem_6rem_minmax(0,1fr)_6.5rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
+                    <span>Students</span>
+                    <span>Alike</span>
+                    <span>Risk</span>
+                    <span>Why</span>
+                    <span class="sr-only">Action</span>
                 </div>
-
-                <div class="overflow-x-auto border border-slate-800 rounded-xl">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-900/90 text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
-                            <tr>
-                                <th class="py-3 px-4">Student 1</th>
-                                <th class="py-3 px-4">Student 2</th>
-                                <th class="py-3 px-4">Similarity Score</th>
-                                <th class="py-3 px-4">Risk Rating</th>
-                                <th class="py-3 px-4">Pattern Summary</th>
-                                <th class="py-3 px-4 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-800/60 bg-slate-950/20 font-mono">
-                            <template x-for="(pair, idx) in plagiarism.flagged_pairs" :key="idx">
-                                <tr class="hover:bg-slate-900/40 transition">
-                                    <td class="py-3 px-4 font-sans font-medium text-white">
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
-                                            <span x-text="pair.student_a.name"></span>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4 font-sans font-medium text-white">
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
-                                            <span x-text="pair.student_b.name"></span>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">
-                                        <div class="flex items-center gap-2">
-                                            <span class="font-bold text-sm" :class="pair.risk === 'high' ? 'text-rose-400' : 'text-amber-400'" x-text="pair.similarity + '%'"></span>
-                                            <div class="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                                                <div class="h-1.5 rounded-full" :class="pair.risk === 'high' ? 'bg-rose-500' : 'bg-amber-400'" :style="'width: ' + pair.similarity + '%'"></div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4 font-sans">
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
-                                              :class="pair.risk === 'high' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'"
-                                              x-text="pair.risk === 'high' ? 'High Risk' : 'Moderate Overlap'"></span>
-                                    </td>
-                                    <td class="py-3 px-4 font-sans text-slate-400 text-xs truncate max-w-xs" x-text="pair.reason"></td>
-                                    <td class="py-3 px-4 text-right font-sans">
-                                        <button @click="openCompareModal(pair)" class="px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold transition flex items-center gap-1 ml-auto border border-slate-700">
-                                            <span>Compare Code</span> &rarr;
-                                        </button>
-                                    </td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
-                </div>
+                <ul class="divide-y divide-[#2e2e2e]">
+                    <template x-for="(pair, idx) in plagiarism.flagged_pairs" :key="idx">
+                        <li class="px-4 sm:px-5 py-3.5 grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1.4fr)_10rem_6rem_minmax(0,1fr)_6.5rem] items-center gap-x-4 gap-y-2.5 transition-colors hover:bg-white/[0.02]"
+                            :class="pair.risk === 'high' ? 'shadow-[inset_2px_0_0_0_rgba(248,113,113,0.7)]' : 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.6)]'">
+                            <div class="min-w-0 flex items-center gap-2 text-sm">
+                                <span class="font-medium text-[#ededed] truncate" x-text="pair.student_a.name"></span>
+                                <span class="text-[#666666] shrink-0" aria-label="and">&amp;</span>
+                                <span class="font-medium text-[#ededed] truncate" x-text="pair.student_b.name"></span>
+                            </div>
+                            <div class="flex items-center gap-2.5 md:order-none order-3">
+                                <span class="w-10 text-sm font-semibold tabular-nums" :class="pair.risk === 'high' ? 'text-red-400' : 'text-amber-400'" x-text="pair.similarity + '%'"></span>
+                                <span class="flex-1 h-1 rounded-full bg-[#2e2e2e] overflow-hidden min-w-[4rem]" aria-hidden="true">
+                                    <span class="block h-full rounded-full" :class="pair.risk === 'high' ? 'bg-red-400' : 'bg-amber-400'" :style="'width: ' + Math.min(100, pair.similarity) + '%'"></span>
+                                </span>
+                            </div>
+                            <div class="order-4 md:order-none">
+                                <span class="inline-flex items-center gap-1.5 text-xs font-medium" :class="pair.risk === 'high' ? 'text-red-300' : 'text-amber-300'">
+                                    <span class="w-1.5 h-1.5 rounded-full" :class="pair.risk === 'high' ? 'bg-red-400' : 'bg-amber-400'" aria-hidden="true"></span>
+                                    <span x-text="pair.risk === 'high' ? 'High' : 'Moderate'"></span>
+                                </span>
+                            </div>
+                            <p class="col-span-2 md:col-span-1 order-5 md:order-none text-xs text-[#888888] line-clamp-2" :title="pair.reason" x-text="pair.reason"></p>
+                            <div class="order-2 md:order-none flex justify-end">
+                                <button type="button" @click="openCompareModal(pair)"
+                                        class="h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3e3e3e] hover:bg-white/[0.03] transition-colors active:scale-[0.98]">
+                                    Compare
+                                </button>
+                            </div>
+                        </li>
+                    </template>
+                </ul>
             </div>
         </template>
 
-        <!-- Similarity Heatmap Matrix -->
-        <div x-show="showSimilarityMatrix" x-cloak class="mt-4 pt-4 border-t border-slate-800 space-y-3">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cohort Pairwise Similarity Heatmap</span>
-                <span class="text-[11px] text-slate-500 font-mono">Row & Column = Students</span>
+        {{-- Every pair, as a grid --}}
+        <div x-show="showSimilarityMatrix" x-cloak x-transition.opacity class="p-4 sm:p-5 border-t border-[#2e2e2e] space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888888]">
+                <span class="text-sm text-[#a3a3a3]">% alike, every pair</span>
+                <span class="flex items-center gap-3">
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-red-500/25 border border-red-500/40"></span>75%+</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500/20 border border-amber-500/35"></span>50–74%</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#232323] border border-[#2e2e2e]"></span>Under 50%</span>
+                </span>
             </div>
 
             <template x-if="plagiarism.students && plagiarism.students.length > 0">
-                <div class="overflow-x-auto border border-slate-800 rounded-xl p-3 bg-slate-900/40">
-                    <table class="text-center text-xs font-mono">
+                <div class="overflow-x-auto rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]">
+                    <table class="text-center text-xs">
                         <thead>
                             <tr>
-                                <th class="p-2 text-left font-sans text-slate-400 text-[11px]">Student</th>
+                                <th scope="col" class="sticky left-0 bg-[#0f0f0f] px-3 py-2 text-left font-normal text-[#888888]">Student</th>
                                 <template x-for="st in plagiarism.students" :key="'col_' + st.session_id">
-                                    <th class="p-2 text-[10px] font-sans text-slate-400 max-w-[80px] truncate" :title="st.name" x-text="st.name.split(' ')[0]"></th>
+                                    <th scope="col" class="px-1.5 py-2 font-normal text-[#888888] max-w-[5rem] truncate" :title="st.name" x-text="st.name.split(' ')[0]"></th>
                                 </template>
                             </tr>
                         </thead>
                         <tbody>
                             <template x-for="rowSt in plagiarism.students" :key="'row_' + rowSt.session_id">
-                                <tr class="border-t border-slate-800/40">
-                                    <td class="p-2 text-left font-sans text-xs text-white font-medium whitespace-nowrap" x-text="rowSt.name"></td>
+                                <tr>
+                                    <th scope="row" class="sticky left-0 bg-[#0f0f0f] px-3 py-1 text-left font-medium text-[#ededed] whitespace-nowrap" x-text="rowSt.name"></th>
                                     <template x-for="colSt in plagiarism.students" :key="'cell_' + rowSt.session_id + '_' + colSt.session_id">
-                                        <td class="p-2 text-[11px] font-bold rounded">
-                                            <span class="px-2 py-1 rounded block"
-                                                  :class="{
-                                                      'bg-slate-800/80 text-slate-500': rowSt.session_id === colSt.session_id,
-                                                      'bg-rose-500/20 text-rose-300 border border-rose-500/30': rowSt.session_id !== colSt.session_id && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) >= 75,
-                                                      'bg-amber-500/20 text-amber-300 border border-amber-500/30': rowSt.session_id !== colSt.session_id && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) >= 50 && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) < 75,
-                                                      'bg-slate-900/60 text-slate-400': rowSt.session_id !== colSt.session_id && (plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0) < 50
-                                                  }"
-                                                  x-text="(plagiarism.matrix[rowSt.session_id]?.[colSt.session_id] || 0).toFixed(0) + '%'"></span>
+                                        <td class="p-0.5">
+                                            <span class="block min-w-[3rem] px-2 py-1.5 rounded tabular-nums border"
+                                                  :class="similarityCellClass(rowSt.session_id, colSt.session_id)"
+                                                  :title="rowSt.session_id === colSt.session_id ? '' : rowSt.name + ' & ' + colSt.name"
+                                                  x-text="rowSt.session_id === colSt.session_id ? '–' : similarityAt(rowSt.session_id, colSt.session_id).toFixed(0) + '%'"></span>
                                         </td>
                                     </template>
                                 </tr>
@@ -522,296 +591,317 @@
                 </div>
             </template>
         </div>
-    </div>
+    </section>
 
-    <!-- Side-by-Side Code Comparison Modal -->
-    <div x-show="isCompareModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style="display: none;">
-        <div class="glass-panel rounded-2xl border border-slate-700 max-w-5xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto" @click.away="isCompareModalOpen = false">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div class="flex items-center gap-3">
-                    <span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span>
-                    <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>Side-by-Side Code Comparison</span>
-                        <template x-if="selectedPair">
-                            <span class="text-xs px-2.5 py-0.5 rounded-full font-mono font-bold"
-                                  :class="selectedPair.risk === 'high' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'"
-                                  x-text="selectedPair.similarity + '% Match'"></span>
-                        </template>
-                    </h3>
-                </div>
-                <button @click="isCompareModalOpen = false" class="text-slate-400 hover:text-white">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-
+    {{-- Side-by-side code comparison --}}
+    <div x-show="isCompareModalOpen" x-cloak @keydown.escape.window="isCompareModalOpen = false"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="compare-title">
+        <div x-show="isCompareModalOpen" x-transition.opacity class="absolute inset-0 bg-black/70 backdrop-blur-[2px]" @click="isCompareModalOpen = false" aria-hidden="true"></div>
+        <div x-show="isCompareModalOpen"
+             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-[0.98]" x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+             class="relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl border border-[#2e2e2e] bg-[#171717] shadow-2xl shadow-black/50">
             <template x-if="selectedPair">
-                <div class="space-y-4">
-                    <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
-                        <span><strong>Analysis:</strong> <span x-text="selectedPair.reason"></span></span>
-                        <span class="font-mono text-slate-500 text-[11px]" x-text="'Tokens: ' + (selectedPair.student_a.token_count || 0) + ' vs ' + (selectedPair.student_b.token_count || 0)"></span>
+                <div class="flex flex-col min-h-0">
+                    <div class="flex items-start justify-between gap-4 p-5 border-b border-[#2e2e2e]">
+                        <div class="min-w-0">
+                            <h3 id="compare-title" class="text-base font-semibold text-[#ededed] flex items-center gap-2.5 flex-wrap">
+                                Compare code
+                                <span class="px-2 py-0.5 rounded-md border text-xs font-medium tabular-nums"
+                                      :class="selectedPair.risk === 'high' ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-amber-400/30 bg-amber-400/10 text-amber-300'"
+                                      x-text="selectedPair.similarity + '% alike'"></span>
+                            </h3>
+                            <p class="mt-1 text-sm text-[#888888]" x-text="selectedPair.reason"></p>
+                        </div>
+                        <button type="button" @click="isCompareModalOpen = false" class="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors" aria-label="Close">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                        </button>
                     </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Student A -->
-                        <div class="space-y-2">
-                            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 bg-slate-900/80 px-3 py-2 rounded-t-lg border border-slate-800">
-                                <span class="text-white" x-text="selectedPair.student_a.name"></span>
-                                <span class="text-[10px] text-slate-500 font-mono" x-text="selectedPair.student_a.code_length + ' bytes'"></span>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-[#2e2e2e] overflow-y-auto min-h-0">
+                        <template x-for="side in [selectedPair.student_a, selectedPair.student_b]" :key="side.name">
+                            <div class="bg-[#0f0f0f] flex flex-col min-w-0">
+                                <div class="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-[#232323] text-xs">
+                                    <span class="font-medium text-[#ededed] truncate" x-text="side.name"></span>
+                                    <span class="font-mono text-[#666666] shrink-0" x-text="(side.token_count || 0) + ' tokens · ' + (side.code_length || 0) + ' bytes'"></span>
+                                </div>
+                                <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-x-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="side.code_preview"></pre>
                             </div>
-                            <pre class="p-3 bg-slate-950 rounded-b-lg border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-80 whitespace-pre-wrap leading-relaxed" x-text="selectedPair.student_a.code_preview"></pre>
-                        </div>
-
-                        <!-- Student B -->
-                        <div class="space-y-2">
-                            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 bg-slate-900/80 px-3 py-2 rounded-t-lg border border-slate-800">
-                                <span class="text-white" x-text="selectedPair.student_b.name"></span>
-                                <span class="text-[10px] text-slate-500 font-mono" x-text="selectedPair.student_b.code_length + ' bytes'"></span>
-                            </div>
-                            <pre class="p-3 bg-slate-950 rounded-b-lg border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-80 whitespace-pre-wrap leading-relaxed" x-text="selectedPair.student_b.code_preview"></pre>
-                        </div>
+                        </template>
                     </div>
                 </div>
             </template>
-
-            <div class="pt-2 flex justify-end">
-                <button @click="isCompareModalOpen = false" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">
-                    Close Comparison
-                </button>
-            </div>
         </div>
     </div>
 
-    <!-- Anomaly Timeline & Proof Snapshot Modal -->
-    <div x-show="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style="display: none;">
-        <div class="glass-panel rounded-2xl border border-slate-700 max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto" @click.away="isModalOpen = false">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                    <h3 class="text-base font-bold text-white">
-                        Integrity & Anomaly Audit Trail — <span x-text="selectedStudentName" class="text-[#3ecf8e]"></span>
-                    </h3>
-                </div>
-                <button @click="isModalOpen = false" class="text-slate-400 hover:text-white">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-
-            <template x-if="selectedAnomalies.length === 0">
-                <div class="py-12 text-center text-slate-500">
-                    <svg class="w-10 h-10 mx-auto mb-2 text-emerald-500/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <p class="text-sm font-medium text-slate-300">Clean session: No anomalies or suspicious activity detected.</p>
-                </div>
-            </template>
-
-            <div class="space-y-3" x-show="selectedAnomalies.length > 0">
-                <template x-for="item in selectedAnomalies" :key="item.id">
-                    <div class="p-4 rounded-xl border border-slate-800 bg-slate-950/60 space-y-2">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
-                                      :class="{
-                                          'bg-rose-500/20 text-rose-400 border border-rose-500/30': item.severity === 'high',
-                                          'bg-amber-500/20 text-amber-400 border border-amber-500/30': item.severity === 'medium',
-                                          'bg-slate-800 text-slate-400': item.severity === 'low'
-                                      }" x-text="item.severity"></span>
-                                <span class="text-xs font-bold text-white font-mono" x-text="item.type"></span>
-                            </div>
-                            <span class="text-[11px] text-slate-500" x-text="item.created_at"></span>
-                        </div>
-                        <p class="text-xs text-slate-300" x-text="item.description"></p>
-
-                        <!-- Paste snippet metadata preview -->
-                        <template x-if="item.metadata && item.metadata.snippet">
-                            <div class="mt-2 bg-slate-900 p-2.5 rounded border border-slate-800">
-                                <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Captured Paste Snippet:</span>
-                                <pre class="text-[11px] font-mono text-amber-200 overflow-x-auto whitespace-pre-wrap" x-text="item.metadata.snippet"></pre>
-                            </div>
-                        </template>
-
-                        <!-- Camera Snapshot proof modal preview -->
-                        <template x-if="item.image_path">
-                            <div class="mt-2">
-                                <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Camera Absence Snapshot:</span>
-                                <img :src="'/' + item.image_path" class="w-48 h-auto rounded border border-slate-700 hover:scale-105 transition-transform" alt="Anomaly Proof">
-                            </div>
-                        </template>
-
-                        <!-- Idle timeout metadata preview -->
-                        <template x-if="item.type === 'idle_timeout' && item.metadata">
-                            <div class="mt-2 bg-slate-900/90 p-2.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
-                                <div class="flex items-center gap-2">
-                                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    <span class="text-xs font-semibold text-amber-300">Continuous Inactivity: <span x-text="(item.metadata.idle_minutes || 10) + ' min'"></span></span>
+    {{-- Student drawer: overview, flags and grade for one student --}}
+    <div x-show="drawerOpen" x-cloak @keydown.escape.window="closeStudent()" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+        <div x-show="drawerOpen" x-transition.opacity.duration.200ms class="absolute inset-0 bg-black/60" @click="closeStudent()" aria-hidden="true"></div>
+        <aside x-show="drawerOpen" x-ref="drawer" tabindex="-1"
+               x-transition:enter="transition ease-out duration-300" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+               x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+               class="absolute inset-y-0 right-0 w-full max-w-xl flex flex-col bg-[#171717] border-l border-[#2e2e2e] shadow-2xl shadow-black/60 focus:outline-none">
+            <template x-if="student">
+                <div class="flex flex-col h-full min-h-0">
+                    {{-- Who --}}
+                    <div class="p-5 pb-0">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <span class="w-11 h-11 rounded-xl bg-[#232323] border border-[#2e2e2e] flex items-center justify-center text-sm font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true" x-text="student.initials"></span>
+                                <div class="min-w-0">
+                                    <h3 id="drawer-title" class="text-lg font-semibold text-[#ededed] truncate" x-text="student.name"></h3>
+                                    <p class="text-sm text-[#888888] truncate">
+                                        <template x-if="student.team_name"><span><span class="text-[#3ecf8e]" x-text="student.team_name"></span> &middot; </span></template>
+                                        <span x-text="student.email || 'No email'"></span>
+                                    </p>
                                 </div>
-                                <template x-if="item.metadata.shared_remaining_minutes !== null && item.metadata.shared_remaining_minutes !== undefined">
-                                    <span class="text-[11px] font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700" x-text="item.metadata.shared_remaining_minutes + ' min remain in Live Lab'"></span>
+                            </div>
+                            <button type="button" @click="closeStudent()" class="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors" aria-label="Close">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+
+                        <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+                            <span class="inline-flex items-center gap-2" :class="stateStyle(student.state).text">
+                                <span class="w-2 h-2 rounded-full" :class="stateStyle(student.state).dot" aria-hidden="true"></span>
+                                <span x-text="student.state_label"></span>
+                            </span>
+                            <span class="text-[#888888]" x-show="student.last_seen" x-text="'Last seen ' + student.last_seen"></span>
+                            <span class="text-[#888888]" x-show="student.started_at" x-text="'Started ' + student.started_at"></span>
+                        </div>
+
+                        {{-- Tabs --}}
+                        <div class="mt-5 flex gap-1 border-b border-[#2e2e2e] -mx-5 px-5" role="tablist" aria-label="Student details">
+                            <template x-for="t in [['overview', 'Overview'], ['flags', 'Flags'], ['grade', 'Grade']]" :key="t[0]">
+                                <button type="button" role="tab" @click="drawerTab = t[0]" :aria-selected="(drawerTab === t[0]).toString()"
+                                        class="relative inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors"
+                                        :class="drawerTab === t[0] ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]'">
+                                    <span x-text="t[1]"></span>
+                                    <span x-show="t[0] === 'flags' && openFlagCount(student) > 0" class="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-400/15 text-amber-300 text-[11px] tabular-nums inline-flex items-center justify-center" x-text="openFlagCount(student)"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 min-h-0 overflow-y-auto p-5">
+                        {{-- Overview --}}
+                        <div x-show="drawerTab === 'overview'" class="space-y-5">
+                            <div>
+                                <div class="flex items-baseline justify-between text-sm">
+                                    <span class="text-[#888888]">Tasks done</span>
+                                    <span class="tabular-nums text-[#ededed]"><span x-text="student.tasks_done"></span><span class="text-[#666666]" x-text="'/' + student.task_total"></span></span>
+                                </div>
+                                <div class="mt-2 h-1.5 rounded-full bg-[#2e2e2e] overflow-hidden" aria-hidden="true">
+                                    <span class="block h-full rounded-full bg-[#3ecf8e]" :style="'width: ' + (student.task_total > 0 ? Math.min(100, Math.round(student.tasks_done / student.task_total * 100)) : 0) + '%'"></span>
+                                </div>
+                            </div>
+
+                            <dl class="grid grid-cols-2 sm:grid-cols-3 gap-px rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#2e2e2e]">
+                                <template x-for="m in overviewMetrics(student)" :key="m.label">
+                                    <div class="bg-[#0f0f0f] p-3.5">
+                                        <dt class="text-xs text-[#888888]" x-text="m.label"></dt>
+                                        <dd class="mt-1 text-lg font-semibold tabular-nums" :class="m.tone"><span x-text="m.value"></span><span x-show="m.unit" class="ml-1 text-xs font-normal text-[#666666]" x-text="m.unit"></span></dd>
+                                    </div>
                                 </template>
-                            </div>
-                        </template>
-                    </div>
-                </template>
-            </div>
+                            </dl>
 
-            <div class="pt-2 flex justify-end">
-                <button @click="isModalOpen = false" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">
-                    Close Audit Log
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- AI Grade Summary & Instructor Override Modal (Feature 10) -->
-    <div x-show="isGradeModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style="display: none;">
-        <div class="glass-panel rounded-2xl border border-slate-700 max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto" @click.away="isGradeModalOpen = false">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div class="space-y-0.5">
-                    <div class="flex items-center gap-2">
-                        <span class="w-2.5 h-2.5 rounded-full" :class="selectedGradeSession?.is_overridden ? 'bg-purple-400 animate-pulse' : 'bg-[#3ecf8e]'"></span>
-                        <h3 class="text-base font-bold text-white">
-                            AI Grade Assessment &amp; Explanation
-                        </h3>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-slate-400">
-                        <span class="font-medium text-slate-200" x-text="selectedGradeSession?.student_name"></span>
-                        @if($laboratory->is_group_lab)
-                            <template x-if="selectedGradeSession?.is_team">
-                                <span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px]" x-text="'Team: ' + selectedGradeSession.team_name"></span>
-                            </template>
-                            <template x-if="selectedGradeSession?.is_team">
-                                <span class="text-[11px] text-slate-500 italic">(Evaluating combined submission as single unit)</span>
-                            </template>
-                        @endif
-                    </div>
-                </div>
-                <button @click="isGradeModalOpen = false" class="text-slate-400 hover:text-white">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-
-            <!-- Side-by-side Score Banner -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-center">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">AI Assessed Grade</span>
-                    <span class="text-xl font-mono font-bold text-[#3ecf8e] my-0.5 block" x-text="(selectedGradeSession?.performance_score ?? 0) + '%'"></span>
-                    <span class="text-[10px] text-slate-500">From submission model</span>
-                </div>
-
-                <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-center">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Effective Grade</span>
-                    <span class="text-xl font-mono font-bold text-white my-0.5 block" x-text="(selectedGradeSession?.effective_score ?? 0) + '%'"></span>
-                    <span class="text-[10px] font-semibold" :class="selectedGradeSession?.is_overridden ? 'text-purple-400' : 'text-emerald-400'"
-                          x-text="selectedGradeSession?.is_overridden ? 'Instructor Overridden' : 'AI Score Applied'"></span>
-                </div>
-
-                <div class="col-span-2 sm:col-span-1 bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-center flex flex-col justify-center">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Test Verification</span>
-                    <template x-if="selectedGradeSession?.ai_grade_summary?.test_cases_total">
-                        <span class="text-xl font-mono font-bold text-sky-400 my-0.5 block">
-                            <span x-text="selectedGradeSession.ai_grade_summary.test_cases_passed"></span> / <span x-text="selectedGradeSession.ai_grade_summary.test_cases_total"></span>
-                        </span>
-                    </template>
-                    <template x-if="!selectedGradeSession?.ai_grade_summary?.test_cases_total">
-                        <span class="text-xs font-mono text-slate-500 my-1 block">N/A</span>
-                    </template>
-                    <span class="text-[10px] text-slate-500">Verified checklist tests</span>
-                </div>
-            </div>
-
-            <!-- Plain-Language AI Grade Summary -->
-            <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-2">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        Plain-Language AI Grade Explanation
-                    </span>
-                    <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">Instructor Only</span>
-                </div>
-                <p class="text-xs text-slate-200 leading-relaxed font-sans" x-text="selectedGradeSession?.ai_grade_summary?.summary || 'No AI grade summary recorded for this session yet.'"></p>
-
-                <template x-if="selectedGradeSession?.ai_grade_summary?.code_quality_notes">
-                    <div class="mt-2 pt-2 border-t border-slate-800/80 text-xs flex items-start gap-2">
-                        <span class="text-slate-400 font-semibold shrink-0">Code Quality:</span>
-                        <span class="text-slate-300" x-text="selectedGradeSession.ai_grade_summary.code_quality_notes"></span>
-                    </div>
-                </template>
-            </div>
-
-            <!-- Competency Breakdown List -->
-            <template x-if="selectedGradeSession?.ai_grade_summary?.competencies && Object.keys(selectedGradeSession.ai_grade_summary.competencies).length > 0">
-                <div class="space-y-2">
-                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Assessed Competencies</h4>
-                    <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        <template x-for="(comp, compKey) in selectedGradeSession.ai_grade_summary.competencies" :key="compKey">
-                            <div class="p-3 rounded-lg bg-slate-950/80 border border-slate-800 flex items-start justify-between gap-3">
-                                <div class="space-y-0.5 min-w-0 flex-1">
-                                    <span class="text-xs font-mono font-bold text-white uppercase tracking-wider" x-text="compKey.replace(/_/g, ' ')"></span>
-                                    <p class="text-xs text-slate-400 leading-relaxed" x-text="comp.reason"></p>
+                            <template x-if="student.contributions && student.contributions.length > 0">
+                                <div>
+                                    <h4 class="text-sm font-medium text-[#ededed]">Team contribution</h4>
+                                    <ul class="mt-2.5 space-y-2.5">
+                                        <template x-for="(c, ci) in student.contributions" :key="ci">
+                                            <li>
+                                                <div class="flex items-center justify-between gap-3 text-sm">
+                                                    <span class="flex items-center gap-2 min-w-0">
+                                                        <span class="w-2 h-2 rounded-full shrink-0" :style="'background-color: ' + safeColor(c.avatar_color)"></span>
+                                                        <span class="text-[#ededed] truncate" x-text="c.name || c.user_name || 'Teammate'"></span>
+                                                    </span>
+                                                    <span class="flex items-center gap-2 shrink-0 font-mono text-xs">
+                                                        <span class="text-[#3ecf8e]/80" x-text="'+' + (c.lines_added || 0)"></span>
+                                                        <span class="text-red-400/70" x-text="'−' + (c.lines_deleted || 0)"></span>
+                                                        <span class="w-10 text-right text-[#a3a3a3]" x-text="(c.percentage || 0) + '%'"></span>
+                                                    </span>
+                                                </div>
+                                                <div class="mt-1.5 h-1 rounded-full bg-[#2e2e2e] overflow-hidden" aria-hidden="true">
+                                                    <span class="block h-full rounded-full" :style="'width: ' + Math.min(100, c.percentage || 0) + '%; background-color: ' + safeColor(c.avatar_color)"></span>
+                                                </div>
+                                            </li>
+                                        </template>
+                                    </ul>
                                 </div>
-                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0"
-                                      :class="comp.passed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'"
-                                      x-text="comp.passed ? 'Passed' : 'Failed'"></span>
-                            </div>
-                        </template>
+                            </template>
+
+                            <a :href="student.timeline_url" class="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-[#2e2e2e] hover:border-[#3e3e3e] hover:bg-white/[0.02] transition-colors group/link">
+                                <span>
+                                    <span class="block text-sm font-medium text-[#ededed]">Activity timeline</span>
+                                    <span class="block text-xs text-[#888888] mt-0.5">Every keystroke burst, paste and focus change, in order</span>
+                                </span>
+                                <svg class="w-4 h-4 text-[#888888] transition-transform group-hover/link:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                            </a>
+                        </div>
+
+                        {{-- Flags --}}
+                        <div x-show="drawerTab === 'flags'" class="space-y-3">
+                            <p x-show="resolveError" x-cloak role="alert" class="text-xs text-red-300" x-text="resolveError"></p>
+                            <template x-if="student.anomalies.length === 0">
+                                <div class="py-12 text-center">
+                                    <p class="text-sm font-medium text-[#ededed]">No flags</p>
+                                    <p class="mt-1 text-sm text-[#888888]">Nothing unusual came up in this session.</p>
+                                </div>
+                            </template>
+                            <template x-for="item in student.anomalies" :key="item.id">
+                                <article class="rounded-xl border p-4 space-y-2.5 transition-opacity" :class="item.resolved ? 'border-[#2e2e2e] opacity-60' : (item.severity === 'high' ? 'border-red-500/25 bg-red-500/[0.03]' : 'border-[#2e2e2e] bg-[#0f0f0f]')">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <span class="text-sm font-medium text-[#ededed]" x-text="flagLabel(item.type)"></span>
+                                                <span class="px-1.5 py-0.5 rounded border text-[11px] font-medium"
+                                                      :class="{ 'border-red-500/30 bg-red-500/10 text-red-300': item.severity === 'high', 'border-amber-400/30 bg-amber-400/10 text-amber-300': item.severity === 'medium', 'border-[#2e2e2e] text-[#a3a3a3]': item.severity !== 'high' && item.severity !== 'medium' }"
+                                                      x-text="item.severity ? item.severity.charAt(0).toUpperCase() + item.severity.slice(1) : 'Low'"></span>
+                                            </div>
+                                            <p class="mt-0.5 text-xs text-[#888888]" x-text="relativeTime(item.created_at)"></p>
+                                        </div>
+                                        <template x-if="item.resolved">
+                                            <span class="inline-flex items-center gap-1 text-xs text-[#888888] shrink-0">
+                                                <svg class="w-3.5 h-3.5 text-[#3ecf8e]" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                                Resolved
+                                            </span>
+                                        </template>
+                                        <template x-if="!item.resolved">
+                                            <button type="button" @click="resolveFlag(item)" :disabled="!!item._resolving"
+                                                    class="h-8 px-3 shrink-0 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50"
+                                                    x-text="item._resolving ? 'Resolving…' : 'Resolve'"></button>
+                                        </template>
+                                    </div>
+                                    <p class="text-sm text-[#a3a3a3]" x-text="item.description"></p>
+
+                                    <template x-if="item.metadata && item.metadata.snippet">
+                                        <div class="rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]"
+                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5 }">
+                                            <span class="block px-3 pt-2 text-xs text-[#888888]">Pasted text</span>
+                                            <pre class="px-3 pb-2.5 pt-1 text-xs font-mono text-amber-200/90 whitespace-pre-wrap break-words"
+                                                 :class="long && !open ? 'max-h-24 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : 'max-h-96 overflow-y-auto'"
+                                                 x-text="item.metadata.snippet"></pre>
+                                            <template x-if="long">
+                                                <button type="button" @click="open = !open"
+                                                        class="block w-full px-3 py-1.5 border-t border-[#2e2e2e] text-left text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] transition-colors"
+                                                        x-text="open ? 'Show less' : 'Show more'"></button>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    <template x-if="item.snapshot_url">
+                                        <a :href="item.snapshot_url" target="_blank" rel="noopener" class="block w-fit" title="Open full size">
+                                            <img :src="item.snapshot_url" loading="lazy" class="w-56 h-auto rounded-lg border border-[#2e2e2e] hover:border-[#3e3e3e] transition-colors" alt="Webcam snapshot taken when this flag was raised">
+                                        </a>
+                                    </template>
+
+                                    <template x-if="item.type === 'idle_timeout' && item.metadata">
+                                        <p class="text-xs text-amber-300/90">
+                                            Idle for <span x-text="(item.metadata.idle_minutes || 10) + ' min'"></span><template x-if="item.metadata.shared_remaining_minutes !== null && item.metadata.shared_remaining_minutes !== undefined"><span x-text="', with ' + item.metadata.shared_remaining_minutes + ' min left in the live lab'"></span></template>
+                                        </p>
+                                    </template>
+                                </article>
+                            </template>
+                        </div>
+
+                        {{-- Grade --}}
+                        <div x-show="drawerTab === 'grade'" class="space-y-5">
+                            <template x-if="student.status !== 'completed'">
+                                <div class="py-12 text-center">
+                                    <p class="text-sm font-medium text-[#ededed]">Not submitted yet</p>
+                                    <p class="mt-1 text-sm text-[#888888] max-w-xs mx-auto">The AI grades the code once the student submits, you end the session, or a live lab's timer runs out.</p>
+                                </div>
+                            </template>
+
+                            <template x-if="student.status === 'completed'">
+                                <div class="space-y-5">
+                                    <div class="grid grid-cols-3 gap-px rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#2e2e2e]">
+                                        <div class="bg-[#0f0f0f] p-3.5">
+                                            <p class="text-xs text-[#888888]">Final grade</p>
+                                            <p class="mt-1 text-2xl font-semibold tabular-nums text-[#ededed]" x-text="formatScore(student.effective_score) + '%'"></p>
+                                            <p class="text-xs mt-0.5" :class="student.is_overridden ? 'text-[#3ecf8e]' : 'text-[#888888]'" x-text="student.is_overridden ? 'Your grade' : 'AI grade'"></p>
+                                        </div>
+                                        <div class="bg-[#0f0f0f] p-3.5">
+                                            <p class="text-xs text-[#888888]">AI grade</p>
+                                            <p class="mt-1 text-2xl font-semibold tabular-nums" :class="student.is_overridden ? 'text-[#666666] line-through decoration-1' : 'text-[#ededed]'" x-text="formatScore(student.performance_score) + '%'"></p>
+                                        </div>
+                                        <div class="bg-[#0f0f0f] p-3.5">
+                                            <p class="text-xs text-[#888888]">Tests passed</p>
+                                            <p class="mt-1 text-2xl font-semibold tabular-nums text-[#ededed]">
+                                                <template x-if="student.ai_grade_summary && student.ai_grade_summary.test_cases_total">
+                                                    <span><span x-text="student.ai_grade_summary.test_cases_passed"></span><span class="text-[#666666]" x-text="'/' + student.ai_grade_summary.test_cases_total"></span></span>
+                                                </template>
+                                                <template x-if="!(student.ai_grade_summary && student.ai_grade_summary.test_cases_total)"><span class="text-[#666666]">–</span></template>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <section aria-labelledby="ai-grade-heading">
+                                        <h4 id="ai-grade-heading" class="text-sm font-medium text-[#ededed]">How the AI graded this</h4>
+                                        <template x-if="student.is_team">
+                                            <p class="mt-0.5 text-xs text-[#888888]">The team's combined code is graded as one submission.</p>
+                                        </template>
+                                        <p class="mt-2 text-sm text-[#a3a3a3] leading-relaxed text-pretty" x-text="(student.ai_grade_summary && student.ai_grade_summary.summary) || 'No AI explanation was saved for this session.'"></p>
+                                        <template x-if="student.ai_grade_summary && student.ai_grade_summary.code_quality_notes">
+                                            <p class="mt-2 text-sm text-[#a3a3a3]"><span class="text-[#ededed]">Code quality:</span> <span x-text="student.ai_grade_summary.code_quality_notes"></span></p>
+                                        </template>
+                                    </section>
+
+                                    <template x-if="student.ai_grade_summary && student.ai_grade_summary.competencies && Object.keys(student.ai_grade_summary.competencies).length > 0">
+                                        <section>
+                                            <h4 class="text-sm font-medium text-[#ededed]">Skills checked</h4>
+                                            <ul class="mt-2 rounded-xl border border-[#2e2e2e] divide-y divide-[#2e2e2e]">
+                                                <template x-for="(comp, compKey) in student.ai_grade_summary.competencies" :key="compKey">
+                                                    <li class="flex items-start gap-3 p-3">
+                                                        <span class="mt-0.5 w-4 h-4 shrink-0 rounded-full flex items-center justify-center" :class="comp.passed ? 'bg-[#3ecf8e]/15 text-[#3ecf8e]' : 'bg-red-500/15 text-red-400'" aria-hidden="true">
+                                                            <svg x-show="comp.passed" class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                                            <svg x-show="!comp.passed" class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                                                        </span>
+                                                        <div class="min-w-0">
+                                                            <p class="text-sm text-[#ededed]"><span x-text="humanize(compKey)"></span><span class="sr-only" x-text="comp.passed ? ': passed' : ': failed'"></span></p>
+                                                            <p class="text-xs text-[#888888] mt-0.5 leading-relaxed" x-text="comp.reason"></p>
+                                                        </div>
+                                                    </li>
+                                                </template>
+                                            </ul>
+                                        </section>
+                                    </template>
+                                </div>
+                            </template>
+
+                            {{-- Change the grade (only once there is one) --}}
+                            <form x-show="student.status === 'completed'" @submit.prevent="submitGradeOverride()" class="rounded-xl border border-[#2e2e2e] bg-[#0f0f0f] p-4 space-y-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-medium text-[#ededed]">Change the grade</h4>
+                                    <span x-show="student.is_overridden" class="text-xs text-[#888888]" x-text="'Changed' + (student.overridden_by_name ? ' by ' + student.overridden_by_name : '') + (student.instructor_overridden_at ? ', ' + student.instructor_overridden_at : '')"></span>
+                                </div>
+                                <template x-if="student.is_overridden && student.instructor_override_reason">
+                                    <p class="text-xs text-[#a3a3a3] border-l-2 border-[#3ecf8e]/40 pl-2.5" x-text="student.instructor_override_reason"></p>
+                                </template>
+                                <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                                    <label class="block">
+                                        <span class="block text-xs text-[#888888] mb-1">Grade (0–100)</span>
+                                        <input type="number" id="override-score-input" name="override_score" step="0.1" min="0" max="100" x-model="overrideScoreInput" required
+                                               class="w-full h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm font-mono tabular-nums text-[#ededed] focus:outline-none focus:border-[#3ecf8e]/60 focus:ring-2 focus:ring-[#3ecf8e]/15">
+                                    </label>
+                                    <label class="block">
+                                        <span class="block text-xs text-[#888888] mb-1">Reason <span class="text-[#666666]">(saved in the audit log)</span></span>
+                                        <input type="text" id="override-reason-input" name="override_reason" x-model="overrideReasonInput" maxlength="1000" placeholder="Partial credit for the custom error handling"
+                                               class="w-full h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e]/60 focus:ring-2 focus:ring-[#3ecf8e]/15">
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="text-xs min-w-0" :class="overrideFeedbackSuccess ? 'text-[#3ecf8e]' : 'text-red-300'" x-text="overrideFeedbackMessage" role="status"></p>
+                                    <button type="submit" :disabled="isSavingOverride"
+                                            class="h-9 px-4 shrink-0 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-colors active:scale-[0.98] disabled:opacity-50"
+                                            x-text="isSavingOverride ? 'Saving…' : 'Save grade'"></button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </template>
-
-            <!-- Instructor Grade Override Box -->
-            <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-700/80 space-y-3">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-200">Manual Grade Override &amp; Audit Record</h4>
-                    </div>
-                    <template x-if="selectedGradeSession?.is_overridden">
-                        <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-semibold">
-                            Override in effect
-                        </span>
-                    </template>
-                </div>
-
-                <template x-if="selectedGradeSession?.is_overridden">
-                    <div class="text-xs bg-purple-950/40 border border-purple-800/40 p-3 rounded-lg text-purple-200 space-y-1">
-                        <div class="flex items-center justify-between font-medium">
-                            <span>Active Override: <strong class="text-white" x-text="selectedGradeSession.instructor_grade_override + '%'"></strong> (Original AI: <span x-text="selectedGradeSession.performance_score + '%'"></span>)</span>
-                            <span class="text-[10px] text-purple-300" x-text="selectedGradeSession.overridden_by_name ? 'By ' + selectedGradeSession.overridden_by_name + ' • ' + (selectedGradeSession.instructor_overridden_at || '') : ''"></span>
-                        </div>
-                        <template x-if="selectedGradeSession.instructor_override_reason">
-                            <p class="text-[11px] text-purple-300/80 italic" x-text="'&ldquo;' + selectedGradeSession.instructor_override_reason + '&rdquo;'"></p>
-                        </template>
-                    </div>
-                </template>
-
-                <form @submit.prevent="submitGradeOverride()" class="space-y-3">
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div class="space-y-1">
-                            <label for="override-score-input" class="text-[11px] font-semibold text-slate-400 uppercase">Override Score (0–100)</label>
-                            <input type="number" id="override-score-input" name="override_score" step="0.1" min="0" max="100" x-model="overrideScoreInput" required
-                                   class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm font-mono text-white focus:outline-none focus:border-[#3ecf8e]">
-                        </div>
-                        <div class="sm:col-span-2 space-y-1">
-                            <label for="override-reason-input" class="text-[11px] font-semibold text-slate-400 uppercase">Audit Note / Reason</label>
-                            <input type="text" id="override-reason-input" name="override_reason" x-model="overrideReasonInput" placeholder="e.g. Awarded partial credit for custom error handling logic..."
-                                   class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-[#3ecf8e]">
-                        </div>
-                    </div>
-
-                    <template x-if="overrideFeedbackMessage">
-                        <div class="p-2.5 rounded-lg text-xs" :class="overrideFeedbackSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'" x-text="overrideFeedbackMessage"></div>
-                    </template>
-
-                    <div class="flex items-center justify-end gap-2 pt-1">
-                        <button type="button" @click="isGradeModalOpen = false" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">
-                            Close
-                        </button>
-                        <button type="submit" :disabled="isSavingOverride" class="px-4 py-1.5 rounded-lg bg-[#3ecf8e] text-slate-950 font-bold text-xs hover:bg-[#00c573] transition disabled:opacity-50 flex items-center gap-1.5">
-                            <span x-show="!isSavingOverride">Save Grade Override</span>
-                            <span x-show="isSavingOverride">Saving...</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        </aside>
     </div>
 </div>
 
@@ -819,40 +909,152 @@
 function instructorMonitor() {
     return {
         searchQuery: '',
+        statusFilter: 'all',
+        sortKey: 'attention',
+        roster: @json($rosterIndex ?? []),
+
+        matchesFilter(row, filter) {
+            if (filter === 'all') return true;
+            if (filter === 'attention') return row.attention > 0;
+            return row.state === filter;
+        },
+        filterCount(filter) {
+            return this.roster.filter((row) => this.matchesFilter(row, filter)).length;
+        },
+        showRow(id) {
+            const row = this.roster.find((r) => r.id === id);
+            if (!row) return true;
+            return this.matchesFilter(row, this.statusFilter) && this.matchesSearch(row.name, row.group);
+        },
+        visibleCount() {
+            return this.roster.filter((row) => this.showRow(row.id)).length;
+        },
+        sortedIds() {
+            const byName = (a, b) => a.name.localeCompare(b.name);
+            const sorters = {
+                attention: (a, b) => b.attention - a.attention || byName(a, b),
+                name: byName,
+                progress: (a, b) => b.progress - a.progress || byName(a, b),
+                wpm: (a, b) => b.wpm - a.wpm || byName(a, b),
+            };
+            return [...this.roster].sort(sorters[this.sortKey] || byName).map((r) => r.id);
+        },
+        rowOrder(id) {
+            return this.sortedIds().indexOf(id);
+        },
         isRefreshing: false,
-        isModalOpen: false,
         hasLiveUpdate: false,
+        liveAlertAnomaly: null,
         liveUpdateMessage: '',
-        selectedStudentName: '',
-        selectedAnomalies: [],
         ws: null,
         wsConnected: false,
 
-        // Feature 10: AI Grade Summary & Manual Override State
-        isGradeModalOpen: false,
-        selectedGradeSession: null,
+        // Student drawer
+        students: @json($studentDetails ?? (object) []),
+        drawerOpen: false,
+        drawerTab: 'overview',
+        student: null,
+        lastFocus: null,
+        resolveError: '',
+
+        // Grade override form inside the drawer
         overrideScoreInput: '',
         overrideReasonInput: '',
         isSavingOverride: false,
         overrideFeedbackMessage: '',
         overrideFeedbackSuccess: false,
 
-        openGradeModal(sessionData) {
-            this.selectedGradeSession = sessionData;
-            this.overrideScoreInput = (sessionData.instructor_grade_override !== null && sessionData.instructor_grade_override !== undefined)
-                ? sessionData.instructor_grade_override
-                : sessionData.performance_score;
-            this.overrideReasonInput = sessionData.instructor_override_reason || '';
+        openStudent(id, tab = 'overview') {
+            const data = this.students[id];
+            if (!data) return;
+            this.lastFocus = document.activeElement;
+            this.student = data;
+            this.drawerTab = tab;
+            this.resolveError = '';
+            this.overrideScoreInput = (data.instructor_grade_override !== null && data.instructor_grade_override !== undefined)
+                ? data.instructor_grade_override
+                : data.performance_score;
+            this.overrideReasonInput = data.instructor_override_reason || '';
             this.overrideFeedbackMessage = '';
-            this.isGradeModalOpen = true;
+            this.drawerOpen = true;
+            document.documentElement.classList.add('overflow-hidden');
+            this.$nextTick(() => this.$refs.drawer && this.$refs.drawer.focus());
+        },
+        closeStudent() {
+            if (!this.drawerOpen) return;
+            this.drawerOpen = false;
+            document.documentElement.classList.remove('overflow-hidden');
+            if (this.lastFocus && this.lastFocus.focus) this.lastFocus.focus();
+        },
+        stateStyle(state) {
+            return {
+                active: { dot: 'bg-[#3ecf8e]', text: 'text-[#ededed]' },
+                idle: { dot: 'bg-amber-400', text: 'text-amber-200' },
+                offline: { dot: 'bg-[#666666]', text: 'text-[#a3a3a3]' },
+                completed: { dot: 'bg-[#3ecf8e]/50', text: 'text-[#a3a3a3]' },
+                abandoned: { dot: 'bg-red-400/70', text: 'text-[#a3a3a3]' },
+            }[state] || { dot: 'bg-[#666666]', text: 'text-[#a3a3a3]' };
+        },
+        openFlagCount(s) {
+            return (s.anomalies || []).filter((a) => !a.resolved).length;
+        },
+        overviewMetrics(s) {
+            const open = this.openFlagCount(s);
+            return [
+                { label: 'Typing speed', value: s.wpm, unit: 'wpm', tone: s.wpm > 0 ? 'text-[#ededed]' : 'text-[#666666]' },
+                { label: 'Keystrokes', value: s.keystrokes.toLocaleString(), unit: '', tone: 'text-[#ededed]' },
+                { label: 'Lines changed', value: '+' + s.lines_added + ' / −' + s.lines_deleted, unit: '', tone: 'text-[#ededed]' },
+                { label: 'Focus lost', value: s.focus_lost, unit: s.focus_lost === 1 ? 'time' : 'times', tone: s.focus_lost > 2 ? 'text-amber-300' : (s.focus_lost > 0 ? 'text-[#ededed]' : 'text-[#666666]') },
+                { label: 'Suspicious pastes', value: s.pastes, unit: '', tone: s.pastes > 0 ? 'text-red-300' : 'text-[#666666]' },
+                { label: 'Open flags', value: open, unit: '', tone: open > 0 ? 'text-amber-300' : 'text-[#666666]' },
+            ];
+        },
+        flagLabel(type) {
+            const label = String(type || 'flag').replace(/_/g, ' ');
+            return label.charAt(0).toUpperCase() + label.slice(1);
+        },
+        humanize(key) {
+            return this.flagLabel(key);
+        },
+        relativeTime(value) {
+            const then = new Date(value);
+            if (!value || isNaN(then)) return value || '';
+            const secs = Math.round((Date.now() - then.getTime()) / 1000);
+            const units = [[31536000, 'year'], [2592000, 'month'], [86400, 'day'], [3600, 'hour'], [60, 'minute']];
+            for (const [size, name] of units) {
+                if (Math.abs(secs) >= size) return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-Math.floor(secs / size), name);
+            }
+            return 'just now';
+        },
+        formatScore(value) {
+            const n = Number(value || 0);
+            return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
+        },
+        safeColor(color) {
+            return /^#[0-9a-fA-F]{3,8}$/.test(color || '') ? color : '#3ecf8e';
+        },
+        resolveFlag(item) {
+            item._resolving = true;
+            this.resolveError = '';
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            // The endpoint redirects back on success; don't follow it, just treat it as done.
+            fetch(`/anomalies/${item.id}/resolve`, { method: 'POST', headers: { 'X-CSRF-TOKEN': token }, redirect: 'manual' })
+                .then((res) => {
+                    if (res.type !== 'opaqueredirect' && !res.ok) throw new Error();
+                    item.resolved = true;
+                    const row = this.roster.find((r) => r.id === this.student.id);
+                    if (row) row.attention = Math.max(0, row.attention - 3);
+                })
+                .catch(() => { this.resolveError = "Couldn't resolve that flag. Try again."; })
+                .finally(() => { item._resolving = false; });
         },
 
         submitGradeOverride() {
-            if (!this.selectedGradeSession) return;
+            if (!this.student) return;
             this.isSavingOverride = true;
             this.overrideFeedbackMessage = '';
 
-            const url = `/instructor/sessions/${this.selectedGradeSession.id}/override-grade`;
+            const url = `/instructor/sessions/${this.student.id}/override-grade`;
             const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
 
             fetch(url, {
@@ -869,21 +1071,21 @@ function instructorMonitor() {
             })
             .then(res => {
                 if (!res.ok) {
-                    return res.json().then(err => { throw new Error(err.message || 'Failed to save grade override.'); });
+                    return res.json().then(err => { throw new Error(err.message || "Couldn't save the grade. Try again."); });
                 }
                 return res.json();
             })
             .then(data => {
                 this.isSavingOverride = false;
                 this.overrideFeedbackSuccess = true;
-                this.overrideFeedbackMessage = 'Grade override saved successfully!';
+                this.overrideFeedbackMessage = 'Grade saved. Updating the roster…';
                 if (data && data.session) {
-                    this.selectedGradeSession.instructor_grade_override = data.session.instructor_grade_override;
-                    this.selectedGradeSession.effective_score = data.session.effective_score;
-                    this.selectedGradeSession.is_overridden = data.session.is_overridden;
-                    this.selectedGradeSession.instructor_override_reason = data.session.override_reason;
-                    this.selectedGradeSession.instructor_overridden_at = data.session.overridden_at;
-                    this.selectedGradeSession.overridden_by_name = data.session.overridden_by_name;
+                    this.student.instructor_grade_override = data.session.instructor_grade_override;
+                    this.student.effective_score = data.session.effective_score;
+                    this.student.is_overridden = data.session.is_overridden;
+                    this.student.instructor_override_reason = data.session.override_reason;
+                    this.student.instructor_overridden_at = data.session.overridden_at;
+                    this.student.overridden_by_name = data.session.overridden_by_name;
                 }
                 setTimeout(() => {
                     window.location.reload();
@@ -892,7 +1094,7 @@ function instructorMonitor() {
             .catch(err => {
                 this.isSavingOverride = false;
                 this.overrideFeedbackSuccess = false;
-                this.overrideFeedbackMessage = err.message || 'Error saving grade override.';
+                this.overrideFeedbackMessage = err.message || "Couldn't save the grade. Try again.";
             });
         },
 
@@ -902,6 +1104,17 @@ function instructorMonitor() {
         isCompareModalOpen: false,
         selectedPair: null,
         plagiarism: @json($plagiarismAnalysis),
+
+        similarityAt(a, b) {
+            return Number((this.plagiarism.matrix && this.plagiarism.matrix[a] && this.plagiarism.matrix[a][b]) || 0);
+        },
+        similarityCellClass(a, b) {
+            if (a === b) return 'border-transparent text-[#444444]';
+            const v = this.similarityAt(a, b);
+            if (v >= 75) return 'border-red-500/40 bg-red-500/25 text-red-200 font-semibold';
+            if (v >= 50) return 'border-amber-500/35 bg-amber-500/20 text-amber-200 font-medium';
+            return 'border-[#2e2e2e] bg-[#232323] text-[#888888]';
+        },
 
         openCompareModal(pair) {
             this.selectedPair = pair;
@@ -934,17 +1147,19 @@ function instructorMonitor() {
 
         initPolling() {
             // Fallback when live updates (Pusher) are not configured
-            const countAnomalies = (data) => (data.sessions || []).reduce((sum, s) => sum + (s.anomalies ? s.anomalies.length : 0), 0);
+            const newestAnomaly = (data) => (data.sessions || []).flatMap(s => (s.anomalies || []).map(a => ({ ...a, student_name: s.user_name })))
+                .reduce((latest, a) => (!latest || a.id > latest.id ? a : latest), null);
             setInterval(() => {
                 fetch('{{ route("instructor.monitoring.data", $laboratory->id) }}', { headers: { 'Accept': 'application/json' } })
                     .then(res => res.json())
                     .then(data => {
                         if (!data || !Array.isArray(data.sessions)) return;
-                        const total = countAnomalies(data);
-                        if (this.lastAnomalyCount !== undefined && total > this.lastAnomalyCount) {
-                            this.showLiveAlert('anomaly.detected');
+                        const newest = newestAnomaly(data);
+                        const newestId = newest ? newest.id : 0;
+                        if (this.lastAnomalyId !== undefined && newestId > this.lastAnomalyId) {
+                            this.showLiveAlert('anomaly.detected', newest);
                         }
-                        this.lastAnomalyCount = total;
+                        this.lastAnomalyId = newestId;
                     })
                     .catch(() => {});
             }, 10000);
@@ -984,7 +1199,9 @@ function instructorMonitor() {
                     } else if (payload.event === 'pusher:ping') {
                         ws.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
                     } else if (['anomaly.detected', 'diff.updated', 'leaderboard.updated'].includes(payload.event)) {
-                        this.showLiveAlert(payload.event);
+                        let data = null;
+                        try { data = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data; } catch {}
+                        this.showLiveAlert(payload.event, data && data.anomaly);
                     }
                 };
                 ws.onclose = () => {
@@ -998,22 +1215,26 @@ function instructorMonitor() {
             connect();
         },
 
-        showLiveAlert(eventType) {
+        showLiveAlert(eventType, anomaly = null) {
             this.hasLiveUpdate = true;
-            this.liveUpdateMessage = eventType === 'anomaly.detected'
-                ? 'New integrity flag from a student.'
-                : 'Student activity updated.';
+            if (eventType !== 'anomaly.detected') {
+                // Don't let a routine activity update hide an unseen flag.
+                if (!this.liveAlertAnomaly) this.liveUpdateMessage = 'Student activity updated.';
+                return;
+            }
+            this.liveAlertAnomaly = anomaly && anomaly.type ? anomaly : null;
+            if (!this.liveAlertAnomaly) {
+                this.liveUpdateMessage = 'New integrity flag from a student.';
+                return;
+            }
+            const label = String(anomaly.type).replace(/_/g, ' ');
+            this.liveUpdateMessage = `New flag from ${anomaly.student_name || 'a student'}: ${label.charAt(0).toUpperCase() + label.slice(1)}.`;
         },
 
         matchesSearch(name, group) {
             if (!this.searchQuery.trim()) return true;
             const q = this.searchQuery.toLowerCase();
             return name.includes(q) || ({{ $laboratory->is_group_lab ? 'true' : 'false' }} && Boolean(group) && group.includes(q));
-        },
-        openAnomalyModal(sessionId, studentName, anomalies) {
-            this.selectedStudentName = studentName;
-            this.selectedAnomalies = anomalies || [];
-            this.isModalOpen = true;
         },
         refreshData() {
             this.isRefreshing = true;

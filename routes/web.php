@@ -128,6 +128,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
+    Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
+    Route::get('/anomalies/{id}/snapshot', \App\Http\Controllers\AnomalySnapshotController::class)->name('anomalies.snapshot');
     Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
     Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
     Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
@@ -279,6 +281,7 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
+        Route::post('/sessions/{sessionId}/vscode-disconnect', [LabSessionController::class, 'vscodeDisconnect']);
         Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
         Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
         Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);

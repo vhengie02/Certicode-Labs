@@ -9,6 +9,7 @@ use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
 use App\Models\Anomaly;
 use App\Services\SandboxExecutionService;
+use App\Support\WebcamSnapshot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -71,6 +72,13 @@ class LabSessionController extends Controller
             }
         }
 
+        if (!$session && !$lab->canStartNewAttempt($user)) {
+            return response()->json([
+                'error' => 'attempts_exhausted',
+                'message' => 'You have used all your attempts for this lab. Ask your instructor if you need another one.',
+            ], 403);
+        }
+
         if (!$session) {
             $session = LabSession::create([
                 'lab_id' => $lab->id,
@@ -99,11 +107,15 @@ class LabSessionController extends Controller
             'payload' => 'nullable|array',
         ]);
 
-        // Create log record
+        // Create log record. A webcam snapshot is kept once, on the anomaly it proves.
+        $logPayload = $request->payload;
+        if (is_array($logPayload)) {
+            unset($logPayload['image_base64'], $logPayload['image_path']);
+        }
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $request->event_type,
-            'payload' => $request->payload,
+            'payload' => $logPayload,
         ]);
 
         // Smart anomaly checks
@@ -153,71 +165,53 @@ class LabSessionController extends Controller
         if ($request->event_type === 'paste_anomaly') {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
-            $snippet = (string) ($request->payload['snippet'] ?? '');
+            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
+            $metadata = $request->payload;
+            $metadata['snippet'] = $snippet;
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
                 'severity' => $pastedLen > 100 ? 'high' : 'medium',
                 'description' => 'Unusual external code paste detected (' . $pastedLen . ' chars): ' . \Illuminate\Support\Str::limit($snippet, 70),
-                'metadata' => $request->payload,
+                'metadata' => $metadata,
             ]);
         }
 
         if ($request->event_type === 'camera_absence') {
-            $imagePath = $this->storeSnapshotImage(
-                $session->id,
-                $request->payload['image_base64'] ?? null,
-                $request->payload['image_path'] ?? null
-            );
-
-            $this->recordAndBroadcastAnomaly($session, [
+            // In low-light mode the check is a brightness comparison, not face detection,
+            // so a miss is less certain and the instructor should see why.
+            $lowLight = (bool) ($request->payload['low_light'] ?? false);
+            $this->recordCameraAnomaly($session, $request->payload, [
                 'type' => 'no_face',
-                'severity' => 'high',
-                'description' => 'Camera presence check failed during active lab session.',
-                'image_path' => $imagePath,
-                'metadata' => $request->payload,
+                'severity' => $lowLight ? 'medium' : 'high',
+                'description' => $lowLight
+                    ? 'Camera presence check failed during active lab session (low-light mode).'
+                    : 'Camera presence check failed during active lab session.',
             ]);
         }
 
         if ($request->event_type === 'prelab_verification_failed') {
-            $imagePath = $this->storeSnapshotImage(
-                $session->id,
-                $request->payload['image_base64'] ?? null,
-                $request->payload['image_path'] ?? null
-            );
-
-            $this->recordAndBroadcastAnomaly($session, [
+            $this->recordCameraAnomaly($session, $request->payload, [
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Pre-lab camera presence verification failed after 3 attempts: No face detected.',
-                'image_path' => $imagePath,
-                'metadata' => array_merge($request->payload ?? [], ['pre_lab' => true]),
-            ]);
+            ], ['pre_lab' => true]);
         }
 
         if ($request->event_type === 'webcam_check') {
-            $faceCount = $request->payload['face_count'] ?? 1;
-            $imagePath = $this->storeSnapshotImage(
-                $session->id,
-                $request->payload['image_base64'] ?? null,
-                $request->payload['image_path'] ?? null
-            );
+            $faceCount = (int) ($request->payload['face_count'] ?? 1);
 
             if ($faceCount === 0) {
-                $this->recordAndBroadcastAnomaly($session, [
+                $this->recordCameraAnomaly($session, $request->payload, [
                     'type' => 'no_face',
                     'severity' => 'high',
                     'description' => 'No face detected in front of the camera during webcam check.',
-                    'image_path' => $imagePath,
-                    'metadata' => $request->payload,
                 ]);
             } elseif ($faceCount > 1) {
-                $this->recordAndBroadcastAnomaly($session, [
+                $this->recordCameraAnomaly($session, $request->payload, [
                     'type' => 'multiple_faces',
                     'severity' => 'medium',
                     'description' => 'Multiple faces detected in front of the camera.',
-                    'image_path' => $imagePath,
-                    'metadata' => $request->payload,
                 ]);
             }
         }
@@ -242,7 +236,7 @@ class LabSessionController extends Controller
                 'type' => $anomaly->type,
                 'severity' => $anomaly->severity,
                 'description' => $anomaly->description,
-                'image_path' => $anomaly->image_path ? asset('storage/' . $anomaly->image_path) : null,
+                'snapshot_url' => $anomaly->snapshot_url,
                 'created_at' => $anomaly->created_at ? $anomaly->created_at->toIso8601String() : now()->toIso8601String(),
                 'user_id' => $session->user_id,
                 'student_name' => $session->user->name ?? 'Student',
@@ -251,6 +245,44 @@ class LabSessionController extends Controller
             \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
         }
         return $anomaly;
+    }
+
+    /**
+     * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
+     * a flag without a picture (e.g. the camera was unplugged) is raised once per
+     * 5 minutes, and one with a picture at most every 20 seconds.
+     */
+    protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
+    {
+        $attributes += $this->cameraSnapshotAttributes($payload, $extraMetadata);
+        $hasSnapshot = $attributes['image_path'] !== null;
+
+        $isRepeat = Anomaly::where('lab_session_id', $session->id)
+            ->where('type', $attributes['type'])
+            ->where('created_at', '>=', $hasSnapshot ? now()->subSeconds(20) : now()->subMinutes(5))
+            ->exists();
+
+        return $isRepeat ? null : $this->recordAndBroadcastAnomaly($session, $attributes);
+    }
+
+    /**
+     * Anomaly `image_path` and `metadata` for a camera payload. Only a real JPEG/PNG sent
+     * by the student is kept; a client-supplied path is never trusted.
+     */
+    protected function cameraSnapshotAttributes(?array $payload, array $extraMetadata = []): array
+    {
+        $payload = $payload ?? [];
+        $snapshot = WebcamSnapshot::normalize($payload['image_base64'] ?? null);
+        unset($payload['image_base64'], $payload['image_path']);
+
+        if ($snapshot) {
+            $payload['image_base64'] = $snapshot;
+        }
+
+        return [
+            'image_path' => $snapshot ? Anomaly::DB_SNAPSHOT : null,
+            'metadata' => array_merge($payload, $extraMetadata),
+        ];
     }
 
     /**
@@ -559,6 +591,8 @@ class LabSessionController extends Controller
 
         if ($isVscodeSource) {
             \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
+            \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_disconnected");
+            $this->recordExtensionVersion($request, $session->id);
             $session->update(['last_ping_at' => now()]);
             TelemetryLog::create([
                 'lab_session_id' => $session->id,
@@ -577,7 +611,10 @@ class LabSessionController extends Controller
             ->where('event_type', 'vscode_ping')
             ->where('created_at', '>=', now()->subSeconds(45))
             ->exists();
-        $isVscodeConnected = (bool) ($hasRecentVscodePing || $hasTelemetryVscodePing || ($session->last_ping_at && ($session->wpm > 0 || $session->keystroke_count > 0) && $session->last_ping_at->diffInSeconds(now()) < 30));
+        // Only extension pings count. The browser page pings last_ping_at too, so it can't
+        // tell us whether VS Code is still open. A clean shutdown reports itself right away.
+        $vscodeDisconnected = \Illuminate\Support\Facades\Cache::has("lab_session_{$session->id}_vscode_disconnected");
+        $isVscodeConnected = !$vscodeDisconnected && ($hasRecentVscodePing || $hasTelemetryVscodePing);
 
         $isCameraVerified = TelemetryLog::where('lab_session_id', $session->id)
             ->where('event_type', 'webcam_prelab_verification')
@@ -589,6 +626,10 @@ class LabSessionController extends Controller
             'camera_verified' => $isCameraVerified,
             'last_ping_at' => $session->last_ping_at ? $session->last_ping_at->toIso8601String() : null,
             'vscode_connected' => $isVscodeConnected,
+            'vscode_closed' => $vscodeDisconnected,
+            // Server-side age so the browser needn't trust its own clock. The extension pings every 15s.
+            'vscode_ping_age_seconds' => $vscodePing ? (int) \Carbon\Carbon::parse($vscodePing)->diffInSeconds(now(), true) : null,
+            ...$this->extensionVersionStatus($session->id),
             'vscode_last_ping_at' => $vscodePing ?: null,
             'started_at' => $session->started_at,
             'elapsed_seconds' => $elapsedSeconds,
@@ -798,6 +839,12 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        $labTitle = $session->laboratory->title ?? 'your lab';
+        $session->notifyStudents(
+            "Lab submitted: {$labTitle}",
+            "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (" . count($completedTasks) . ' tasks passed).'
+        );
+
         $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
             'ai_grade_summary',
             'competencies',
@@ -811,7 +858,47 @@ class LabSessionController extends Controller
             'performance_score' => $session->performance_score,
             'execution' => $executionResult,
             'evaluation' => $studentEvaluation,
+            'summary' => $this->submissionSummary($session->fresh('laboratory')),
         ]);
+    }
+
+    /**
+     * What the student sees once a lab is submitted: time spent, score, tasks, typing
+     * speed, and, in a live lab, their place on the leaderboard.
+     */
+    private function submissionSummary(LabSession $session): array
+    {
+        $lab = $session->laboratory;
+        $isLive = $lab && $lab->isLiveLab();
+
+        // Time is capped at the limit, the same way the leaderboard counts it
+        $timeLimitSeconds = $lab ? ($isLive ? $lab->getLiveTotalDurationSeconds() : ($lab->time_limit ?? 0) * 60) : 0;
+        $elapsed = $session->started_at
+            ? (int) $session->started_at->diffInSeconds($session->ended_at ?: now(), true)
+            : 0;
+        if ($timeLimitSeconds > 0 && $elapsed > $timeLimitSeconds) {
+            $elapsed = $timeLimitSeconds;
+        }
+
+        $place = null;
+        $participants = null;
+        if ($isLive) {
+            $board = collect($this->getLeaderboard($session->id)->getData(true)['leaderboard'] ?? []);
+            $entry = $board->firstWhere('id', $session->id) ?? $board->firstWhere('user_id', $session->user_id);
+            $place = $entry['rank'] ?? null;
+            $participants = $board->count();
+        }
+
+        return [
+            'time_spent_seconds' => $elapsed,
+            'score' => (float) $session->performance_score,
+            'tasks_completed' => is_array($session->completed_tasks) ? count($session->completed_tasks) : 0,
+            'tasks_total' => is_array($lab?->tasks_definition) ? count($lab->tasks_definition) : 0,
+            'wpm' => (int) ($session->calculateOverallWpm() ?: $session->wpm),
+            'is_live' => $isLive,
+            'place' => $place,
+            'participants' => $participants,
+        ];
     }
 
     /**
@@ -1215,6 +1302,8 @@ class LabSessionController extends Controller
 
         if ($isVscode) {
             \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
+            \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_disconnected");
+            $this->recordExtensionVersion($request, $session->id);
             TelemetryLog::create([
                 'lab_session_id' => $session->id,
                 'event_type' => 'vscode_ping',
@@ -1247,7 +1336,63 @@ class LabSessionController extends Controller
             'is_active' => true,
             'time_remaining_seconds' => $remainingSeconds,
             'timestamp' => now()->toIso8601String(),
+            ...$this->extensionVersionStatus($session->id),
         ]);
+    }
+
+    /**
+     * Remember which extension build is talking to this session. Builds before
+     * version reporting send no header, which is recorded as an empty version.
+     */
+    private function recordExtensionVersion(Request $request, int $sessionId): void
+    {
+        $version = trim((string) $request->header('X-Extension-Version', ''));
+        if (!preg_match('/^\d+(\.\d+){0,3}$/', $version)) {
+            $version = '';
+        }
+        \Illuminate\Support\Facades\Cache::put("lab_session_{$sessionId}_extension_version", $version, 86400);
+    }
+
+    /**
+     * Whether the extension connected to this session is older than the minimum supported build.
+     * Null until the extension has pinged at least once.
+     */
+    private function extensionVersionStatus(int $sessionId): array
+    {
+        $minVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
+        $version = \Illuminate\Support\Facades\Cache::get("lab_session_{$sessionId}_extension_version");
+
+        return [
+            'extension_version' => $version ?: null,
+            'extension_min_version' => $minVersion,
+            'extension_outdated' => $version === null ? null : ($version === '' || version_compare($version, $minVersion, '<')),
+            'extension_download_url' => asset(config('services.vscode_extension.download_path')),
+        ];
+    }
+
+    /**
+     * The VS Code extension reports that its window is closing, so the browser page
+     * can leave camera mode without waiting for the ping to go stale.
+     */
+    public function vscodeDisconnect(int $sessionId)
+    {
+        $session = LabSession::find($sessionId);
+        if (!$session) {
+            return response()->json(['error' => 'Session not found'], 404);
+        }
+
+        \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_ping");
+        \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_disconnected", now()->toIso8601String(), 600);
+        TelemetryLog::create([
+            'lab_session_id' => $session->id,
+            'event_type' => 'vscode_disconnected',
+            'payload' => [
+                'source' => 'vscode',
+                'timestamp' => now()->toIso8601String(),
+            ],
+        ]);
+
+        return response()->json(['status' => 'success', 'vscode_connected' => false]);
     }
 
     /**
@@ -1361,16 +1506,12 @@ class LabSessionController extends Controller
         }
 
         if ($faceCount === 0) {
-            $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
-
             Anomaly::create([
                 'lab_session_id' => $session->id,
                 'type' => 'no_face',
                 'severity' => 'high',
                 'description' => 'Pre-lab facial verification failed: No face detected in frame.',
-                'image_path' => $imagePath,
-                'metadata' => ['pre_lab' => true],
-            ]);
+            ] + $this->cameraSnapshotAttributes(['image_base64' => $imageBase64], ['pre_lab' => true]));
 
             return response()->json([
                 'status' => 'error',
@@ -1381,16 +1522,12 @@ class LabSessionController extends Controller
         }
 
         if ($faceCount > 1) {
-            $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
-
             Anomaly::create([
                 'lab_session_id' => $session->id,
                 'type' => 'multiple_faces',
                 'severity' => 'medium',
                 'description' => 'Pre-lab facial verification failed: Multiple faces detected.',
-                'image_path' => $imagePath,
-                'metadata' => ['pre_lab' => true, 'face_count' => $faceCount],
-            ]);
+            ] + $this->cameraSnapshotAttributes(['image_base64' => $imageBase64], ['pre_lab' => true, 'face_count' => $faceCount]));
 
             return response()->json([
                 'status' => 'error',
@@ -1400,16 +1537,15 @@ class LabSessionController extends Controller
             ], 422);
         }
 
-        // Successfully verified
-        $imagePath = $this->storeSnapshotImage($session->id, $imageBase64);
-
+        // Successfully verified. The reference frame isn't kept: nothing reads it, and a
+        // webcam picture of a student who passed has no place in storage.
         TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => 'webcam_prelab_verification',
             'payload' => [
                 'verified' => true,
                 'face_count' => $faceCount,
-                'reference_image_path' => $imagePath,
+                'low_light' => $request->boolean('low_light'),
                 'verified_at' => now()->toISOString(),
             ],
         ]);
@@ -1421,7 +1557,6 @@ class LabSessionController extends Controller
         return response()->json([
             'status' => 'success',
             'verified' => true,
-            'reference_image' => $imagePath,
             'message' => 'Camera permission and AI presence verified successfully. Workspace unlocked.',
         ]);
     }
@@ -1473,44 +1608,5 @@ class LabSessionController extends Controller
             'verified' => true,
             'message' => 'Camera permission and AI presence verified. Workspace unlocked.',
         ]);
-    }
-
-    /**
-     * Store anomaly snapshot image if base64 data is provided.
-     */
-    protected function storeSnapshotImage(int $sessionId, ?string $imageBase64, ?string $defaultPath = null): ?string
-    {
-        if (empty($imageBase64)) {
-            return $defaultPath;
-        }
-
-        try {
-            $type = 'jpg';
-            if (preg_match('/^data:image\/(\w+);base64,/', $imageBase64, $matches)) {
-                $imageBase64 = substr($imageBase64, strpos($imageBase64, ',') + 1);
-                $type = strtolower($matches[1]);
-            }
-
-            $decoded = base64_decode($imageBase64);
-            if ($decoded === false) {
-                return $defaultPath;
-            }
-
-            $extension = in_array($type, ['png', 'webp', 'jpeg']) ? ($type === 'jpeg' ? 'jpg' : $type) : 'jpg';
-            $filename = 'snapshot_' . time() . '_' . \Illuminate\Support\Str::random(6) . '.' . $extension;
-
-            $relativeDir = "anomalies/{$sessionId}";
-            $storageDir = storage_path("app/public/{$relativeDir}");
-
-            if (!file_exists($storageDir)) {
-                mkdir($storageDir, 0755, true);
-            }
-
-            file_put_contents("{$storageDir}/{$filename}", $decoded);
-
-            return "storage/{$relativeDir}/{$filename}";
-        } catch (\Throwable $e) {
-            return $defaultPath;
-        }
     }
 }

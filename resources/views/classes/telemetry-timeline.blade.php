@@ -112,18 +112,27 @@
                         $badgeColor = 'bg-slate-900 border-slate-800 text-slate-400';
                         $titleColor = 'text-white';
                         
-                        if ($log->event_type === 'tab_switch') {
+                        $dotColor = 'bg-slate-800';
+
+                        if (in_array($log->event_type, ['tab_switch', 'focus_lost', 'idle_timeout', 'vscode_disconnected'])) {
                             $badgeColor = 'bg-amber-500/10 border-amber-500/20 text-amber-400';
                             $titleColor = 'text-amber-400';
+                            $dotColor = 'bg-amber-500';
+                        } elseif (in_array($log->event_type, ['paste_anomaly', 'camera_absence', 'prelab_verification_failed', 'webcam_permission_denied', 'webcam_check'])) {
+                            $badgeColor = 'bg-rose-500/10 border-rose-500/20 text-rose-400';
+                            $titleColor = 'text-rose-400';
+                            $dotColor = 'bg-rose-500';
                         } elseif ($log->event_type === 'task_verified' || $log->event_type === 'session_completed') {
                             $badgeColor = 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
                             $titleColor = 'text-emerald-400';
+                            $dotColor = 'bg-emerald-500';
                         } elseif ($log->event_type === 'code_execution') {
                             $badgeColor = 'bg-blue-500/10 border-blue-500/20 text-blue-400';
                             $titleColor = 'text-blue-400';
                         } elseif ($log->event_type === 'check_progress') {
                             $badgeColor = 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400';
                             $titleColor = 'text-cyan-400';
+                            $dotColor = 'bg-cyan-500';
                         } elseif ($log->event_type === 'github_sync') {
                             $badgeColor = 'bg-purple-500/10 border-purple-500/20 text-purple-400';
                             $titleColor = 'text-purple-400';
@@ -131,7 +140,7 @@
                     @endphp
                     <div class="relative">
                         <!-- Timeline circle dot -->
-                        <span class="absolute -left-[31px] top-1 h-3 w-3 rounded-full {{ $log->event_type === 'tab_switch' ? 'bg-amber-500 ring-4 ring-slate-950' : (in_array($log->event_type, ['task_verified', 'session_completed']) ? 'bg-emerald-500 ring-4 ring-slate-950' : ($log->event_type === 'check_progress' ? 'bg-cyan-500 ring-4 ring-slate-950' : 'bg-slate-800 ring-4 ring-slate-950')) }}"></span>
+                        <span class="absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-slate-950 {{ $dotColor }}"></span>
                         
                         <div class="space-y-1.5 text-left">
                             <div class="flex items-center justify-between">
@@ -169,17 +178,41 @@
                                 <p class="text-xs text-emerald-300 font-semibold leading-relaxed font-sans">
                                     Completed and submitted lab exercise via VS Code. Final score: <span class="font-bold text-white">{{ $log->payload['final_score'] ?? 0 }}%</span> (<span class="font-bold text-white">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks passed, status: <span class="font-mono">{{ $log->payload['execution_status'] ?? 'completed' }}</span>).
                                 </p>
-                            @else
+                            @elseif($log->event_type === 'paste_anomaly')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
-                                    Telemetry event logged.
+                                    Pasted <span class="font-bold text-white">{{ $log->payload['pasted_length'] ?? 0 }} chars</span> of external code.
                                 </p>
-                            @endif
-
-                            @if(!empty($log->payload))
-                                <details class="group mt-1">
-                                    <summary class="text-[10px] text-slate-500 cursor-pointer select-none hover:text-slate-400 font-mono outline-none">Show Raw Payload Payload</summary>
-                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-indigo-400 overflow-x-auto mt-1 font-mono leading-normal">{{ json_encode($log->payload, JSON_PRETTY_PRINT) }}</pre>
-                                </details>
+                                @if(!empty($log->payload['snippet']))
+                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-x-auto mt-1 font-mono leading-normal max-h-40">{{ \Illuminate\Support\Str::limit($log->payload['snippet'], 400) }}</pre>
+                                @endif
+                            @elseif($log->event_type === 'focus_lost')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    Student left the VS Code window.
+                                </p>
+                            @elseif($log->event_type === 'idle_timeout')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    No activity for <span class="font-bold text-white">{{ $log->payload['idle_minutes'] ?? 10 }} min</span>.
+                                </p>
+                            @elseif($log->event_type === 'camera_absence' || $log->event_type === 'prelab_verification_failed')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    Camera presence check failed{{ !empty($log->payload['low_light']) ? ' (low-light mode)' : '' }}.
+                                </p>
+                            @elseif($log->event_type === 'webcam_permission_denied')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    {{ $log->payload['reason'] ?? 'Camera access was denied.' }}
+                                </p>
+                            @elseif($log->event_type === 'webcam_prelab_verification')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    Passed pre-lab camera verification.
+                                </p>
+                            @elseif($log->event_type === 'vscode_disconnected')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    VS Code closed or disconnected.
+                                </p>
+                            @elseif($log->event_type === 'instructor_grade_override')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    {{ $log->payload['instructor_name'] ?? 'Instructor' }} changed the score from <span class="font-bold text-white">{{ $log->payload['original_score'] ?? 0 }}%</span> to <span class="font-bold text-white">{{ $log->payload['override_score'] ?? 0 }}%</span>@if(!empty($log->payload['reason'])): {{ $log->payload['reason'] }}@endif.
+                                </p>
                             @endif
                         </div>
                     </div>

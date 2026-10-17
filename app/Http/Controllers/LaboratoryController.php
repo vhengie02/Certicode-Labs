@@ -45,6 +45,7 @@ class LaboratoryController extends Controller
             'description' => 'required|string',
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
+            'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
             'availability_mode' => 'nullable|in:open,live',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
@@ -105,6 +106,7 @@ class LaboratoryController extends Controller
             'description' => $validated['description'],
             'github_repo_template' => $validated['github_repo_template'] ?? null,
             'time_limit' => $validated['time_limit'],
+            'max_attempts' => $validated['max_attempts'] ?? 1,
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
@@ -144,13 +146,19 @@ class LaboratoryController extends Controller
         $laboratory->recordViewBy(auth()->user());
         $laboratory->load(['module.schoolClass']);
 
-        // Check if student already has a session
+        // Check if student already has a session (stale ones are closed first)
+        \App\Models\LabSession::autoExpireStaleSessions($laboratory->id, auth()->id());
         $activeSession = $laboratory->labSessions()
             ->where('user_id', auth()->id())
             ->where('status', 'in_progress')
             ->first();
 
-        return view('laboratories.show', compact('laboratory', 'activeSession'));
+        $user = auth()->user();
+        $attempts = $user->role === 'student'
+            ? ['limit' => $laboratory->attemptLimit(), 'used' => $laboratory->attemptsUsedBy($user), 'canStart' => $laboratory->canStartNewAttempt($user)]
+            : null;
+
+        return view('laboratories.show', compact('laboratory', 'activeSession', 'attempts'));
     }
 
     /**
@@ -180,6 +188,7 @@ class LaboratoryController extends Controller
             'description' => 'required|string',
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
+            'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
             'availability_mode' => 'nullable|in:open,live',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
@@ -241,6 +250,7 @@ class LaboratoryController extends Controller
             // No longer on the form; keep whatever was saved before
             'github_repo_template' => $validated['github_repo_template'] ?? $laboratory->github_repo_template,
             'time_limit' => $validated['time_limit'],
+            'max_attempts' => $validated['max_attempts'] ?? $laboratory->max_attempts ?? 1,
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,

@@ -94,3 +94,4 @@ Artisan::command('certicode:refresh-competencies {--dry-run : Report what would 
 
 Schedule::command('certicode:close-expired-live-labs')->everyMinute();
 Schedule::command('certicode:auto-conclude-expired-classes')->everyMinute();
+Schedule::command('model:prune', ['--model' => [\App\Models\Anomaly::class]])->daily();

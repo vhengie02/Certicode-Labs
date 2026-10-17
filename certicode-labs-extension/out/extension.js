@@ -27,16 +27,15 @@ exports.deactivate = exports.activate = void 0;
 const vscode = __importStar(require("vscode"));
 const sidebarProvider_1 = require("./sidebarProvider");
 const url_1 = require("url");
+let activeSidebarProvider;
 function activate(context) {
     const sidebarProvider = new sidebarProvider_1.SidebarProvider(context.extensionUri, context.globalState);
+    activeSidebarProvider = sidebarProvider;
     context.subscriptions.push(sidebarProvider);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider("certicode-labs.sidebar", sidebarProvider, {
         webviewOptions: {
             retainContextWhenHidden: true,
         }
-    }));
-    context.subscriptions.push(vscode.commands.registerCommand("certicode-labs.connectSession", () => {
-        sidebarProvider.connectSessionPrompt();
     }));
     // Register URI Handler for deep linking (vscode://certicode.certicode-labs/connect)
     context.subscriptions.push(vscode.window.registerUriHandler({
@@ -60,6 +59,9 @@ function activate(context) {
     }));
 }
 exports.activate = activate;
-function deactivate() { }
+// Runs when the VS Code window closes. Returning the promise makes VS Code wait for the request.
+function deactivate() {
+    return activeSidebarProvider?.notifyVsCodeClosed();
+}
 exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map

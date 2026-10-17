@@ -64,6 +64,15 @@ class LabAttemptController extends Controller
             }
         }
 
+        if (!$session && $user && !$laboratory->canStartNewAttempt($user)) {
+            $message = 'You have used all your attempts for this lab. Ask your instructor if you need another one.';
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['error' => 'attempts_exhausted', 'message' => $message], 403);
+            }
+
+            return back()->with('error', $message);
+        }
+
         if (!$session) {
             $session = \App\Models\LabSession::create([
                 'lab_id' => $laboratory->id,
@@ -154,6 +163,11 @@ class LabAttemptController extends Controller
 
         // Find associated class to redirect back
         $lab = $session->laboratory;
+
+        $session->notifyStudents(
+            "Lab submitted: {$lab->title}",
+            "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%."
+        );
         $classId = null;
         if ($lab->module_id) {
             $module = \App\Models\Module::find($lab->module_id);

@@ -86,6 +86,105 @@ class VSCodeExtensionApiTest extends TestCase
     }
 
     /**
+     * Closing VS Code reports a disconnect, so the browser page leaves the lab.
+     * A later extension ping (VS Code reopened) connects again.
+     */
+    public function test_vscode_disconnect_marks_session_as_closed_until_next_ping(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
+
+        $this->postJson("/api/v1/sessions/{$session->id}/vscode-disconnect", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('telemetry_logs', [
+            'lab_session_id' => $session->id,
+            'event_type' => 'vscode_disconnected',
+        ]);
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => false, 'vscode_closed' => true]);
+
+        $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
+    }
+
+    /**
+     * The extension reports its version on every request; old builds are flagged as outdated.
+     */
+    public function test_extension_version_is_checked_against_minimum(): void
+    {
+        config(['services.vscode_extension.min_version' => '1.6.0']);
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+        $this->actingAs($this->student);
+
+        // Nothing known until the extension pings.
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertJson(['extension_outdated' => null, 'extension_min_version' => '1.6.0']);
+
+        // Builds from before version reporting send no header.
+        $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertJson(['extension_outdated' => true]);
+
+        $this->withHeaders(['X-Extension-Version' => '1.5.0'])
+            ->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertJson(['extension_outdated' => true, 'extension_version' => '1.5.0']);
+
+        $this->withHeaders(['X-Extension-Version' => '1.6.0', 'X-Client' => 'vscode'])
+            ->getJson("/api/v1/sessions/{$session->id}")
+            ->assertJson(['extension_outdated' => false, 'extension_version' => '1.6.0']);
+
+        // The browser page reads the version the extension reported.
+        $this->withHeaders(['X-Extension-Version' => '', 'X-Client' => ''])
+            ->getJson("/v1/sessions/{$session->id}")
+            ->assertJson(['extension_outdated' => false, 'extension_version' => '1.6.0']);
+    }
+
+    /**
+     * Browser pings keep last_ping_at fresh, so they must not count as VS Code being open.
+     */
+    public function test_browser_ping_does_not_count_as_vscode_connected(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+            'wpm' => 40,
+            'keystroke_count' => 200,
+        ]);
+
+        $this->actingAs($this->student)
+            ->postJson("/v1/sessions/{$session->id}/ping", ['face_count' => 1])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => false]);
+    }
+
+    /**
      * Test check progress (AI task evaluation) with invalid code.
      */
     public function test_check_progress_with_invalid_code(): void
@@ -317,6 +416,81 @@ JAVA;
             'score_achieved' => 100.0,
         ]);
         $this->assertDatabaseMissing('student_competencies', ['competency_id' => $untagged->id]);
+    }
+
+    /**
+     * Test submission returns a summary; an open lab has no leaderboard place.
+     */
+    public function test_submit_returns_summary_without_place_for_open_lab(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(10),
+            'keystroke_count' => 1000,
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/submit", [
+                'code' => 'class InvalidAgeException extends Exception {}',
+                'language' => 'java',
+            ]);
+
+        $response->assertOk();
+        $summary = $response->json('summary');
+        $this->assertEqualsWithDelta(600, $summary['time_spent_seconds'], 5);
+        $this->assertSame(2, $summary['tasks_total']);
+        $this->assertSame(20, $summary['wpm']);
+        $this->assertFalse($summary['is_live']);
+        $this->assertNull($summary['place']);
+    }
+
+    /**
+     * Test a live lab submission reports the student's leaderboard place.
+     */
+    public function test_submit_returns_place_for_live_lab(): void
+    {
+        $this->laboratory->update([
+            'availability_mode' => 'live',
+            'live_status' => 'active',
+            'live_started_at' => now()->subMinutes(5),
+            'live_duration_minutes' => 60,
+        ]);
+
+        // A classmate already finished both tasks, so this student can't beat them
+        $rival = User::create([
+            'name' => 'Rival Student',
+            'email' => 'rival@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'student',
+        ]);
+        LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $rival->id,
+            'status' => 'completed',
+            'started_at' => now()->subMinutes(5),
+            'ended_at' => now()->subMinutes(4),
+            'completed_tasks' => [1, 2],
+        ]);
+
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(5),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/submit", [
+                'code' => '// nothing yet',
+                'language' => 'java',
+            ]);
+
+        $response->assertOk();
+        $this->assertTrue($response->json('summary.is_live'));
+        $this->assertSame(2, $response->json('summary.place'));
+        $this->assertSame(2, $response->json('summary.participants'));
     }
 
     /**

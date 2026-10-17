@@ -92,6 +92,16 @@
                         </div>
                     </div>
 
+                    <!-- Outdated extension: an old build misses fixes the lab page relies on -->
+                    <div x-show="extensionOutdated" x-cloak class="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                        <p class="flex-1 text-xs text-amber-200 leading-relaxed">
+                            <strong class="font-semibold">Your Certicode extension is out of date</strong>
+                            <span x-text="extensionVersion ? '(v' + extensionVersion + ').' : '(older build).'"></span>
+                            Install version <span class="font-mono" x-text="extensionMinVersion"></span> or newer: download it, then in VS Code open Extensions, the … menu, <strong class="font-semibold">Install from VSIX</strong>, and reload VS Code.
+                        </p>
+                        <a :href="extensionDownloadUrl" download class="ui-btn ui-btn-secondary text-xs shrink-0">Download update (.vsix)</a>
+                    </div>
+
                     <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                         <!-- Compact Live Camera Viewport -->
                         <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video flex items-center justify-center">
@@ -375,8 +385,19 @@
             @if ($isStudent)
                 {{-- Start --}}
                 <section class="ui-card ui-card-body" aria-labelledby="start-heading">
-                    <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : 'Start the lab' }}</h2>
-                    @if ($isLive && $laboratory->isLiveNotStarted())
+                    @php
+                        // Students only: retakes depend on the attempts the instructor allows
+                        $outOfAttempts = !$activeSession && $attempts && !$attempts['canStart'];
+                        $isRetake = !$activeSession && $attempts && $attempts['used'] > 0;
+                    @endphp
+                    <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : ($outOfAttempts ? 'No attempts left' : ($isRetake ? 'Retake the lab' : 'Start the lab')) }}</h2>
+                    @if ($outOfAttempts)
+                        <p class="ui-card-subtitle">
+                            You've used {{ $attempts['used'] === 1 ? 'your only attempt' : "all {$attempts['used']} attempts" }} at this lab, and your best grade counts.
+                            Ask your instructor if you need another try.
+                        </p>
+                        <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">No attempts left</button>
+                    @elseif ($isLive && $laboratory->isLiveNotStarted())
                         <p class="ui-card-subtitle">Your instructor hasn't started this live lab yet. Refresh this page once they do.</p>
                         <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Waiting for your instructor</button>
                     @elseif ($isLive && $laboratory->isLiveClosed())
@@ -392,9 +413,20 @@
                             @csrf
                             <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
                             <button type="button" @click="handleStartClick()" class="ui-btn ui-btn-primary w-full">
-                                {{ $activeSession ? 'Continue in VS Code' : 'Start lab' }}
+                                {{ $activeSession ? 'Continue in VS Code' : ($isRetake ? 'Retake lab' : 'Start lab') }}
                             </button>
                         </form>
+                        @if ($attempts && !$activeSession)
+                            <p class="ui-hint text-center">
+                                @if ($attempts['limit'] === null)
+                                    Unlimited attempts. Your best grade counts.
+                                @elseif ($attempts['limit'] === 1)
+                                    You get one attempt at this lab, so start when you're ready.
+                                @else
+                                    This will be attempt {{ $attempts['used'] + 1 }} of {{ $attempts['limit'] }}. Your best grade counts.
+                                @endif
+                            </p>
+                        @endif
                         @if ($isLive && $laboratory->isLiveActive())
                             <p class="ui-hint text-center">Shared timer: {{ max(1, (int) ceil($liveLeft / 60)) }} min left. Work is submitted when it ends.</p>
                         @endif
@@ -549,11 +581,26 @@
                                 </div>
                             </div>
 
-                            <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : 'Starting Lab in VS Code...'"></h3>
-                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...'"></p>
+                            <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : (vscodeNotDetected ? 'Certicode extension not detected' : 'Starting Lab in VS Code...')"></h3>
+                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : (vscodeNotDetected ? 'VS Code has not answered yet. The Certicode extension is probably not installed. Follow these steps, then open the lab again.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...')"></p>
+
+                            <!-- Extension not detected: install instructions -->
+                            <div x-show="vscodeNotDetected && !vscodeConnected" x-cloak class="mb-6 text-left bg-[#0d0d0d] p-4 rounded-xl border border-amber-500/30 space-y-3">
+                                <ol class="space-y-2.5 text-xs text-[#a3a3a3]" role="list">
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span><span>Did VS Code open? If not, install <a href="https://code.visualstudio.com/download" target="_blank" rel="noopener" class="text-[#3ecf8e] hover:underline">VS Code</a>, and allow your browser to open it when asked.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span><span>Download the Certicode extension file with the button below.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span><span>In VS Code open Extensions (<kbd class="rounded border border-[#2e2e2e] bg-[#141414] px-1 font-mono text-[11px] text-[#ededed]">Ctrl+Shift+X</kbd>), then the <strong class="text-[#ededed] font-medium">…</strong> menu, then <strong class="text-[#ededed] font-medium">Install from VSIX</strong>, and pick the downloaded file.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">4</span><span>If VS Code asks whether to trust this Certicode server, choose to trust it.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">5</span><span>Click <strong class="text-[#ededed] font-medium">Open lab again</strong>. This page keeps checking and continues on its own once the extension answers.</span></li>
+                                </ol>
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="ui-btn ui-btn-secondary flex-1 text-xs">Download extension (.vsix)</a>
+                                    <button type="button" @click="reopenVsCode()" class="ui-btn ui-btn-primary flex-1 text-xs">Open lab again</button>
+                                </div>
+                            </div>
 
                             <!-- Progress checklist -->
-                            <div class="space-y-2.5 mb-6 text-left bg-[#0d0d0d] p-3.5 rounded-xl border border-[#222]">
+                            <div x-show="!vscodeNotDetected || vscodeConnected" class="space-y-2.5 mb-6 text-left bg-[#0d0d0d] p-3.5 rounded-xl border border-[#222]">
                                 <div class="flex items-center gap-2.5 text-xs text-[#ededed]">
                                     <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>
                                     <span>Camera Presence Verified</span>
@@ -611,9 +658,7 @@
                         </a>
                         @if ($activeSession)
                             <div class="rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 text-xs text-[#888888] space-y-1">
-                                <p class="text-[#a3a3a3]">If VS Code doesn't connect on its own, enter these in the extension:</p>
-                                <p>Session <code class="font-mono text-[#3ecf8e]">{{ $activeSession->id }}</code></p>
-                                <p class="break-all">Server <code class="font-mono text-[#ededed]">{{ request()->getSchemeAndHttpHost() }}</code></p>
+                                <p class="text-[#a3a3a3]">If VS Code doesn't connect on its own, click <strong class="text-[#ededed] font-medium">Continue in VS Code</strong> above and allow your browser to open it.</p>
                             </div>
                         @endif
                     </div>
@@ -692,8 +737,26 @@ function preLabCameraGate(labId, initialSessionId) {
         launchingVsCode: false,
         vscodeConnected: false,
         vscodePollInterval: null,
+        // Set when the extension has not pinged within vscodeDetectTimeoutMs of launch,
+        // which usually means it is not installed. Polling keeps going so a late ping still connects.
+        vscodeNotDetected: false,
+        vscodeDetectTimer: null,
+        vscodeDetectTimeoutMs: 25000,
+        // After connecting, how often the page checks VS Code is still open.
+        vscodeWatchInterval: null,
+        vscodeWatchIntervalMs: 5000,
+        vscodeStaleAfterSeconds: 32,
+        // Version reported by the connected extension, checked against the server's minimum.
+        extensionOutdated: false,
+        extensionVersion: null,
+        extensionMinVersion: '',
+        extensionDownloadUrl: @js(asset(config('services.vscode_extension.download_path'))),
+        leavingAfterVsCodeClosed: false,
         lowLightingDetected: false,
         isLowLightMode: false,
+        // Small luminance grid of the frame the student verified with in low-light mode.
+        // In-lab checks compare against it, since face detection is unreliable in the dark.
+        lowLightReference: null,
 
         // Continuous in-browser proctoring & heartbeat states
         browserProctorActive: false,
@@ -702,8 +765,10 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodeUrl: '',
         pingCount: 0,
         absenceCount: 0,
+        cameraDisconnectReported: false,
         lastAbsenceAlertAt: 0,
         lastMultiFaceAlertAt: 0,
+        multiFaceStreak: 0,
         proctorInterval: null,
         pingInterval: null,
 
@@ -728,15 +793,6 @@ function preLabCameraGate(labId, initialSessionId) {
                     } else {
                         this.logTelemetry('tab_switch', { event: 'tab_visible', timestamp: new Date().toISOString() });
                     }
-                }
-            });
-
-            // Prevent accidental tab closing during live proctored lab
-            window.addEventListener('beforeunload', (e) => {
-                if (this.browserProctorActive) {
-                    e.preventDefault();
-                    e.returnValue = 'Live camera proctoring is active for your laboratory session. Leaving or closing this tab will disconnect camera proctoring and notify your instructor.';
-                    return e.returnValue;
                 }
             });
         },
@@ -874,7 +930,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
                     );
-                    detectedFaces = detections.length;
+                    detectedFaces = this.countFaces(detections);
                 } catch (e) {
                     console.warn('SsdMobilenetv1 detection error:', e);
                 }
@@ -887,7 +943,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.15 })
                     );
-                    detectedFaces = tinyDetections.length;
+                    detectedFaces = this.countFaces(tinyDetections);
                 } catch (e) {
                     console.warn('TinyFaceDetector detection error:', e);
                 }
@@ -909,7 +965,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.12 })
                         );
                         if (enhancedTiny.length > 0) {
-                            detectedFaces = enhancedTiny.length;
+                            detectedFaces = this.countFaces(enhancedTiny);
                         }
                     }
                     if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
@@ -918,7 +974,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.12 })
                         );
                         if (enhancedSsd.length > 0) {
-                            detectedFaces = enhancedSsd.length;
+                            detectedFaces = this.countFaces(enhancedSsd);
                         }
                     }
                 } catch (e) {
@@ -931,7 +987,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 try {
                     const detector = new window.FaceDetector({ fastMode: true });
                     const faces = await detector.detect(video);
-                    detectedFaces = faces.length;
+                    detectedFaces = this.countFaces(faces);
                 } catch (e) {}
             }
 
@@ -1000,6 +1056,9 @@ function preLabCameraGate(labId, initialSessionId) {
             this.status = 'verified';
             this.cameraVerified = true;
             this.isLowLightMode = isLowLight;
+            if (isLowLight && this.$refs.videoEl) {
+                this.lowLightReference = this.luminanceGrid(this.$refs.videoEl);
+            }
             setTimeout(() => {
                 this.launchLab();
             }, 600);
@@ -1070,13 +1129,24 @@ function preLabCameraGate(labId, initialSessionId) {
             }
             if (!this.activeSessionId) return;
 
+            this.vscodeNotDetected = false;
+            clearTimeout(this.vscodeDetectTimer);
+            this.vscodeDetectTimer = setTimeout(() => {
+                if (!this.vscodeConnected) {
+                    this.vscodeNotDetected = true;
+                }
+            }, this.vscodeDetectTimeoutMs);
+
             const checkPing = async () => {
                 try {
                     const res = await fetch(`/v1/sessions/${this.activeSessionId}`);
                     if (res.ok) {
                         const data = await res.json();
+                        this.applyExtensionStatus(data);
                         if (data && data.vscode_connected === true) {
                             this.vscodeConnected = true;
+                            this.vscodeNotDetected = false;
+                            clearTimeout(this.vscodeDetectTimer);
                             if (this.vscodePollInterval) {
                                 clearInterval(this.vscodePollInterval);
                                 this.vscodePollInterval = null;
@@ -1085,6 +1155,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             setTimeout(() => {
                                 this.launchingVsCode = false;
                             }, 800);
+                            this.watchVsCodeConnection();
                         }
                     }
                 } catch (e) {
@@ -1094,6 +1165,62 @@ function preLabCameraGate(labId, initialSessionId) {
 
             setTimeout(checkPing, 800);
             this.vscodePollInterval = setInterval(checkPing, 1200);
+        },
+
+        // Once VS Code is connected, keep checking it is still open. When the student
+        // closes VS Code, leave camera mode and the lab and go back to the lab view.
+        watchVsCodeConnection() {
+            clearInterval(this.vscodeWatchInterval);
+            let missedChecks = 0;
+
+            const check = async () => {
+                if (!this.browserProctorActive || !this.activeSessionId) return;
+                try {
+                    const res = await fetch(`/v1/sessions/${this.activeSessionId}`, { headers: { 'Accept': 'application/json' } });
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    this.applyExtensionStatus(data);
+                    if (data.status && data.status !== 'in_progress') {
+                        this.leaveLabAfterVsCodeClosed('session_ended');
+                        return;
+                    }
+                    if (data.vscode_closed === true) {
+                        this.leaveLabAfterVsCodeClosed('vscode_closed');
+                        return;
+                    }
+                    // No clean shutdown report (old extension, crash, killed process): the extension
+                    // pings every 15s, so two missed pings means VS Code is gone.
+                    const pingAge = data.vscode_ping_age_seconds;
+                    const stale = data.vscode_connected !== true
+                        || (typeof pingAge === 'number' && pingAge > this.vscodeStaleAfterSeconds);
+                    missedChecks = stale ? missedChecks + 1 : 0;
+                    if (missedChecks >= 2) {
+                        this.leaveLabAfterVsCodeClosed('vscode_heartbeat_lost');
+                    }
+                } catch (e) {
+                    // Network blip in the browser, not proof VS Code closed.
+                }
+            };
+
+            this.vscodeWatchInterval = setInterval(check, this.vscodeWatchIntervalMs);
+        },
+
+        applyExtensionStatus(data) {
+            if (!data) return;
+            this.extensionOutdated = data.extension_outdated === true;
+            this.extensionVersion = data.extension_version || null;
+            this.extensionMinVersion = data.extension_min_version || '';
+            if (data.extension_download_url) this.extensionDownloadUrl = data.extension_download_url;
+        },
+
+        async leaveLabAfterVsCodeClosed(reason) {
+            if (this.leavingAfterVsCodeClosed) return;
+            this.leavingAfterVsCodeClosed = true;
+            await this.logTelemetry('vscode_closed_exit', { reason: reason, timestamp: new Date().toISOString() });
+            this.stopProctoring();
+            this.proctorStatus = 'disconnected';
+            this.proctorStatusText = 'VS Code closed';
+            window.location.reload();
         },
 
         startContinuousProctoring() {
@@ -1115,16 +1242,36 @@ function preLabCameraGate(labId, initialSessionId) {
             if (!this.stream || !this.stream.getVideoTracks().some(t => t.readyState === 'live')) {
                 this.proctorStatus = 'disconnected';
                 this.proctorStatusText = 'Camera Disconnected';
-                await this.logTelemetry('camera_absence', {
-                    reason: 'Webcam video track disconnected in browser',
-                    timestamp: new Date().toISOString()
-                });
+                // Report a disconnect once, not on every cycle until the camera returns.
+                if (!this.cameraDisconnectReported) {
+                    this.cameraDisconnectReported = true;
+                    await this.logTelemetry('camera_absence', {
+                        reason: 'Webcam video track disconnected in browser',
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 return;
             }
+            this.cameraDisconnectReported = false;
 
             const video = this.$refs.proctorLiveVideo || this.$refs.videoEl;
             if (!video || video.readyState < 2) return;
 
+            // Students who verified in low-light mode, or whose room has gone dark since,
+            // get the low-light check instead of normal face detection.
+            const grid = this.luminanceGrid(video);
+            const avgLuminance = grid ? grid.reduce((a, b) => a + b, 0) / grid.length : 100;
+            this.lowLightingDetected = avgLuminance < 75;
+            const lowLight = this.isLowLightMode || this.lowLightingDetected;
+
+            const detectedFaces = lowLight
+                ? await this.detectFacesLowLight(video, grid)
+                : await this.detectFacesNormal(video);
+
+            await this.applyProctorResult(video, detectedFaces, lowLight);
+        },
+
+        async detectFacesNormal(video) {
             let detectedFaces = 0;
 
             // Strategy 1: SsdMobilenetv1 on raw video
@@ -1134,7 +1281,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
                     );
-                    detectedFaces = detections.length;
+                    detectedFaces = this.countFaces(detections);
                 } catch (e) {}
             }
 
@@ -1145,7 +1292,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.12 })
                     );
-                    detectedFaces = tinyDetections.length;
+                    detectedFaces = this.countFaces(tinyDetections);
                 } catch (e) {}
             }
 
@@ -1164,7 +1311,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             canvas,
                             new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
                         );
-                        if (boostedTiny.length > 0) detectedFaces = boostedTiny.length;
+                        if (boostedTiny.length > 0) detectedFaces = this.countFaces(boostedTiny);
                     }
 
                     if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
@@ -1172,7 +1319,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             canvas,
                             new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
                         );
-                        if (boostedSsd.length > 0) detectedFaces = boostedSsd.length;
+                        if (boostedSsd.length > 0) detectedFaces = this.countFaces(boostedSsd);
                     }
                 } catch (e) {}
             }
@@ -1182,24 +1329,95 @@ function preLabCameraGate(labId, initialSessionId) {
                 try {
                     const detector = new window.FaceDetector({ fastMode: true });
                     const faces = await detector.detect(video);
-                    detectedFaces = faces.length;
+                    detectedFaces = this.countFaces(faces);
                 } catch (e) {}
             }
 
-            // Strategy 5: Low-light presence check (silhouette/center mass analysis for dark or backlit rooms)
-            if (detectedFaces === 0 && (this.lowLightingDetected || this.isLowLightMode)) {
-                if (this.checkLowLightPresence(video)) {
-                    detectedFaces = 1;
-                }
+            return detectedFaces;
+        },
+
+        async detectFacesLowLight(video, grid) {
+            // Boost the frame first: raw detection mostly misses faces in the dark
+            if (window.faceapi && this.modelLoaded) {
+                try {
+                    const canvas = this.$refs.proctorCanvas || document.createElement('canvas');
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.filter = 'brightness(2.4) contrast(1.6)';
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    ctx.filter = 'none';
+
+                    let detections = [];
+                    if (window.faceapi.nets.tinyFaceDetector?.isLoaded) {
+                        detections = await window.faceapi.detectAllFaces(
+                            canvas,
+                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
+                        );
+                    }
+                    if (detections.length === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
+                        detections = await window.faceapi.detectAllFaces(
+                            canvas,
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
+                        );
+                    }
+                    if (detections.length > 0) return this.countFaces(detections);
+                } catch (e) {}
             }
 
+            if ('FaceDetector' in window) {
+                try {
+                    const faces = await new window.FaceDetector({ fastMode: true }).detect(video);
+                    if (faces.length > 0) return this.countFaces(faces);
+                } catch (e) {}
+            }
+
+            return this.checkLowLightPresence(grid) ? 1 : 0;
+        },
+
+        // How many people a set of detections represents. The thresholds above are low so a
+        // dim or backlit student still counts as present, but that also picks up shadows,
+        // posters and people far in the background. The largest face is the student; another
+        // face only counts if it is confident, not a duplicate box of the student's face, and
+        // close enough to the camera to be someone sitting with them.
+        countFaces(detections) {
+            const faces = (detections || []).map((d) => {
+                const box = d.box || d.boundingBox || d.detection?.box || {};
+                return {
+                    score: d.score ?? d.classScore ?? d.detection?.score ?? 1,
+                    x: box.x ?? 0, y: box.y ?? 0, w: box.width ?? 0, h: box.height ?? 0,
+                };
+            }).filter((f) => f.w > 0 && f.h > 0);
+
+            if (faces.length === 0) return (detections || []).length > 0 ? 1 : 0;
+
+            faces.sort((a, b) => b.w * b.h - a.w * a.h);
+            const main = faces[0];
+            const overlap = (a, b) => {
+                const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+                const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+                return (ix * iy) / Math.min(a.w * a.h, b.w * b.h);
+            };
+
+            const others = faces.slice(1).filter((f) =>
+                f.score >= 0.5
+                && f.w * f.h >= main.w * main.h * 0.2
+                && overlap(main, f) < 0.3
+            );
+
+            return 1 + others.length;
+        },
+
+        async applyProctorResult(video, detectedFaces, lowLight) {
             this.faceCount = detectedFaces;
             const nowTime = Date.now();
+
+            if (detectedFaces < 2) this.multiFaceStreak = 0;
 
             if (detectedFaces === 1) {
                 this.absenceCount = 0;
                 this.proctorStatus = 'normal';
-                this.proctorStatusText = 'Face Present (Normal)';
+                this.proctorStatusText = lowLight ? 'Present (Low-light mode)' : 'Face Present (Normal)';
             } else if (detectedFaces === 0) {
                 this.absenceCount++;
                 this.proctorStatus = 'absence';
@@ -1212,6 +1430,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         image_base64: snapshot,
                         face_count: 0,
                         consecutive_absences: this.absenceCount,
+                        low_light: lowLight,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -1219,56 +1438,75 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.absenceCount = 0;
                 this.proctorStatus = 'multiple_faces';
                 this.proctorStatusText = `Multiple Faces Detected (${detectedFaces})`;
+                this.multiFaceStreak++;
 
-                if (nowTime - this.lastMultiFaceAlertAt > 30000) {
+                // One frame can still catch a passer-by, so only flag a second person
+                // who stays in view for two checks in a row (about 20 seconds).
+                if (this.multiFaceStreak >= 2 && nowTime - this.lastMultiFaceAlertAt > 30000) {
                     this.lastMultiFaceAlertAt = nowTime;
                     const snapshot = this.captureSnapshot(video);
                     await this.logTelemetry('webcam_check', {
                         image_base64: snapshot,
                         face_count: detectedFaces,
+                        low_light: lowLight,
                         timestamp: new Date().toISOString()
                     });
                 }
             }
         },
 
-        checkLowLightPresence(video) {
+        // 40x30 luminance values for the current frame, or null if the frame can't be read.
+        luminanceGrid(video) {
             try {
                 const canvas = document.createElement('canvas');
-                canvas.width = 160;
-                canvas.height = 120;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imgData = ctx.getImageData(0, 0, 160, 120);
-                const data = imgData.data;
+                canvas.width = 40;
+                canvas.height = 30;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(video, 0, 0, 40, 30);
+                const data = ctx.getImageData(0, 0, 40, 30).data;
+                const grid = new Array(40 * 30);
+                for (let i = 0; i < grid.length; i++) {
+                    grid[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+                }
+                return grid;
+            } catch (e) {
+                return null;
+            }
+        },
 
-                let centerLum = 0, centerCount = 0;
-                let borderLum = 0, borderCount = 0;
+        checkLowLightPresence(grid) {
+            if (!grid) return false;
 
-                for (let y = 0; y < 120; y += 4) {
-                    for (let x = 0; x < 160; x += 4) {
-                        const idx = (y * 160 + x) * 4;
-                        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-                        if (x >= 40 && x <= 120 && y >= 20 && y <= 100) {
-                            centerLum += lum;
-                            centerCount++;
-                        } else {
-                            borderLum += lum;
-                            borderCount++;
-                        }
+            let centerLum = 0, centerCount = 0;
+            let borderLum = 0, borderCount = 0;
+            let refDiff = 0;
+            const ref = this.lowLightReference;
+
+            for (let y = 0; y < 30; y++) {
+                for (let x = 0; x < 40; x++) {
+                    const i = y * 40 + x;
+                    if (x >= 10 && x < 30 && y >= 5 && y < 25) {
+                        centerLum += grid[i];
+                        centerCount++;
+                        if (ref) refDiff += Math.abs(grid[i] - ref[i]);
+                    } else {
+                        borderLum += grid[i];
+                        borderCount++;
                     }
                 }
-
-                const avgCenter = centerLum / (centerCount || 1);
-                const avgBorder = borderLum / (borderCount || 1);
-
-                // Silhouette in backlit/dark room: head is darker than surroundings, or non-black center
-                const hasContrast = Math.abs(avgBorder - avgCenter) > 6;
-                const notPitchBlack = avgCenter > 8;
-                return hasContrast && notPitchBlack;
-            } catch (e) {
-                return false;
             }
+
+            const avgCenter = centerLum / centerCount;
+            const avgBorder = borderLum / borderCount;
+
+            // A covered or switched-off camera is never "present"
+            if (avgCenter <= 4) return false;
+
+            // The middle of the frame still looks like it did when the student verified
+            if (ref && refDiff / centerCount < 14) return true;
+
+            // Silhouette: head darker (backlit) or lighter (screen glow) than the room around it
+            return Math.abs(avgBorder - avgCenter) > 6;
         },
 
         captureSnapshot(video) {
@@ -1349,6 +1587,8 @@ function preLabCameraGate(labId, initialSessionId) {
         reopenVsCode() {
             if (this.vscodeUrl) {
                 window.location.href = this.vscodeUrl;
+                // Restart detection so the student gets a fresh wait after installing the extension.
+                this.pollForVsCodePing();
             }
         },
 
@@ -1357,6 +1597,10 @@ function preLabCameraGate(labId, initialSessionId) {
                 clearInterval(this.vscodePollInterval);
                 this.vscodePollInterval = null;
             }
+            clearTimeout(this.vscodeDetectTimer);
+            clearInterval(this.vscodeWatchInterval);
+            this.vscodeWatchInterval = null;
+            this.vscodeNotDetected = false;
             if (this.proctorInterval) {
                 clearInterval(this.proctorInterval);
                 this.proctorInterval = null;
@@ -1382,6 +1626,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 clearInterval(this.vscodePollInterval);
                 this.vscodePollInterval = null;
             }
+            clearTimeout(this.vscodeDetectTimer);
+            this.vscodeNotDetected = false;
             this.showModal = false;
             this.launchingVsCode = false;
         }
