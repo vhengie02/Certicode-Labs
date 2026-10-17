@@ -1716,6 +1716,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         const sessionScreenStyle = showSessionDirectly ? 'display: flex;' : 'display: none;';
         const initialStatusText = this._lastSessionData ? 'Connected' : (this._sessionId ? `Connecting to Session #${this._sessionId}...` : 'Connected');
         const initialStatusClass = this._lastSessionData ? 'status-connected' : 'status-reconnecting';
+        const extensionVersion = String(
+            vscode.extensions.getExtension('certicode.certicode-labs')?.packageJSON?.version ?? ''
+        ).replace(/[^0-9A-Za-z.+-]/g, '') || 'dev';
         const nonce = crypto.randomBytes(16).toString('base64');
         const csp = [
             "default-src 'none'",
@@ -2060,6 +2063,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         }
         .actions .btn-ghost { grid-column: 1 / -1; padding: 3px 8px; font-size: 0.95em; }
         @media (max-width: 220px) { .actions { grid-template-columns: 1fr; } }
+        .version-tag { font-family: var(--mono); font-size: 0.8em; color: var(--muted); text-align: left; opacity: 0.8; }
+        .actions .version-tag { grid-column: 1 / -1; }
+        #connection-screen .version-tag { margin-top: auto; }
 
         /* High-contrast themes: draw every edge with the contrast border */
         body.vscode-high-contrast .list,
@@ -2097,6 +2103,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
             <div class="notice-body" id="connect-error-text"></div>
         </div>
+
+        <div class="version-tag">v${extensionVersion}</div>
     </main>
 
     <div id="session-screen" class="screen" style="${sessionScreenStyle}">
@@ -2268,6 +2276,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             <button id="check-progress-btn" class="btn btn-secondary" title="Have the AI grader check your work without submitting">Check progress</button>
             <button id="submit-btn" class="btn btn-primary" title="Submit your final work for grading">Submit lab</button>
             <button id="exit-btn" class="btn btn-ghost">Leave session</button>
+            <div class="version-tag">v${extensionVersion}</div>
         </footer>
     </div>
 
