@@ -232,6 +232,14 @@ class InstructorMonitoringController extends Controller
             ],
         ]);
 
+        $labTitle = $session->laboratory->title ?? 'your lab';
+        $instructorName = Auth::user()->name ?? 'Your instructor';
+        $session->notifyStudents(
+            "Lab reviewed: {$labTitle}",
+            "{$instructorName} reviewed your work on '{$labTitle}' and set your score to {$overrideScore}%."
+                . ($reason ? " Note: {$reason}" : '')
+        );
+
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([
                 'status' => 'success',

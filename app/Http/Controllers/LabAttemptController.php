@@ -163,6 +163,11 @@ class LabAttemptController extends Controller
 
         // Find associated class to redirect back
         $lab = $session->laboratory;
+
+        $session->notifyStudents(
+            "Lab submitted: {$lab->title}",
+            "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%."
+        );
         $classId = null;
         if ($lab->module_id) {
             $module = \App\Models\Module::find($lab->module_id);

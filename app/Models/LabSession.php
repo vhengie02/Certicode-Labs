@@ -215,6 +215,31 @@ class LabSession extends Model
     }
 
     /**
+     * Send a lab notification to whoever owns this attempt: the student, plus every
+     * member of the team on a group lab. A failed send never breaks the caller.
+     */
+    public function notifyStudents(string $title, string $message): void
+    {
+        $recipients = collect([$this->user])
+            ->merge($this->group_id ? ($this->group?->members ?? collect()) : collect())
+            ->filter()
+            ->unique('id');
+
+        foreach ($recipients as $student) {
+            try {
+                $student->notify(new \App\Notifications\ClassActivityNotification(
+                    $title,
+                    $message,
+                    route('laboratories.show', $this->lab_id),
+                    'lab'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Lab notification failed: ' . $e->getMessage());
+            }
+        }
+    }
+
+    /**
      * Get the telemetry logs.
      */
     public function telemetryLogs()

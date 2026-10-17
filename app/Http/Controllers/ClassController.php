@@ -230,6 +230,11 @@ class ClassController extends Controller
         }
 
         $userId = Auth::id();
+        $wasEnrolled = $userId && $class->students()
+            ->where('users.id', $userId)
+            ->wherePivot('status', 'enrolled')
+            ->exists();
+
         if ($userId) {
             // Attach student
             $class->students()->syncWithoutDetaching([
@@ -239,6 +244,26 @@ class ClassController extends Controller
             // If they had an invitation, make sure it is updated to enrolled
             $class->students()->updateExistingPivot($userId, ['status' => 'enrolled']);
             self::clearClassesCache($userId);
+        }
+
+        // Tell the student and the instructor, but only on the first join, not a repeat code entry
+        if ($userId && !$wasEnrolled) {
+            try {
+                Auth::user()->notify(new \App\Notifications\ClassActivityNotification(
+                    "Joined class: {$class->name}",
+                    "You're now enrolled in '{$class->name}'" . ($class->instructor ? " with {$class->instructor->name}." : '.'),
+                    route('classes.show', $class->id),
+                    'class'
+                ));
+                $class->instructor?->notify(new \App\Notifications\ClassActivityNotification(
+                    "Student Joined Class: {$class->name}",
+                    Auth::user()->name . " joined '{$class->name}' with the class code.",
+                    route('classes.show', $class->id),
+                    'class'
+                ));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Class join notification failed: ' . $e->getMessage());
+            }
         }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Successfully enrolled in ' . $class->name);

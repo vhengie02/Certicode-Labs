@@ -839,6 +839,12 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        $labTitle = $session->laboratory->title ?? 'your lab';
+        $session->notifyStudents(
+            "Lab submitted: {$labTitle}",
+            "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (" . count($completedTasks) . ' tasks passed).'
+        );
+
         $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
             'ai_grade_summary',
             'competencies',
