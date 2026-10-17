@@ -165,13 +165,15 @@ class LabSessionController extends Controller
         if ($request->event_type === 'paste_anomaly') {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
-            $snippet = (string) ($request->payload['snippet'] ?? '');
+            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
+            $metadata = $request->payload;
+            $metadata['snippet'] = $snippet;
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
                 'severity' => $pastedLen > 100 ? 'high' : 'medium',
                 'description' => 'Unusual external code paste detected (' . $pastedLen . ' chars): ' . \Illuminate\Support\Str::limit($snippet, 70),
-                'metadata' => $request->payload,
+                'metadata' => $metadata,
             ]);
         }
 
@@ -850,7 +852,47 @@ class LabSessionController extends Controller
             'performance_score' => $session->performance_score,
             'execution' => $executionResult,
             'evaluation' => $studentEvaluation,
+            'summary' => $this->submissionSummary($session->fresh('laboratory')),
         ]);
+    }
+
+    /**
+     * What the student sees once a lab is submitted: time spent, score, tasks, typing
+     * speed, and, in a live lab, their place on the leaderboard.
+     */
+    private function submissionSummary(LabSession $session): array
+    {
+        $lab = $session->laboratory;
+        $isLive = $lab && $lab->isLiveLab();
+
+        // Time is capped at the limit, the same way the leaderboard counts it
+        $timeLimitSeconds = $lab ? ($isLive ? $lab->getLiveTotalDurationSeconds() : ($lab->time_limit ?? 0) * 60) : 0;
+        $elapsed = $session->started_at
+            ? (int) $session->started_at->diffInSeconds($session->ended_at ?: now(), true)
+            : 0;
+        if ($timeLimitSeconds > 0 && $elapsed > $timeLimitSeconds) {
+            $elapsed = $timeLimitSeconds;
+        }
+
+        $place = null;
+        $participants = null;
+        if ($isLive) {
+            $board = collect($this->getLeaderboard($session->id)->getData(true)['leaderboard'] ?? []);
+            $entry = $board->firstWhere('id', $session->id) ?? $board->firstWhere('user_id', $session->user_id);
+            $place = $entry['rank'] ?? null;
+            $participants = $board->count();
+        }
+
+        return [
+            'time_spent_seconds' => $elapsed,
+            'score' => (float) $session->performance_score,
+            'tasks_completed' => is_array($session->completed_tasks) ? count($session->completed_tasks) : 0,
+            'tasks_total' => is_array($lab?->tasks_definition) ? count($lab->tasks_definition) : 0,
+            'wpm' => (int) ($session->calculateOverallWpm() ?: $session->wpm),
+            'is_live' => $isLive,
+            'place' => $place,
+            'participants' => $participants,
+        ];
     }
 
     /**

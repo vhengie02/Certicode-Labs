@@ -980,7 +980,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 if (!isSuppressedA && !isSuppressedB) {
                     this.sendTelemetry('paste_anomaly', {
                         pasted_length: change.text.length,
-                        snippet: change.text.slice(0, 100),
+                        snippet: change.text.slice(0, 2000),
                         file: vscode.workspace.asRelativePath(event.document.uri),
                         wpm: this._currentWpm
                     });
@@ -2003,6 +2003,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: var(--r-md); }
         .stat { padding: 8px 10px; }
         .stat + .stat { border-left: 1px solid var(--border); }
+        .summary-grid { grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); margin-bottom: 8px; }
         .stat-value { display: block; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.25em; font-weight: 600; line-height: 1.25; }
         .stat-label { font-size: 0.86em; color: var(--muted); }
         .diff-bar { display: flex; width: 48px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--track); flex-shrink: 0; }
@@ -2253,6 +2254,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     Lab submitted
                 </span>
                 <span class="result-score" id="submission-final-score">0%</span>
+            </div>
+            <div id="submission-summary" class="stat-grid summary-grid" hidden>
+                <div class="stat"><span class="stat-value" id="summary-time">--:--</span><span class="stat-label">Time</span></div>
+                <div class="stat"><span class="stat-value" id="summary-tasks">0/0</span><span class="stat-label">Tasks</span></div>
+                <div class="stat"><span class="stat-value" id="summary-wpm">0</span><span class="stat-label">WPM</span></div>
+                <div class="stat" id="summary-place-cell" hidden><span class="stat-value" id="summary-place">-</span><span class="stat-label">Place</span></div>
             </div>
             <button id="post-submit-exit-btn" class="btn btn-secondary btn-block">Close lab workspace</button>
         </div>
@@ -2723,6 +2730,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                         timerBox.className = 'timer timer-done';
                         submitBtn.textContent = 'Submitted';
                         $('submission-final-score').textContent = (message.data.performance_score || 0) + '%';
+                        renderSubmissionSummary(message.data.summary);
                         show(submissionBanner);
                     }
 
@@ -2769,6 +2777,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 }
             }
         });
+
+        function renderSubmissionSummary(summary) {
+            if (!summary) return;
+            const secs = Math.max(0, summary.time_spent_seconds || 0);
+            const h = Math.floor(secs / 3600);
+            const m = Math.floor((secs % 3600) / 60);
+            const s = secs % 60;
+            const pad = n => String(n).padStart(2, '0');
+            $('summary-time').textContent = h > 0 ? \`\${h}:\${pad(m)}:\${pad(s)}\` : \`\${pad(m)}:\${pad(s)}\`;
+            $('summary-tasks').textContent = \`\${summary.tasks_completed || 0}/\${summary.tasks_total || 0}\`;
+            $('summary-wpm').textContent = String(summary.wpm || 0);
+
+            const hasPlace = !!summary.is_live && summary.place;
+            if (hasPlace) {
+                $('summary-place').textContent = \`#\${summary.place}/\${summary.participants || summary.place}\`;
+            }
+            show($('summary-place-cell'), !!hasPlace);
+            show($('submission-summary'));
+        }
 
         function handleSessionUpdate(session) {
             if (!session || !session.laboratory) return;

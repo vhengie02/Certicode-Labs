@@ -419,6 +419,81 @@ JAVA;
     }
 
     /**
+     * Test submission returns a summary; an open lab has no leaderboard place.
+     */
+    public function test_submit_returns_summary_without_place_for_open_lab(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(10),
+            'keystroke_count' => 1000,
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/submit", [
+                'code' => 'class InvalidAgeException extends Exception {}',
+                'language' => 'java',
+            ]);
+
+        $response->assertOk();
+        $summary = $response->json('summary');
+        $this->assertEqualsWithDelta(600, $summary['time_spent_seconds'], 5);
+        $this->assertSame(2, $summary['tasks_total']);
+        $this->assertSame(20, $summary['wpm']);
+        $this->assertFalse($summary['is_live']);
+        $this->assertNull($summary['place']);
+    }
+
+    /**
+     * Test a live lab submission reports the student's leaderboard place.
+     */
+    public function test_submit_returns_place_for_live_lab(): void
+    {
+        $this->laboratory->update([
+            'availability_mode' => 'live',
+            'live_status' => 'active',
+            'live_started_at' => now()->subMinutes(5),
+            'live_duration_minutes' => 60,
+        ]);
+
+        // A classmate already finished both tasks, so this student can't beat them
+        $rival = User::create([
+            'name' => 'Rival Student',
+            'email' => 'rival@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'student',
+        ]);
+        LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $rival->id,
+            'status' => 'completed',
+            'started_at' => now()->subMinutes(5),
+            'ended_at' => now()->subMinutes(4),
+            'completed_tasks' => [1, 2],
+        ]);
+
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(5),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/submit", [
+                'code' => '// nothing yet',
+                'language' => 'java',
+            ]);
+
+        $response->assertOk();
+        $this->assertTrue($response->json('summary.is_live'));
+        $this->assertSame(2, $response->json('summary.place'));
+        $this->assertSame(2, $response->json('summary.participants'));
+    }
+
+    /**
      * Test retrieving session info includes starter files manifest.
      */
     public function test_session_info_includes_starter_files(): void
