@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-18
+
+- Instructors can sort the class integrity flags table by any column and resolve several flags at once.
+- Resolved flags older than 90 days are deleted automatically. Open flags are always kept.
+- Shadows, posters and people in the background no longer raise "multiple faces" flags.
+- The VS Code sidebar shows which version of the Certicode extension is installed.
+
 ## 2026-10-16
 
 - Instructors get a redesigned student monitoring dashboard: one compact row per student, filters by status, sorting by who needs attention, and an "Open flags" count.

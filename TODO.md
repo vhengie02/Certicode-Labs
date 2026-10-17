@@ -203,6 +203,11 @@ This document outlines the final feature specifications, implementation tasks, a
   - Image thumbnail & modal preview displaying captured camera snapshots for camera-absence events.
 - [x] **Team Contribution Drill-Down**:
   - Sub-drawer showing individual teammate lines added/deleted and percentage contribution from Feature 1 diff data.
+- [x] **Integrity Flag Triage ([`ClassController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/ClassController.php))**:
+  - The class telemetry flags table sorts by student, lab, type, severity, time or status (`?sort=&dir=`, newest first by default).
+  - `POST /classes/{class_id}/anomalies/resolve` resolves several open flags at once; IDs outside the class are ignored.
+  - A daily `model:prune` deletes resolved flags older than `ANOMALY_RETENTION_DAYS` (default 90). Open flags are never pruned.
+  - Covered by [`IntegrityFlagsTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/IntegrityFlagsTest.php).
 
 ---
 
@@ -290,6 +295,9 @@ This document outlines the final feature specifications, implementation tasks, a
   - Extension 1.6.0 reports its window closing (`POST /sessions/{id}/vscode-disconnect`); the lab page stops the camera and returns to the lab view. A crash is caught after two missed extension pings (~40 s). The session stays in progress.
 - [x] **Extension version check**:
   - The extension sends `X-Extension-Version`; builds below `services.vscode_extension.min_version` (or sending none) get an update banner on the lab page and a warning in VS Code.
+  - The VS Code sidebar shows the installed extension version on the connection and session screens.
+- [x] **Fewer false "multiple faces" flags ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php))**:
+  - `countFaces()` treats the largest face as the student. Another face counts only if it is confident (score ≥ 0.5), not a duplicate box of the student's face, and at least 20% of its size.
 - [ ] **Follow-ups**:
   - Notify the instructor (email or in-app) about camera flags when the monitoring page is closed.
   - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
