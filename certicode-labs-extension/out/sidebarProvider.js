@@ -930,7 +930,7 @@ class SidebarProvider {
                 if (!isSuppressedA && !isSuppressedB) {
                     this.sendTelemetry('paste_anomaly', {
                         pasted_length: change.text.length,
-                        snippet: change.text.slice(0, 100),
+                        snippet: change.text.slice(0, 2000),
                         file: vscode.workspace.asRelativePath(event.document.uri),
                         wpm: this._currentWpm
                     });
@@ -1609,6 +1609,7 @@ class SidebarProvider {
         const sessionScreenStyle = showSessionDirectly ? 'display: flex;' : 'display: none;';
         const initialStatusText = this._lastSessionData ? 'Connected' : (this._sessionId ? `Connecting to Session #${this._sessionId}...` : 'Connected');
         const initialStatusClass = this._lastSessionData ? 'status-connected' : 'status-reconnecting';
+        const extensionVersion = String(vscode.extensions.getExtension('certicode.certicode-labs')?.packageJSON?.version ?? '').replace(/[^0-9A-Za-z.+-]/g, '') || 'dev';
         const nonce = crypto.randomBytes(16).toString('base64');
         const csp = [
             "default-src 'none'",
@@ -1895,6 +1896,7 @@ class SidebarProvider {
         .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: var(--r-md); }
         .stat { padding: 8px 10px; }
         .stat + .stat { border-left: 1px solid var(--border); }
+        .summary-grid { grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); margin-bottom: 8px; }
         .stat-value { display: block; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.25em; font-weight: 600; line-height: 1.25; }
         .stat-label { font-size: 0.86em; color: var(--muted); }
         .diff-bar { display: flex; width: 48px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--track); flex-shrink: 0; }
@@ -1951,6 +1953,9 @@ class SidebarProvider {
         }
         .actions .btn-ghost { grid-column: 1 / -1; padding: 3px 8px; font-size: 0.95em; }
         @media (max-width: 220px) { .actions { grid-template-columns: 1fr; } }
+        .version-tag { font-family: var(--mono); font-size: 0.8em; color: var(--muted); text-align: left; opacity: 0.8; }
+        .actions .version-tag { grid-column: 1 / -1; }
+        #connection-screen .version-tag { margin-top: auto; }
 
         /* High-contrast themes: draw every edge with the contrast border */
         body.vscode-high-contrast .list,
@@ -1988,6 +1993,8 @@ class SidebarProvider {
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
             <div class="notice-body" id="connect-error-text"></div>
         </div>
+
+        <div class="version-tag">v${extensionVersion}</div>
     </main>
 
     <div id="session-screen" class="screen" style="${sessionScreenStyle}">
@@ -2146,6 +2153,12 @@ class SidebarProvider {
                 </span>
                 <span class="result-score" id="submission-final-score">0%</span>
             </div>
+            <div id="submission-summary" class="stat-grid summary-grid" hidden>
+                <div class="stat"><span class="stat-value" id="summary-time">--:--</span><span class="stat-label">Time</span></div>
+                <div class="stat"><span class="stat-value" id="summary-tasks">0/0</span><span class="stat-label">Tasks</span></div>
+                <div class="stat"><span class="stat-value" id="summary-wpm">0</span><span class="stat-label">WPM</span></div>
+                <div class="stat" id="summary-place-cell" hidden><span class="stat-value" id="summary-place">-</span><span class="stat-label">Place</span></div>
+            </div>
             <button id="post-submit-exit-btn" class="btn btn-secondary btn-block">Close lab workspace</button>
         </div>
 
@@ -2153,6 +2166,7 @@ class SidebarProvider {
             <button id="check-progress-btn" class="btn btn-secondary" title="Have the AI grader check your work without submitting">Check progress</button>
             <button id="submit-btn" class="btn btn-primary" title="Submit your final work for grading">Submit lab</button>
             <button id="exit-btn" class="btn btn-ghost">Leave session</button>
+            <div class="version-tag">v${extensionVersion}</div>
         </footer>
     </div>
 
@@ -2615,6 +2629,7 @@ class SidebarProvider {
                         timerBox.className = 'timer timer-done';
                         submitBtn.textContent = 'Submitted';
                         $('submission-final-score').textContent = (message.data.performance_score || 0) + '%';
+                        renderSubmissionSummary(message.data.summary);
                         show(submissionBanner);
                     }
 
@@ -2661,6 +2676,25 @@ class SidebarProvider {
                 }
             }
         });
+
+        function renderSubmissionSummary(summary) {
+            if (!summary) return;
+            const secs = Math.max(0, summary.time_spent_seconds || 0);
+            const h = Math.floor(secs / 3600);
+            const m = Math.floor((secs % 3600) / 60);
+            const s = secs % 60;
+            const pad = n => String(n).padStart(2, '0');
+            $('summary-time').textContent = h > 0 ? \`\${h}:\${pad(m)}:\${pad(s)}\` : \`\${pad(m)}:\${pad(s)}\`;
+            $('summary-tasks').textContent = \`\${summary.tasks_completed || 0}/\${summary.tasks_total || 0}\`;
+            $('summary-wpm').textContent = String(summary.wpm || 0);
+
+            const hasPlace = !!summary.is_live && summary.place;
+            if (hasPlace) {
+                $('summary-place').textContent = \`#\${summary.place}/\${summary.participants || summary.place}\`;
+            }
+            show($('summary-place-cell'), !!hasPlace);
+            show($('submission-summary'));
+        }
 
         function handleSessionUpdate(session) {
             if (!session || !session.laboratory) return;
