@@ -643,8 +643,30 @@ class ClassController extends Controller
         }
 
         [$sessions, $anomalies] = $this->classTelemetryOverview($class);
+        [$anomalies, $flagSort, $flagDir] = $this->sortAnomalies($anomalies, $request);
 
-        return view('classes.telemetry', compact('class', 'labs', 'selectedLab', 'sessions', 'anomalies'));
+        return view('classes.telemetry', compact('class', 'labs', 'selectedLab', 'sessions', 'anomalies', 'flagSort', 'flagDir'));
+    }
+
+    /**
+     * Sort the integrity flags table by the `sort` and `dir` query parameters (newest first by default).
+     * Ties keep the newest-first order the overview loads them in.
+     */
+    private function sortAnomalies($anomalies, Request $request): array
+    {
+        $keys = [
+            'student' => fn ($a) => mb_strtolower($a->labSession?->user?->name ?? ''),
+            'lab' => fn ($a) => mb_strtolower($a->labSession?->laboratory?->title ?? ''),
+            'type' => fn ($a) => $a->type,
+            'severity' => fn ($a) => ['high' => 3, 'medium' => 2][$a->severity] ?? 1,
+            'when' => fn ($a) => $a->created_at?->getTimestamp() ?? 0,
+            'status' => fn ($a) => $a->resolved ? 1 : 0,
+        ];
+
+        $sort = array_key_exists($request->query('sort'), $keys) ? $request->query('sort') : 'when';
+        $dir = $request->query('dir') === 'asc' ? 'asc' : ($request->query('dir') === 'desc' ? 'desc' : ($sort === 'when' || $sort === 'severity' ? 'desc' : 'asc'));
+
+        return [$anomalies->sortBy($keys[$sort], SORT_REGULAR, $dir === 'desc')->values(), $sort, $dir];
     }
 
     /**
@@ -739,6 +761,34 @@ class ClassController extends Controller
         }
 
         return back()->with('success', 'Anomaly marked as resolved.');
+    }
+
+    /**
+     * Mark several of a class's open anomalies as resolved at once.
+     * IDs outside the class are ignored.
+     */
+    public function resolveAnomalies(Request $request, int $class_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
+
+        $ids = $request->validate([
+            'ids' => ['required', 'array', 'max:1000'],
+            'ids.*' => ['integer'],
+        ])['ids'];
+
+        $class->loadModuleTree();
+        $labIds = $class->modules->flatMap(fn ($module) => $module->getAllLaboratoryIds())->unique()->values();
+
+        $count = \App\Models\Anomaly::whereIn('id', $ids)
+            ->where('resolved', false)
+            ->whereHas('labSession', fn ($q) => $q->whereIn('lab_id', $labIds))
+            ->update(['resolved' => true]);
+
+        \Illuminate\Support\Facades\Cache::store('file')->forget("class_telemetry_{$class->id}");
+
+        return back()->with('success', $count === 1 ? '1 flag marked as resolved.' : "{$count} flags marked as resolved.");
     }
 
     /**

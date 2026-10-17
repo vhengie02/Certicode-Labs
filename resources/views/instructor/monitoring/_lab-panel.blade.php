@@ -741,6 +741,7 @@
 
                         {{-- Flags --}}
                         <div x-show="drawerTab === 'flags'" class="space-y-3">
+                            <p x-show="resolveError" x-cloak role="alert" class="text-xs text-red-300" x-text="resolveError"></p>
                             <template x-if="student.anomalies.length === 0">
                                 <div class="py-12 text-center">
                                     <p class="text-sm font-medium text-[#ededed]">No flags</p>
@@ -766,7 +767,7 @@
                                             </span>
                                         </template>
                                         <template x-if="!item.resolved">
-                                            <button type="button" @click="resolveFlag(item)" :disabled="item._resolving"
+                                            <button type="button" @click="resolveFlag(item)" :disabled="!!item._resolving"
                                                     class="h-8 px-3 shrink-0 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50"
                                                     x-text="item._resolving ? 'Resolving…' : 'Resolve'"></button>
                                         </template>
@@ -801,7 +802,6 @@
                                     </template>
                                 </article>
                             </template>
-                            <p x-show="resolveError" x-cloak class="text-xs text-red-300" x-text="resolveError"></p>
                         </div>
 
                         {{-- Grade --}}

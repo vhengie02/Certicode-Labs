@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\MassPrunable;
 
 class Anomaly extends Model
 {
-    use HasFactory;
+    use HasFactory, MassPrunable;
 
     protected $fillable = [
         'lab_session_id',
@@ -64,6 +65,16 @@ class Anomaly extends Model
         return $query
             ->select(array_map(fn ($column) => "{$table}.{$column}", $columns))
             ->selectRaw("({$table}.metadata::jsonb - 'image_base64') as metadata");
+    }
+
+    /**
+     * `model:prune` deletes resolved flags older than `app.anomaly_retention_days`.
+     * Open flags are never pruned, so nothing unreviewed disappears.
+     */
+    public function prunable()
+    {
+        return static::where('resolved', true)
+            ->where('created_at', '<', now()->subDays((int) config('app.anomaly_retention_days')));
     }
 
     /**
