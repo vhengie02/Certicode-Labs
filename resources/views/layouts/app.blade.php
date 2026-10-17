@@ -308,6 +308,85 @@
         html:not(.dark) .sr-only.peer:checked + div:after {
             background-color: #ffffff !important;
         }
+        /* Span-based switches (settings, admin): white knob, deeper emerald track */
+        html:not(.dark) .peer-checked\:bg-\[\#06150e\] {
+            background-color: #ffffff !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15) !important;
+        }
+        html:not(.dark) .peer:checked ~ .peer-checked\:bg-\[\#3ecf8e\] {
+            background-color: #059669 !important;
+            border-color: #059669 !important;
+        }
+
+        /* Chips, badges and switch tracks on the #232323 surface */
+        html:not(.dark) .bg-\[\#232323\] {
+            background-color: #e5e7eb !important;
+        }
+
+        /* Hover surfaces */
+        html:not(.dark) .hover\:bg-\[\#1c1c1c\]:hover {
+            background-color: #f3f4f6 !important;
+        }
+        html:not(.dark) .hover\:text-\[\#ededed\]:hover {
+            color: #111827 !important;
+        }
+
+        /* Remaining dark-only surfaces */
+        html:not(.dark) .bg-\[\#0c0c0c\],
+        html:not(.dark) .bg-\[\#0e0e0e\] {
+            background-color: #f8fafc !important;
+        }
+        html:not(.dark) .bg-\[\#141414\]\/50 {
+            background-color: #f9fafb !important;
+        }
+        html:not(.dark) .bg-\[\#1e1e1e\],
+        html:not(.dark) .bg-\[\#2a2a2a\],
+        html:not(.dark) .bg-\[\#2e2e2e\] {
+            background-color: #e5e7eb !important;
+        }
+        html:not(.dark) .bg-\[\#0d0d0d\]\/90,
+        html:not(.dark) .bg-\[\#171717\]\/95 {
+            background-color: rgba(255, 255, 255, 0.94) !important;
+        }
+        html:not(.dark) .bg-\[\#ededed\]\/60 {
+            background-color: rgba(55, 65, 81, 0.6) !important;
+        }
+        html:not(.dark) .hover\:bg-\[\#1a1a1a\]:hover,
+        html:not(.dark) .hover\:bg-\[\#202020\]:hover,
+        html:not(.dark) .hover\:bg-\[\#222222\]:hover,
+        html:not(.dark) .hover\:bg-\[\#2a2a2a\]:hover {
+            background-color: #f3f4f6 !important;
+        }
+        html:not(.dark) .hover\:bg-\[\#333\]:hover {
+            background-color: #e5e7eb !important;
+        }
+
+        /* Remaining dark-only borders and dividers */
+        html:not(.dark) .border-\[\#222\],
+        html:not(.dark) .border-\[\#222222\],
+        html:not(.dark) .border-\[\#242424\] {
+            border-color: #e5e7eb !important;
+        }
+        html:not(.dark) .border-\[\#333\],
+        html:not(.dark) .border-\[\#3a3a3a\],
+        html:not(.dark) .border-\[\#444444\] {
+            border-color: #d1d5db !important;
+        }
+        html:not(.dark) .hover\:border-\[\#2e2e2e\]:hover,
+        html:not(.dark) .hover\:border-\[\#383838\]:hover,
+        html:not(.dark) .hover\:border-\[\#3e3e3e\]:hover,
+        html:not(.dark) .group\/row:hover .group-hover\/row\:border-\[\#3e3e3e\] {
+            border-color: #9ca3af !important;
+        }
+        html:not(.dark) .divide-\[\#232323\] > *,
+        html:not(.dark) .divide-\[\#2e2e2e\] > * {
+            border-color: #e5e7eb !important;
+        }
+
+        /* Light-grey body copy that vanishes on white */
+        html:not(.dark) .text-\[\#d4d4d4\] {
+            color: #1f2937 !important;
+        }
 
         /* 8. Top Navigation & Dropdown Panels */
         html:not(.dark) header.h-15 {

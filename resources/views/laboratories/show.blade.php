@@ -768,6 +768,7 @@ function preLabCameraGate(labId, initialSessionId) {
         cameraDisconnectReported: false,
         lastAbsenceAlertAt: 0,
         lastMultiFaceAlertAt: 0,
+        multiFaceStreak: 0,
         proctorInterval: null,
         pingInterval: null,
 
@@ -929,7 +930,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
                     );
-                    detectedFaces = detections.length;
+                    detectedFaces = this.countFaces(detections);
                 } catch (e) {
                     console.warn('SsdMobilenetv1 detection error:', e);
                 }
@@ -942,7 +943,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.15 })
                     );
-                    detectedFaces = tinyDetections.length;
+                    detectedFaces = this.countFaces(tinyDetections);
                 } catch (e) {
                     console.warn('TinyFaceDetector detection error:', e);
                 }
@@ -964,7 +965,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.12 })
                         );
                         if (enhancedTiny.length > 0) {
-                            detectedFaces = enhancedTiny.length;
+                            detectedFaces = this.countFaces(enhancedTiny);
                         }
                     }
                     if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
@@ -973,7 +974,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.12 })
                         );
                         if (enhancedSsd.length > 0) {
-                            detectedFaces = enhancedSsd.length;
+                            detectedFaces = this.countFaces(enhancedSsd);
                         }
                     }
                 } catch (e) {
@@ -986,7 +987,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 try {
                     const detector = new window.FaceDetector({ fastMode: true });
                     const faces = await detector.detect(video);
-                    detectedFaces = faces.length;
+                    detectedFaces = this.countFaces(faces);
                 } catch (e) {}
             }
 
@@ -1280,7 +1281,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.15 })
                     );
-                    detectedFaces = detections.length;
+                    detectedFaces = this.countFaces(detections);
                 } catch (e) {}
             }
 
@@ -1291,7 +1292,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         video,
                         new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.12 })
                     );
-                    detectedFaces = tinyDetections.length;
+                    detectedFaces = this.countFaces(tinyDetections);
                 } catch (e) {}
             }
 
@@ -1310,7 +1311,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             canvas,
                             new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
                         );
-                        if (boostedTiny.length > 0) detectedFaces = boostedTiny.length;
+                        if (boostedTiny.length > 0) detectedFaces = this.countFaces(boostedTiny);
                     }
 
                     if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
@@ -1318,7 +1319,7 @@ function preLabCameraGate(labId, initialSessionId) {
                             canvas,
                             new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
                         );
-                        if (boostedSsd.length > 0) detectedFaces = boostedSsd.length;
+                        if (boostedSsd.length > 0) detectedFaces = this.countFaces(boostedSsd);
                     }
                 } catch (e) {}
             }
@@ -1328,7 +1329,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 try {
                     const detector = new window.FaceDetector({ fastMode: true });
                     const faces = await detector.detect(video);
-                    detectedFaces = faces.length;
+                    detectedFaces = this.countFaces(faces);
                 } catch (e) {}
             }
 
@@ -1360,28 +1361,58 @@ function preLabCameraGate(labId, initialSessionId) {
                             new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
                         );
                     }
-                    if (detections.length > 0) {
-                        // Thresholds this low pick up shadows as extra faces, so only
-                        // confident detections count towards "multiple faces".
-                        const confident = detections.filter(d => (d.score ?? d.classScore ?? 0) >= 0.5).length;
-                        return Math.max(1, confident);
-                    }
+                    if (detections.length > 0) return this.countFaces(detections);
                 } catch (e) {}
             }
 
             if ('FaceDetector' in window) {
                 try {
                     const faces = await new window.FaceDetector({ fastMode: true }).detect(video);
-                    if (faces.length > 0) return faces.length;
+                    if (faces.length > 0) return this.countFaces(faces);
                 } catch (e) {}
             }
 
             return this.checkLowLightPresence(grid) ? 1 : 0;
         },
 
+        // How many people a set of detections represents. The thresholds above are low so a
+        // dim or backlit student still counts as present, but that also picks up shadows,
+        // posters and people far in the background. The largest face is the student; another
+        // face only counts if it is confident, not a duplicate box of the student's face, and
+        // close enough to the camera to be someone sitting with them.
+        countFaces(detections) {
+            const faces = (detections || []).map((d) => {
+                const box = d.box || d.boundingBox || d.detection?.box || {};
+                return {
+                    score: d.score ?? d.classScore ?? d.detection?.score ?? 1,
+                    x: box.x ?? 0, y: box.y ?? 0, w: box.width ?? 0, h: box.height ?? 0,
+                };
+            }).filter((f) => f.w > 0 && f.h > 0);
+
+            if (faces.length === 0) return (detections || []).length > 0 ? 1 : 0;
+
+            faces.sort((a, b) => b.w * b.h - a.w * a.h);
+            const main = faces[0];
+            const overlap = (a, b) => {
+                const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+                const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+                return (ix * iy) / Math.min(a.w * a.h, b.w * b.h);
+            };
+
+            const others = faces.slice(1).filter((f) =>
+                f.score >= 0.5
+                && f.w * f.h >= main.w * main.h * 0.2
+                && overlap(main, f) < 0.3
+            );
+
+            return 1 + others.length;
+        },
+
         async applyProctorResult(video, detectedFaces, lowLight) {
             this.faceCount = detectedFaces;
             const nowTime = Date.now();
+
+            if (detectedFaces < 2) this.multiFaceStreak = 0;
 
             if (detectedFaces === 1) {
                 this.absenceCount = 0;
@@ -1407,8 +1438,11 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.absenceCount = 0;
                 this.proctorStatus = 'multiple_faces';
                 this.proctorStatusText = `Multiple Faces Detected (${detectedFaces})`;
+                this.multiFaceStreak++;
 
-                if (nowTime - this.lastMultiFaceAlertAt > 30000) {
+                // One frame can still catch a passer-by, so only flag a second person
+                // who stays in view for two checks in a row (about 20 seconds).
+                if (this.multiFaceStreak >= 2 && nowTime - this.lastMultiFaceAlertAt > 30000) {
                     this.lastMultiFaceAlertAt = nowTime;
                     const snapshot = this.captureSnapshot(video);
                     await this.logTelemetry('webcam_check', {
