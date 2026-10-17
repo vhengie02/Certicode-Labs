@@ -71,6 +71,12 @@
         <input type="hidden" name="gmail" value="{{ session('google_auth_gmail') }}">
     </form>
 
+    @unless ($needsRole)
+        <p class="mt-6 text-center text-[13px] cc-rise" style="--d:2">
+            <a href="{{ route('auth.google.password') }}" class="cc-link">Sign in with your password instead</a>
+        </p>
+    @endunless
+
     <p class="mt-10 text-center text-[13px] cc-rise" style="--d:2">
         <a href="{{ route('auth.google') }}" class="text-[var(--cc-text-faint)] hover:text-white transition-colors">&larr; Back</a>
     </p>

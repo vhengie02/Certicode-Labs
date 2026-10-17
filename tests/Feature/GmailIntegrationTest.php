@@ -169,9 +169,10 @@ class GmailIntegrationTest extends TestCase
     }
 
     /**
-     * Test failed login via mock Google Callback for unverified/unlinked Gmail.
+     * The emailed code proves the user owns the account's address, so an unverified Gmail
+     * on that account is verified and the user is signed in (no password loop back to /login).
      */
-    public function test_google_callback_rejects_unverified_gmail(): void
+    public function test_google_callback_verifies_gmail_and_signs_in_account_owner(): void
     {
         // Unverified gmail address
         $this->user->update([
@@ -187,9 +188,9 @@ class GmailIntegrationTest extends TestCase
             'code' => '123456',
         ]);
 
-        $response->assertRedirect('/login');
-        $response->assertSessionHasErrors();
-        $this->assertGuest();
+        $response->assertRedirect('/dashboard');
+        $this->assertAuthenticatedAs($this->user);
+        $this->assertNotNull($this->user->fresh()->gmail_verified_at);
     }
 
     /**
@@ -242,9 +243,9 @@ class GmailIntegrationTest extends TestCase
     }
 
     /**
-     * Test a user is prompted for password when Gmail already exists.
+     * An existing account gets an emailed code too (not a password prompt), without the role step.
      */
-    public function test_google_email_submission_redirects_to_password_if_exists(): void
+    public function test_google_email_submission_sends_code_if_exists(): void
     {
         $this->user->update([
             'gmail' => 'john@example.com',
@@ -255,7 +256,8 @@ class GmailIntegrationTest extends TestCase
             'gmail' => 'john@example.com',
         ]);
 
-        $response->assertRedirect('/auth/google/password');
+        $response->assertRedirect('/auth/google/verify');
+        $this->assertNotNull(session('google_auth_code'));
     }
 
     /**
