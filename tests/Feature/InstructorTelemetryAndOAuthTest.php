@@ -128,6 +128,37 @@ class InstructorTelemetryAndOAuthTest extends TestCase
     }
 
     /**
+     * Test the timeline hides heartbeat noise and lists events oldest first.
+     */
+    public function test_session_timeline_hides_noise_and_lists_oldest_first(): void
+    {
+        TelemetryLog::create([
+            'lab_session_id' => $this->labSession->id,
+            'event_type' => 'vscode_ping',
+            'payload' => ['source' => 'vscode'],
+        ]);
+        TelemetryLog::create([
+            'lab_session_id' => $this->labSession->id,
+            'event_type' => 'paste_anomaly',
+            'payload' => ['pasted_length' => 321, 'snippet' => 'int x = 1;'],
+            'created_at' => now()->subMinutes(5),
+        ]);
+        TelemetryLog::create([
+            'lab_session_id' => $this->labSession->id,
+            'event_type' => 'tab_switch',
+            'payload' => ['tab_title' => 'Cheat Sheet'],
+        ]);
+
+        $response = $this->actingAs($this->instructor)
+            ->get("/sessions/{$this->labSession->id}/telemetry-timeline");
+
+        $response->assertOk();
+        $response->assertDontSee('vscode ping');
+        $response->assertDontSee('Telemetry event logged.');
+        $response->assertSeeInOrder(['321 chars', 'Cheat Sheet']);
+    }
+
+    /**
      * Test instructor can resolve student anomalies.
      */
     public function test_instructor_can_resolve_anomaly(): void
@@ -300,6 +331,8 @@ class InstructorTelemetryAndOAuthTest extends TestCase
      */
     public function test_github_oauth_redirects_to_mock_github(): void
     {
+        config(['services.github.client_id' => null, 'services.github.client_secret' => null]);
+
         $response = $this->get('/auth/github/redirect');
         $response->assertRedirect('/auth/github');
     }

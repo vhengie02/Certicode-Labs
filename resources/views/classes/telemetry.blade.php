@@ -14,29 +14,71 @@
         <p class="mt-1 text-[15px] text-[#a3a3a3]">Integrity flags and student sessions across the class, or live detail for one lab.</p>
     </header>
 
-    {{-- Lab switcher --}}
-    <nav class="monitor-tabs -mx-4 sm:mx-0 px-4 sm:px-0 flex items-center gap-1.5 overflow-x-auto border-b border-[#2e2e2e] pb-px" aria-label="Choose what to monitor">
+    {{-- Lab switcher: "All labs" plus a searchable picker, so any number of labs fits on one row --}}
+    @php
+        $isLiveLab = fn ($lab) => $lab->availability_mode === 'live' && $lab->live_status === 'active';
+        // Live labs first, then the controller's order.
+        $pickerLabs = $labs->sortBy(fn ($lab) => $isLiveLab($lab) ? 0 : 1, SORT_REGULAR, false)->values();
+        $liveLabCount = $labs->filter($isLiveLab)->count();
+    @endphp
+    <nav class="flex flex-wrap items-center gap-2 border-b border-[#2e2e2e] pb-3" aria-label="Choose what to monitor">
         <a href="{{ route('classes.telemetry', $class->id) }}" @if(!$selectedLab) aria-current="page" @endif
-           class="shrink-0 relative px-3 py-2.5 text-sm font-medium transition-colors {{ !$selectedLab ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]' }}">
+           class="shrink-0 inline-flex items-center h-9 px-3 rounded-lg border text-sm font-medium transition-colors {{ !$selectedLab ? 'bg-[#1c1c1c] border-[#383838] text-[#ededed]' : 'border-transparent text-[#888888] hover:text-[#ededed] hover:bg-[#1c1c1c]' }}">
             All labs
         </a>
-        @foreach ($labs as $lab)
-            @php
-                $isSelected = $selectedLab && $selectedLab->id === $lab->id;
-                $isLive = $lab->availability_mode === 'live' && $lab->live_status === 'active';
-            @endphp
-            <a href="{{ route('classes.telemetry', ['class_id' => $class->id, 'lab' => $lab->id]) }}" @if($isSelected) aria-current="page" @endif
-               class="shrink-0 relative inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors {{ $isSelected ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]' }}">
-                @if ($isLive)
-                    <span class="relative flex h-2 w-2" aria-hidden="true">
-                        <span class="absolute inline-flex h-full w-full rounded-full bg-[#3ecf8e] opacity-60 animate-ping"></span>
-                        <span class="relative inline-flex h-2 w-2 rounded-full bg-[#3ecf8e]"></span>
-                    </span>
-                    <span class="sr-only">Live now:</span>
-                @endif
-                <span class="max-w-[14rem] truncate">{{ $lab->title }}</span>
-            </a>
-        @endforeach
+
+        @if ($labs->isNotEmpty())
+            <div class="relative min-w-0 flex-1 sm:flex-none"
+                 x-data="{ open: false, q: '' }"
+                 @keydown.escape.window="open = false"
+                 @click.outside="open = false">
+                <button type="button" @click="open = !open; if (open) $nextTick(() => $refs.search?.focus())"
+                        :aria-expanded="open" aria-haspopup="listbox"
+                        class="w-full sm:w-auto sm:max-w-[28rem] inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-sm font-medium transition-colors {{ $selectedLab ? 'bg-[#1c1c1c] border-[#383838] text-[#ededed]' : 'border-[#2e2e2e] text-[#888888] hover:text-[#ededed] hover:border-[#383838]' }}">
+                    @if ($selectedLab && $isLiveLab($selectedLab))
+                        <span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                            <span class="absolute inline-flex h-full w-full rounded-full bg-[#3ecf8e] opacity-60 animate-ping"></span>
+                            <span class="relative inline-flex h-2 w-2 rounded-full bg-[#3ecf8e]"></span>
+                        </span>
+                    @endif
+                    <span class="truncate">{{ $selectedLab ? $selectedLab->title : 'Pick a lab' }}</span>
+                    <span class="shrink-0 text-xs text-[#666666] tabular-nums">{{ $labs->count() }}</span>
+                    @if (!$selectedLab && $liveLabCount > 0)
+                        <span class="shrink-0 inline-flex items-center gap-1 rounded-full bg-[#3ecf8e]/10 px-1.5 py-0.5 text-[11px] text-[#3ecf8e]">{{ $liveLabCount }} live</span>
+                    @endif
+                    <svg class="ml-auto w-4 h-4 shrink-0 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+
+                <div x-show="open" x-cloak x-transition.opacity.duration.100ms
+                     class="absolute left-0 z-40 mt-2 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-[#2e2e2e] bg-[#171717] shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)] overflow-hidden">
+                    @if ($labs->count() > 6)
+                        <div class="p-2 border-b border-[#2e2e2e]">
+                            <input x-ref="search" x-model="q" type="search" placeholder="Search labs" aria-label="Search labs" class="ui-input h-9 w-full">
+                        </div>
+                    @endif
+                    <ul class="max-h-80 overflow-y-auto py-1" role="listbox" aria-label="Labs">
+                        @foreach ($pickerLabs as $lab)
+                            @php $isSelected = $selectedLab && $selectedLab->id === $lab->id; @endphp
+                            <li x-show="!q || {{ \Illuminate\Support\Js::from(mb_strtolower($lab->title)) }}.includes(q.toLowerCase())" role="option" @if($isSelected) aria-selected="true" @endif>
+                                <a href="{{ route('classes.telemetry', ['class_id' => $class->id, 'lab' => $lab->id]) }}" @if($isSelected) aria-current="page" @endif
+                                   class="flex items-center gap-2.5 px-3 py-2 text-sm transition-colors {{ $isSelected ? 'bg-[#1c1c1c] text-[#ededed]' : 'text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-[#ededed]' }}">
+                                    <span class="flex h-2 w-2 shrink-0" aria-hidden="true">
+                                        @if ($isLiveLab($lab))
+                                            <span class="inline-flex h-2 w-2 rounded-full bg-[#3ecf8e]"></span>
+                                        @endif
+                                    </span>
+                                    @if ($isLiveLab($lab))<span class="sr-only">Live now:</span>@endif
+                                    <span class="min-w-0 flex-1 truncate" title="{{ $lab->title }}">{{ $lab->title }}</span>
+                                    @if ($isSelected)
+                                        <svg class="w-4 h-4 shrink-0 text-[#3ecf8e]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                    @endif
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
     </nav>
 
     @if ($selectedLab)

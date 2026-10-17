@@ -484,7 +484,9 @@
         .live-timer.is-over .live-timer-clock { color: #f87171; }
         html:not(.dark) .live-timer.is-ending .live-timer-clock { color: #b45309; }
 
-        /* Lab switcher on the class monitoring page */
+        [x-cloak] { display: none !important; }
+
+        /* Underlined tab strips (admin users, monitoring drawer) */
         .monitor-tab-active::after {
             content: ''; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px;
             height: 2px; border-radius: 2px 2px 0 0; background: #3ecf8e;

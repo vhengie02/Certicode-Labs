@@ -774,9 +774,17 @@
                                     <p class="text-sm text-[#a3a3a3]" x-text="item.description"></p>
 
                                     <template x-if="item.metadata && item.metadata.snippet">
-                                        <div class="rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]">
+                                        <div class="rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]"
+                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5 }">
                                             <span class="block px-3 pt-2 text-xs text-[#888888]">Pasted text</span>
-                                            <pre class="px-3 pb-2.5 pt-1 text-xs font-mono text-amber-200/90 overflow-x-auto whitespace-pre-wrap max-h-40" x-text="item.metadata.snippet"></pre>
+                                            <pre class="px-3 pb-2.5 pt-1 text-xs font-mono text-amber-200/90 whitespace-pre-wrap break-words"
+                                                 :class="long && !open ? 'max-h-24 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : 'max-h-96 overflow-y-auto'"
+                                                 x-text="item.metadata.snippet"></pre>
+                                            <template x-if="long">
+                                                <button type="button" @click="open = !open"
+                                                        class="block w-full px-3 py-1.5 border-t border-[#2e2e2e] text-left text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] transition-colors"
+                                                        x-text="open ? 'Show less' : 'Show more'"></button>
+                                            </template>
                                         </div>
                                     </template>
 

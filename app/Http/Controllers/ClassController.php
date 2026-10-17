@@ -679,12 +679,20 @@ class ClassController extends Controller
         $session = \App\Models\LabSession::with(['user', 'laboratory.module.schoolClass'])->findOrFail($id);
         $this->authorizeClassManager($session->laboratory?->module?->schoolClass);
 
+        // Heartbeats and typing-speed samples arrive every few seconds and say nothing on
+        // their own, so the timeline keeps only events an instructor acts on, oldest first.
         $logs = \App\Models\TelemetryLog::where('lab_session_id', $session->id)
-            ->latest()
-            ->get();
+            ->whereNotIn('event_type', ['vscode_ping', 'wpm_update'])
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->reject(fn ($log) => $log->event_type === 'webcam_check'
+                && (int) ($log->payload['face_count'] ?? 1) === 1)
+            ->values();
 
         $anomalies = \App\Models\Anomaly::where('lab_session_id', $session->id)
-            ->latest()
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->get();
 
         return view('classes.telemetry-timeline', compact('session', 'logs', 'anomalies'));
