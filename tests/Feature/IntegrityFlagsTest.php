@@ -108,4 +108,16 @@ class IntegrityFlagsTest extends TestCase
         $this->assertNotNull($oldOpen->fresh());
         $this->assertNotNull($recentResolved->fresh());
     }
+
+    public function test_cron_tick_prunes_old_resolved_flags()
+    {
+        config()->set('app.anomaly_retention_days', 90);
+
+        $oldResolved = $this->flag(['resolved' => true]);
+        Anomaly::whereKey($oldResolved->id)->update(['created_at' => now()->subDays(91)]);
+
+        $this->getJson('/api/cron/tick')->assertOk()->assertJsonPath('status', 'success');
+
+        $this->assertNull($oldResolved->fresh());
+    }
 }
