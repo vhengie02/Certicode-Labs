@@ -107,7 +107,6 @@ class LoginController extends Controller
         session()->put('google_auth_code', $code);
         session()->put('google_auth_code_for', $gmail);
         session()->forget('google_auth_code_attempts'); // a fresh code gets a fresh set of attempts
-        session()->put('gmail_code_debug', $code);
 
         if ($this->mayRevealAuthSecrets()) {
             Log::info("Google Sign-In/Up verification code for {$gmail}: {$code}");

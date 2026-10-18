@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\SchoolClass;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\ClassActivityNotification;
 use Tests\TestCase;
@@ -25,6 +27,25 @@ class GmailIntegrationTest extends TestCase
             'password' => bcrypt('password'),
             'role' => 'student',
         ]);
+    }
+
+    /**
+     * Request a Gmail code and return it. Only a hash is stored, so the code is read from the
+     * log line that local and test environments write.
+     */
+    private function requestGmailCode(string $gmail = 'john.doe@gmail.com'): string
+    {
+        $code = null;
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$code) {
+            if (preg_match('/^Gmail connection code .*: (\d{6})$/', $event->message, $m)) {
+                $code = $m[1];
+            }
+        });
+
+        $this->actingAs($this->user)->post('/settings/gmail/connect', ['gmail' => $gmail]);
+        $this->assertNotNull($code, 'No Gmail code was logged');
+
+        return $code;
     }
 
     /**
@@ -80,7 +101,7 @@ class GmailIntegrationTest extends TestCase
         $this->assertEquals('john.doe@gmail.com', $this->user->gmail);
         $this->assertNotNull($this->user->gmail_verification_code);
         $this->assertNull($this->user->gmail_verified_at);
-        $this->assertNotEmpty(session('gmail_code_debug'));
+        $this->assertNull(session('gmail_code_debug'));
     }
 
     /**
@@ -89,13 +110,7 @@ class GmailIntegrationTest extends TestCase
     public function test_submitting_correct_code_verifies_gmail(): void
     {
         // First request connection
-        $this->actingAs($this->user)
-            ->post('/settings/gmail/connect', [
-                'gmail' => 'john.doe@gmail.com',
-            ]);
-
-        $this->user->refresh();
-        $correctCode = $this->user->gmail_verification_code;
+        $correctCode = $this->requestGmailCode();
 
         // Verify code
         $response = $this->actingAs($this->user)
