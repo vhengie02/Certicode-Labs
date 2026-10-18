@@ -852,7 +852,13 @@ function preLabCameraGate(labId, initialSessionId) {
                         promises.push(window.faceapi.nets.tinyFaceDetector.loadFromUri('/models').catch(e => console.warn('TinyFace load warning:', e)));
                     }
                     await Promise.all(promises);
-                    this.modelLoaded = true;
+                    // Only count as loaded if a detector really loaded; a failed download used to
+                    // leave every student on the low-light fallback without anyone knowing
+                    const nets = window.faceapi.nets;
+                    this.modelLoaded = !!(nets.ssdMobilenetv1?.isLoaded || nets.tinyFaceDetector?.isLoaded);
+                    if (!this.modelLoaded) {
+                        console.error('Face detection models did not load from /models.');
+                    }
                 }
             } catch (err) {
                 console.error('Failed to load face detection models from /models:', err);
