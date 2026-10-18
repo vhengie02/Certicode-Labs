@@ -372,20 +372,16 @@ class ClassController extends Controller
             'order_index' => 'integer',
             'parent_id' => 'nullable|exists:modules,id,class_id,' . $class->id,
             'attachments' => 'nullable|array',
-            'attachments.*' => 'file|max:20480', // Max 20MB
+            'attachments.*' => 'file|max:' . ModuleAttachment::MAX_SIZE_KB,
+            ...$this->directUploadRules(),
         ]);
 
-        if ($request->hasFile('attachments') && !ModuleAttachment::storageIsDurable()) {
+        if ($this->hasAttachments($request) && !ModuleAttachment::storageIsDurable()) {
             return back()->withInput()->withErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
         }
 
         // Upload first, so a storage failure saves nothing instead of leaving a module without its files
-        try {
-            $uploads = ModuleAttachment::uploadAll($request->file('attachments', []));
-        } catch (\Throwable $e) {
-            report($e);
-            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::UPLOAD_FAILED_MESSAGE]);
-        }
+        $uploads = $this->collectUploads($request, $class, $validated['uploaded_attachments'] ?? []);
 
         $parentId = $validated['parent_id'] ?? null;
         $existingCount = Module::where('class_id', $class->id)
@@ -414,6 +410,7 @@ class ClassController extends Controller
             ModuleAttachment::discardUploads($uploads);
             throw $e;
         }
+        ModuleAttachment::forgetDirectUploads(array_column($uploads, 'file_path'));
 
         // Notify enrolled students
         $students = $class->students()->wherePivot('status', 'enrolled')->get();
@@ -431,6 +428,68 @@ class ClassController extends Controller
         }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Module created successfully.');
+    }
+
+    /**
+     * Start a direct upload: a signed URL the module form PUTs one file to, so the file goes
+     * straight to cloud storage. Vercel refuses request bodies over 4.5 MB, which is less than
+     * the 20 MB the form allows.
+     */
+    public function attachmentUpload(Request $request, int $class_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
+        abort_unless(ModuleAttachment::usesDirectUploads(), 404);
+
+        $validated = $request->validate([
+            'file_name' => 'required|string|max:255',
+            'file_size' => 'required|integer|min:0|max:' . ModuleAttachment::MAX_SIZE_KB * 1024,
+        ], [
+            'file_size.max' => 'Files can be up to 20 MB each.',
+        ]);
+
+        return response()->json(ModuleAttachment::issueDirectUpload($class->id, $validated['file_name']));
+    }
+
+    /**
+     * Files the browser already uploaded with attachmentUpload(): their keys and names. The
+     * size is read from storage, not taken from the form.
+     */
+    private function directUploadRules(): array
+    {
+        return [
+            'uploaded_attachments' => 'nullable|array|max:50',
+            'uploaded_attachments.*' => 'array:key,name',
+            'uploaded_attachments.*.key' => 'required|string|distinct',
+            'uploaded_attachments.*.name' => 'required|string|max:255',
+        ];
+    }
+
+    private function hasAttachments(Request $request): bool
+    {
+        return $request->hasFile('attachments') || filled($request->input('uploaded_attachments'));
+    }
+
+    /**
+     * Attachments to save with the module: files the browser already sent to cloud storage,
+     * then files posted with the form, which are uploaded now. Runs before any database write,
+     * so a storage failure saves nothing.
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    private function collectUploads(Request $request, SchoolClass $class, array $directUploads): array
+    {
+        try {
+            $claimed = ModuleAttachment::claimDirectUploads($class->id, $directUploads);
+
+            return array_merge($claimed, ModuleAttachment::uploadAll($request->file('attachments', [])));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => ModuleAttachment::UPLOAD_FAILED_MESSAGE]);
+        }
     }
 
     /**
@@ -507,12 +566,13 @@ class ClassController extends Controller
             'order_index' => 'integer',
             'parent_id' => 'nullable|exists:modules,id,class_id,' . $class->id . '|not_in:' . $module->id,
             'attachments' => 'nullable|array',
-            'attachments.*' => 'file|max:20480',
+            'attachments.*' => 'file|max:' . ModuleAttachment::MAX_SIZE_KB,
+            ...$this->directUploadRules(),
             'remove_attachments' => 'nullable|array',
             'remove_attachments.*' => 'exists:module_attachments,id',
         ]);
 
-        if ($request->hasFile('attachments') && !ModuleAttachment::storageIsDurable()) {
+        if ($this->hasAttachments($request) && !ModuleAttachment::storageIsDurable()) {
             return back()->withInput()->withErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
         }
 
@@ -527,12 +587,7 @@ class ClassController extends Controller
             : $existingCount;
 
         // Upload first, so a storage failure changes nothing (not even the removals)
-        try {
-            $uploads = ModuleAttachment::uploadAll($request->file('attachments', []));
-        } catch (\Throwable $e) {
-            report($e);
-            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::UPLOAD_FAILED_MESSAGE]);
-        }
+        $uploads = $this->collectUploads($request, $class, $validated['uploaded_attachments'] ?? []);
 
         try {
             $removed = DB::transaction(function () use ($module, $parentId, $validated, $orderIndex, $uploads) {
@@ -556,6 +611,7 @@ class ClassController extends Controller
             ModuleAttachment::discardUploads($uploads);
             throw $e;
         }
+        ModuleAttachment::forgetDirectUploads(array_column($uploads, 'file_path'));
 
         // Files go only once the rows are gone for good
         $removed->each->deleteFile();
