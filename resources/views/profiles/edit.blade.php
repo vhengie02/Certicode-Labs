@@ -74,22 +74,15 @@
                 @error('github_username') <p class="text-red-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
             </div>
 
-            <!-- Role select (Only Admin can edit) -->
+            <!-- Role: shown only. Roles change in Admin > Users, which keeps the last admin and
+                 teaching instructors from being demoted. -->
             <div>
-                <label for="role" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Access Role</label>
+                <label for="user_role_display" class="block text-xs font-mono uppercase tracking-wider text-[#a3a3a3] mb-2">Access Role</label>
+                <input type="text" id="user_role_display" disabled value="{{ ucfirst($user->role) }}"
+                    class="w-full px-3.5 py-2.5 bg-[#141414]/50 border border-[#2e2e2e] rounded-[6px] text-xs text-[#666666] font-mono focus:outline-none cursor-not-allowed">
                 @if(auth()->user()->role === 'admin')
-                    <select name="role" id="role"
-                        class="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-xs text-[#ededed] focus:outline-none focus:border-[#3ecf8e] focus:ring-1 focus:ring-[#3ecf8e]">
-                        <option value="student" {{ $user->role === 'student' ? 'selected' : '' }} class="bg-[#141414] text-[#ededed]">Student</option>
-                        <option value="instructor" {{ $user->role === 'instructor' ? 'selected' : '' }} class="bg-[#141414] text-[#ededed]">Instructor</option>
-                        <option value="admin" {{ $user->role === 'admin' ? 'selected' : '' }} class="bg-[#141414] text-[#ededed]">Administrator</option>
-                    </select>
-                @else
-                    <input type="text" id="user_role_display" name="role_display" disabled value="{{ ucfirst($user->role) }}"
-                        class="w-full px-3.5 py-2.5 bg-[#141414]/50 border border-[#2e2e2e] rounded-[6px] text-xs text-[#666666] font-mono focus:outline-none cursor-not-allowed">
-                    <input type="hidden" name="role" value="{{ $user->role }}">
+                    <p class="text-xs text-[#888888] mt-1.5">To change it, use <a href="{{ route('admin.users.index') }}" class="text-[#3ecf8e] hover:underline">Admin &rsaquo; Users</a>.</p>
                 @endif
-                @error('role') <p class="text-red-400 text-xs mt-1 font-mono">{{ $message }}</p> @enderror
             </div>
 
             <!-- Actions -->

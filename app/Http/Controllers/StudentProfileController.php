@@ -40,21 +40,13 @@ class StudentProfileController extends Controller
             'gender' => 'nullable|string|in:male,female,other',
             'email' => ['sometimes', 'required', 'string', 'email', 'max:255', new \App\Rules\UniqueEmail(ignoreUserId: $user->id)],
             'github_username' => 'nullable|string|max:255',
-            'role' => 'required|string|in:student,instructor,admin',
         ]);
 
-        // Restrict role modification to admin users only
-        if (auth()->user()->role !== 'admin') {
-            unset($validated['role']);
-        }
-
+        // No role here: roles change only through Admin\UserController::updateRole, whose
+        // checks (not your own role, not the last admin, not an instructor still teaching)
+        // this form used to skip
         $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];
         $user->update($validated);
-
-        // An admin setting the role directly settles any pending instructor request
-        if (isset($validated['role']) && $validated['role'] !== 'student' && $user->instructor_requested_at) {
-            $user->forceFill(['instructor_requested_at' => null])->save();
-        }
 
         // Redirect appropriately
         if ($user->id === auth()->id()) {
