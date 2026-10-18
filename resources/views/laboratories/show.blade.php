@@ -785,14 +785,12 @@ function preLabCameraGate(labId, initialSessionId) {
                 }
             });
 
-            // Log focus / tab switch telemetry when in active proctor mode
+            // Note when this page goes out of view during the lab. Students are told to code in
+            // VS Code with this page open behind it, so it isn't a tab switch: VS Code reports
+            // its own focus changes, and coming back to this page isn't logged at all.
             document.addEventListener('visibilitychange', () => {
-                if (this.browserProctorActive && this.activeSessionId) {
-                    if (document.hidden) {
-                        this.logTelemetry('tab_switch', { event: 'tab_hidden', timestamp: new Date().toISOString() });
-                    } else {
-                        this.logTelemetry('tab_switch', { event: 'tab_visible', timestamp: new Date().toISOString() });
-                    }
+                if (this.browserProctorActive && this.activeSessionId && document.hidden) {
+                    this.logTelemetry('lab_page_hidden', { timestamp: new Date().toISOString() });
                 }
             });
         },

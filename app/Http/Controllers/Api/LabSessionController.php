@@ -107,6 +107,15 @@ class LabSessionController extends Controller
             'payload' => 'nullable|array',
         ]);
 
+        // The lab page going out of view is the expected workflow (students code in VS Code with
+        // the page open behind it), so it is logged as its own event and never counted as a
+        // switch. Pages loaded before this change still send it as tab_switch.
+        $eventType = $request->event_type;
+        $pageEvent = $request->input('payload.event');
+        if ($eventType === 'tab_switch' && in_array($pageEvent, ['tab_hidden', 'tab_visible'], true)) {
+            $eventType = $pageEvent === 'tab_hidden' ? 'lab_page_hidden' : 'lab_page_visible';
+        }
+
         // Create log record. A webcam snapshot is kept once, on the anomaly it proves.
         $logPayload = $request->payload;
         if (is_array($logPayload)) {
@@ -114,13 +123,13 @@ class LabSessionController extends Controller
         }
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
-            'event_type' => $request->event_type,
+            'event_type' => $eventType,
             'payload' => $logPayload,
         ]);
 
         // Smart anomaly checks
-        if ($request->event_type === 'tab_switch' || $request->event_type === 'focus_lost') {
-            if ($request->event_type === 'focus_lost') {
+        if ($eventType === 'tab_switch' || $eventType === 'focus_lost') {
+            if ($eventType === 'focus_lost') {
                 $session->increment('focus_lost_count');
             }
 
@@ -131,12 +140,7 @@ class LabSessionController extends Controller
                 ->count();
 
             if ($recentSwitches >= 3) {
-                $this->recordAndBroadcastAnomaly($session, [
-                    'type' => $request->event_type === 'focus_lost' ? 'excessive_focus_loss' : 'excessive_tab_switch',
-                    'severity' => $recentSwitches >= 6 ? 'high' : 'medium',
-                    'description' => "Student switched window/focus {$recentSwitches} times within the last 2 minutes.",
-                    'metadata' => $request->payload,
-                ]);
+                $this->recordSwitchAnomaly($session, $eventType === 'focus_lost' ? 'excessive_focus_loss' : 'excessive_tab_switch', $recentSwitches, $request->payload);
             }
         }
 
@@ -222,6 +226,34 @@ class LabSessionController extends Controller
             'status' => 'success',
             'log' => $log,
         ]);
+    }
+
+    /**
+     * Flag frequent window or focus switching once per 2-minute window: a further switch in
+     * the window raises the existing flag's count (and severity) instead of adding a new row.
+     */
+    protected function recordSwitchAnomaly(LabSession $session, string $type, int $recentSwitches, ?array $payload): void
+    {
+        $attributes = [
+            'severity' => $recentSwitches >= 6 ? 'high' : 'medium',
+            'description' => "Student switched window/focus {$recentSwitches} times within the last 2 minutes.",
+        ];
+
+        $open = Anomaly::where('lab_session_id', $session->id)
+            ->where('type', $type)
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->latest('id')
+            ->first();
+
+        if ($open) {
+            if ($open->severity === 'high') {
+                unset($attributes['severity']);
+            }
+            $open->update($attributes);
+            return;
+        }
+
+        $this->recordAndBroadcastAnomaly($session, ['type' => $type, 'metadata' => $payload] + $attributes);
     }
 
     /**
