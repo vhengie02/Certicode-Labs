@@ -86,8 +86,9 @@ class LabExecuteGradeForgeryTest extends TestCase
 
         $this->actingAs($this->student)->postJson("/api/v1/sessions/{$session->id}/end")->assertOk();
 
+        // Leaving doesn't finalize the attempt, and the score stays untouched
         $session->refresh();
-        $this->assertSame('completed', $session->status);
+        $this->assertSame('in_progress', $session->status);
         $this->assertEquals(0.0, $session->performance_score);
     }
 

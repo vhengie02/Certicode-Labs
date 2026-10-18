@@ -23,6 +23,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     private _chatPollInterval?: any;
     private _isReconnecting: boolean = false;
     private _lastSessionData: any = null;
+    // A check-progress or submit is waiting on the grader; further clicks are ignored until it answers
+    private _gradingInFlight: boolean = false;
 
     // Feature 1: Starter Files & Integrity
     private _starterFileSnapshots: Map<string, string> = new Map();
@@ -1439,7 +1441,40 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         return collected;
     }
 
+    /**
+     * Run one grading request at a time. Grading can take a minute, and a second click used to
+     * start another full grading run on the server.
+     */
+    private async runGrading(grade: () => Promise<void>) {
+        if (this._gradingInFlight) {
+            vscode.window.showInformationMessage('Your code is still being graded. The result will appear here when it is ready.');
+            return;
+        }
+        this._gradingInFlight = true;
+        try {
+            await grade();
+        } finally {
+            this._gradingInFlight = false;
+        }
+    }
+
+    /**
+     * The server's explanation for a failed request: its message, else its error code.
+     */
+    private failureReason(body: string, fallback: string): string {
+        try {
+            const data = JSON.parse(body);
+            return data.message || data.error || fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
     private async handleCheckProgress() {
+        return this.runGrading(() => this.checkProgress());
+    }
+
+    private async checkProgress() {
         if (!this._sessionId) {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
@@ -1495,12 +1530,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 });
                 this.syncSessionState();
             } else {
-                const responseData = JSON.parse(result.body);
-                vscode.window.showErrorMessage(`Check Progress Failed: ${responseData.error || 'Server error'}`);
-                this._view?.webview.postMessage({
-                    type: 'error',
-                    message: responseData.error || 'Check progress failed.'
-                });
+                const reason = this.failureReason(result.body, 'Check progress failed.');
+                vscode.window.showErrorMessage(`Check Progress Failed: ${reason}`);
+                this._view?.webview.postMessage({ type: 'error', message: reason });
+                if (result.status === 409) {
+                    this.syncSessionState();
+                }
             }
         } catch (err: any) {
             vscode.window.showErrorMessage(`Check Progress Connection Error: ${err.message}`);
@@ -1509,6 +1544,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     private async handleSubmit() {
+        return this.runGrading(() => this.submit());
+    }
+
+    private async submit() {
         if (!this._sessionId) {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
@@ -1573,12 +1612,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     }
                 });
             } else {
-                const responseData = JSON.parse(result.body);
-                vscode.window.showErrorMessage(`Submission Failed: ${responseData.error || 'Server error'}`);
-                this._view?.webview.postMessage({
-                    type: 'error',
-                    message: responseData.error || 'Submission failed.'
-                });
+                const reason = this.failureReason(result.body, 'Submission failed.');
+                vscode.window.showErrorMessage(`Submission Failed: ${reason}`);
+                this._view?.webview.postMessage({ type: 'error', message: reason });
+                if (result.status === 409) {
+                    this.syncSessionState();
+                }
             }
         } catch (err: any) {
             vscode.window.showErrorMessage(`Submission Connection Error: ${err.message}`);
@@ -1589,7 +1628,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     private async handleExit(confirmExit: boolean = true) {
         if (confirmExit) {
             const confirm = await vscode.window.showWarningMessage(
-                'Are you sure you want to exit this workspace? Any unsaved editor content or unsubmitted progress will remain pending.',
+                'Are you sure you want to exit this workspace? Your attempt stays open: come back from the lab page to continue and submit before time runs out.',
                 { modal: true },
                 'Confirm Exit'
             );
@@ -2397,6 +2436,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             show(liveLabAlert);
         }
 
+        // Set from the 'status' message until the grade (or an error) comes back, so the
+        // periodic session refresh doesn't turn the buttons back on mid-grade
+        let gradingInFlight = false;
+
         function setActionsLocked(locked) {
             checkProgressBtn.disabled = locked;
             submitBtn.disabled = locked || !isIntegrityValid;
@@ -2564,6 +2607,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             const message = event.data;
             switch (message.type) {
                 case 'status':
+                    gradingInFlight = true;
                     actionStatus.textContent = message.message;
                     show(actionStatus);
                     checkProgressBtn.disabled = true;
@@ -2571,6 +2615,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     break;
 
                 case 'error':
+                    gradingInFlight = false;
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
                     submitBtn.disabled = !isIntegrityValid;
@@ -2726,6 +2771,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
                 case 'checkResult':
                 case 'submitResult': {
+                    gradingInFlight = false;
                     show(actionStatus, false);
                     checkProgressBtn.disabled = message.type === 'submitResult';
                     submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
@@ -2810,10 +2856,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             if (!session || !session.laboratory) return;
             if (connectionScreen.style.display !== 'none' && !INITIAL_SESSION_ID) return;
 
-            show(actionStatus, false);
+            // Mid-grade, keep the "grading" status and the locked buttons
+            if (!gradingInFlight) {
+                show(actionStatus, false);
+            }
             show(connectError, false);
-            checkProgressBtn.disabled = false;
-            submitBtn.disabled = !isIntegrityValid;
+            const attemptClosed = session.status !== 'in_progress';
+            setActionsLocked(gradingInFlight || attemptClosed);
 
             connectionScreen.style.display = 'none';
             sessionScreen.style.display = 'flex';
@@ -2907,7 +2956,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 setActionsLocked(true);
             } else {
                 setLiveAlert(null);
-                setActionsLocked(false);
+                setActionsLocked(gradingInFlight || attemptClosed);
             }
 
             // Timer

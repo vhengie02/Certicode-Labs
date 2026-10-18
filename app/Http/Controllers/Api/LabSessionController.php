@@ -615,6 +615,10 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
+        if (!$session->acceptsWork()) {
+            return $this->attemptClosedResponse($session);
+        }
+
         $request->validate([
             'code' => 'nullable|string',
             'files' => 'nullable|array',
@@ -622,6 +626,11 @@ class LabSessionController extends Controller
             'diagnostics' => 'nullable|array',
         ]);
 
+        return $this->whileGrading($session, fn () => $this->gradeProgress($request, $session));
+    }
+
+    private function gradeProgress(Request $request, LabSession $session)
+    {
         $code = $request->code;
         if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
             foreach ($request->input('files') as $f) {
@@ -649,12 +658,16 @@ class LabSessionController extends Controller
             }
         }
 
-        $session->update([
+        $session = $this->updateIfInProgress($session, null, [
             'completed_tasks' => $completedTasks,
             'performance_score' => (float) ($evaluation['correctness_score'] ?? $session->performance_score),
             'submitted_code' => $code,
             'submitted_files' => $request->input('files'),
-        ]);
+        ]) ?? $session->refresh();
+
+        if ($session->status !== 'in_progress') {
+            return $this->attemptClosedResponse($session);
+        }
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,
@@ -691,12 +704,25 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
+        // A finished, timed-out or live-closed attempt keeps its grade: no regrading
+        if (!$session->acceptsWork()) {
+            return $this->attemptClosedResponse($session);
+        }
+
         $request->validate([
             'code' => 'nullable|string',
             'files' => 'nullable|array',
             'language' => 'required|string',
             'diagnostics' => 'nullable|array',
         ]);
+
+        return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
+    }
+
+    private function gradeSubmission(Request $request, LabSession $session)
+    {
+        // Whole seconds, to compare with the stored ended_at
+        $gradingStartedAt = now()->startOfSecond();
 
         $code = $request->code;
         if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
@@ -730,7 +756,7 @@ class LabSessionController extends Controller
         }
 
         $finalScore = (float) ($evaluation['correctness_score'] ?? 0.0);
-        $session->update([
+        $completed = $this->updateIfInProgress($session, $gradingStartedAt, [
             'status' => 'completed',
             'ended_at' => now(),
             'completed_tasks' => $completedTasks,
@@ -739,6 +765,11 @@ class LabSessionController extends Controller
             'submitted_code' => $code,
             'submitted_files' => $request->input('files'),
         ]);
+
+        if (!$completed) {
+            return $this->attemptClosedResponse($session->refresh());
+        }
+        $session = $completed;
 
         // Competency scores follow from the update above (LabSession's save hook)
 
@@ -779,6 +810,66 @@ class LabSessionController extends Controller
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
         ]);
+    }
+
+    /**
+     * The answer to grading or submitting an attempt that is no longer open.
+     */
+    private function attemptClosedResponse(LabSession $session)
+    {
+        return response()->json([
+            'error' => 'session_not_in_progress',
+            'message' => $session->status === 'in_progress'
+                ? 'Time is up for this lab, so it can no longer be graded.'
+                : 'This lab attempt has already ended, so it can no longer be graded.',
+            'session_status' => $session->status,
+        ], 409);
+    }
+
+    /**
+     * Grade while holding the session's grading lock, so a check-progress and a submit (or
+     * two of either) never grade one attempt at once. The lock is in the database cache
+     * store, shared by every serverless instance, and expires on its own if a request dies.
+     */
+    private function whileGrading(LabSession $session, \Closure $grade)
+    {
+        $lock = \Illuminate\Support\Facades\Cache::store('database')->lock("lab_session_{$session->id}_grading", 90);
+
+        if (!$lock->get()) {
+            return response()->json([
+                'error' => 'grading_in_progress',
+                'message' => 'This lab is already being graded. Wait for that result before trying again.',
+            ], 409);
+        }
+
+        try {
+            return $grade();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Save a grade only while the attempt is still open, checked under a row lock. A submit
+     * also lands if the attempt was closed after its grading began (time ran out or the live
+     * lab ended mid-grade), since it was sent in time. Returns null when nothing was saved.
+     */
+    private function updateIfInProgress(LabSession $session, ?\Carbon\CarbonInterface $acceptClosedSince, array $attributes): ?LabSession
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($session, $acceptClosedSince, $attributes) {
+            $current = LabSession::whereKey($session->id)->lockForUpdate()->first();
+
+            $open = $current && ($current->status === 'in_progress'
+                || ($acceptClosedSince && $current->ended_at && $current->ended_at->gte($acceptClosedSince)));
+            if (!$open) {
+                return null;
+            }
+
+            $current->setRelation('laboratory', $session->laboratory);
+            $current->update($attributes);
+
+            return $current;
+        });
     }
 
     /**
@@ -1129,11 +1220,33 @@ class LabSessionController extends Controller
     }
 
     /**
-     * End session and purge ephemeral records.
+     * Leave a lab session (the extension's Exit, the lab page's "stop proctoring").
+     *
+     * For the student this only records that they left: the attempt stays open, so they can
+     * come back and submit, and it ends through submit, time running out or the instructor.
+     * Ending it here used to finalize it ungraded, which cost students their only attempt.
+     * Staff still end the session outright, as from the monitoring page.
      */
-    public function endSession(int $sessionId)
+    public function endSession(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
+
+        if (!in_array($request->user()?->role, ['admin', 'instructor'], true)) {
+            if ($session->status === 'in_progress') {
+                TelemetryLog::create([
+                    'lab_session_id' => $session->id,
+                    'event_type' => 'session_left',
+                    'payload' => ['timestamp' => now()->toIso8601String()],
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'You left the lab. Your attempt stays open until you submit it or time runs out.',
+                'session' => $session,
+            ]);
+        }
+
         $session->update([
             'status' => 'completed',
             'ended_at' => $session->ended_at ?: now(),

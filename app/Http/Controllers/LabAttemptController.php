@@ -146,6 +146,11 @@ class LabAttemptController extends Controller
             $this->authorizeSessionManager($session);
         }
 
+        // Only an open attempt can be completed: a timed-out or already finished one keeps its result
+        if (!$session->acceptsWork()) {
+            return back()->with('error', 'This lab attempt has already ended, so it can no longer be completed.');
+        }
+
         $session->update([
             'status' => 'completed',
             'ended_at' => now(),
