@@ -819,7 +819,8 @@
                                         <div class="bg-[#0f0f0f] p-3.5">
                                             <p class="text-xs text-[#888888]">Final grade</p>
                                             <p class="mt-1 text-2xl font-semibold tabular-nums text-[#ededed]" x-text="formatScore(student.effective_score) + '%'"></p>
-                                            <p class="text-xs mt-0.5" :class="student.is_overridden ? 'text-[#3ecf8e]' : 'text-[#888888]'" x-text="student.is_overridden ? 'Your grade' : 'AI grade'"></p>
+                                            <p class="text-xs mt-0.5" :class="student.is_overridden ? 'text-[#3ecf8e]' : (student.ai_grade_summary && student.ai_grade_summary.needs_review ? 'text-amber-300' : 'text-[#888888]')"
+                                               x-text="student.is_overridden ? 'Your grade' : (student.ai_grade_summary && student.ai_grade_summary.needs_review ? 'Provisional: needs your review' : 'AI grade')"></p>
                                         </div>
                                         <div class="bg-[#0f0f0f] p-3.5">
                                             <p class="text-xs text-[#888888]">AI grade</p>
@@ -838,6 +839,9 @@
 
                                     <section aria-labelledby="ai-grade-heading">
                                         <h4 id="ai-grade-heading" class="text-sm font-medium text-[#ededed]">How the AI graded this</h4>
+                                        <template x-if="student.ai_grade_summary && student.ai_grade_summary.needs_review && !student.is_overridden">
+                                            <p class="mt-2 text-sm text-amber-200 border-l-2 border-amber-400/50 pl-2.5" x-text="student.ai_grade_summary.grader_note + ' Check the code and save a grade below.'"></p>
+                                        </template>
                                         <template x-if="student.is_team">
                                             <p class="mt-0.5 text-xs text-[#888888]">The team's combined code is graded as one submission.</p>
                                         </template>

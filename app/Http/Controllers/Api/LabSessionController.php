@@ -820,6 +820,7 @@ class LabSessionController extends Controller
         $session->notifyStudents(
             "Lab submitted: {$labTitle}",
             "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (" . count($completedTasks) . ' tasks passed).'
+                . (!empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : '')
         );
 
         $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
