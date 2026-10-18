@@ -11,6 +11,7 @@ const EXTENSION_VERSION: string = vscode.extensions.getExtension('certicode.cert
 // (up to ~25 s + 45 s, capped at 60 s on Vercel), so they get more than the default 15 s.
 const GRADING_TIMEOUT_MS = 90000;
 const TRUSTED_BACKENDS_KEY = 'certicode.trustedBackends';
+const STARTER_OWNERS_KEY = 'certicode.starterFileOwners';
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
 
@@ -312,6 +313,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         const origin = await this.ensureTrustedBackend(backendUrl);
         if (!origin) {
             return false;
+        }
+
+        // Another lab or attempt: forget the previous one's starter baseline, read-only files
+        // and session data, so diffs and paste checks compare against this lab's files
+        if (this._sessionId !== sessionId) {
+            this._starterFileSnapshots.clear();
+            this._readonlyFiles.clear();
+            this._lastSessionData = null;
+            this._filesGenerated = false;
         }
 
         this._backendUrl = origin;
@@ -781,6 +791,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     /**
+     * The session that wrote each starter file in a workspace folder (file name -> session id).
+     */
+    private starterFileOwners(rootUri: vscode.Uri): Record<string, number> {
+        return { ...this._globalState.get<Record<string, number>>(`${STARTER_OWNERS_KEY}:${rootUri.toString()}`, {}) };
+    }
+
+    private async saveStarterFileOwners(rootUri: vscode.Uri, owners: Record<string, number>) {
+        await this._globalState.update(`${STARTER_OWNERS_KEY}:${rootUri.toString()}`, owners);
+    }
+
+    /**
      * Feature 1: Generate starter files in active workspace and open primary file.
      */
     private async provisionStarterFiles(starterFiles: Array<{ name: string; content: string; is_primary?: boolean; is_readonly?: boolean }>) {
@@ -819,6 +840,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         const rootUri = workspaceFolders[0].uri;
         let primaryUri: vscode.Uri | null = null;
+        const enc = new TextEncoder();
+        const sessionId = this._sessionId;
+        // Which session wrote each starter file here, so a returning student keeps their work
+        // while a different lab (or a new attempt) in the same folder gets its own files
+        const owners = this.starterFileOwners(rootUri);
+        const fromElsewhere: Array<{ name: string; uri: vscode.Uri; content: string }> = [];
 
         for (const file of starterFiles) {
             const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
@@ -829,10 +856,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 continue;
             }
 
-            // Cache snapshot for diff engine
-            if (!this._starterFileSnapshots.has(file.name)) {
-                this._starterFileSnapshots.set(file.name, file.content || '');
-            }
+            // Cache snapshot for diff engine (cleared when the session changes)
+            this._starterFileSnapshots.set(file.name, file.content || '');
 
             let exists = false;
             try {
@@ -843,14 +868,48 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }
 
             if (!exists) {
-                const enc = new TextEncoder();
                 await vscode.workspace.fs.writeFile(fileUri, enc.encode(file.content || ''));
+                owners[file.name] = sessionId!;
+            } else if (owners[file.name] !== sessionId) {
+                const current = new TextDecoder().decode(await vscode.workspace.fs.readFile(fileUri));
+                if (current === (file.content || '')) {
+                    owners[file.name] = sessionId!;
+                } else {
+                    fromElsewhere.push({ name: file.name, uri: fileUri, content: file.content || '' });
+                }
             }
 
             if (file.is_primary) {
                 primaryUri = fileUri;
             }
         }
+
+        if (fromElsewhere.length > 0) {
+            const names = fromElsewhere.map(f => f.name).join(', ');
+            const choice = await vscode.window.showWarningMessage(
+                `This folder already has ${names} from another lab or attempt. Replace ${fromElsewhere.length === 1 ? 'it' : 'them'} with this lab's starter files? The current ${fromElsewhere.length === 1 ? 'copy is' : 'copies are'} saved in .certicode/previous first.`,
+                { modal: true },
+                'Replace files',
+                'Keep my files'
+            );
+            if (choice === 'Replace files') {
+                const backupRoot = vscode.Uri.joinPath(rootUri, '.certicode', 'previous', String(Date.now()));
+                for (const file of fromElsewhere) {
+                    const old = await vscode.workspace.fs.readFile(file.uri);
+                    const backupUri = this.resolveWorkspaceFile(backupRoot, file.name);
+                    if (backupUri) {
+                        await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(backupUri, '..'));
+                        await vscode.workspace.fs.writeFile(backupUri, old);
+                    }
+                    await vscode.workspace.fs.writeFile(file.uri, enc.encode(file.content));
+                    owners[file.name] = sessionId!;
+                }
+            } else if (choice === 'Keep my files') {
+                // The student chose to work on what is there; don't ask again for this session
+                fromElsewhere.forEach(f => { owners[f.name] = sessionId!; });
+            }
+        }
+        await this.saveStarterFileOwners(rootUri, owners);
 
         await this.applyReadonlyStarterFiles(rootUri, starterFiles);
 
@@ -978,13 +1037,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     );
                 }
 
-                // Flagging Rule: External paste without internal/chat justification
-                if (!isSuppressedA && !isSuppressedB) {
-                    this.sendTelemetry('paste_anomaly', {
-                        pasted_length: change.text.length,
-                        snippet: change.text.slice(0, 2000),
-                        file: vscode.workspace.asRelativePath(event.document.uri),
-                        wpm: this._currentWpm
+                // Flagging Rule: External paste without internal/chat justification. Snippets,
+                // quick fixes, completions and reloads from disk also insert big blocks, so only
+                // flag text that is really on the clipboard, in a document the student edited.
+                if (!isSuppressedA && !isSuppressedB && event.document.isDirty) {
+                    const file = vscode.workspace.asRelativePath(event.document.uri);
+                    const wpm = this._currentWpm;
+                    void this.matchesClipboard(change.text).then(fromClipboard => {
+                        if (fromClipboard) {
+                            this.sendTelemetry('paste_anomaly', {
+                                pasted_length: change.text.length,
+                                snippet: change.text.slice(0, 2000),
+                                file,
+                                wpm
+                            });
+                        }
                     });
                 }
             }
@@ -998,6 +1065,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 this.computeAndSyncDiffs();
             }, 2000);
         }
+    }
+
+    /**
+     * Whether inserted text is what is on the clipboard, ignoring whitespace (pasting re-indents).
+     */
+    private async matchesClipboard(inserted: string): Promise<boolean> {
+        let clipboard = '';
+        try {
+            clipboard = await vscode.env.clipboard.readText();
+        } catch {
+            return false;
+        }
+        const squash = (text: string) => text.replace(/\s+/g, '');
+        const pasted = squash(inserted);
+        return pasted.length > 0 && squash(clipboard) === pasted;
     }
 
     /**
