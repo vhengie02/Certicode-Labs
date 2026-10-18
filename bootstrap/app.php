@@ -17,6 +17,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // First, so its numbers include session start and auth lookups
         $middleware->prepend(\App\Http\Middleware\ServerTiming::class);
         $middleware->appendToGroup('web', \App\Http\Middleware\PreventAuthenticatedCaching::class);
+        // Before StartSession: the extension's cookieless token calls must not create session rows
+        $middleware->prependToGroup('web', \App\Http\Middleware\SkipSessionForExtensionToken::class);
         $middleware->alias([
             'lab.session' => \App\Http\Middleware\AuthorizeLabSession::class,
             'admin' => \App\Http\Middleware\EnsureAdmin::class,

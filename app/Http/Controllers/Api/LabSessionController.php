@@ -549,11 +549,10 @@ class LabSessionController extends Controller
             $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
         }
 
-        if ($session->status === 'in_progress') {
-            $session->update(['last_ping_at' => now()]);
-        }
+        // Reading the session is not a heartbeat: the lab page polls this while it waits for
+        // VS Code and pings /ping on its own. Only the extension's read below counts.
 
-        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
+        $colors =['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $currentUser = $request->user() ?? $session->user;
         $userId = $currentUser ? $currentUser->id : 1;
         $userName = $currentUser ? $currentUser->name : 'Student';
