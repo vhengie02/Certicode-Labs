@@ -939,6 +939,13 @@ class ClassController extends Controller
         $session = \App\Models\LabSession::findOrFail($id);
         $this->authorizeSessionManager($session);
 
+        if ($session->hasOtherOpenAttempt()) {
+            $message = 'This student has another attempt open on this lab. End that one before reopening this one.';
+            return $request->wantsJson()
+                ? response()->json(['error' => 'other_attempt_open', 'message' => $message], 409)
+                : back()->with('error', $message);
+        }
+
         $session->update([
             'status' => 'in_progress',
             'ended_at' => null,

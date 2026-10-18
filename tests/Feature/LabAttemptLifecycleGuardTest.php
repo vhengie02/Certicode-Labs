@@ -107,6 +107,8 @@ class LabAttemptLifecycleGuardTest extends TestCase
         $this->actingAs($this->student)->postJson("/api/v1/sessions/{$late->id}/submit", self::CODE)->assertStatus(409);
         $this->assertSame('in_progress', $late->fresh()->status);
 
+        // A student has one open attempt per lab (unique index), so end that one first
+        $late->update(['status' => 'abandoned']);
         $justInTime = $this->labSession('in_progress', now()->subMinutes(45)->subSeconds(30));
         $this->actingAs($this->student)->postJson("/api/v1/sessions/{$justInTime->id}/submit", self::CODE)->assertOk();
         $this->assertSame('completed', $justInTime->fresh()->status);

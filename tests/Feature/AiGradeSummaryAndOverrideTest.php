@@ -290,6 +290,8 @@ JAVA;
             'lab_id' => $this->lab->id,
         ]);
 
+        // One open attempt per student and lab: this one replaces the setUp session
+        $this->session->update(['status' => 'abandoned']);
         $teamSession = LabSession::create([
             'lab_id' => $this->lab->id,
             'user_id' => $this->student->id,

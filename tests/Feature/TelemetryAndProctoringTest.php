@@ -807,13 +807,9 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
 
         $this->session1->update(['group_id' => $group->id]);
-        $session2 = \App\Models\LabSession::create([
-            'lab_id' => $this->laboratory->id,
-            'user_id' => $this->student2->id,
-            'group_id' => $group->id,
-            'status' => 'in_progress',
-            'started_at' => now(),
-        ]);
+        // student2's open attempt from setUp joins the team (one open attempt per student and lab)
+        $this->session2->update(['group_id' => $group->id, 'started_at' => now()]);
+        $session2 = $this->session2;
 
         // Teammate 1 is actively working
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
@@ -847,6 +843,8 @@ class TelemetryAndProctoringTest extends TestCase
      */
     public function test_wpm_calculation_does_not_exclude_idle_time()
     {
+        // One open attempt per student and lab: this one replaces the setUp session
+        $this->session1->update(['status' => 'abandoned']);
         $session = \App\Models\LabSession::create([
             'lab_id' => $this->laboratory->id,
             'user_id' => $this->student1->id,

@@ -53,40 +53,13 @@ class LabSessionController extends Controller
             }
         }
 
-        // Find or create session
-        $session = LabSession::where('lab_id', $lab->id)
-            ->where('user_id', $user->id)
-            ->where('status', 'in_progress')
-            ->latest()
-            ->first();
-
-        // If session exists but has exceeded its time limit, mark it abandoned and start fresh
-        if ($session && $lab->time_limit > 0) {
-            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
-            if ($elapsed >= ($lab->time_limit * 60)) {
-                $session->update([
-                    'status' => 'abandoned',
-                    'ended_at' => now(),
-                ]);
-                $session = null;
-            }
-        }
-
-        if (!$session && !$lab->canStartNewAttempt($user)) {
+        // Resume the open attempt or start one (shared with the web start route)
+        $session = $lab->findOrStartAttemptFor($user);
+        if (!$session) {
             return response()->json([
                 'error' => 'attempts_exhausted',
                 'message' => 'You have used all your attempts for this lab. Ask your instructor if you need another one.',
             ], 403);
-        }
-
-        if (!$session) {
-            $session = LabSession::create([
-                'lab_id' => $lab->id,
-                'user_id' => $user->id,
-                'status' => 'in_progress',
-                'started_at' => now(),
-                'performance_score' => 0.0,
-            ]);
         }
 
         return response()->json([
@@ -1354,6 +1327,12 @@ class LabSessionController extends Controller
         }
 
         $session = LabSession::findOrFail($sessionId);
+        if ($session->hasOtherOpenAttempt()) {
+            return response()->json([
+                'error' => 'other_attempt_open',
+                'message' => 'This student has another attempt open on this lab. End that one before reopening this one.',
+            ], 409);
+        }
         $session->update([
             'status' => 'in_progress',
             'ended_at' => null,

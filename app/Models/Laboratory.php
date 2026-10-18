@@ -371,6 +371,60 @@ class Laboratory extends Model
     }
 
     /**
+     * The user's open attempt on this lab, or a new one if they may start one; null when they
+     * have used all their attempts. An open attempt past the lab's time limit is abandoned
+     * first. The database allows one open attempt per user and lab (a partial unique index),
+     * so two starts at once (a double click, the page and the extension together) both end
+     * up with the same attempt instead of two.
+     */
+    public function findOrStartAttemptFor(User $user): ?LabSession
+    {
+        $session = $this->openAttemptOf($user);
+
+        if ($session && $this->time_limit > 0) {
+            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
+            if ($elapsed >= ($this->time_limit * 60)) {
+                $session->update([
+                    'status' => 'abandoned',
+                    'ended_at' => now(),
+                ]);
+                $session = null;
+            }
+        }
+
+        if ($session) {
+            return $session;
+        }
+        if (!$this->canStartNewAttempt($user)) {
+            return null;
+        }
+
+        try {
+            // A savepoint when already inside a transaction, so a lost race doesn't abort it
+            return \Illuminate\Support\Facades\DB::transaction(fn () => LabSession::create([
+                'lab_id' => $this->id,
+                'user_id' => $user->id,
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'performance_score' => 0.0,
+            ]));
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Another request opened it a moment ago
+            return $this->openAttemptOf($user);
+        }
+    }
+
+    private function openAttemptOf(User $user): ?LabSession
+    {
+        return $this->labSessions()
+            ->where('user_id', $user->id)
+            ->where('status', 'in_progress')
+            ->latest()
+            ->latest('id')
+            ->first();
+    }
+
+    /**
      * Get the groups created for this laboratory.
      */
     public function groups()

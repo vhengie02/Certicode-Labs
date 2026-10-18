@@ -51,42 +51,15 @@ class LabAttemptController extends Controller
             return back()->with('error', $message);
         }
 
-        // Find existing in-progress session
-        $session = \App\Models\LabSession::where('lab_id', $laboratory->id)
-            ->where('user_id', $user ? $user->id : null)
-            ->where('status', 'in_progress')
-            ->latest()
-            ->first();
-
-        // If session exists but has exceeded its time limit, mark it abandoned and start fresh
-        if ($session && $laboratory->time_limit > 0) {
-            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
-            if ($elapsed >= ($laboratory->time_limit * 60)) {
-                $session->update([
-                    'status' => 'abandoned',
-                    'ended_at' => now(),
-                ]);
-                $session = null;
-            }
-        }
-
-        if (!$session && $user && !$laboratory->canStartNewAttempt($user)) {
+        // Resume the open attempt or start one (shared with the extension API's start route)
+        $session = $laboratory->findOrStartAttemptFor($user);
+        if (!$session) {
             $message = 'You have used all your attempts for this lab. Ask your instructor if you need another one.';
             if ($request->wantsJson() || $request->ajax()) {
                 return response()->json(['error' => 'attempts_exhausted', 'message' => $message], 403);
             }
 
             return back()->with('error', $message);
-        }
-
-        if (!$session) {
-            $session = \App\Models\LabSession::create([
-                'lab_id' => $laboratory->id,
-                'user_id' => $user ? $user->id : null,
-                'status' => 'in_progress',
-                'started_at' => now(),
-                'performance_score' => 0.0,
-            ]);
         }
 
         // Attach prelab verification telemetry if verified. A low-light pass skipped face
