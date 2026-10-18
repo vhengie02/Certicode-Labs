@@ -303,7 +303,8 @@ class LlmEvaluationService
     {
         $client = new \Anthropic\Client(
             apiKey: (string) config('services.anthropic.key'),
-            requestOptions: ['transporter' => $this->graderTransport(), 'maxRetries' => 1],
+            // No retry: a second 40 s attempt can't fit in Vercel's 60 s limit
+            requestOptions: ['transporter' => $this->graderTransport(), 'maxRetries' => 0],
         );
 
         $message = $client->beta->messages->create(
@@ -342,12 +343,13 @@ class LlmEvaluationService
     }
 
     /**
-     * HTTP client for the Claude call. The SDK leaves timeouts to the transport; 45 s keeps a grade
-     * inside Vercel's 60 s function limit. Overridable so tests can use a mock handler.
+     * HTTP client for the Claude call. The SDK leaves timeouts to the transport; 40 s keeps a grade
+     * inside Vercel's 60 s function limit with room for the rest of the request. Overridable so
+     * tests can use a mock handler.
      */
     protected function graderTransport(): \Psr\Http\Client\ClientInterface
     {
-        return new \GuzzleHttp\Client(['timeout' => 45, 'connect_timeout' => 5]);
+        return new \GuzzleHttp\Client(['timeout' => 40, 'connect_timeout' => 5]);
     }
 
     /**

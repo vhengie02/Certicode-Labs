@@ -718,6 +718,8 @@ class LabSessionController extends Controller
     {
         // Whole seconds, to compare with the stored ended_at
         $gradingStartedAt = now()->startOfSecond();
+        // Vercel stops the function at 60 s; the grade must be saved well before that
+        $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
 
         $code = $request->code;
         if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
@@ -733,8 +735,11 @@ class LabSessionController extends Controller
         }
         $code = $code ?? '';
 
-        // Execute code
-        $executionResult = $this->sandboxService->execute($code, $request->language);
+        // Keep the code before grading, so a request cut off mid-grade doesn't lose it.
+        // The attempt stays open, so the student can submit again.
+        if (!$this->updateIfInProgress($session, null, ['submitted_code' => $code, 'submitted_files' => $request->input('files')])) {
+            return $this->attemptClosedResponse($session->refresh());
+        }
 
         // AI task-completion evaluation
         $diagnostics = $this->submittedFileDiagnostics($request);
@@ -767,6 +772,13 @@ class LabSessionController extends Controller
         $session = $completed;
 
         // Competency scores follow from the update above (LabSession's save hook)
+
+        // The run doesn't affect the grade; it only shows the student their output or compile
+        // error. It gets whatever is left of the budget once the grade is saved, or is skipped.
+        $secondsLeft = (int) now()->diffInSeconds($deadline, false);
+        $executionResult = $secondsLeft >= self::MIN_EXECUTION_SECONDS
+            ? $this->sandboxService->execute($code, $request->language, min(25, $secondsLeft))
+            : ['status' => 'skipped'];
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,
@@ -801,11 +813,15 @@ class LabSessionController extends Controller
             'performance_score' => $session->performance_score,
             // The extension shows any execution errors as a compile error, so leave out the
             // "code execution is not set up" result: the code was still graded
-            'execution' => ($executionResult['status'] ?? null) === 'unavailable' ? null : $executionResult,
+            'execution' => in_array($executionResult['status'] ?? null, ['unavailable', 'skipped'], true) ? null : $executionResult,
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
         ]);
     }
+
+    /** Seconds a submit may use in all (Vercel stops the function at 60), and the least worth giving a code run. */
+    private const SUBMIT_BUDGET_SECONDS = 50;
+    private const MIN_EXECUTION_SECONDS = 5;
 
     /**
      * The answer to grading or submitting an attempt that is no longer open.
