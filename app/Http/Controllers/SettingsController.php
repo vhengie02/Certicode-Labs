@@ -56,7 +56,7 @@ class SettingsController extends Controller
         $user = auth()->user();
 
         $request->validate([
-            'gmail' => 'required|email|unique:users,gmail,' . $user->id,
+            'gmail' => ['required', 'email', new \App\Rules\UniqueEmail('gmail', $user->id)],
         ]);
 
         if (!app()->runningUnitTests()) {
@@ -240,7 +240,7 @@ class SettingsController extends Controller
             'last_name' => 'required|string|max:255',
             'username' => 'required|string|max:255|unique:users,username,' . $user->id,
             'gender' => 'nullable|string|in:male,female,other',
-            'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $user->id,
+            'email' => ['sometimes', 'required', 'string', 'email', 'max:255', new \App\Rules\UniqueEmail(ignoreUserId: $user->id)],
         ]);
 
         $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];

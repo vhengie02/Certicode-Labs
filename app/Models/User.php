@@ -55,6 +55,44 @@ class User extends Authenticatable
      *
      * @return array<string, string>
      */
+    /**
+     * Email addresses are stored trimmed and lowercased. Postgres compares strings case-
+     * sensitively, so 'Ana@x.com' and 'ana@x.com' would otherwise be two accounts.
+     */
+    public static function normalizeEmail(?string $email): ?string
+    {
+        return $email === null ? null : mb_strtolower(trim($email));
+    }
+
+    protected function email(): \Illuminate\Database\Eloquent\Casts\Attribute
+    {
+        return \Illuminate\Database\Eloquent\Casts\Attribute::make(set: fn ($value) => static::normalizeEmail($value));
+    }
+
+    protected function gmail(): \Illuminate\Database\Eloquent\Casts\Attribute
+    {
+        return \Illuminate\Database\Eloquent\Casts\Attribute::make(set: fn ($value) => static::normalizeEmail($value));
+    }
+
+    /**
+     * Match an account email whatever its case, so accounts saved before emails were
+     * lowercased are still found.
+     */
+    public function scopeWhereEmailIs($query, ?string $email)
+    {
+        return $query->whereRaw('lower(email) = ?', [static::normalizeEmail((string) $email)]);
+    }
+
+    public function scopeWhereGmailIs($query, ?string $gmail)
+    {
+        return $query->whereRaw('lower(gmail) = ?', [static::normalizeEmail((string) $gmail)]);
+    }
+
+    public static function findByEmail(?string $email): ?self
+    {
+        return $email === null || trim($email) === '' ? null : static::query()->whereEmailIs($email)->first();
+    }
+
     protected function casts(): array
     {
         return [
