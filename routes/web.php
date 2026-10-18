@@ -137,6 +137,7 @@ Route::middleware('auth')->group(function () {
     // Modules routing
     Route::get('/classes/{class_id}/modules/create', [ClassController::class, 'createModule'])->name('modules.create');
     Route::post('/classes/{class_id}/modules', [ClassController::class, 'storeModule'])->name('modules.store');
+    Route::post('/classes/{class_id}/modules/attachment-uploads', [ClassController::class, 'attachmentUpload'])->name('modules.attachment-uploads');
     Route::get('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'showModule'])->name('modules.show');
     Route::get('/classes/{class_id}/modules/{module_id}/edit', [ClassController::class, 'editModule'])->name('modules.edit');
     Route::put('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'updateModule'])->name('modules.update');

@@ -61,6 +61,26 @@ class ModuleAttachmentS3Test extends TestCase
         }
     }
 
+    public function test_direct_upload_is_a_five_minute_presigned_put_a_browser_can_send(): void
+    {
+        $this->assertTrue(ModuleAttachment::usesDirectUploads());
+
+        $upload = ModuleAttachment::issueDirectUpload(1, 'Week 1 slides.pdf');
+        $url = parse_url($upload['url']);
+        parse_str($url['query'] ?? '', $query);
+
+        $this->assertMatchesRegularExpression('#^module_attachments/[A-Za-z0-9]{40}\.pdf$#', $upload['key']);
+        $this->assertSame('abc123.storage.supabase.co', $url['host']);
+        $this->assertSame('/storage/v1/s3/attachments/' . $upload['key'], $url['path']);
+        $this->assertContains((int) $query['X-Amz-Expires'], [299, 300]);
+        $this->assertNotEmpty($query['X-Amz-Signature']);
+        // Only Host is signed and the browser sets it itself; a signed checksum or content
+        // header would make every browser PUT fail
+        $this->assertSame('host', $query['X-Amz-SignedHeaders']);
+        $this->assertSame([], $upload['headers']);
+        $this->assertEmpty(preg_grep('/checksum/i', array_keys($query)));
+    }
+
     public function test_cloud_disk_without_region_or_keys_is_not_treated_as_usable(): void
     {
         $this->assertTrue(ModuleAttachment::storageIsDurable());
