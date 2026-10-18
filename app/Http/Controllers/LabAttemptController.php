@@ -197,6 +197,7 @@ class LabAttemptController extends Controller
             'status' => 'completed',
             'ended_at' => now(),
         ]);
+        app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
 
         // Log completion in telemetry
         \App\Models\TelemetryLog::create([

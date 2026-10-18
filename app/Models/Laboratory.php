@@ -243,6 +243,11 @@ class Laboratory extends Model
             // Purge ephemeral chat
             \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
         }
+
+        // Those attempts are submissions now: compare them once for the monitoring page
+        if ($inProgressSessions->isNotEmpty()) {
+            app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($this->id);
+        }
     }
 
     /**

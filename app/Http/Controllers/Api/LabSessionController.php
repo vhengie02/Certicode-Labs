@@ -816,6 +816,10 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        // Compare the new submission with the cohort once, here, rather than on every view
+        // of the monitoring page
+        app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
+
         $labTitle = $session->laboratory->title ?? 'your lab';
         $session->notifyStudents(
             "Lab submitted: {$labTitle}",

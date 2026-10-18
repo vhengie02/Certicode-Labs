@@ -479,7 +479,8 @@
                     Similar submissions
                     <span class="ml-1.5 text-sm font-normal text-[#888888] tabular-nums" x-text="(plagiarism.total_students_with_code || 0) + ' compared'"></span>
                 </h3>
-                <p class="text-sm text-[#888888] mt-1 max-w-[65ch] text-pretty">Every pair of submitted solutions, compared by structure. Renamed variables don&rsquo;t hide a match, but shared starter code can raise a score, so check the code before acting.</p>
+                <p class="text-sm text-[#888888] mt-1 max-w-[65ch] text-pretty">Each student&rsquo;s latest submission, compared by structure with every other student&rsquo;s. Renamed variables don&rsquo;t hide a match. The starter code and teammates&rsquo; shared code don&rsquo;t count, but check the code before acting.</p>
+                <p class="text-xs text-[#666666] mt-1" x-show="plagiarism.computed_at" x-text="'Last compared ' + new Date(plagiarism.computed_at).toLocaleString() + '. Each submit compares again.'"></p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <button type="button" @click="showSimilarityMatrix = !showSimilarityMatrix" :aria-expanded="showSimilarityMatrix.toString()"
@@ -580,8 +581,8 @@
                                         <td class="p-0.5">
                                             <span class="block min-w-[3rem] px-2 py-1.5 rounded tabular-nums border"
                                                   :class="similarityCellClass(rowSt.session_id, colSt.session_id)"
-                                                  :title="rowSt.session_id === colSt.session_id ? '' : rowSt.name + ' & ' + colSt.name"
-                                                  x-text="rowSt.session_id === colSt.session_id ? '–' : similarityAt(rowSt.session_id, colSt.session_id).toFixed(0) + '%'"></span>
+                                                  :title="rowSt.session_id === colSt.session_id ? '' : (similarityAt(rowSt.session_id, colSt.session_id) === null ? 'Same team: not compared' : rowSt.name + ' & ' + colSt.name)"
+                                                  x-text="rowSt.session_id === colSt.session_id || similarityAt(rowSt.session_id, colSt.session_id) === null ? '–' : similarityAt(rowSt.session_id, colSt.session_id).toFixed(0) + '%'"></span>
                                         </td>
                                     </template>
                                 </tr>
@@ -1109,12 +1110,16 @@ function instructorMonitor() {
         selectedPair: null,
         plagiarism: @json($plagiarismAnalysis),
 
+        // null: a pair that isn't compared (teammates)
         similarityAt(a, b) {
-            return Number((this.plagiarism.matrix && this.plagiarism.matrix[a] && this.plagiarism.matrix[a][b]) || 0);
+            const row = this.plagiarism.matrix && this.plagiarism.matrix[a];
+            if (row && row[b] === null) return null;
+            return Number((row && row[b]) || 0);
         },
         similarityCellClass(a, b) {
             if (a === b) return 'border-transparent text-[#444444]';
             const v = this.similarityAt(a, b);
+            if (v === null) return 'border-transparent text-[#444444]';
             if (v >= 75) return 'border-red-500/40 bg-red-500/25 text-red-200 font-semibold';
             if (v >= 50) return 'border-amber-500/35 bg-amber-500/20 text-amber-200 font-medium';
             return 'border-[#2e2e2e] bg-[#232323] text-[#888888]';

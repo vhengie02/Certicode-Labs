@@ -69,8 +69,9 @@ class InstructorMonitoringController extends Controller
         $totalAnomalies = $sessions->sum(fn($s) => $s->anomalies->count());
         $avgWpm = $sessions->count() > 0 ? round($sessions->avg('wpm')) : 0;
 
+        // Stored at each submit; comparing every pair on each page view was O(n²) per load
         $similarityService = app(\App\Services\CodeSimilarityService::class);
-        $plagiarismAnalysis = $similarityService->analyzeLabCohort($laboratory->id, 75.0, 50.0);
+        $plagiarismAnalysis = $similarityService->labReport($laboratory->id);
 
         return compact(
             'laboratory',
@@ -97,8 +98,11 @@ class InstructorMonitoringController extends Controller
         $this->authorizeLabManager($laboratory);
         $threshold = (float) $request->query('threshold', 75.0);
 
+        // "Compare again": the default comparison also replaces the stored one
         $similarityService = app(\App\Services\CodeSimilarityService::class);
-        $results = $similarityService->analyzeLabCohort($laboratory->id, $threshold, 50.0);
+        $results = $threshold === 75.0
+            ? $similarityService->refreshLabReport($laboratory->id)
+            : $similarityService->analyzeLabCohort($laboratory->id, $threshold, 50.0);
 
         return response()->json([
             'status' => 'success',
