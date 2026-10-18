@@ -31,9 +31,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
         Route::post('/sessions/{sessionId}/vscode-disconnect', [LabSessionController::class, 'vscodeDisconnect']);
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
-        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
-        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
-        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);
+        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode'])->middleware('throttle:lab-execute');
+        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress'])->middleware('throttle:lab-grade');
+        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession'])->middleware('throttle:lab-grade');
         Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions']);
         Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
         Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
