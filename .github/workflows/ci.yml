@@ -67,6 +67,9 @@ jobs:
       # Same as production (the Supabase pooler needs emulated prepares), so the
       # App\Support\PostgresConnection boolean bindings are exercised
       DB_EMULATE_PREPARES: true
+      # Columns the database fills in (telemetry_logs.created_at) are read back as UTC.
+      # Production runs in UTC; this pins the session time zone (libpq reads PGTZ) to match.
+      PGTZ: UTC
     steps:
       - uses: actions/checkout@v7
 

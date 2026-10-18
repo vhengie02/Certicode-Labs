@@ -928,49 +928,53 @@ class ShowcaseAccountSeeder extends Seeder
         }
 
         try {
-            $existing = DB::select("SELECT id FROM auth.users WHERE email = ? LIMIT 1", [$email]);
-            if (!empty($existing)) {
-                return $existing[0]->id;
-            }
+            // In a transaction: without Supabase's auth schema the error rolls back to a savepoint
+            // instead of aborting a caller's transaction, and the two inserts land together
+            return DB::transaction(function () use ($email, $name, $role, $password) {
+                $existing = DB::select("SELECT id FROM auth.users WHERE email = ? LIMIT 1", [$email]);
+                if (!empty($existing)) {
+                    return $existing[0]->id;
+                }
 
-            $uuid = (string) Str::uuid();
-            $hashed = Hash::make($password);
+                $uuid = (string) Str::uuid();
+                $hashed = Hash::make($password);
 
-            DB::statement("
-                INSERT INTO auth.users (
-                    id, instance_id, aud, role, email, encrypted_password,
-                    email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
-                ) VALUES (
-                    '{$uuid}',
-                    '00000000-0000-0000-0000-000000000000',
-                    'authenticated',
-                    'authenticated',
-                    '{$email}',
-                    '{$hashed}',
-                    now(),
-                    '{\"provider\":\"email\",\"providers\":[\"email\"]}'::jsonb,
-                    jsonb_build_object('name', '{$name}', 'role', '{$role}'),
-                    now(),
-                    now()
-                )
-            ");
+                DB::statement("
+                    INSERT INTO auth.users (
+                        id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+                    ) VALUES (
+                        '{$uuid}',
+                        '00000000-0000-0000-0000-000000000000',
+                        'authenticated',
+                        'authenticated',
+                        '{$email}',
+                        '{$hashed}',
+                        now(),
+                        '{\"provider\":\"email\",\"providers\":[\"email\"]}'::jsonb,
+                        jsonb_build_object('name', '{$name}', 'role', '{$role}'),
+                        now(),
+                        now()
+                    )
+                ");
 
-            DB::statement("
-                INSERT INTO auth.identities (
-                    id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
-                ) VALUES (
-                    gen_random_uuid(),
-                    '{$uuid}',
-                    jsonb_build_object('sub', '{$uuid}', 'email', '{$email}'),
-                    'email',
-                    '{$uuid}',
-                    now(),
-                    now(),
-                    now()
-                )
-            ");
+                DB::statement("
+                    INSERT INTO auth.identities (
+                        id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+                    ) VALUES (
+                        gen_random_uuid(),
+                        '{$uuid}',
+                        jsonb_build_object('sub', '{$uuid}', 'email', '{$email}'),
+                        'email',
+                        '{$uuid}',
+                        now(),
+                        now(),
+                        now()
+                    )
+                ");
 
-            return $uuid;
+                return $uuid;
+            });
         } catch (\Throwable $e) {
             Log::warning("Could not sync with auth.users: " . $e->getMessage());
             return null;

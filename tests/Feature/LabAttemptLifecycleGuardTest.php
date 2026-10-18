@@ -11,6 +11,7 @@ use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -126,6 +127,19 @@ class LabAttemptLifecycleGuardTest extends TestCase
 
     public function test_a_second_grading_request_waits_for_the_first(): void
     {
+        // A taken database lock makes Laravel try an INSERT and catch the duplicate-key error.
+        // Postgres aborts the surrounding transaction on that error, and in tests that is
+        // RefreshDatabase's. Production takes the lock outside any transaction, so locks get
+        // their own connection here.
+        if (DB::getDriverName() === 'pgsql') {
+            config([
+                'database.connections.test_locks' => config('database.connections.' . config('database.default')),
+                'cache.stores.database.lock_connection' => 'test_locks',
+            ]);
+            // The rate limiter already built the store at boot, with the old lock connection
+            Cache::forgetDriver('database');
+        }
+
         $session = $this->labSession();
         $lock = Cache::store('database')->lock("lab_session_{$session->id}_grading", 90);
         $this->assertTrue($lock->get());
