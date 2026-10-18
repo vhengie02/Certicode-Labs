@@ -9,12 +9,15 @@ use Illuminate\Database\Seeder;
 class DatabaseSeeder extends Seeder
 {
     use WithoutModelEvents;
+    use RefusesProduction;
 
     /**
      * Seed the application's database.
      */
     public function run(): void
     {
+        $this->refuseInProduction();
+
         // 1. Seed Instructor
         $instructor = User::firstOrCreate(
             ['email' => 'instructor@example.com'],

@@ -22,11 +22,15 @@ use Illuminate\Support\Str;
 
 class ShowcaseAccountSeeder extends Seeder
 {
+    use RefusesProduction;
+
     /**
      * Run the database seeds.
      */
     public function run(): void
     {
+        $this->refuseInProduction();
+
         // -------------------------------------------------------------
         // 1. Seed / Update Instructor (Dr. Jane Smith)
         // -------------------------------------------------------------
@@ -89,27 +93,6 @@ class ShowcaseAccountSeeder extends Seeder
             $alexData
         );
 
-        // Also update existing student "ben@gmail.com" if present, so both accounts have everything
-        $benStudent = User::where('email', 'ben@gmail.com')->first();
-        if ($benStudent) {
-            $benStudent->update([
-                'name' => 'Ben Davis',
-                'first_name' => 'Ben',
-                'last_name' => 'Davis',
-                'username' => 'bendavis',
-                'gender' => 'male',
-                'password' => Hash::make('password'),
-                'github_username' => 'bendavis-code',
-                'gmail' => 'ben@gmail.com',
-                'gmail_verified_at' => now(),
-                'notify_class' => true,
-                'notify_module' => true,
-                'notify_lab' => true,
-                'notify_certificate' => true,
-                'notify_email_channel' => true,
-            ]);
-        }
-
         // Secondary peer student for team collaboration
         $peerAuthId = $this->getOrCreateAuthUserId('student@example.com', 'John Doe', 'student', 'password');
         $peerData = [
@@ -140,9 +123,6 @@ class ShowcaseAccountSeeder extends Seeder
 
         // Target student accounts to populate
         $students = collect([$showcaseStudent]);
-        if ($benStudent) {
-            $students->push($benStudent);
-        }
 
         // -------------------------------------------------------------
         // 3. Competencies Definition & Scoring
@@ -754,11 +734,6 @@ class ShowcaseAccountSeeder extends Seeder
             $showcaseStudent->id => ['contribution_score' => 88.0],
             $peerStudent->id => ['contribution_score' => 45.0],
         ]);
-        if ($benStudent) {
-            $groupAlpha->members()->syncWithoutDetaching([
-                $benStudent->id => ['contribution_score' => 76.0],
-            ]);
-        }
 
         foreach ($students as $student) {
             // Lab 3.1 completed
