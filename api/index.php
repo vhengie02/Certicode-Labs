@@ -44,6 +44,16 @@ if (!getenv('APP_KEY')) {
     exit;
 }
 
+// The pgsql config ships no real defaults (the repo is public). Without these every request would
+// try 127.0.0.1 and fail with a confusing connection error, so stop here with a clear log line.
+if ((getenv('DB_CONNECTION') ?: 'pgsql') === 'pgsql' && !getenv('DB_URL') && !getenv('DB_HOST')) {
+    error_log('Vercel Serverless: set DB_URL, or DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD, in Vercel > Project > Settings > Environment Variables.');
+    http_response_code(500);
+    header('Content-Type: text/plain');
+    echo 'Server configuration error.';
+    exit;
+}
+
 // Point compiled views and caches to writable /tmp
 putenv('APP_CONFIG_CACHE=/tmp/bootstrap/cache/config.php');
 putenv('APP_EVENTS_CACHE=/tmp/bootstrap/cache/events.php');
@@ -58,6 +68,10 @@ putenv('SESSION_COOKIE=certicode_labs_session');
 putenv('SESSION_LIFETIME=120');
 putenv('SESSION_EXPIRE_ON_CLOSE=false');
 putenv('BCRYPT_ROUNDS=12');
+// Local disks live in this instance's /tmp and vanish with it; uploads must go to Supabase Storage
+putenv('EPHEMERAL_LOCAL_STORAGE=true');
+$_ENV['EPHEMERAL_LOCAL_STORAGE'] = 'true';
+$_SERVER['EPHEMERAL_LOCAL_STORAGE'] = 'true';
 if (!getenv('MAIL_MAILER')) {
     putenv('MAIL_MAILER=log');
     $_ENV['MAIL_MAILER'] = 'log';

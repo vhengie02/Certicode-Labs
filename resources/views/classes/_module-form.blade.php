@@ -71,6 +71,7 @@
             <span class="file-drop-list text-xs text-[#888888]">{{ $module ? 'Adds to the files above' : 'Optional' }}</span>
             <input type="file" name="attachments[]" id="attachments" multiple class="sr-only">
         </label>
+        @error('attachments') <p class="ui-error">{{ $message }}</p> @enderror
         @error('attachments.*') <p class="ui-error">{{ $message }}</p> @enderror
     </div>
 </div>

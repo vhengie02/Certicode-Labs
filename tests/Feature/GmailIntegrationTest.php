@@ -160,6 +160,7 @@ class GmailIntegrationTest extends TestCase
         $response = $this->withSession([
             'google_auth_gmail' => 'verified@gmail.com',
             'google_auth_code' => '123456',
+            'google_auth_code_for' => 'verified@gmail.com',
         ])->post('/auth/google/callback', [
             'code' => '123456',
         ]);
@@ -184,6 +185,7 @@ class GmailIntegrationTest extends TestCase
         $response = $this->withSession([
             'google_auth_gmail' => 'unverified@gmail.com',
             'google_auth_code' => '123456',
+            'google_auth_code_for' => 'unverified@gmail.com',
         ])->post('/auth/google/callback', [
             'code' => '123456',
         ]);
@@ -308,6 +310,7 @@ class GmailIntegrationTest extends TestCase
         $response = $this->withSession([
             'google_auth_gmail' => 'newuser@gmail.com',
             'google_auth_code' => '123456',
+            'google_auth_code_for' => 'newuser@gmail.com',
         ])->post('/auth/google/callback', [
             'code' => '123456',
             'role' => 'student',

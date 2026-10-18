@@ -76,6 +76,10 @@ class LoginController extends Controller
 
         $gmail = strtolower(trim($request->gmail));
 
+        // Typing an address switches to the emailed-code flow, so an earlier OAuth sign-up (its
+        // proof, provider name and GitHub identity) no longer applies to whoever continues here.
+        session()->forget(['google_auth_oauth_email', 'github_auth_username', 'google_auth_name']);
+
         // Existing accounts and new addresses both prove ownership with an emailed code;
         // only the step after the code differs (sign in vs. pick a role).
         $verifyParams = $this->findGoogleUser($gmail) ? [] : ['needs_role' => 1];
@@ -83,7 +87,8 @@ class LoginController extends Controller
         // The cooldown only covers resending to the address that last got a code.
         // A different address (e.g. fixing a typo) is sent right away.
         $lastSent = session('google_auth_code_sent_at');
-        if ($lastSent && session('google_auth_code_sent_to') === $gmail && session('google_auth_code')) {
+        if ($lastSent && session('google_auth_code_sent_to') === $gmail
+            && session('google_auth_code') && session('google_auth_code_for') === $gmail) {
             $elapsed = (int) now()->diffInSeconds($lastSent, true);
             if ($elapsed < 60) {
                 $secondsLeft = 60 - $elapsed;
@@ -97,8 +102,10 @@ class LoginController extends Controller
 
         $code = (string) random_int(100000, 999999);
 
-        // Save target gmail and verification code in session
+        // Save target gmail and verification code in session. The code is bound to the address it
+        // was emailed to, so it can never sign in to a different address put in the session later.
         session()->put('google_auth_code', $code);
+        session()->put('google_auth_code_for', $gmail);
         session()->forget('google_auth_code_attempts'); // a fresh code gets a fresh set of attempts
         session()->put('gmail_code_debug', $code);
 
@@ -127,7 +134,7 @@ class LoginController extends Controller
 
         if ($mailError && !$this->mayRevealAuthSecrets()) {
             // Nothing reached the user, so don't start a cooldown for a code they never got
-            session()->forget(['google_auth_code', 'gmail_code_debug']);
+            session()->forget(['google_auth_code', 'google_auth_code_for', 'gmail_code_debug']);
             return back()->withInput()->withErrors(['gmail' => "We couldn't send the email right now. Please try again in a few minutes."]);
         }
 
@@ -170,37 +177,55 @@ class LoginController extends Controller
      */
     public function handleGoogleCallback(Request $request)
     {
+        $gmail = session('google_auth_gmail');
+
+        // An OAuth sign-up proved the address the provider returned, and only that address.
+        // It skips the emailed code; any other address in the session still needs one.
+        $oauthEmail = session('google_auth_oauth_email');
+        $provedByOAuth = is_string($gmail) && is_string($oauthEmail) && hash_equals($oauthEmail, $gmail);
+
         $request->validate([
-            'code' => 'required|string|min:6|max:20',
+            'code' => $provedByOAuth ? 'nullable|string|max:20' : 'required|string|min:6|max:20',
             'role' => 'nullable|string|in:student,instructor',
         ]);
 
-        $gmail = session('google_auth_gmail');
-        $expectedCode = session('google_auth_code');
-
-        if (!$gmail || !$expectedCode) {
+        if (!$gmail) {
             return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
         }
 
-        // Check verification code. After 5 wrong guesses the code is discarded, so a 6-digit
-        // code can't be brute-forced; the user requests a new one.
-        if ($request->code !== $expectedCode) {
-            $attempts = (int) session('google_auth_code_attempts', 0) + 1;
-            if ($attempts >= 5) {
-                session()->forget(['google_auth_code', 'google_auth_code_attempts']);
-                return redirect()->route('auth.google')->withErrors(['email' => 'Too many incorrect codes. Request a new code to try again.']);
+        if (!$provedByOAuth) {
+            $expectedCode = session('google_auth_code');
+
+            // The code must have been emailed to this exact address
+            if (!is_string($expectedCode) || $expectedCode === '' || session('google_auth_code_for') !== $gmail) {
+                return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
             }
-            session()->put('google_auth_code_attempts', $attempts);
-            return back()->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+
+            // Check verification code. After 5 wrong guesses the code is discarded, so a 6-digit
+            // code can't be brute-forced; the user requests a new one.
+            if (!hash_equals($expectedCode, (string) $request->code)) {
+                $attempts = (int) session('google_auth_code_attempts', 0) + 1;
+                if ($attempts >= 5) {
+                    session()->forget(['google_auth_code', 'google_auth_code_for', 'google_auth_code_attempts']);
+                    return redirect()->route('auth.google')->withErrors(['email' => 'Too many incorrect codes. Request a new code to try again.']);
+                }
+                session()->put('google_auth_code_attempts', $attempts);
+                return back()->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+            }
+            session()->forget('google_auth_code_attempts');
         }
-        session()->forget('google_auth_code_attempts');
 
         // 1. Existing account (verified Gmail, or the same account email). The code just proved the
         // user owns this mailbox, so sign them in without a password and link the Gmail if needed.
         $user = $this->findGoogleUser($gmail);
 
+        // The provider's name and GitHub identity belong to the OAuth sign-up only. An emailed-code
+        // sign-up must never pick them up, or a GitHub login would later open this account.
+        $githubUsername = $provedByOAuth ? session('github_auth_username') : null;
+        $providerName = $provedByOAuth ? session('google_auth_name') : null;
+
         // A GitHub sign-up only asserts the email, it never proved the mailbox; don't hand it an existing account
-        if ($user && session('github_auth_username')) {
+        if ($user && $githubUsername) {
             $this->clearAuthSessions();
             return redirect()->route('login')->withErrors([
                 'email' => 'This email address (' . $gmail . ') is already registered. Please log in, then link GitHub from Settings.',
@@ -246,13 +271,13 @@ class LoginController extends Controller
             User::where('gmail', $gmail)->whereNull('gmail_verified_at')->update(['gmail' => null]);
 
             $newUser = User::create([
-                'name' => session('google_auth_name') ?: $name,
+                'name' => $providerName ?: $name,
                 'email' => $gmail,
                 'gmail' => $gmail,
                 'gmail_verified_at' => now(),
                 'password' => Hash::make($password),
                 'role' => 'student', // instructor access needs an admin's approval
-                'github_username' => session('github_auth_username'),
+                'github_username' => $githubUsername,
             ]);
 
             if ($request->role === 'instructor') {
@@ -370,12 +395,28 @@ class LoginController extends Controller
             return redirect()->intended('/dashboard')->with('success', 'Logged in via GitHub successfully!');
         }
 
-        session()->put('google_auth_gmail', $email);
-        session()->put('google_auth_code', 'OAUTH_VERIFIED');
-        session()->put('google_auth_name', $name);
-        session()->put('github_auth_username', $nickname);
+        $this->startOAuthSignup($email, $name, $nickname);
 
         return redirect()->route('auth.google.verify', ['needs_role' => 1]);
+    }
+
+    /**
+     * Hand a new OAuth identity to the "finish creating your account" step. The proof covers
+     * only the address the provider returned, and it is kept apart from emailed codes so the
+     * code flow can never inherit it for a different address.
+     */
+    private function startOAuthSignup(string $email, string $name, ?string $githubUsername = null): void
+    {
+        session()->forget(['google_auth_code', 'google_auth_code_for', 'google_auth_code_attempts', 'gmail_code_debug']);
+        session()->put('google_auth_gmail', $email);
+        session()->put('google_auth_oauth_email', $email);
+        session()->put('google_auth_name', $name);
+
+        if ($githubUsername !== null) {
+            session()->put('github_auth_username', $githubUsername);
+        } else {
+            session()->forget('github_auth_username');
+        }
     }
 
     /**
@@ -435,6 +476,10 @@ class LoginController extends Controller
 
         // 2. Authentication/Login case
         if ($provider === 'google') {
+            if (empty($email)) {
+                return redirect()->route('login')->withErrors(['email' => 'Unable to retrieve your email from Google. Please try again.']);
+            }
+
             $user = User::where('gmail', $email)
                 ->whereNotNull('gmail_verified_at')
                 ->first();
@@ -455,9 +500,7 @@ class LoginController extends Controller
                 return redirect()->intended('/dashboard')->with('success', 'Logged in via Google successfully!');
             }
 
-            session()->put('google_auth_gmail', $email);
-            session()->put('google_auth_code', 'OAUTH_VERIFIED');
-            session()->put('google_auth_name', $name);
+            $this->startOAuthSignup($email, $name);
 
             return redirect()->route('auth.google.verify', ['needs_role' => 1]);
         }
@@ -482,10 +525,7 @@ class LoginController extends Controller
                 return redirect()->route('login')->withErrors(['email' => 'Unable to retrieve your email from GitHub. Please register an account first.']);
             }
 
-            session()->put('google_auth_gmail', $email);
-            session()->put('google_auth_code', 'OAUTH_VERIFIED');
-            session()->put('google_auth_name', $name);
-            session()->put('github_auth_username', $nickname);
+            $this->startOAuthSignup($email, $name, $nickname);
 
             return redirect()->route('auth.google.verify', ['needs_role' => 1]);
         }
@@ -711,6 +751,9 @@ class LoginController extends Controller
         session()->forget([
             'google_auth_gmail',
             'google_auth_code',
+            'google_auth_code_for',
+            'google_auth_code_attempts',
+            'google_auth_oauth_email',
             'google_auth_code_sent_at',
             'google_auth_code_sent_to',
             'gmail_code_debug',

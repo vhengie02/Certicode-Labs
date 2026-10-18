@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\SchoolClass;
 use App\Models\Module;
+use App\Models\ModuleAttachment;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ClassController extends Controller
 {
@@ -373,6 +375,18 @@ class ClassController extends Controller
             'attachments.*' => 'file|max:20480', // Max 20MB
         ]);
 
+        if ($request->hasFile('attachments') && !ModuleAttachment::storageIsDurable()) {
+            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
+        }
+
+        // Upload first, so a storage failure saves nothing instead of leaving a module without its files
+        try {
+            $uploads = ModuleAttachment::uploadAll($request->file('attachments', []));
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::UPLOAD_FAILED_MESSAGE]);
+        }
+
         $parentId = $validated['parent_id'] ?? null;
         $existingCount = Module::where('class_id', $class->id)
             ->where('parent_id', $parentId)
@@ -382,25 +396,23 @@ class ClassController extends Controller
             ? min(max(0, (int)$validated['order_index']), $existingCount)
             : $existingCount;
 
-        $module = Module::create([
-            'class_id' => $class->id,
-            'parent_id' => $parentId,
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'content' => $validated['content'],
-            'order_index' => $orderIndex,
-        ]);
-
-        // Handle file attachments
-        if ($request->hasFile('attachments')) {
-            foreach ($request->file('attachments') as $file) {
-                $path = $file->store('module_attachments', 'public');
-                $module->attachments()->create([
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                    'file_size' => $file->getSize(),
+        try {
+            $module = DB::transaction(function () use ($class, $parentId, $validated, $orderIndex, $uploads) {
+                $module = Module::create([
+                    'class_id' => $class->id,
+                    'parent_id' => $parentId,
+                    'title' => $validated['title'],
+                    'description' => $validated['description'] ?? null,
+                    'content' => $validated['content'],
+                    'order_index' => $orderIndex,
                 ]);
-            }
+                $module->attachments()->createMany($uploads);
+
+                return $module;
+            });
+        } catch (\Throwable $e) {
+            ModuleAttachment::discardUploads($uploads);
+            throw $e;
         }
 
         // Notify enrolled students
@@ -500,6 +512,10 @@ class ClassController extends Controller
             'remove_attachments.*' => 'exists:module_attachments,id',
         ]);
 
+        if ($request->hasFile('attachments') && !ModuleAttachment::storageIsDurable()) {
+            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
+        }
+
         $parentId = $validated['parent_id'] ?? null;
         $existingCount = Module::where('class_id', $class->id)
             ->where('parent_id', $parentId)
@@ -510,36 +526,39 @@ class ClassController extends Controller
             ? min(max(0, (int)$validated['order_index']), $existingCount)
             : $existingCount;
 
-        $module->update([
-            'parent_id' => $parentId,
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'content' => $validated['content'],
-            'order_index' => $orderIndex,
-        ]);
-
-        // Remove marked attachments
-        if (!empty($validated['remove_attachments'])) {
-            foreach ($validated['remove_attachments'] as $attId) {
-                $attachment = $module->attachments()->find($attId);
-                if ($attachment) {
-                    \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
-                    $attachment->delete();
-                }
-            }
+        // Upload first, so a storage failure changes nothing (not even the removals)
+        try {
+            $uploads = ModuleAttachment::uploadAll($request->file('attachments', []));
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::UPLOAD_FAILED_MESSAGE]);
         }
 
-        // Add new attachments
-        if ($request->hasFile('attachments')) {
-            foreach ($request->file('attachments') as $file) {
-                $path = $file->store('module_attachments', 'public');
-                $module->attachments()->create([
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                    'file_size' => $file->getSize(),
+        try {
+            $removed = DB::transaction(function () use ($module, $parentId, $validated, $orderIndex, $uploads) {
+                $module->update([
+                    'parent_id' => $parentId,
+                    'title' => $validated['title'],
+                    'description' => $validated['description'] ?? null,
+                    'content' => $validated['content'],
+                    'order_index' => $orderIndex,
                 ]);
-            }
+
+                // Remove marked attachments (only this module's)
+                $removed = $module->attachments()->whereIn('id', $validated['remove_attachments'] ?? [])->get();
+                ModuleAttachment::whereIn('id', $removed->modelKeys())->delete();
+
+                $module->attachments()->createMany($uploads);
+
+                return $removed;
+            });
+        } catch (\Throwable $e) {
+            ModuleAttachment::discardUploads($uploads);
+            throw $e;
         }
+
+        // Files go only once the rows are gone for good
+        $removed->each->deleteFile();
 
         return redirect()->route('modules.show', [$class->id, $module->id])->with('success', 'Module updated successfully.');
     }
@@ -566,12 +585,12 @@ class ClassController extends Controller
                 . ($labCount === 1 ? 'it' : 'them') . ' first.');
         }
 
-        // Delete attachment files for the module and its sections
-        foreach (\App\Models\ModuleAttachment::whereIn('module_id', $moduleIds)->get() as $attachment) {
-            \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
-        }
+        // Delete attachment files for the module and its sections, once their rows are gone
+        $attachments = ModuleAttachment::whereIn('module_id', $moduleIds)->get();
 
         $module->delete();
+
+        $attachments->each->deleteFile();
 
         return redirect()->route('classes.show', $class_id)->with('success', 'Module deleted successfully.');
     }
@@ -581,7 +600,7 @@ class ClassController extends Controller
      */
     public function downloadAttachment(int $id)
     {
-        $attachment = \App\Models\ModuleAttachment::findOrFail($id);
+        $attachment = ModuleAttachment::findOrFail($id);
         $module = $attachment->module;
         $class = $module->schoolClass;
         $user = Auth::user();
@@ -599,15 +618,11 @@ class ClassController extends Controller
             $this->authorizeClassManager($class);
         }
 
-        if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+        if (!ModuleAttachment::disk()->exists($attachment->file_path)) {
             abort(404, 'File not found.');
         }
 
-        $filePath = (string) $attachment->file_path;
-        $fileName = (string) $attachment->file_name;
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        return $disk->download($filePath, $fileName);
+        return $attachment->downloadResponse();
     }
 
     /**

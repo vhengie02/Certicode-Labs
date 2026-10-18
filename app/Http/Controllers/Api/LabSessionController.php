@@ -286,22 +286,25 @@ class LabSessionController extends Controller
     }
 
     /**
-     * Compile/Run student code submissions.
+     * Run student code and return its output. Running code never changes the grade: tasks and
+     * scores come only from the AI grader in check-progress and submit. (Matching the code or its
+     * output against each task's check string used to award tasks here, and since a program can
+     * print any string, that let a student forge a 100% score.)
      */
     public function executeCode(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
+
+        if ($session->status !== 'in_progress') {
+            return response()->json(['error' => 'This lab session is no longer in progress.'], 409);
+        }
 
         $request->validate([
             'code' => 'required|string',
             'language' => 'required|string',
         ]);
 
-        // Run code via Mock Sandbox
-        $result = $this->sandboxService->executeCodeMock($request->code, $request->language);
-
-        // Verify tasks based on the executed code and its output
-        $completedTasks = $this->verifyTasks($session, $request->code, $request->language, $result['output'] ?? '');
+        $result = $this->sandboxService->execute($request->code, $request->language);
 
         // Record execution event in logs
         TelemetryLog::create([
@@ -314,97 +317,11 @@ class LabSessionController extends Controller
             ],
         ]);
 
-        // Merge verification state in response
-        $result['completed_tasks'] = $completedTasks;
-        $result['performance_score'] = $session->fresh()->performance_score;
+        // Current progress, unchanged by this run
+        $result['completed_tasks'] = $session->completed_tasks ?? [];
+        $result['performance_score'] = $session->performance_score;
 
         return response()->json($result);
-    }
-
-    /**
-     * Compare student execution against tasks_definition and update progress.
-     */
-    protected function verifyTasks(LabSession $session, string $code, string $language, string $output): array
-    {
-        $lab = $session->laboratory;
-        $tasks = $lab->tasks_definition ?? [];
-        $completed = $session->completed_tasks ?? [];
-
-        if (empty($tasks)) {
-            return $completed;
-        }
-
-        $newlyCompleted = [];
-
-        foreach ($tasks as $task) {
-            $taskId = $task['id'];
-            
-            // Skip if already completed
-            if (in_array($taskId, $completed)) {
-                continue;
-            }
-
-            $expectedCommand = trim($task['command'] ?? '');
-            
-            if (empty($expectedCommand)) {
-                continue;
-            }
-
-            $cleanedStudentCode = preg_replace('/\s+/', ' ', strtolower(trim($code)));
-            $cleanedExpected = preg_replace('/\s+/', ' ', strtolower($expectedCommand));
-
-            $isMatch = false;
-
-            // Simple prefix support for regex
-            if (str_starts_with($expectedCommand, 'regex:')) {
-                $pattern = substr($expectedCommand, 6);
-                if (@preg_match($pattern, $code) || @preg_match('/' . str_replace('/', '\/', $pattern) . '/i', $code)) {
-                    $isMatch = true;
-                }
-            } else {
-                if ($cleanedStudentCode === $cleanedExpected || str_contains($cleanedStudentCode, $cleanedExpected)) {
-                    $isMatch = true;
-                }
-            }
-
-            // Fallback: Check if execution output contains the keyword / expected string
-            if (!$isMatch && !empty($output)) {
-                $cleanedOutput = strtolower(trim($output));
-                if (str_contains($cleanedOutput, strtolower($expectedCommand))) {
-                    $isMatch = true;
-                }
-            }
-
-            if ($isMatch) {
-                $completed[] = $taskId;
-                $newlyCompleted[] = $taskId;
-            }
-        }
-
-        if (!empty($newlyCompleted)) {
-            $completed = array_values(array_unique($completed));
-            sort($completed);
-            
-            $totalTasks = count($tasks);
-            $score = ($totalTasks > 0) ? (count($completed) / $totalTasks) * 100 : 0.0;
-
-            $session->update([
-                'completed_tasks' => $completed,
-                'performance_score' => $score,
-            ]);
-
-            TelemetryLog::create([
-                'lab_session_id' => $session->id,
-                'event_type' => 'task_verified',
-                'payload' => [
-                    'verified_task_ids' => $newlyCompleted,
-                    'current_progress' => count($completed) . '/' . $totalTasks,
-                    'performance_score' => $score,
-                ],
-            ]);
-        }
-
-        return $completed;
     }
 
     /**
@@ -856,7 +773,9 @@ class LabSessionController extends Controller
             'status' => 'success',
             'completed_tasks' => $completedTasks,
             'performance_score' => $session->performance_score,
-            'execution' => $executionResult,
+            // The extension shows any execution errors as a compile error, so leave out the
+            // "code execution is not set up" result: the code was still graded
+            'execution' => ($executionResult['status'] ?? null) === 'unavailable' ? null : $executionResult,
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
         ]);

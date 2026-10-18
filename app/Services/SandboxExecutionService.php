@@ -8,22 +8,8 @@ use Illuminate\Support\Facades\Log;
 class SandboxExecutionService
 {
     /**
-     * Execute student code submissions.
-     *
-     * Detects if Docker is available and secure.
-     * Falls back to a local isolated sub-process with resource restrictions and timeouts.
-     *
-     * @param string $code
-     * @param string $language
-     * @return array
-     */
-    public function executeCodeMock(string $code, string $language): array
-    {
-        return $this->execute($code, $language);
-    }
-
-    /**
-     * Execute the code securely.
+     * Execute student code: on Judge0 when configured, otherwise (local development and tests
+     * only) in Docker or a local sub-process with a timeout.
      */
     public function execute(string $code, string $language): array
     {
@@ -33,6 +19,11 @@ class SandboxExecutionService
         // Serverless hosts (Vercel) have no Docker or JDK: run code on a Judge0 server when one is configured.
         if ($this->isRemoteExecutionConfigured()) {
             return $this->executeRemotely($code, $language, $startTime);
+        }
+
+        // Fail closed: without Judge0 the code would run on this server with the app's secrets
+        if (!$this->isHostExecutionAllowed()) {
+            return $this->executionResult('', 'Code execution is not set up on this server, so your code was not run. Your submission is still graded.', $startTime, 'unavailable');
         }
 
         if ($language === 'java') {
@@ -65,6 +56,21 @@ class SandboxExecutionService
     public function isRemoteExecutionConfigured(): bool
     {
         return !empty(config('services.judge0.url'));
+    }
+
+    /**
+     * Whether code may run on this server (Docker or local interpreters) when Judge0 is not set up.
+     * Only local development and tests allow it unless SANDBOX_HOST_EXECUTION says otherwise.
+     */
+    public function isHostExecutionAllowed(): bool
+    {
+        $setting = config('services.sandbox.host_execution');
+
+        if ($setting !== null && $setting !== '') {
+            return filter_var($setting, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return app()->environment('local', 'testing');
     }
 
     /**

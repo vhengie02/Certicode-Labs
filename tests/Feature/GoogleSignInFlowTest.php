@@ -97,8 +97,8 @@ class GoogleSignInFlowTest extends TestCase
     {
         User::create(['name' => 'Owner', 'email' => 'owner@school.edu', 'gmail' => 'owner@gmail.com', 'gmail_verified_at' => now(), 'password' => bcrypt('x'), 'role' => 'student']);
 
-        $this->withSession(['google_auth_gmail' => 'owner@gmail.com', 'google_auth_code' => 'OAUTH_VERIFIED', 'github_auth_username' => 'intruder'])
-            ->post('/auth/google/callback', ['code' => 'OAUTH_VERIFIED'])
+        $this->withSession(['google_auth_gmail' => 'owner@gmail.com', 'google_auth_oauth_email' => 'owner@gmail.com', 'github_auth_username' => 'intruder'])
+            ->post('/auth/google/callback')
             ->assertRedirect(route('login'));
         $this->assertGuest();
     }

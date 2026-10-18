@@ -261,15 +261,15 @@ class InstructorTelemetryAndOAuthTest extends TestCase
         $response = $this->get('/auth/google/callback');
         $response->assertRedirect('/auth/google/verify?needs_role=1');
         $this->assertEquals('new-oauth@gmail.com', session('google_auth_gmail'));
-        $this->assertEquals('OAUTH_VERIFIED', session('google_auth_code'));
+        $this->assertEquals('new-oauth@gmail.com', session('google_auth_oauth_email'));
+        $this->assertNull(session('google_auth_code'));
 
-        // Completing verification form registration with role
+        // Completing verification form registration with role: the OAuth proof replaces the emailed code
         $response2 = $this->withSession([
             'google_auth_gmail' => 'new-oauth@gmail.com',
-            'google_auth_code' => 'OAUTH_VERIFIED',
+            'google_auth_oauth_email' => 'new-oauth@gmail.com',
             'google_auth_name' => 'New Google User',
         ])->post('/auth/google/callback', [
-            'code' => 'OAUTH_VERIFIED',
             'role' => 'student',
         ]);
 

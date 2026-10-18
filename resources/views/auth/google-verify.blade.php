@@ -1,7 +1,7 @@
 @extends('layouts.auth')
 
 @php($needsRole = (bool) request('needs_role'))
-@php($oauthVerified = session('google_auth_code') === 'OAUTH_VERIFIED')
+@php($oauthVerified = session('google_auth_oauth_email') !== null && session('google_auth_oauth_email') === session('google_auth_gmail'))
 
 @section('title', $needsRole ? 'Finish creating your account' : 'Enter your code')
 
@@ -44,9 +44,7 @@
             </div>
         @endif
 
-        @if ($oauthVerified)
-            <input type="hidden" name="code" value="OAUTH_VERIFIED">
-        @else
+        @unless ($oauthVerified)
             <div>
                 <div class="flex items-center justify-between mb-2">
                     <label for="code" class="cc-label !mb-0">Verification code</label>
@@ -59,7 +57,7 @@
                        @if (!$needsRole) autofocus @endif
                        class="cc-field cc-mono text-center text-xl !tracking-[0.5em]" placeholder="000000" @error('code') aria-invalid="true" @enderror>
             </div>
-        @endif
+        @endunless
 
         <button type="submit" class="cc-btn cc-btn-brand w-full">
             {{ $needsRole ? 'Create account' : 'Verify and sign in' }} <span class="cc-arrow" aria-hidden="true">&rarr;</span>
