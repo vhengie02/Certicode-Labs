@@ -169,11 +169,9 @@ class LlmEvaluationService
             }
         }
 
-        // Strip single-line and multi-line comments and strings for brace analysis
-        $cleanCode = preg_replace('/\/\*.*?\*\//s', '', $code);
-        $cleanCode = preg_replace('/\/\/.*?$/m', '', $cleanCode);
-        $cleanCode = preg_replace('/"(?:\\\\.|[^"\\\\])*"/', '""', $cleanCode);
-        $cleanCode = preg_replace('/\'(?:\\\\.|[^\'\\\\])*\'/', "''", $cleanCode);
+        // Every check below looks only at code: comments and string contents are blanked out,
+        // with the comment syntax of the submission's language
+        $cleanCode = $this->stripCommentsAndStrings($code, $language);
 
         // 2. Unbalanced curly braces check
         $openBraces = substr_count($cleanCode, '{');
@@ -189,20 +187,14 @@ class LlmEvaluationService
             $errors[] = "Unbalanced parentheses: found {$openParens} opening '(' and {$closeParens} closing ')'.";
         }
 
-        // 4. Repeated character spam / keyboard mash detection (e.g. aaaaaaaaaaaaaaaaaa)
-        if (preg_match('/([a-zA-Z0-9_])\1{5,}/', $code, $spamMatches)) {
-            $errors[] = "Invalid syntax: unexpected repeated token sequence '{$spamMatches[0]}'.";
-        }
+        // (No repeated-character check: it failed valid literals like 1000000 and 0xFFFFFFFF and
+        // "// ______" dividers. Keyboard mash is left to the grader.)
 
-        // 5. Line ending syntax garbage: statement terminated with ';' followed by illegal identifier
+        // 4. Line ending syntax garbage: statement terminated with ';' followed by illegal identifier
         // e.g. "return result;aaaaaaaaaaaaaaaaaa" or "int x = 5; foo bar"
-        $lines = explode("\n", $code);
+        $lines = explode("\n", $cleanCode);
         foreach ($lines as $lineNum => $line) {
             $trimmedLine = trim($line);
-            // Ignore comment lines
-            if (str_starts_with($trimmedLine, '//') || str_starts_with($trimmedLine, '/*')) {
-                continue;
-            }
             // Check for semicolon followed by non-whitespace that isn't a comment or recognized keyword
             if (preg_match('/;\s*([a-zA-Z0-9_]{3,})\s*$/', $trimmedLine, $m)) {
                 $trailing = $m[1];
@@ -214,6 +206,71 @@ class LlmEvaluationService
         }
 
         return array_unique($errors);
+    }
+
+    /**
+     * The code with comments removed and string contents emptied (quotes kept), so brace and
+     * token checks never trip over prose. Line breaks are kept, so line numbers still match.
+     * Comment syntax follows the language: # for Python and shell, // and /* *\/ for the
+     * C family, and both for PHP.
+     */
+    protected function stripCommentsAndStrings(string $code, string $language): string
+    {
+        $language = strtolower(trim($language));
+        $hashComments = in_array($language, ['python', 'py', 'bash', 'shell', 'sh', 'php'], true);
+        $slashComments = !in_array($language, ['python', 'py', 'bash', 'shell', 'sh'], true);
+        $tripleQuotes = in_array($language, ['python', 'py'], true);
+        $backticks = in_array($language, ['javascript', 'js', 'nodejs', 'typescript', 'ts'], true);
+
+        $out = '';
+        $length = strlen($code);
+        $i = 0;
+        while ($i < $length) {
+            $char = $code[$i];
+            $next = $code[$i + 1] ?? '';
+
+            // Line comment: drop to the end of the line
+            if (($slashComments && $char === '/' && $next === '/') || ($hashComments && $char === '#')) {
+                while ($i < $length && $code[$i] !== "\n") {
+                    $i++;
+                }
+                continue;
+            }
+
+            // Block comment: drop it, keeping its line breaks
+            if ($slashComments && $char === '/' && $next === '*') {
+                $end = strpos($code, '*/', $i + 2);
+                $end = $end === false ? $length : $end + 2;
+                $out .= str_repeat("\n", substr_count(substr($code, $i, $end - $i), "\n"));
+                $i = $end;
+                continue;
+            }
+
+            // Python triple-quoted string (also docstrings)
+            if ($tripleQuotes && ($char === '"' || $char === "'") && substr($code, $i, 3) === str_repeat($char, 3)) {
+                $end = strpos($code, str_repeat($char, 3), $i + 3);
+                $end = $end === false ? $length : $end + 3;
+                $out .= $char . $char . str_repeat("\n", substr_count(substr($code, $i, $end - $i), "\n"));
+                $i = $end;
+                continue;
+            }
+
+            // Ordinary string or char literal: keep the quotes, empty the contents
+            if ($char === '"' || $char === "'" || ($backticks && $char === '`')) {
+                $i++;
+                while ($i < $length && $code[$i] !== $char && ($code[$i] !== "\n" || $char === '`')) {
+                    $i += $code[$i] === '\\' ? 2 : 1;
+                }
+                $i++;
+                $out .= $char . $char;
+                continue;
+            }
+
+            $out .= $char;
+            $i++;
+        }
+
+        return $out;
     }
 
     /**
@@ -303,7 +360,8 @@ class LlmEvaluationService
     {
         $client = new \Anthropic\Client(
             apiKey: (string) config('services.anthropic.key'),
-            requestOptions: ['transporter' => $this->graderTransport(), 'maxRetries' => 1],
+            // No retry: a second 40 s attempt can't fit in Vercel's 60 s limit
+            requestOptions: ['transporter' => $this->graderTransport(), 'maxRetries' => 0],
         );
 
         $message = $client->beta->messages->create(
@@ -342,12 +400,13 @@ class LlmEvaluationService
     }
 
     /**
-     * HTTP client for the Claude call. The SDK leaves timeouts to the transport; 45 s keeps a grade
-     * inside Vercel's 60 s function limit. Overridable so tests can use a mock handler.
+     * HTTP client for the Claude call. The SDK leaves timeouts to the transport; 40 s keeps a grade
+     * inside Vercel's 60 s function limit with room for the rest of the request. Overridable so
+     * tests can use a mock handler.
      */
     protected function graderTransport(): \Psr\Http\Client\ClientInterface
     {
-        return new \GuzzleHttp\Client(['timeout' => 45, 'connect_timeout' => 5]);
+        return new \GuzzleHttp\Client(['timeout' => 40, 'connect_timeout' => 5]);
     }
 
     /**

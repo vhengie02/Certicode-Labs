@@ -210,6 +210,22 @@ class ClassController extends Controller
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
         $this->authorizeClassManager($class);
+
+        // Deleting would take issued certificates with it (their verify links would fail) and
+        // leave the class's labs and student attempts reachable only by admins
+        $certificateCount = \App\Models\Certificate::where('class_id', $class->id)->count();
+        $labCount = \App\Models\Laboratory::whereIn('module_id', Module::where('class_id', $class->id)->select('id'))->count();
+        if ($certificateCount > 0 || $labCount > 0) {
+            $parts = array_filter([
+                $certificateCount > 0 ? "{$certificateCount} issued " . Str::plural('certificate', $certificateCount) : null,
+                $labCount > 0 ? "{$labCount} " . Str::plural('lab', $labCount) : null,
+            ]);
+
+            return redirect()->route('classes.index')->with('error',
+                "“{$class->name}” can't be deleted: it has " . implode(' and ', $parts) . '. '
+                . ($certificateCount > 0 ? 'Issued certificates must stay verifiable, so end the course instead.' : 'Delete or move its labs first.'));
+        }
+
         $class->delete();
         self::clearClassesCache((int) Auth::id());
 

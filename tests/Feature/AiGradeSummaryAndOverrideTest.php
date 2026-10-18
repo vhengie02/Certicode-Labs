@@ -137,6 +137,19 @@ JAVA;
 public class InvalidAgeException extends Exception {}
 JAVA;
 
+        // check-progress first: once submitted, the attempt can't be graded again
+        $progressResponse = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$this->session->id}/check-progress", [
+            'code' => $code,
+            'language' => 'java',
+        ]);
+
+        $progressResponse->assertOk();
+        $progressEval = $progressResponse->json('evaluation');
+        $this->assertArrayNotHasKey('ai_grade_summary', $progressEval);
+        $this->assertArrayNotHasKey('competencies', $progressEval);
+        $this->assertArrayNotHasKey('code_quality_notes', $progressEval);
+        $this->assertArrayNotHasKey('summary', $progressEval);
+
         $response = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$this->session->id}/submit", [
             'code' => $code,
             'language' => 'java',
@@ -151,19 +164,6 @@ JAVA;
         $this->assertArrayNotHasKey('competencies', $evaluation);
         $this->assertArrayNotHasKey('code_quality_notes', $evaluation);
         $this->assertArrayNotHasKey('summary', $evaluation);
-
-        // Also test check-progress
-        $progressResponse = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$this->session->id}/check-progress", [
-            'code' => $code,
-            'language' => 'java',
-        ]);
-
-        $progressResponse->assertOk();
-        $progressEval = $progressResponse->json('evaluation');
-        $this->assertArrayNotHasKey('ai_grade_summary', $progressEval);
-        $this->assertArrayNotHasKey('competencies', $progressEval);
-        $this->assertArrayNotHasKey('code_quality_notes', $progressEval);
-        $this->assertArrayNotHasKey('summary', $progressEval);
     }
 
     /**

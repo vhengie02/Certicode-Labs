@@ -411,7 +411,6 @@
                         </ol>
                         <form id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST" class="mt-5">
                             @csrf
-                            <input type="hidden" name="camera_verified" :value="cameraVerified ? 1 : 0">
                             <button type="button" @click="handleStartClick()" class="ui-btn ui-btn-primary w-full">
                                 {{ $activeSession ? 'Continue in VS Code' : ($isRetake ? 'Retake lab' : 'Start lab') }}
                             </button>
@@ -490,7 +489,7 @@
                                         <span x-text="errorMessage" class="leading-tight"></span>
                                         <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white ml-2 flex-shrink-0">Retry</button>
                                     </div>
-                                    <div class="flex justify-end">
+                                    <div class="flex justify-end" x-show="!multipleFacesDetected">
                                         <button type="button" @click="acceptLowLightPresence()" class="px-2.5 py-1 rounded bg-[#3ecf8e] text-[#0f0f0f] font-bold text-[11px] hover:bg-[#00c573] transition">
                                             Continue in low-light mode &rarr;
                                         </button>
@@ -536,7 +535,7 @@
                                         <span x-text="`Retry (${attempts + 1}/${maxAttempts})`"></span>
                                     </button>
 
-                                    <button x-show="status === 'failed' || attempts > 0" 
+                                    <button x-show="(status === 'failed' || attempts > 0) && !multipleFacesDetected" 
                                             type="button" 
                                             @click="acceptLowLightPresence()" 
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition flex items-center gap-1.5 shadow-sm">
@@ -753,6 +752,7 @@ function preLabCameraGate(labId, initialSessionId) {
         extensionDownloadUrl: @js(asset(config('services.vscode_extension.download_path'))),
         leavingAfterVsCodeClosed: false,
         lowLightingDetected: false,
+        multipleFacesDetected: false,
         isLowLightMode: false,
         // Small luminance grid of the frame the student verified with in low-light mode.
         // In-lab checks compare against it, since face detection is unreliable in the dark.
@@ -785,14 +785,12 @@ function preLabCameraGate(labId, initialSessionId) {
                 }
             });
 
-            // Log focus / tab switch telemetry when in active proctor mode
+            // Note when this page goes out of view during the lab. Students are told to code in
+            // VS Code with this page open behind it, so it isn't a tab switch: VS Code reports
+            // its own focus changes, and coming back to this page isn't logged at all.
             document.addEventListener('visibilitychange', () => {
-                if (this.browserProctorActive && this.activeSessionId) {
-                    if (document.hidden) {
-                        this.logTelemetry('tab_switch', { event: 'tab_hidden', timestamp: new Date().toISOString() });
-                    } else {
-                        this.logTelemetry('tab_switch', { event: 'tab_visible', timestamp: new Date().toISOString() });
-                    }
+                if (this.browserProctorActive && this.activeSessionId && document.hidden) {
+                    this.logTelemetry('lab_page_hidden', { timestamp: new Date().toISOString() });
                 }
             });
         },
@@ -854,7 +852,13 @@ function preLabCameraGate(labId, initialSessionId) {
                         promises.push(window.faceapi.nets.tinyFaceDetector.loadFromUri('/models').catch(e => console.warn('TinyFace load warning:', e)));
                     }
                     await Promise.all(promises);
-                    this.modelLoaded = true;
+                    // Only count as loaded if a detector really loaded; a failed download used to
+                    // leave every student on the low-light fallback without anyone knowing
+                    const nets = window.faceapi.nets;
+                    this.modelLoaded = !!(nets.ssdMobilenetv1?.isLoaded || nets.tinyFaceDetector?.isLoaded);
+                    if (!this.modelLoaded) {
+                        console.error('Face detection models did not load from /models.');
+                    }
                 }
             } catch (err) {
                 console.error('Failed to load face detection models from /models:', err);
@@ -993,6 +997,9 @@ function preLabCameraGate(labId, initialSessionId) {
 
             this.faceCount = detectedFaces;
 
+            // Low-light mode skips face detection, so it is no way around a multiple-faces failure
+            this.multipleFacesDetected = detectedFaces > 1;
+
             if (detectedFaces === 1) {
                 await this.completeVerification(imageBase64, 1, false);
             } else if (detectedFaces > 1) {
@@ -1009,7 +1016,7 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         async acceptLowLightPresence() {
-            if (!this.$refs.videoEl) return;
+            if (!this.$refs.videoEl || this.multipleFacesDetected) return;
             const video = this.$refs.videoEl;
             const canvas = this.$refs.canvasEl || document.createElement('canvas');
             canvas.width = video.videoWidth || 640;
@@ -1040,6 +1047,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 ? [`/v1/sessions/${this.activeSessionId}/verify-camera`]
                 : [`/v1/labs/${labId}/verify-camera`];
 
+            let recorded = false;
             for (const url of endpoints) {
                 try {
                     const res = await fetch(url, {
@@ -1047,10 +1055,21 @@ function preLabCameraGate(labId, initialSessionId) {
                         headers: headers,
                         body: verifyPayload
                     });
-                    if (res.ok) break;
+                    if (res.ok) {
+                        recorded = true;
+                        break;
+                    }
                 } catch (e) {
                     console.warn(`Verify endpoint ${url} network warning:`, e);
                 }
+            }
+
+            // The lab only starts once the server has recorded the check
+            if (!recorded) {
+                this.attempts++;
+                this.errorMessage = 'Your camera check could not be saved. Check your connection and try again.';
+                this.status = 'failed';
+                return;
             }
 
             this.status = 'verified';
@@ -1082,7 +1101,8 @@ function preLabCameraGate(labId, initialSessionId) {
                         'Accept': 'application/json',
                         ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
                     },
-                    body: JSON.stringify({ camera_verified: 1 })
+                    // The server checks its own record of the camera check; nothing to send
+                    body: JSON.stringify({})
                 });
 
                 if (res.ok) {

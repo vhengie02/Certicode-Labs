@@ -329,6 +329,44 @@ class LabSession extends Model
     }
 
     /**
+     * How long after the time limit or live countdown runs out work is still taken, so a
+     * submit sent just before the end isn't lost to network lag.
+     */
+    public const LATE_GRACE_SECONDS = 60;
+
+    /**
+     * Whether this attempt can still be graded: it is in progress, and its time limit (or,
+     * in a live lab, the shared countdown) hasn't run out beyond the grace period.
+     */
+    public function acceptsWork(): bool
+    {
+        if ($this->status !== 'in_progress') {
+            return false;
+        }
+
+        $lab = $this->laboratory;
+        if (!$lab) {
+            return true;
+        }
+
+        if ($lab->isLiveLab()) {
+            if ($lab->live_status === 'closed') {
+                return false;
+            }
+            if ($lab->live_status === 'active') {
+                return $lab->getLiveElapsedSeconds() < $lab->getLiveTotalDurationSeconds() + self::LATE_GRACE_SECONDS;
+            }
+            return true;
+        }
+
+        if ($lab->time_limit > 0 && $this->started_at) {
+            return $this->started_at->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
+        }
+
+        return true;
+    }
+
+    /**
      * Check if the session is currently actively connected with a recent heartbeat.
      * Pings are dispatched every 15-20s. A 75-second window accommodates minor network jitter.
      */

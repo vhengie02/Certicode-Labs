@@ -45,7 +45,7 @@ class LabAttemptLimitTest extends TestCase
 
     private function start(Laboratory $lab)
     {
-        return $this->actingAs($this->student)->post(route('laboratories.start', $lab->id), ['camera_verified' => 1]);
+        return $this->actingAs($this->student)->withCameraCheck($lab->id)->post(route('laboratories.start', $lab->id));
     }
 
     public function test_labs_allow_one_attempt_by_default()

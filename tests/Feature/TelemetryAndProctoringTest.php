@@ -677,9 +677,8 @@ class TelemetryAndProctoringTest extends TestCase
     public function test_student_can_start_web_lab_session_with_camera_verification()
     {
         $response = $this->actingAs($this->student1)
-            ->post("/laboratories/{$this->laboratory->id}/start", [
-                'camera_verified' => 1,
-            ]);
+            ->withCameraCheck($this->laboratory->id)
+            ->post("/laboratories/{$this->laboratory->id}/start");
 
         $response->assertRedirect();
         $this->assertStringStartsWith('vscode://', $response->headers->get('Location'));

@@ -74,18 +74,18 @@ Route::get('/verify-certificate/{code}', [CertificateController::class, 'verify'
 
 // Public Google Authentication Mock
 Route::get('/auth/google', [LoginController::class, 'redirectToGoogle'])->name('auth.google');
-Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email');
+Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email')->middleware('throttle:auth-mail');
 Route::get('/auth/google/verify', [LoginController::class, 'showGoogleVerify'])->name('auth.google.verify');
-Route::post('/auth/google/callback', [LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+Route::post('/auth/google/callback', [LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback')->middleware('throttle:code-verify');
 Route::get('/auth/google/password', [LoginController::class, 'showGooglePassword'])->name('auth.google.password');
-Route::post('/auth/google/password', [LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit');
-Route::post('/auth/google/forgot-password', [LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot');
+Route::post('/auth/google/password', [LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit')->middleware('throttle:login');
+Route::post('/auth/google/forgot-password', [LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot')->middleware('throttle:auth-mail');
 
 // Password Reset Routes
 Route::get('/forgot-password', [LoginController::class, 'showForgotPasswordForm'])->name('password.request');
-Route::post('/forgot-password', [LoginController::class, 'sendResetLinkEmail'])->name('password.email');
+Route::post('/forgot-password', [LoginController::class, 'sendResetLinkEmail'])->name('password.email')->middleware('throttle:auth-mail');
 Route::get('/reset-password/{token}', [LoginController::class, 'showResetPasswordForm'])->name('password.reset');
-Route::post('/reset-password', [LoginController::class, 'resetPassword'])->name('password.update');
+Route::post('/reset-password', [LoginController::class, 'resetPassword'])->name('password.update')->middleware('throttle:code-verify');
 
 // Public GitHub Authentication Mock (Local Fallback)
 Route::get('/auth/github', [LoginController::class, 'redirectToGithub'])->name('auth.github');
@@ -97,10 +97,10 @@ Route::get('/auth/{provider}/callback', [LoginController::class, 'handleProvider
 
 // Authentication Routes
 Route::get('/register', [RegisterController::class, 'show'])->name('register.show');
-Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
+Route::post('/register', [RegisterController::class, 'store'])->name('register.store')->middleware('throttle:register');
 
 Route::get('/login', [LoginController::class, 'show'])->name('login');
-Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+Route::post('/login', [LoginController::class, 'store'])->name('login.store')->middleware('throttle:login');
 
 Route::post('/logout', LogoutController::class)->name('logout')->middleware('auth');
 
@@ -114,8 +114,8 @@ Route::middleware('auth')->group(function () {
     Route::put('/settings/profile', [SettingsController::class, 'updateProfile'])->name('settings.profile.update');
     Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password.update');
     Route::post('/settings/notifications', [SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
-    Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect');
-    Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify');
+    Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect')->middleware('throttle:auth-mail');
+    Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify')->middleware('throttle:code-verify');
     Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
     Route::post('/settings/github/disconnect', [SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
 
@@ -284,9 +284,9 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
         Route::post('/sessions/{sessionId}/vscode-disconnect', [LabSessionController::class, 'vscodeDisconnect']);
         Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
-        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
-        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
-        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);
+        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode'])->middleware('throttle:lab-execute');
+        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress'])->middleware('throttle:lab-grade');
+        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession'])->middleware('throttle:lab-grade');
         Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions']);
         Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
         Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);

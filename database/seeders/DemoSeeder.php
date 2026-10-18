@@ -14,11 +14,15 @@ use Illuminate\Support\Facades\Hash;
 
 class DemoSeeder extends Seeder
 {
+    use RefusesProduction;
+
     /**
      * Seed a realistic, ready-to-test CertiCode Labs environment.
      */
     public function run(): void
     {
+        $this->refuseInProduction();
+
         $this->command->info("⚡ Seeding CertiCode Labs instant demo environment...");
 
         // 1. Seed Instructor

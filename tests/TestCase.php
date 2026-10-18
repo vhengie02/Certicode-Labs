@@ -17,4 +17,15 @@ abstract class TestCase extends BaseTestCase
         Cache::forgetDriver('file');
         Cache::store('file')->flush();
     }
+
+    /**
+     * Act as a browser session that just passed the pre-lab camera check for this lab.
+     */
+    protected function withCameraCheck(int $labId, bool $lowLight = false): static
+    {
+        return $this->withSession(["camera_verified_lab_{$labId}" => [
+            'verified_at' => now()->toIso8601String(),
+            'low_light' => $lowLight,
+        ]]);
+    }
 }

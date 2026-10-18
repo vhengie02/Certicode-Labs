@@ -153,7 +153,8 @@ class LabSessionAccessTest extends TestCase
     public function test_vscode_deep_link_carries_the_session_token()
     {
         $response = $this->actingAs($this->alice)
-            ->postJson("/laboratories/{$this->laboratory->id}/start", ['camera_verified' => true])
+            ->withCameraCheck($this->laboratory->id)
+            ->postJson("/laboratories/{$this->laboratory->id}/start")
             ->assertOk();
 
         $session = LabSession::find($response->json('session_id'));

@@ -107,6 +107,15 @@ class LabSessionController extends Controller
             'payload' => 'nullable|array',
         ]);
 
+        // The lab page going out of view is the expected workflow (students code in VS Code with
+        // the page open behind it), so it is logged as its own event and never counted as a
+        // switch. Pages loaded before this change still send it as tab_switch.
+        $eventType = $request->event_type;
+        $pageEvent = $request->input('payload.event');
+        if ($eventType === 'tab_switch' && in_array($pageEvent, ['tab_hidden', 'tab_visible'], true)) {
+            $eventType = $pageEvent === 'tab_hidden' ? 'lab_page_hidden' : 'lab_page_visible';
+        }
+
         // Create log record. A webcam snapshot is kept once, on the anomaly it proves.
         $logPayload = $request->payload;
         if (is_array($logPayload)) {
@@ -114,13 +123,13 @@ class LabSessionController extends Controller
         }
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
-            'event_type' => $request->event_type,
+            'event_type' => $eventType,
             'payload' => $logPayload,
         ]);
 
         // Smart anomaly checks
-        if ($request->event_type === 'tab_switch' || $request->event_type === 'focus_lost') {
-            if ($request->event_type === 'focus_lost') {
+        if ($eventType === 'tab_switch' || $eventType === 'focus_lost') {
+            if ($eventType === 'focus_lost') {
                 $session->increment('focus_lost_count');
             }
 
@@ -131,12 +140,7 @@ class LabSessionController extends Controller
                 ->count();
 
             if ($recentSwitches >= 3) {
-                $this->recordAndBroadcastAnomaly($session, [
-                    'type' => $request->event_type === 'focus_lost' ? 'excessive_focus_loss' : 'excessive_tab_switch',
-                    'severity' => $recentSwitches >= 6 ? 'high' : 'medium',
-                    'description' => "Student switched window/focus {$recentSwitches} times within the last 2 minutes.",
-                    'metadata' => $request->payload,
-                ]);
+                $this->recordSwitchAnomaly($session, $eventType === 'focus_lost' ? 'excessive_focus_loss' : 'excessive_tab_switch', $recentSwitches, $request->payload);
             }
         }
 
@@ -222,6 +226,34 @@ class LabSessionController extends Controller
             'status' => 'success',
             'log' => $log,
         ]);
+    }
+
+    /**
+     * Flag frequent window or focus switching once per 2-minute window: a further switch in
+     * the window raises the existing flag's count (and severity) instead of adding a new row.
+     */
+    protected function recordSwitchAnomaly(LabSession $session, string $type, int $recentSwitches, ?array $payload): void
+    {
+        $attributes = [
+            'severity' => $recentSwitches >= 6 ? 'high' : 'medium',
+            'description' => "Student switched window/focus {$recentSwitches} times within the last 2 minutes.",
+        ];
+
+        $open = Anomaly::where('lab_session_id', $session->id)
+            ->where('type', $type)
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->latest('id')
+            ->first();
+
+        if ($open) {
+            if ($open->severity === 'high') {
+                unset($attributes['severity']);
+            }
+            $open->update($attributes);
+            return;
+        }
+
+        $this->recordAndBroadcastAnomaly($session, ['type' => $type, 'metadata' => $payload] + $attributes);
     }
 
     /**
@@ -507,9 +539,6 @@ class LabSessionController extends Controller
             || $request->input('client') === 'vscode_extension';
 
         if ($isVscodeSource) {
-            \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
-            \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_disconnected");
-            $this->recordExtensionVersion($request, $session->id);
             $session->update(['last_ping_at' => now()]);
             TelemetryLog::create([
                 'lab_session_id' => $session->id,
@@ -517,21 +546,19 @@ class LabSessionController extends Controller
                 'payload' => [
                     'source' => 'vscode',
                     'action' => 'get_session',
+                    'extension_version' => $this->extensionVersionFrom($request),
                     'timestamp' => now()->toIso8601String(),
                 ],
             ]);
         }
 
-        $vscodePing = \Illuminate\Support\Facades\Cache::get("lab_session_{$session->id}_vscode_ping");
-        $hasRecentVscodePing = $vscodePing && \Carbon\Carbon::parse($vscodePing)->diffInSeconds(now()) < 45;
-        $hasTelemetryVscodePing = TelemetryLog::where('lab_session_id', $session->id)
-            ->where('event_type', 'vscode_ping')
-            ->where('created_at', '>=', now()->subSeconds(45))
-            ->exists();
         // Only extension pings count. The browser page pings last_ping_at too, so it can't
         // tell us whether VS Code is still open. A clean shutdown reports itself right away.
-        $vscodeDisconnected = \Illuminate\Support\Facades\Cache::has("lab_session_{$session->id}_vscode_disconnected");
-        $isVscodeConnected = !$vscodeDisconnected && ($hasRecentVscodePing || $hasTelemetryVscodePing);
+        // Read from the telemetry rows, not the cache: on Vercel the cache is per request.
+        $vscode = $this->vscodeConnection($session->id);
+        $vscodePing = $vscode['last_ping'];
+        $vscodeDisconnected = $vscode['disconnected'];
+        $isVscodeConnected = !$vscodeDisconnected && $vscodePing && $vscodePing->diffInSeconds(now(), true) < 45;
 
         $isCameraVerified = TelemetryLog::where('lab_session_id', $session->id)
             ->where('event_type', 'webcam_prelab_verification')
@@ -545,9 +572,9 @@ class LabSessionController extends Controller
             'vscode_connected' => $isVscodeConnected,
             'vscode_closed' => $vscodeDisconnected,
             // Server-side age so the browser needn't trust its own clock. The extension pings every 15s.
-            'vscode_ping_age_seconds' => $vscodePing ? (int) \Carbon\Carbon::parse($vscodePing)->diffInSeconds(now(), true) : null,
-            ...$this->extensionVersionStatus($session->id),
-            'vscode_last_ping_at' => $vscodePing ?: null,
+            'vscode_ping_age_seconds' => $vscodePing ? (int) $vscodePing->diffInSeconds(now(), true) : null,
+            ...$this->extensionVersionStatus($vscode['extension_version']),
+            'vscode_last_ping_at' => $vscodePing?->toIso8601String(),
             'started_at' => $session->started_at,
             'elapsed_seconds' => $elapsedSeconds,
             'time_remaining_seconds' => $timeRemainingSeconds,
@@ -615,6 +642,10 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
+        if (!$session->acceptsWork()) {
+            return $this->attemptClosedResponse($session);
+        }
+
         $request->validate([
             'code' => 'nullable|string',
             'files' => 'nullable|array',
@@ -622,6 +653,11 @@ class LabSessionController extends Controller
             'diagnostics' => 'nullable|array',
         ]);
 
+        return $this->whileGrading($session, fn () => $this->gradeProgress($request, $session));
+    }
+
+    private function gradeProgress(Request $request, LabSession $session)
+    {
         $code = $request->code;
         if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
             foreach ($request->input('files') as $f) {
@@ -649,12 +685,16 @@ class LabSessionController extends Controller
             }
         }
 
-        $session->update([
+        $session = $this->updateIfInProgress($session, null, [
             'completed_tasks' => $completedTasks,
             'performance_score' => (float) ($evaluation['correctness_score'] ?? $session->performance_score),
             'submitted_code' => $code,
             'submitted_files' => $request->input('files'),
-        ]);
+        ]) ?? $session->refresh();
+
+        if ($session->status !== 'in_progress') {
+            return $this->attemptClosedResponse($session);
+        }
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,
@@ -691,12 +731,27 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
+        // A finished, timed-out or live-closed attempt keeps its grade: no regrading
+        if (!$session->acceptsWork()) {
+            return $this->attemptClosedResponse($session);
+        }
+
         $request->validate([
             'code' => 'nullable|string',
             'files' => 'nullable|array',
             'language' => 'required|string',
             'diagnostics' => 'nullable|array',
         ]);
+
+        return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
+    }
+
+    private function gradeSubmission(Request $request, LabSession $session)
+    {
+        // Whole seconds, to compare with the stored ended_at
+        $gradingStartedAt = now()->startOfSecond();
+        // Vercel stops the function at 60 s; the grade must be saved well before that
+        $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
 
         $code = $request->code;
         if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
@@ -712,8 +767,11 @@ class LabSessionController extends Controller
         }
         $code = $code ?? '';
 
-        // Execute code
-        $executionResult = $this->sandboxService->execute($code, $request->language);
+        // Keep the code before grading, so a request cut off mid-grade doesn't lose it.
+        // The attempt stays open, so the student can submit again.
+        if (!$this->updateIfInProgress($session, null, ['submitted_code' => $code, 'submitted_files' => $request->input('files')])) {
+            return $this->attemptClosedResponse($session->refresh());
+        }
 
         // AI task-completion evaluation
         $diagnostics = $this->submittedFileDiagnostics($request);
@@ -730,7 +788,7 @@ class LabSessionController extends Controller
         }
 
         $finalScore = (float) ($evaluation['correctness_score'] ?? 0.0);
-        $session->update([
+        $completed = $this->updateIfInProgress($session, $gradingStartedAt, [
             'status' => 'completed',
             'ended_at' => now(),
             'completed_tasks' => $completedTasks,
@@ -740,7 +798,19 @@ class LabSessionController extends Controller
             'submitted_files' => $request->input('files'),
         ]);
 
+        if (!$completed) {
+            return $this->attemptClosedResponse($session->refresh());
+        }
+        $session = $completed;
+
         // Competency scores follow from the update above (LabSession's save hook)
+
+        // The run doesn't affect the grade; it only shows the student their output or compile
+        // error. It gets whatever is left of the budget once the grade is saved, or is skipped.
+        $secondsLeft = (int) now()->diffInSeconds($deadline, false);
+        $executionResult = $secondsLeft >= self::MIN_EXECUTION_SECONDS
+            ? $this->sandboxService->execute($code, $request->language, min(25, $secondsLeft))
+            : ['status' => 'skipped'];
 
         TelemetryLog::create([
             'lab_session_id' => $session->id,
@@ -775,10 +845,74 @@ class LabSessionController extends Controller
             'performance_score' => $session->performance_score,
             // The extension shows any execution errors as a compile error, so leave out the
             // "code execution is not set up" result: the code was still graded
-            'execution' => ($executionResult['status'] ?? null) === 'unavailable' ? null : $executionResult,
+            'execution' => in_array($executionResult['status'] ?? null, ['unavailable', 'skipped'], true) ? null : $executionResult,
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
         ]);
+    }
+
+    /** Seconds a submit may use in all (Vercel stops the function at 60), and the least worth giving a code run. */
+    private const SUBMIT_BUDGET_SECONDS = 50;
+    private const MIN_EXECUTION_SECONDS = 5;
+
+    /**
+     * The answer to grading or submitting an attempt that is no longer open.
+     */
+    private function attemptClosedResponse(LabSession $session)
+    {
+        return response()->json([
+            'error' => 'session_not_in_progress',
+            'message' => $session->status === 'in_progress'
+                ? 'Time is up for this lab, so it can no longer be graded.'
+                : 'This lab attempt has already ended, so it can no longer be graded.',
+            'session_status' => $session->status,
+        ], 409);
+    }
+
+    /**
+     * Grade while holding the session's grading lock, so a check-progress and a submit (or
+     * two of either) never grade one attempt at once. The lock is in the database cache
+     * store, shared by every serverless instance, and expires on its own if a request dies.
+     */
+    private function whileGrading(LabSession $session, \Closure $grade)
+    {
+        $lock = \Illuminate\Support\Facades\Cache::store('database')->lock("lab_session_{$session->id}_grading", 90);
+
+        if (!$lock->get()) {
+            return response()->json([
+                'error' => 'grading_in_progress',
+                'message' => 'This lab is already being graded. Wait for that result before trying again.',
+            ], 409);
+        }
+
+        try {
+            return $grade();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Save a grade only while the attempt is still open, checked under a row lock. A submit
+     * also lands if the attempt was closed after its grading began (time ran out or the live
+     * lab ended mid-grade), since it was sent in time. Returns null when nothing was saved.
+     */
+    private function updateIfInProgress(LabSession $session, ?\Carbon\CarbonInterface $acceptClosedSince, array $attributes): ?LabSession
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($session, $acceptClosedSince, $attributes) {
+            $current = LabSession::whereKey($session->id)->lockForUpdate()->first();
+
+            $open = $current && ($current->status === 'in_progress'
+                || ($acceptClosedSince && $current->ended_at && $current->ended_at->gte($acceptClosedSince)));
+            if (!$open) {
+                return null;
+            }
+
+            $current->setRelation('laboratory', $session->laboratory);
+            $current->update($attributes);
+
+            return $current;
+        });
     }
 
     /**
@@ -1129,11 +1263,33 @@ class LabSessionController extends Controller
     }
 
     /**
-     * End session and purge ephemeral records.
+     * Leave a lab session (the extension's Exit, the lab page's "stop proctoring").
+     *
+     * For the student this only records that they left: the attempt stays open, so they can
+     * come back and submit, and it ends through submit, time running out or the instructor.
+     * Ending it here used to finalize it ungraded, which cost students their only attempt.
+     * Staff still end the session outright, as from the monitoring page.
      */
-    public function endSession(int $sessionId)
+    public function endSession(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
+
+        if (!in_array($request->user()?->role, ['admin', 'instructor'], true)) {
+            if ($session->status === 'in_progress') {
+                TelemetryLog::create([
+                    'lab_session_id' => $session->id,
+                    'event_type' => 'session_left',
+                    'payload' => ['timestamp' => now()->toIso8601String()],
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'You left the lab. Your attempt stays open until you submit it or time runs out.',
+                'session' => $session,
+            ]);
+        }
+
         $session->update([
             'status' => 'completed',
             'ended_at' => $session->ended_at ?: now(),
@@ -1220,14 +1376,12 @@ class LabSessionController extends Controller
             || $request->input('client') === 'vscode_extension';
 
         if ($isVscode) {
-            \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_ping", now()->toIso8601String(), 120);
-            \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_disconnected");
-            $this->recordExtensionVersion($request, $session->id);
             TelemetryLog::create([
                 'lab_session_id' => $session->id,
                 'event_type' => 'vscode_ping',
                 'payload' => [
                     'source' => 'vscode',
+                    'extension_version' => $this->extensionVersionFrom($request),
                     'timestamp' => now()->toIso8601String(),
                 ],
             ]);
@@ -1255,31 +1409,60 @@ class LabSessionController extends Controller
             'is_active' => true,
             'time_remaining_seconds' => $remainingSeconds,
             'timestamp' => now()->toIso8601String(),
-            ...$this->extensionVersionStatus($session->id),
+            ...$this->extensionVersionStatus(
+                $isVscode ? $this->extensionVersionFrom($request) : $this->vscodeConnection($session->id)['extension_version']
+            ),
         ]);
     }
 
     /**
-     * Remember which extension build is talking to this session. Builds before
-     * version reporting send no header, which is recorded as an empty version.
+     * The extension build making this request. Builds before version reporting send no
+     * header, which counts as an empty version.
      */
-    private function recordExtensionVersion(Request $request, int $sessionId): void
+    private function extensionVersionFrom(Request $request): string
     {
         $version = trim((string) $request->header('X-Extension-Version', ''));
-        if (!preg_match('/^\d+(\.\d+){0,3}$/', $version)) {
-            $version = '';
-        }
-        \Illuminate\Support\Facades\Cache::put("lab_session_{$sessionId}_extension_version", $version, 86400);
+
+        return preg_match('/^\d+(\.\d+){0,3}$/', $version) ? $version : '';
+    }
+
+    /**
+     * What the extension last told the server about this session, from the telemetry rows
+     * (the cache is per request on Vercel): its last ping time, the build that sent it, and
+     * whether a clean shutdown came after it.
+     *
+     * @return array{last_ping: ?\Carbon\Carbon, extension_version: ?string, disconnected: bool}
+     */
+    private function vscodeConnection(int $sessionId): array
+    {
+        $lastPing = TelemetryLog::where('lab_session_id', $sessionId)
+            ->where('event_type', 'vscode_ping')
+            ->latest('id')
+            ->first();
+        $lastDisconnectId = TelemetryLog::where('lab_session_id', $sessionId)
+            ->where('event_type', 'vscode_disconnected')
+            ->max('id');
+
+        $disconnected = $lastDisconnectId !== null && (!$lastPing || $lastDisconnectId > $lastPing->id);
+
+        return [
+            // created_at is filled in by the database, so the model holds it as a string
+            'last_ping' => $disconnected || !$lastPing ? null : \Carbon\Carbon::parse($lastPing->created_at),
+            // Pings logged before versions were recorded say nothing about the build
+            'extension_version' => $lastPing && is_array($lastPing->payload) && array_key_exists('extension_version', $lastPing->payload)
+                ? (string) $lastPing->payload['extension_version']
+                : null,
+            'disconnected' => $disconnected,
+        ];
     }
 
     /**
      * Whether the extension connected to this session is older than the minimum supported build.
      * Null until the extension has pinged at least once.
      */
-    private function extensionVersionStatus(int $sessionId): array
+    private function extensionVersionStatus(?string $version): array
     {
         $minVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
-        $version = \Illuminate\Support\Facades\Cache::get("lab_session_{$sessionId}_extension_version");
 
         return [
             'extension_version' => $version ?: null,
@@ -1300,8 +1483,7 @@ class LabSessionController extends Controller
             return response()->json(['error' => 'Session not found'], 404);
         }
 
-        \Illuminate\Support\Facades\Cache::forget("lab_session_{$session->id}_vscode_ping");
-        \Illuminate\Support\Facades\Cache::put("lab_session_{$session->id}_vscode_disconnected", now()->toIso8601String(), 600);
+        // Counts as closed until the next ping (see vscodeConnection)
         TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => 'vscode_disconnected',
@@ -1469,9 +1651,7 @@ class LabSessionController extends Controller
             ],
         ]);
 
-        if ($request->hasSession()) {
-            $request->session()->put("camera_verified_lab_{$session->lab_id}", true);
-        }
+        \App\Http\Controllers\LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'));
 
         return response()->json([
             'status' => 'success',
@@ -1518,9 +1698,7 @@ class LabSessionController extends Controller
             ], 422);
         }
 
-        if ($request->hasSession()) {
-            $request->session()->put("camera_verified_lab_{$labId}", true);
-        }
+        \App\Http\Controllers\LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
 
         return response()->json([
             'status' => 'success',

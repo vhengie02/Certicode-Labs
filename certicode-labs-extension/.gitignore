@@ -4,3 +4,4 @@ compile_out.log
 errors.txt
 .vscode/
 .vscode-test/
+out/test/

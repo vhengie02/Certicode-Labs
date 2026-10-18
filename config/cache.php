@@ -19,6 +19,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Rate Limiter Cache Store
+    |--------------------------------------------------------------------------
+    |
+    | The store that holds throttle counts. They must outlive a single request:
+    | on Vercel each request can land on a fresh instance and CACHE_STORE is
+    | "array" there, so the counts are kept in the database's cache table.
+    |
+    */
+
+    'limiter' => env('CACHE_LIMITER', 'database'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache Stores
     |--------------------------------------------------------------------------
     |

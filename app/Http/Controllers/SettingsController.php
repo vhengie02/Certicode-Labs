@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Hash;
 
 class SettingsController extends Controller
 {
+    /** How long an emailed Gmail code stays valid, and how many tries it gets. */
+    private const CODE_TTL_MINUTES = 10;
+    private const CODE_MAX_ATTEMPTS = 5;
+
     /**
      * Show settings dashboard.
      */
@@ -67,20 +71,23 @@ class SettingsController extends Controller
         // Generate 6-digit code
         $code = (string) random_int(100000, 999999);
 
-        // Store unverified Gmail and verification code
+        // Store the unverified Gmail and a hash of the code, its expiry and a fresh attempt count
         $user->update([
             'gmail' => $request->gmail,
-            'gmail_verification_code' => $code,
+            'gmail_verification_code' => $this->encodePendingCode(
+                now()->addMinutes(self::CODE_TTL_MINUTES)->timestamp,
+                0,
+                $this->codeHash($code)
+            ),
             'gmail_verified_at' => null,
         ]);
 
         session()->put('gmail_code_sent_at', now());
 
-        // Log code and put it in session so user/tests can see the code easily
+        // Local development only: log the code so the flow works without email
         if ($this->mayRevealAuthSecrets()) {
             Log::info("Gmail connection code for User ID {$user->id} ({$request->gmail}): {$code}");
         }
-        session()->put('gmail_code_debug', $code);
 
         $mailError = null;
         try {
@@ -89,7 +96,7 @@ class SettingsController extends Controller
                 'greeting' => 'Hello ' . ($user->name ?? 'developer') . ',',
                 'messageLines' => [
                     'You requested to connect your Gmail account (' . $request->gmail . ') to your Certicode Labs profile.',
-                    'Please use the verification code below to verify your email ownership.'
+                    'Please use the verification code below to verify your email ownership. It expires in ' . self::CODE_TTL_MINUTES . ' minutes.'
                 ],
                 'code' => $code,
             ], function ($message) use ($request) {
@@ -124,7 +131,28 @@ class SettingsController extends Controller
             'code' => 'required|string|size:6',
         ]);
 
-        if ($request->code === $user->gmail_verification_code) {
+        $stored = $user->refresh()->gmail_verification_code;
+        $pending = $this->decodePendingCode($stored);
+
+        if (!$pending || $pending['expires_at'] < now()->timestamp || $pending['attempts'] >= self::CODE_MAX_ATTEMPTS) {
+            if ($stored !== null) {
+                $user->update(['gmail_verification_code' => null]);
+            }
+            return redirect()->route('settings.show')->withErrors(['code' => 'This code has expired. Request a new one.']);
+        }
+
+        // Count the attempt before checking it. The write only lands if nobody else changed the
+        // code meanwhile, so parallel guesses can't share one attempt.
+        $attempts = $pending['attempts'] + 1;
+        $claimed = \App\Models\User::whereKey($user->id)
+            ->where('gmail_verification_code', $stored)
+            ->update(['gmail_verification_code' => $this->encodePendingCode($pending['expires_at'], $attempts, $pending['hash'])]);
+
+        if ($claimed === 0) {
+            return redirect()->route('settings.show')->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+        }
+
+        if (hash_equals($pending['hash'], $this->codeHash($request->code))) {
             $user->update([
                 'gmail_verified_at' => now(),
                 'gmail_verification_code' => null,
@@ -135,7 +163,39 @@ class SettingsController extends Controller
             return redirect()->route('settings.show')->with('success', 'Gmail account connected successfully!');
         }
 
+        if ($attempts >= self::CODE_MAX_ATTEMPTS) {
+            $user->update(['gmail_verification_code' => null]);
+            return redirect()->route('settings.show')->withErrors(['code' => 'Too many incorrect codes. Request a new code to try again.']);
+        }
+
         return redirect()->route('settings.show')->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+    }
+
+    /**
+     * A pending Gmail code is kept in gmail_verification_code as "expires|attempts|hash",
+     * so the plain code is never stored and expiry and attempts need no extra columns.
+     */
+    private function encodePendingCode(int $expiresAt, int $attempts, string $hash): string
+    {
+        return "{$expiresAt}|{$attempts}|{$hash}";
+    }
+
+    /**
+     * @return array{expires_at: int, attempts: int, hash: string}|null
+     */
+    private function decodePendingCode(?string $value): ?array
+    {
+        $parts = explode('|', (string) $value);
+        if (count($parts) !== 3 || !ctype_digit($parts[0]) || !ctype_digit($parts[1]) || $parts[2] === '') {
+            return null;
+        }
+
+        return ['expires_at' => (int) $parts[0], 'attempts' => (int) $parts[1], 'hash' => $parts[2]];
+    }
+
+    private function codeHash(string $code): string
+    {
+        return hash_hmac('sha256', $code, (string) config('app.key'));
     }
 
     /**

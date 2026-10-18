@@ -9,16 +9,17 @@ class SandboxExecutionService
 {
     /**
      * Execute student code: on Judge0 when configured, otherwise (local development and tests
-     * only) in Docker or a local sub-process with a timeout.
+     * only) in Docker or a local sub-process with a timeout. $timeoutSeconds caps the wait for
+     * Judge0, so a caller with a time budget can stay inside it.
      */
-    public function execute(string $code, string $language): array
+    public function execute(string $code, string $language, ?int $timeoutSeconds = null): array
     {
         $language = strtolower(trim($language));
         $startTime = microtime(true);
 
         // Serverless hosts (Vercel) have no Docker or JDK: run code on a Judge0 server when one is configured.
         if ($this->isRemoteExecutionConfigured()) {
-            return $this->executeRemotely($code, $language, $startTime);
+            return $this->executeRemotely($code, $language, $startTime, $timeoutSeconds ?? 25);
         }
 
         // Fail closed: without Judge0 the code would run on this server with the app's secrets
@@ -76,7 +77,7 @@ class SandboxExecutionService
     /**
      * Run code on a Judge0 server (self-hosted, or hosted via RapidAPI when JUDGE0_KEY is set).
      */
-    protected function executeRemotely(string $code, string $language, float $startTime): array
+    protected function executeRemotely(string $code, string $language, float $startTime, int $timeoutSeconds = 25): array
     {
         $languageId = self::JUDGE0_LANGUAGES[$language] ?? null;
         if ($languageId === null) {
@@ -99,7 +100,7 @@ class SandboxExecutionService
 
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->timeout(25)
+                ->timeout($timeoutSeconds)
                 ->post(rtrim(config('services.judge0.url'), '/') . '/submissions?base64_encoded=true&wait=true', [
                     'source_code' => base64_encode($code),
                     'language_id' => $languageId,
