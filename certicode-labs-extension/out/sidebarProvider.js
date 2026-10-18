@@ -36,6 +36,7 @@ const EXTENSION_VERSION = vscode.extensions.getExtension('certicode.certicode-la
 // (up to ~25 s + 45 s, capped at 60 s on Vercel), so they get more than the default 15 s.
 const GRADING_TIMEOUT_MS = 90000;
 const TRUSTED_BACKENDS_KEY = 'certicode.trustedBackends';
+const STARTER_OWNERS_KEY = 'certicode.starterFileOwners';
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
 class SidebarProvider {
@@ -45,6 +46,8 @@ class SidebarProvider {
         this._backendUrl = 'http://localhost';
         this._isReconnecting = false;
         this._lastSessionData = null;
+        // A check-progress or submit is waiting on the grader; further clicks are ignored until it answers
+        this._gradingInFlight = false;
         // Feature 1: Starter Files & Integrity
         this._starterFileSnapshots = new Map();
         // Read-only starter files (document URI -> original content) and a re-entrancy flag for restoring them
@@ -302,6 +305,14 @@ class SidebarProvider {
         const origin = await this.ensureTrustedBackend(backendUrl);
         if (!origin) {
             return false;
+        }
+        // Another lab or attempt: forget the previous one's starter baseline, read-only files
+        // and session data, so diffs and paste checks compare against this lab's files
+        if (this._sessionId !== sessionId) {
+            this._starterFileSnapshots.clear();
+            this._readonlyFiles.clear();
+            this._lastSessionData = null;
+            this._filesGenerated = false;
         }
         this._backendUrl = origin;
         this._sessionId = sessionId;
@@ -752,6 +763,15 @@ class SidebarProvider {
         vscode.window.showWarningMessage(`CertiCode: "${entry.name}" is read-only for this lab, so your change was undone.`);
     }
     /**
+     * The session that wrote each starter file in a workspace folder (file name -> session id).
+     */
+    starterFileOwners(rootUri) {
+        return { ...this._globalState.get(`${STARTER_OWNERS_KEY}:${rootUri.toString()}`, {}) };
+    }
+    async saveStarterFileOwners(rootUri, owners) {
+        await this._globalState.update(`${STARTER_OWNERS_KEY}:${rootUri.toString()}`, owners);
+    }
+    /**
      * Feature 1: Generate starter files in active workspace and open primary file.
      */
     async provisionStarterFiles(starterFiles) {
@@ -785,6 +805,12 @@ class SidebarProvider {
         }
         const rootUri = workspaceFolders[0].uri;
         let primaryUri = null;
+        const enc = new TextEncoder();
+        const sessionId = this._sessionId;
+        // Which session wrote each starter file here, so a returning student keeps their work
+        // while a different lab (or a new attempt) in the same folder gets its own files
+        const owners = this.starterFileOwners(rootUri);
+        const fromElsewhere = [];
         for (const file of starterFiles) {
             const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
             if (!fileUri) {
@@ -793,10 +819,8 @@ class SidebarProvider {
                 }
                 continue;
             }
-            // Cache snapshot for diff engine
-            if (!this._starterFileSnapshots.has(file.name)) {
-                this._starterFileSnapshots.set(file.name, file.content || '');
-            }
+            // Cache snapshot for diff engine (cleared when the session changes)
+            this._starterFileSnapshots.set(file.name, file.content || '');
             let exists = false;
             try {
                 await vscode.workspace.fs.stat(fileUri);
@@ -806,13 +830,44 @@ class SidebarProvider {
                 exists = false;
             }
             if (!exists) {
-                const enc = new TextEncoder();
                 await vscode.workspace.fs.writeFile(fileUri, enc.encode(file.content || ''));
+                owners[file.name] = sessionId;
+            }
+            else if (owners[file.name] !== sessionId) {
+                const current = new TextDecoder().decode(await vscode.workspace.fs.readFile(fileUri));
+                if (current === (file.content || '')) {
+                    owners[file.name] = sessionId;
+                }
+                else {
+                    fromElsewhere.push({ name: file.name, uri: fileUri, content: file.content || '' });
+                }
             }
             if (file.is_primary) {
                 primaryUri = fileUri;
             }
         }
+        if (fromElsewhere.length > 0) {
+            const names = fromElsewhere.map(f => f.name).join(', ');
+            const choice = await vscode.window.showWarningMessage(`This folder already has ${names} from another lab or attempt. Replace ${fromElsewhere.length === 1 ? 'it' : 'them'} with this lab's starter files? The current ${fromElsewhere.length === 1 ? 'copy is' : 'copies are'} saved in .certicode/previous first.`, { modal: true }, 'Replace files', 'Keep my files');
+            if (choice === 'Replace files') {
+                const backupRoot = vscode.Uri.joinPath(rootUri, '.certicode', 'previous', String(Date.now()));
+                for (const file of fromElsewhere) {
+                    const old = await vscode.workspace.fs.readFile(file.uri);
+                    const backupUri = this.resolveWorkspaceFile(backupRoot, file.name);
+                    if (backupUri) {
+                        await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(backupUri, '..'));
+                        await vscode.workspace.fs.writeFile(backupUri, old);
+                    }
+                    await vscode.workspace.fs.writeFile(file.uri, enc.encode(file.content));
+                    owners[file.name] = sessionId;
+                }
+            }
+            else if (choice === 'Keep my files') {
+                // The student chose to work on what is there; don't ask again for this session
+                fromElsewhere.forEach(f => { owners[f.name] = sessionId; });
+            }
+        }
+        await this.saveStarterFileOwners(rootUri, owners);
         await this.applyReadonlyStarterFiles(rootUri, starterFiles);
         // Fallback to first file if none marked primary
         if (!primaryUri && starterFiles.length > 0) {
@@ -926,13 +981,21 @@ class SidebarProvider {
                     isSuppressedB = this._recentChatSnippets.some(snippet => snippet.length >= MIN_CHAT_SNIPPET_LENGTH
                         && (snippet.includes(trimmedPaste) || trimmedPaste.includes(snippet)));
                 }
-                // Flagging Rule: External paste without internal/chat justification
-                if (!isSuppressedA && !isSuppressedB) {
-                    this.sendTelemetry('paste_anomaly', {
-                        pasted_length: change.text.length,
-                        snippet: change.text.slice(0, 2000),
-                        file: vscode.workspace.asRelativePath(event.document.uri),
-                        wpm: this._currentWpm
+                // Flagging Rule: External paste without internal/chat justification. Snippets,
+                // quick fixes, completions and reloads from disk also insert big blocks, so only
+                // flag text that is really on the clipboard, in a document the student edited.
+                if (!isSuppressedA && !isSuppressedB && event.document.isDirty) {
+                    const file = vscode.workspace.asRelativePath(event.document.uri);
+                    const wpm = this._currentWpm;
+                    void this.matchesClipboard(change.text).then(fromClipboard => {
+                        if (fromClipboard) {
+                            this.sendTelemetry('paste_anomaly', {
+                                pasted_length: change.text.length,
+                                snippet: change.text.slice(0, 2000),
+                                file,
+                                wpm
+                            });
+                        }
                     });
                 }
             }
@@ -945,6 +1008,21 @@ class SidebarProvider {
                 this.computeAndSyncDiffs();
             }, 2000);
         }
+    }
+    /**
+     * Whether inserted text is what is on the clipboard, ignoring whitespace (pasting re-indents).
+     */
+    async matchesClipboard(inserted) {
+        let clipboard = '';
+        try {
+            clipboard = await vscode.env.clipboard.readText();
+        }
+        catch {
+            return false;
+        }
+        const squash = (text) => text.replace(/\s+/g, '');
+        const pasted = squash(inserted);
+        return pasted.length > 0 && squash(clipboard) === pasted;
     }
     /**
      * Feature 5: OS-Level Focus Loss Sensor
@@ -1379,7 +1457,39 @@ class SidebarProvider {
         }
         return collected;
     }
+    /**
+     * Run one grading request at a time. Grading can take a minute, and a second click used to
+     * start another full grading run on the server.
+     */
+    async runGrading(grade) {
+        if (this._gradingInFlight) {
+            vscode.window.showInformationMessage('Your code is still being graded. The result will appear here when it is ready.');
+            return;
+        }
+        this._gradingInFlight = true;
+        try {
+            await grade();
+        }
+        finally {
+            this._gradingInFlight = false;
+        }
+    }
+    /**
+     * The server's explanation for a failed request: its message, else its error code.
+     */
+    failureReason(body, fallback) {
+        try {
+            const data = JSON.parse(body);
+            return data.message || data.error || fallback;
+        }
+        catch {
+            return fallback;
+        }
+    }
     async handleCheckProgress() {
+        return this.runGrading(() => this.checkProgress());
+    }
+    async checkProgress() {
         if (!this._sessionId) {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
@@ -1430,12 +1540,12 @@ class SidebarProvider {
                 this.syncSessionState();
             }
             else {
-                const responseData = JSON.parse(result.body);
-                vscode.window.showErrorMessage(`Check Progress Failed: ${responseData.error || 'Server error'}`);
-                this._view?.webview.postMessage({
-                    type: 'error',
-                    message: responseData.error || 'Check progress failed.'
-                });
+                const reason = this.failureReason(result.body, 'Check progress failed.');
+                vscode.window.showErrorMessage(`Check Progress Failed: ${reason}`);
+                this._view?.webview.postMessage({ type: 'error', message: reason });
+                if (result.status === 409) {
+                    this.syncSessionState();
+                }
             }
         }
         catch (err) {
@@ -1444,6 +1554,9 @@ class SidebarProvider {
         }
     }
     async handleSubmit() {
+        return this.runGrading(() => this.submit());
+    }
+    async submit() {
         if (!this._sessionId) {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
             return;
@@ -1489,12 +1602,12 @@ class SidebarProvider {
                 });
             }
             else {
-                const responseData = JSON.parse(result.body);
-                vscode.window.showErrorMessage(`Submission Failed: ${responseData.error || 'Server error'}`);
-                this._view?.webview.postMessage({
-                    type: 'error',
-                    message: responseData.error || 'Submission failed.'
-                });
+                const reason = this.failureReason(result.body, 'Submission failed.');
+                vscode.window.showErrorMessage(`Submission Failed: ${reason}`);
+                this._view?.webview.postMessage({ type: 'error', message: reason });
+                if (result.status === 409) {
+                    this.syncSessionState();
+                }
             }
         }
         catch (err) {
@@ -1504,7 +1617,7 @@ class SidebarProvider {
     }
     async handleExit(confirmExit = true) {
         if (confirmExit) {
-            const confirm = await vscode.window.showWarningMessage('Are you sure you want to exit this workspace? Any unsaved editor content or unsubmitted progress will remain pending.', { modal: true }, 'Confirm Exit');
+            const confirm = await vscode.window.showWarningMessage('Are you sure you want to exit this workspace? Your attempt stays open: come back from the lab page to continue and submit before time runs out.', { modal: true }, 'Confirm Exit');
             if (confirm !== 'Confirm Exit') {
                 return;
             }
@@ -2287,6 +2400,10 @@ class SidebarProvider {
             show(liveLabAlert);
         }
 
+        // Set from the 'status' message until the grade (or an error) comes back, so the
+        // periodic session refresh doesn't turn the buttons back on mid-grade
+        let gradingInFlight = false;
+
         function setActionsLocked(locked) {
             checkProgressBtn.disabled = locked;
             submitBtn.disabled = locked || !isIntegrityValid;
@@ -2454,6 +2571,7 @@ class SidebarProvider {
             const message = event.data;
             switch (message.type) {
                 case 'status':
+                    gradingInFlight = true;
                     actionStatus.textContent = message.message;
                     show(actionStatus);
                     checkProgressBtn.disabled = true;
@@ -2461,6 +2579,7 @@ class SidebarProvider {
                     break;
 
                 case 'error':
+                    gradingInFlight = false;
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
                     submitBtn.disabled = !isIntegrityValid;
@@ -2616,6 +2735,7 @@ class SidebarProvider {
 
                 case 'checkResult':
                 case 'submitResult': {
+                    gradingInFlight = false;
                     show(actionStatus, false);
                     checkProgressBtn.disabled = message.type === 'submitResult';
                     submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
@@ -2700,10 +2820,13 @@ class SidebarProvider {
             if (!session || !session.laboratory) return;
             if (connectionScreen.style.display !== 'none' && !INITIAL_SESSION_ID) return;
 
-            show(actionStatus, false);
+            // Mid-grade, keep the "grading" status and the locked buttons
+            if (!gradingInFlight) {
+                show(actionStatus, false);
+            }
             show(connectError, false);
-            checkProgressBtn.disabled = false;
-            submitBtn.disabled = !isIntegrityValid;
+            const attemptClosed = session.status !== 'in_progress';
+            setActionsLocked(gradingInFlight || attemptClosed);
 
             connectionScreen.style.display = 'none';
             sessionScreen.style.display = 'flex';
@@ -2797,7 +2920,7 @@ class SidebarProvider {
                 setActionsLocked(true);
             } else {
                 setLiveAlert(null);
-                setActionsLocked(false);
+                setActionsLocked(gradingInFlight || attemptClosed);
             }
 
             // Timer
