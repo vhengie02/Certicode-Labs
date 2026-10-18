@@ -91,7 +91,7 @@ class LabSessionController extends Controller
 
         return response()->json([
             'message' => 'Lab session started.',
-            'session' => $session->load('laboratory'),
+            'session' => array_merge($session->toArray(), ['laboratory' => $lab->studentPayload()]),
         ]);
     }
 
@@ -598,17 +598,7 @@ class LabSessionController extends Controller
             ],
             'is_group_lab' => (bool) $lab->is_group_lab,
             'teammates' => $teammates,
-            'laboratory' => [
-                'id' => $lab->id,
-                'title' => $lab->title,
-                'description' => $lab->description,
-                'is_group_lab' => (bool) $lab->is_group_lab,
-                'availability_mode' => $lab->availability_mode ?? 'open',
-                'live_status' => $lab->live_status ?? 'not_started',
-                'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
-                'tasks_definition' => $lab->tasks_definition ?? [],
-                'starter_files' => $lab->getStarterFilesList(),
-            ]
+            'laboratory' => $lab->studentPayload(),
         ]);
     }
 

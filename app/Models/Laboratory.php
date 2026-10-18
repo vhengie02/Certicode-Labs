@@ -41,8 +41,16 @@ class Laboratory extends Model
         'live_elapsed_seconds' => 'integer',
     ];
 
+    /** The grading key. Never serialized, so a lab sent as JSON can't hand it to a student. */
+    protected $hidden = [
+        'reference_solution',
+        'rubric',
+        'test_cases',
+    ];
+
     /**
-     * Get normalized starter files with backward-compatibility fallback.
+     * Get normalized starter files with backward-compatibility fallback. The fallback is a
+     * neutral stub, never the reference solution: that is the grading key.
      */
     public function getStarterFilesList(): array
     {
@@ -50,7 +58,7 @@ class Laboratory extends Model
             return $this->starter_files;
         }
 
-        $defaultContent = $this->reference_solution ?: "// CertiCode Labs - Starter Code\npublic class TaskManager {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, CertiCode Labs!\");\n    }\n}\n";
+        $defaultContent = "// CertiCode Labs - Starter Code\npublic class TaskManager {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, CertiCode Labs!\");\n    }\n}\n";
 
         return [
             [
@@ -59,6 +67,36 @@ class Laboratory extends Model
                 'is_primary' => true,
                 'is_readonly' => false,
             ]
+        ];
+    }
+
+    /**
+     * The task checklist as students may see it: id and text only. Each task's 'command' is a
+     * grading check, and showing it tells the student exactly what string to write.
+     */
+    public function studentTasks(): array
+    {
+        return collect(is_array($this->tasks_definition) ? $this->tasks_definition : [])
+            ->filter(fn ($task) => is_array($task))
+            ->map(fn ($task) => ['id' => $task['id'] ?? null, 'task' => $task['task'] ?? ''])
+            ->values()
+            ->all();
+    }
+
+    /** The lab as the student-facing API sends it: no grading key, no task checks. */
+    public function studentPayload(): array
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'description' => $this->description,
+            'is_group_lab' => (bool) $this->is_group_lab,
+            'availability_mode' => $this->availability_mode ?? 'open',
+            'live_status' => $this->live_status ?? 'not_started',
+            'live_duration_minutes' => $this->live_duration_minutes ?? $this->time_limit ?? 60,
+            'time_limit' => $this->time_limit,
+            'tasks_definition' => $this->studentTasks(),
+            'starter_files' => $this->getStarterFilesList(),
         ];
     }
 
