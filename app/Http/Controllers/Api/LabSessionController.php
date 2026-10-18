@@ -124,7 +124,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $logPayload,
+            'payload' => $this->boundedPayload($logPayload),
         ]);
 
         // Smart anomaly checks
@@ -172,6 +172,7 @@ class LabSessionController extends Controller
             $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
             $metadata = $request->payload;
             $metadata['snippet'] = $snippet;
+            $metadata = $this->boundedPayload($metadata);
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
@@ -253,7 +254,7 @@ class LabSessionController extends Controller
             return;
         }
 
-        $this->recordAndBroadcastAnomaly($session, ['type' => $type, 'metadata' => $payload] + $attributes);
+        $this->recordAndBroadcastAnomaly($session, ['type' => $type, 'metadata' => $this->boundedPayload($payload)] + $attributes);
     }
 
     /**
@@ -282,19 +283,58 @@ class LabSessionController extends Controller
     /**
      * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
      * a flag without a picture (e.g. the camera was unplugged) is raised once per
-     * 5 minutes, and one with a picture at most every 20 seconds.
+     * 5 minutes, and one with a picture at most every 20 seconds. The picture itself is
+     * stored at most once every SNAPSHOT_INTERVAL_SECONDS per type: a covered camera sends
+     * the same dark frame all lab long.
      */
     protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
     {
         $attributes += $this->cameraSnapshotAttributes($payload, $extraMetadata);
         $hasSnapshot = $attributes['image_path'] !== null;
 
-        $isRepeat = Anomaly::where('lab_session_id', $session->id)
-            ->where('type', $attributes['type'])
+        $recent = Anomaly::where('lab_session_id', $session->id)
+            ->where('type', $attributes['type']);
+
+        $isRepeat = (clone $recent)
             ->where('created_at', '>=', $hasSnapshot ? now()->subSeconds(20) : now()->subMinutes(5))
             ->exists();
+        if ($isRepeat) {
+            return null;
+        }
 
-        return $isRepeat ? null : $this->recordAndBroadcastAnomaly($session, $attributes);
+        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)
+            ->where('created_at', '>=', now()->subSeconds(self::SNAPSHOT_INTERVAL_SECONDS))->exists()) {
+            unset($attributes['metadata']['image_base64']);
+            $attributes['image_path'] = null;
+        }
+
+        return $this->recordAndBroadcastAnomaly($session, $attributes);
+    }
+
+    private const SNAPSHOT_INTERVAL_SECONDS = 120;
+
+    /** Largest client telemetry payload or flag metadata kept as sent (webcam snapshot not counted). */
+    private const MAX_PAYLOAD_BYTES = 8192;
+
+    /**
+     * A client-sent payload, cut down if it is too large to store. Small scalar fields are
+     * kept so the event still says what happened.
+     */
+    private function boundedPayload(?array $payload): ?array
+    {
+        if ($payload === null || strlen((string) json_encode($payload)) <= self::MAX_PAYLOAD_BYTES) {
+            return $payload;
+        }
+
+        $kept = collect($payload)
+            ->filter(fn ($value) => is_scalar($value) || $value === null)
+            ->map(fn ($value) => is_string($value) ? mb_substr($value, 0, 500) : $value)
+            ->take(20)
+            ->all();
+
+        return strlen((string) json_encode($kept)) <= self::MAX_PAYLOAD_BYTES
+            ? $kept + ['truncated' => true]
+            : ['truncated' => true];
     }
 
     /**
@@ -306,6 +346,7 @@ class LabSessionController extends Controller
         $payload = $payload ?? [];
         $snapshot = WebcamSnapshot::normalize($payload['image_base64'] ?? null);
         unset($payload['image_base64'], $payload['image_path']);
+        $payload = $this->boundedPayload($payload) ?? [];
 
         if ($snapshot) {
             $payload['image_base64'] = $snapshot;

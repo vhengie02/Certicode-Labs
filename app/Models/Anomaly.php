@@ -55,16 +55,21 @@ class Anomaly extends Model
      */
     public function scopeWithoutSnapshotData($query)
     {
-        if ($query->getConnection()->getDriverName() !== 'pgsql') {
+        $table = $this->getTable();
+        $metadata = match ($query->getConnection()->getDriverName()) {
+            'pgsql' => "({$table}.metadata::jsonb - 'image_base64')",
+            'sqlite' => "json_remove({$table}.metadata, '$.image_base64')",
+            default => null,
+        };
+        if ($metadata === null) {
             return $query;
         }
 
-        $table = $this->getTable();
         $columns = ['id', 'lab_session_id', 'type', 'severity', 'description', 'resolved', 'image_path', 'created_at', 'updated_at'];
 
         return $query
             ->select(array_map(fn ($column) => "{$table}.{$column}", $columns))
-            ->selectRaw("({$table}.metadata::jsonb - 'image_base64') as metadata");
+            ->selectRaw("{$metadata} as metadata");
     }
 
     /**
@@ -75,6 +80,36 @@ class Anomaly extends Model
     {
         return static::where('resolved', true)
             ->where('created_at', '<', now()->subDays((int) config('app.anomaly_retention_days')));
+    }
+
+    /**
+     * Remove the webcam snapshot from flags older than `app.snapshot_retention_days`, open ones
+     * included: a snapshot is up to 400 KB of base64 in the row. The flag itself is kept, with
+     * `snapshot_expired` so the instructor can see a picture existed. Returns the rows changed.
+     */
+    public static function expireOldSnapshots(int $chunk = 50): int
+    {
+        $old = static::where('image_path', self::DB_SNAPSHOT)
+            ->where('created_at', '<', now()->subDays((int) config('app.snapshot_retention_days')));
+
+        if ((new static)->getConnection()->getDriverName() === 'pgsql') {
+            return $old->update([
+                'image_path' => null,
+                'metadata' => \Illuminate\Support\Facades\DB::raw("((coalesce(metadata::jsonb, '{}'::jsonb) - 'image_base64') || '{\"snapshot_expired\": true}'::jsonb)::json"),
+            ]);
+        }
+
+        $changed = 0;
+        $old->select(['id', 'metadata'])->chunkById($chunk, function ($anomalies) use (&$changed) {
+            foreach ($anomalies as $anomaly) {
+                $metadata = $anomaly->metadata ?? [];
+                unset($metadata['image_base64']);
+                $anomaly->forceFill(['image_path' => null, 'metadata' => $metadata + ['snapshot_expired' => true]])->saveQuietly();
+                $changed++;
+            }
+        });
+
+        return $changed;
     }
 
     /**

@@ -24,8 +24,11 @@ class CronController extends Controller
         $classesOutput = trim(Artisan::output());
 
         // The Laravel scheduler doesn't run on Vercel, so the daily prune from routes/console.php runs here too.
-        Artisan::call('model:prune', ['--model' => [\App\Models\Anomaly::class]]);
+        Artisan::call('model:prune', ['--model' => [\App\Models\Anomaly::class, \App\Models\TelemetryLog::class]]);
         $pruneOutput = trim(Artisan::output());
+
+        Artisan::call('certicode:expire-old-snapshots');
+        $snapshotOutput = trim(Artisan::output());
 
         return response()->json([
             'status' => 'success',
@@ -34,6 +37,7 @@ class CronController extends Controller
                 'live_labs' => $liveLabsOutput,
                 'classes' => $classesOutput,
                 'anomaly_prune' => $pruneOutput,
+                'snapshots' => $snapshotOutput,
             ],
         ]);
     }

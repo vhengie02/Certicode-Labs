@@ -92,6 +92,12 @@ Artisan::command('certicode:refresh-competencies {--dry-run : Report what would 
         . "{$totals['removed']} removed, {$totals['unchanged']} unchanged.");
 })->purpose('Recalculate every competency score from completed lab sessions (run once after deploying the competency fix)');
 
+Artisan::command('certicode:expire-old-snapshots', function () {
+    $count = \App\Models\Anomaly::expireOldSnapshots();
+    $this->info("Removed the webcam snapshot from {$count} flag(s) older than " . config('app.snapshot_retention_days') . ' days.');
+})->purpose('Remove webcam snapshots from old integrity flags, keeping the flags');
+
 Schedule::command('certicode:close-expired-live-labs')->everyMinute();
 Schedule::command('certicode:auto-conclude-expired-classes')->everyMinute();
-Schedule::command('model:prune', ['--model' => [\App\Models\Anomaly::class]])->daily();
+Schedule::command('model:prune', ['--model' => [\App\Models\Anomaly::class, \App\Models\TelemetryLog::class]])->daily();
+Schedule::command('certicode:expire-old-snapshots')->daily();

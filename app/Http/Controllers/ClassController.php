@@ -824,7 +824,10 @@ class ClassController extends Controller
                 && (int) ($log->payload['face_count'] ?? 1) === 1)
             ->values();
 
+        // The view links to each snapshot; loading every base64 image here would pull them
+        // all into memory at once
         $anomalies = \App\Models\Anomaly::where('lab_session_id', $session->id)
+            ->withoutSnapshotData()
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
