@@ -145,7 +145,7 @@
 
             <!-- Reading Content (Renders Rich HTML and custom tags) -->
             <div class="prose prose-invert max-w-none text-slate-200 text-sm leading-relaxed border-t border-transparent pt-2">
-                {!! $module->content !!}
+                {!! $module->safeContent() !!}
             </div>
         </div>
 
