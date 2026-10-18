@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Stubbed external services. phpunit.xml forces these too; they are repeated here so the
+# intent is visible. This repository is public: never put a real key in this file.
+env:
+  ANTHROPIC_API_KEY: mock
+  JUDGE0_URL: ""
+
+jobs:
+  php-sqlite:
+    name: PHP ${{ matrix.php }} / SQLite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.2: composer.json minimum. 8.3: the vercel-php@0.7 runtime production uses.
+        php: ['8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-laravel
+        with:
+          php-version: ${{ matrix.php }}
+
+      # phpunit.xml sets up SQLite :memory:
+      - name: Run tests
+        run: php artisan test
+
+  php-postgres:
+    name: PHP 8.3 / Postgres 17
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Production runs Supabase Postgres 17
+        image: postgres:17
+        env:
+          POSTGRES_DB: testing
+          # Throwaway container that only this job can reach: no password at all
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Real env vars win over phpunit.xml's SQLite settings
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: ""
+      DB_SSLMODE: disable
+      # Same as production (the Supabase pooler needs emulated prepares), so the
+      # App\Support\PostgresConnection boolean bindings are exercised
+      DB_EMULATE_PREPARES: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-laravel
+        with:
+          php-version: '8.3'
+
+      # Supabase creates these roles; a migration grants them access to public.profiles
+      - name: Create the Supabase API roles
+        run: psql -h 127.0.0.1 -U postgres -d testing -v ON_ERROR_STOP=1 -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;"
+
+      - name: Run tests
+        run: php artisan test
+
+  extension:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: certicode-labs-extension
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # node --test with a glob needs Node 21+
+          node-version: 22
+          cache: npm
+          cache-dependency-path: certicode-labs-extension/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check and compile
+        run: npx tsc -p ./
+
+      - run: npm test
+
+  pint:
+    name: Code style (Pint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-laravel
+        with:
+          php-version: '8.3'
+
+      # Non-blocking: 119 PHP files were not Pint-formatted on 2026-10-19. Once the codebase
+      # has been run through `vendor/bin/pint`, remove continue-on-error and the warning step.
+      - name: Check code style
+        id: pint
+        continue-on-error: true
+        run: vendor/bin/pint --test
+
+      - name: Report code style issues
+        if: steps.pint.outcome == 'failure'
+        run: echo "::warning title=Pint::Code style issues found (not blocking yet). Run vendor/bin/pint to fix them."

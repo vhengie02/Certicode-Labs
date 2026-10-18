@@ -1,0 +1,39 @@
+name: Set up Laravel
+description: Install PHP and the locked Composer dependencies, then create a throwaway .env with a fresh APP_KEY.
+
+inputs:
+  php-version:
+    description: PHP version to install
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: curl, dom, fileinfo, iconv, intl, mbstring, pdo_pgsql, pdo_sqlite, xml
+        coverage: none
+
+    - name: Find the Composer cache folder
+      id: composer-cache
+      shell: bash
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v6
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: composer-${{ runner.os }}-php${{ inputs.php-version }}-${{ hashFiles('composer.lock') }}
+        restore-keys: composer-${{ runner.os }}-php${{ inputs.php-version }}-
+
+    - name: Install Composer dependencies
+      shell: bash
+      run: composer install --no-interaction --prefer-dist --no-progress
+
+    # The app needs an APP_KEY to encrypt sessions and cookies. Generate a new one per run:
+    # nothing secret is stored in the repository.
+    - name: Create .env
+      shell: bash
+      run: |
+        cp .env.example .env
+        php artisan key:generate --ansi
