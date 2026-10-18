@@ -39,10 +39,16 @@ class LabAttemptController extends Controller
             }
         }
 
-        // Feature 8: Pre-Lab Camera Proctoring Verification Gate for Students
-        $isCameraVerified = $request->boolean('camera_verified') || session("camera_verified_lab_{$laboratory->id}", false);
+        // Feature 8: Pre-Lab Camera Proctoring Verification Gate for Students. Only the server's
+        // own record of a recent camera check counts, never a flag the browser sends.
+        $cameraCheck = self::recentCameraCheck($laboratory->id);
+        $isCameraVerified = $cameraCheck !== null;
         if ($user && $user->role === 'student' && !$isCameraVerified) {
-            return back()->with('error', 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.');
+            $message = 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.';
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['error' => 'camera_not_verified', 'message' => $message], 403);
+            }
+            return back()->with('error', $message);
         }
 
         // Find existing in-progress session
@@ -83,16 +89,19 @@ class LabAttemptController extends Controller
             ]);
         }
 
-        // Attach prelab verification telemetry if verified
+        // Attach prelab verification telemetry if verified. A low-light pass skipped face
+        // detection, so it is recorded as such for the instructor rather than as one face.
         if ($isCameraVerified && $session) {
+            $lowLight = (bool) ($cameraCheck['low_light'] ?? false);
             \App\Models\TelemetryLog::firstOrCreate([
                 'lab_session_id' => $session->id,
                 'event_type' => 'webcam_prelab_verification',
             ], [
                 'payload' => [
                     'status' => 'granted',
-                    'face_count' => 1,
-                    'verified_at' => now()->toIso8601String(),
+                    'face_count' => $lowLight ? null : 1,
+                    'low_light' => $lowLight,
+                    'verified_at' => $cameraCheck['verified_at'] ?? now()->toIso8601String(),
                 ],
             ]);
         }
@@ -112,6 +121,39 @@ class LabAttemptController extends Controller
         }
 
         return redirect($vscodeUrl);
+    }
+
+    /** How long a passed camera check lets the student start the lab. */
+    public const CAMERA_CHECK_TTL_MINUTES = 10;
+
+    /**
+     * Record a passed camera check in the student's session; the lab start reads it back.
+     */
+    public static function rememberCameraCheck(Request $request, int $labId, bool $lowLight): void
+    {
+        if ($request->hasSession()) {
+            $request->session()->put("camera_verified_lab_{$labId}", [
+                'verified_at' => now()->toIso8601String(),
+                'low_light' => $lowLight,
+            ]);
+        }
+    }
+
+    /**
+     * The camera check this browser session passed for the lab in the last few minutes, if any.
+     *
+     * @return array{verified_at: string, low_light: bool}|null
+     */
+    private static function recentCameraCheck(int $labId): ?array
+    {
+        $check = session("camera_verified_lab_{$labId}");
+        if (!is_array($check) || empty($check['verified_at'])) {
+            return null;
+        }
+
+        $verifiedAt = \Carbon\Carbon::parse($check['verified_at']);
+
+        return $verifiedAt->gt(now()->subMinutes(self::CAMERA_CHECK_TTL_MINUTES)) ? $check : null;
     }
 
     /**

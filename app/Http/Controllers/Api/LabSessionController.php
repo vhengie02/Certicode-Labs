@@ -1603,9 +1603,7 @@ class LabSessionController extends Controller
             ],
         ]);
 
-        if ($request->hasSession()) {
-            $request->session()->put("camera_verified_lab_{$session->lab_id}", true);
-        }
+        \App\Http\Controllers\LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'));
 
         return response()->json([
             'status' => 'success',
@@ -1652,9 +1650,7 @@ class LabSessionController extends Controller
             ], 422);
         }
 
-        if ($request->hasSession()) {
-            $request->session()->put("camera_verified_lab_{$labId}", true);
-        }
+        \App\Http\Controllers\LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
 
         return response()->json([
             'status' => 'success',
