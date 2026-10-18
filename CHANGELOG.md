@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-19
+
+- Module files up to 20 MB now upload and download reliably on the live site. They are kept in cloud storage instead of disappearing.
+- A lab's grade is final once the attempt ends. Leaving a lab no longer submits it ungraded: the attempt stays open to resume and submit.
+- Fewer false integrity flags: normal snippets and quick fixes no longer count as pastes, and keeping the lab page behind VS Code no longer counts as tab switching. Valid code no longer fails the syntax check (long numbers, Python comments).
+- Sign-in and Gmail linking are harder to abuse, lesson content is cleaned of scripts when saved, and a class with certificates or labs can't be deleted by accident.
+- Extension 1.7.1 ships with this release: each lab gets its own starter files, and Check/Submit stay disabled while grading runs. Students on 1.6.0 can keep using it, but should update.
+
 ## 2026-10-18
 
 - Instructors can sort the class integrity flags table by any column and resolve several flags at once.

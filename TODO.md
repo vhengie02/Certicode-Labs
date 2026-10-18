@@ -109,6 +109,8 @@ This document outlines the final feature specifications, implementation tasks, a
   - Automatically disables Submit button while file structure is invalid.
 - [x] **Separation of Concerns**:
   - Instructions, rubrics, and task objectives remain in sidebar; workspace files contain only runnable code/comments.
+- [x] **Each lab gets its own starter files (extension 1.7.1)**:
+  - Starter files that already existed were never replaced, so a new lab in the same folder kept (and graded) the previous lab's code. The extension now remembers which session wrote each file: resuming keeps the student's work, and a file from another lab prompts to replace it after saving the old copy in `.certicode/previous`.
 
 ---
 
@@ -139,6 +141,8 @@ This document outlines the final feature specifications, implementation tasks, a
   - Ensure lifecycle is bounded strictly to session duration (flushed/reset across sessions).
 - [x] **Student Blindness Enforcement**:
   - Suppress any indicator of paste flags in the extension sidebar and student dashboard; surface solely on instructor views.
+- [x] **Fewer false paste flags (extension 1.7.1)**:
+  - Snippet expansions, quick fixes, completions and reloads from disk no longer count. A large insertion is flagged only when it matches the clipboard (ignoring whitespace) in a document the student edited.
 
 ---
 
@@ -298,9 +302,16 @@ This document outlines the final feature specifications, implementation tasks, a
   - The VS Code sidebar shows the installed extension version on the connection and session screens.
 - [x] **Fewer false "multiple faces" flags ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php))**:
   - `countFaces()` treats the largest face as the student. Another face counts only if it is confident (score ≥ 0.5), not a duplicate box of the student's face, and at least 20% of its size.
+- [x] **Server-side camera gate**:
+  - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. A low-light pass is logged as `low_light`, and the low-light option is hidden after a multiple-faces failure.
+- [x] **Face models actually load on Vercel**:
+  - `public/models` and `public/fonts` are routed as static files; before, they 404ed and in-lab detection silently fell back to the brightness check.
+- [x] **No tab-switch flags for normal work**:
+  - The lab page going out of view behind VS Code is logged as `lab_page_hidden` and not counted; real switching raises one flag per 2-minute window.
 - [ ] **Follow-ups**:
   - Notify the instructor (email or in-app) about camera flags when the monitoring page is closed.
   - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
+  - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
   - Reloading the VS Code window also fires `deactivate()` and exits the lab; tell a reload apart from a close.
   - Show instructors on the monitoring page which students run an outdated extension.
@@ -422,6 +433,31 @@ When creating a lab exercise, the instructor selects one of two availability mod
   - Added Alpine.js modal displaying AI vs. Effective scores side-by-side, full plain-language AI explanation, test results, competency checklist with reasons, and inline override form.
 - [x] **Automated Test Verification ([`AiGradeSummaryAndOverrideTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/AiGradeSummaryAndOverrideTest.php))**:
   - Comprehensive feature tests covering persistence, student privacy, side-by-side audit preservation, authorization, and team submission unit evaluation (6 tests, 53 assertions).
+- [x] **Grades can't be forged or changed after the attempt**:
+  - Running code (`/execute`) no longer awards tasks or sets the score. Check-progress and submit refuse an attempt that has ended or run out of time, one grading run per session at a time.
+  - A student leaving the lab no longer finalizes an ungraded attempt; the extension keeps Check/Submit disabled while a grade is pending.
+- [x] **Submits fit Vercel's 60 s limit**:
+  - The code is saved first, the grade gets one 40 s attempt, and the code run gets what's left of a 50 s budget.
+- [x] **Syntax gate no longer fails valid code**:
+  - Comments and strings are stripped per language before the check, and the repeated-character rule is gone.
+
+---
+
+## 🔒 Security & Deployment Hardening (October 2026 audit)
+
+A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and highs are fixed, each with a regression test.
+
+- [x] **Critical fixes**: Google sign-in account takeover, student code running on the server without Judge0, grade forging through `/execute`, real credentials as config defaults, module attachments lost on Vercel's temporary disk.
+- [x] **High fixes**: rate limits on sign-in, mail, codes and grading; lesson HTML sanitised; Gmail-link code capped and expiring; classes with certificates can't be deleted; extension state read from telemetry instead of the per-request cache; demo seeders blocked in production; Supabase signup trigger no longer takes the role from signup data.
+- [x] **Attachments in Supabase Storage**: uploads and downloads go straight between the browser and storage through 5-minute signed URLs, so files up to 20 MB work despite Vercel's 4.5 MB request limit.
+- [ ] **Follow-ups (owner)**:
+  - Finish the post-audit production checklist (credentials, Supabase Auth settings, demo accounts). The details are kept outside this public repo.
+  - Run the `2026_10_18_000000_stop_taking_role_from_supabase_signup_metadata` migration on Supabase.
+  - Set the Vercel env vars: `DB_URL` (or `DB_*`), `JUDGE0_URL`, `ATTACHMENTS_DISK=supabase` and `SUPABASE_STORAGE_*`; set the bucket file-size limit to at least 20 MB.
+  - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.7.1 if every student should update.
+- [ ] **Follow-ups (code)**:
+  - Try a real upload to the Supabase bucket after deploying.
+  - Work through the audit's remaining 41 medium and 30 low findings (polling load, unbounded telemetry and snapshot growth, O(n²) plagiarism on every page load, reference solution sent to students, no CI, Postgres-only paths untested on SQLite).
 
 ---
 
