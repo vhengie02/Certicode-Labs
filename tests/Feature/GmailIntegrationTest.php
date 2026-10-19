@@ -3,12 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Models\SchoolClass;
+use App\Notifications\ClassActivityNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
-use App\Notifications\ClassActivityNotification;
 use Tests\TestCase;
 
 class GmailIntegrationTest extends TestCase
@@ -243,7 +242,7 @@ class GmailIntegrationTest extends TestCase
 
         $this->user->notify(new ClassActivityNotification('Title', 'Message', '/url', 'class'));
         Notification::assertSentTo($this->user, ClassActivityNotification::class, function ($notification, $channels) {
-            return in_array('database', $channels) && !in_array('mail', $channels);
+            return in_array('database', $channels) && ! in_array('mail', $channels);
         });
     }
 
@@ -337,7 +336,7 @@ class GmailIntegrationTest extends TestCase
             'gmail' => 'newuser@gmail.com',
             'role' => 'student',
         ]);
-        
+
         $user = User::where('email', 'newuser@gmail.com')->first();
         $this->assertNotNull($user->gmail_verified_at);
         $this->assertAuthenticatedAs($user);

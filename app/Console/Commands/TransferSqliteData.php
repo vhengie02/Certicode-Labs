@@ -50,8 +50,9 @@ class TransferSqliteData extends Command
     {
         $sqlitePath = base_path($this->option('sqlite-path'));
 
-        if (!file_exists($sqlitePath)) {
+        if (! file_exists($sqlitePath)) {
             $this->error("SQLite database file not found at: {$sqlitePath}");
+
             return 1;
         }
 
@@ -60,7 +61,7 @@ class TransferSqliteData extends Command
 
         if ($activeConnection === 'sqlite') {
             $this->warn("Warning: Current database connection is still 'sqlite'. Please configure your pgsql/Supabase credentials in .env first.");
-            if (!$this->confirm('Do you wish to continue anyway?', false)) {
+            if (! $this->confirm('Do you wish to continue anyway?', false)) {
                 return 0;
             }
         }
@@ -75,7 +76,7 @@ class TransferSqliteData extends Command
         $this->info("Target driver is: [{$driver}]");
 
         if ($driver === 'pgsql') {
-            $this->info("Disabling PostgreSQL foreign key checks temporarily...");
+            $this->info('Disabling PostgreSQL foreign key checks temporarily...');
             DB::statement("SET session_replication_role = 'replica';");
         }
 
@@ -83,7 +84,7 @@ class TransferSqliteData extends Command
             foreach ($this->tables as $table) {
                 // Check if table exists in SQLite
                 $check = $sqlitePdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='{$table}'")->fetch();
-                if (!$check) {
+                if (! $check) {
                     continue;
                 }
 
@@ -92,6 +93,7 @@ class TransferSqliteData extends Command
 
                 if ($count === 0) {
                     $this->line("<comment>• {$table}:</comment> 0 rows (skipped)");
+
                     continue;
                 }
 
@@ -123,7 +125,7 @@ class TransferSqliteData extends Command
 
         } finally {
             if ($driver === 'pgsql') {
-                $this->info("Re-enabling PostgreSQL foreign key checks...");
+                $this->info('Re-enabling PostgreSQL foreign key checks...');
                 DB::statement("SET session_replication_role = 'origin';");
             }
         }

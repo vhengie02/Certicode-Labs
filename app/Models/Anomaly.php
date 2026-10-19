@@ -3,8 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\MassPrunable;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Anomaly extends Model
 {
@@ -95,7 +96,7 @@ class Anomaly extends Model
         if ((new static)->getConnection()->getDriverName() === 'pgsql') {
             return $old->update([
                 'image_path' => null,
-                'metadata' => \Illuminate\Support\Facades\DB::raw("((coalesce(metadata::jsonb, '{}'::jsonb) - 'image_base64') || '{\"snapshot_expired\": true}'::jsonb)::json"),
+                'metadata' => DB::raw("((coalesce(metadata::jsonb, '{}'::jsonb) - 'image_base64') || '{\"snapshot_expired\": true}'::jsonb)::json"),
             ]);
         }
 

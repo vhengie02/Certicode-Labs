@@ -2,8 +2,15 @@
 
 namespace App\Models;
 
+use App\Events\AnomalyDetected;
+use App\Notifications\ClassActivityNotification;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class LabSession extends Model
 {
@@ -67,11 +74,11 @@ class LabSession extends Model
     public function issueExtensionToken(): string
     {
         $token = $this->currentExtensionToken();
-        if (!$token) {
-            $token = \Illuminate\Support\Str::random(48);
+        if (! $token) {
+            $token = Str::random(48);
             // Written with a query rather than save(): save() decrypts the old value to detect changes,
             // which throws when that value was encrypted with a previous APP_KEY.
-            $encrypted = \Illuminate\Support\Facades\Crypt::encryptString($token);
+            $encrypted = Crypt::encryptString($token);
             static::whereKey($this->getKey())->update(['extension_token' => $encrypted]);
             $this->setRawAttributes(['extension_token' => $encrypted] + $this->getAttributes(), true);
         }
@@ -87,7 +94,7 @@ class LabSession extends Model
     {
         try {
             return $this->extension_token ?: null;
-        } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+        } catch (DecryptException) {
             return null;
         }
     }
@@ -98,7 +105,7 @@ class LabSession extends Model
      */
     public function isAccessibleBy(?User $user): bool
     {
-        if (!$user) {
+        if (! $user) {
             return false;
         }
 
@@ -108,6 +115,7 @@ class LabSession extends Model
 
         if ($user->role === 'instructor') {
             $classId = Module::whereKey(Laboratory::whereKey($this->lab_id)->value('module_id'))->value('class_id');
+
             return $user->canManageClass($classId);
         }
 
@@ -136,7 +144,7 @@ class LabSession extends Model
             }
         });
         static::updated(function (LabSession $session) {
-            if (!$session->changesCompetencyEvidence()) {
+            if (! $session->changesCompetencyEvidence()) {
                 return;
             }
             // A session moved to another student or lab no longer counts for the old one either
@@ -164,7 +172,7 @@ class LabSession extends Model
      */
     private function changesCompetencyEvidence(): bool
     {
-        if (!$this->wasChanged(['status', 'performance_score', 'instructor_grade_override', 'lab_id', 'user_id'])) {
+        if (! $this->wasChanged(['status', 'performance_score', 'instructor_grade_override', 'lab_id', 'user_id'])) {
             return false;
         }
 
@@ -174,18 +182,18 @@ class LabSession extends Model
     private function forgetCachedProgress(): void
     {
         $lab = $this->laboratory ?: Laboratory::find($this->lab_id);
-        if (!$lab || !$lab->module_id) {
+        if (! $lab || ! $lab->module_id) {
             return;
         }
 
-        \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_module_{$lab->module_id}_progress");
+        Cache::forget("user_{$this->user_id}_module_{$lab->module_id}_progress");
         $module = $lab->module ?: Module::find($lab->module_id);
         if ($module) {
             if ($module->parent_id) {
-                \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_module_{$module->parent_id}_progress");
+                Cache::forget("user_{$this->user_id}_module_{$module->parent_id}_progress");
             }
             if ($module->class_id) {
-                \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_class_{$module->class_id}_progress");
+                Cache::forget("user_{$this->user_id}_class_{$module->class_id}_progress");
             }
         }
     }
@@ -227,14 +235,14 @@ class LabSession extends Model
 
         foreach ($recipients as $student) {
             try {
-                $student->notify(new \App\Notifications\ClassActivityNotification(
+                $student->notify(new ClassActivityNotification(
                     $title,
                     $message,
                     route('laboratories.show', $this->lab_id),
                     'lab'
                 ));
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Lab notification failed: ' . $e->getMessage());
+                Log::warning('Lab notification failed: '.$e->getMessage());
             }
         }
     }
@@ -358,7 +366,7 @@ class LabSession extends Model
         }
 
         $lab = $this->laboratory;
-        if (!$lab) {
+        if (! $lab) {
             return true;
         }
 
@@ -369,6 +377,7 @@ class LabSession extends Model
             if ($lab->live_status === 'active') {
                 return $lab->getLiveElapsedSeconds() < $lab->getLiveTotalDurationSeconds() + self::LATE_GRACE_SECONDS;
             }
+
             return true;
         }
 
@@ -408,11 +417,13 @@ class LabSession extends Model
 
         if ($this->last_ping_at) {
             $diff = $this->last_ping_at->diffInSeconds(now());
+
             return $diff > 75 && $diff <= 300;
         }
 
         if ($this->started_at) {
             $diff = $this->started_at->diffInSeconds(now());
+
             return $diff > 60 && $diff <= 300;
         }
 
@@ -428,7 +439,7 @@ class LabSession extends Model
             return false;
         }
 
-        return !$this->isActivelyConnected() && !$this->isIdle();
+        return ! $this->isActivelyConnected() && ! $this->isIdle();
     }
 
     /**
@@ -449,8 +460,10 @@ class LabSession extends Model
             if ($this->isIdle()) {
                 return 'idle';
             }
+
             return 'offline';
         }
+
         return $this->status;
     }
 
@@ -534,7 +547,7 @@ class LabSession extends Model
         ]);
 
         try {
-            event(new \App\Events\AnomalyDetected($this->id, [
+            event(new AnomalyDetected($this->id, [
                 'id' => $anomaly->id,
                 'type' => $anomaly->type,
                 'severity' => $anomaly->severity,
@@ -545,7 +558,7 @@ class LabSession extends Model
                 'student_name' => $studentName,
             ]));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
+            Log::warning('Failed to broadcast AnomalyDetected: '.$e->getMessage());
         }
 
         return $anomaly;
@@ -567,6 +580,7 @@ class LabSession extends Model
         $elapsedMinutes = max($started->diffInSeconds($ended, true) / 60, 0.1);
 
         $words = $keystrokes / 5.0;
+
         return (int) round($words / $elapsedMinutes);
     }
 }

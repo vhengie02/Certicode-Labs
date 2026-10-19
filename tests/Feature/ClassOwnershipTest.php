@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Anomaly;
 use App\Models\Certificate;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -21,13 +21,21 @@ class ClassOwnershipTest extends TestCase
     use RefreshDatabase;
 
     private User $owner;
+
     private User $otherInstructor;
+
     private User $admin;
+
     private User $student;
+
     private SchoolClass $class;
+
     private Module $module;
+
     private Laboratory $lab;
+
     private LabSession $session;
+
     private Anomaly $anomaly;
 
     protected function setUp(): void
@@ -35,7 +43,7 @@ class ClassOwnershipTest extends TestCase
         parent::setUp();
         $this->withoutMiddleware(ValidateCsrfToken::class);
 
-        $make = fn ($name, $role) => User::create(['name' => $name, 'email' => strtolower(str_replace(' ', '.', $name)) . '@example.com', 'password' => bcrypt('password'), 'role' => $role]);
+        $make = fn ($name, $role) => User::create(['name' => $name, 'email' => strtolower(str_replace(' ', '.', $name)).'@example.com', 'password' => bcrypt('password'), 'role' => $role]);
         $this->owner = $make('Maria Owner', 'instructor');
         $this->otherInstructor = $make('Other Prof', 'instructor');
         $this->admin = $make('Root Admin', 'admin');

@@ -25,7 +25,7 @@ class SeederProductionGuardTest extends TestCase
         foreach ([DatabaseSeeder::class, DemoSeeder::class, ShowcaseAccountSeeder::class] as $seeder) {
             try {
                 // Run directly: db:seed itself would stop to ask for confirmation in production
-                (new $seeder())->setContainer($this->app)->__invoke();
+                (new $seeder)->setContainer($this->app)->__invoke();
                 $this->fail("{$seeder} ran in production");
             } catch (\RuntimeException $e) {
                 $this->assertStringContainsString('never runs in production', $e->getMessage());

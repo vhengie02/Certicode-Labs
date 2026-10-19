@@ -3,7 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\Module;
+use App\Models\TelemetryLog;
+use App\Models\User;
+use App\Services\CodeSimilarityService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * A student's attempt at a lab from the website: starting it (live-lab and camera gates,
@@ -21,7 +28,7 @@ class LabAttemptController extends Controller
     {
         $laboratory = Laboratory::findOrFail($id);
         $this->authorizeLabViewer($laboratory);
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = auth()->user();
 
         $laboratory->recordViewBy($user);
@@ -43,17 +50,18 @@ class LabAttemptController extends Controller
         // own record of a recent camera check counts, never a flag the browser sends.
         $cameraCheck = self::recentCameraCheck($laboratory->id);
         $isCameraVerified = $cameraCheck !== null;
-        if ($user && $user->role === 'student' && !$isCameraVerified) {
+        if ($user && $user->role === 'student' && ! $isCameraVerified) {
             $message = 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.';
             if ($request->wantsJson() || $request->ajax()) {
                 return response()->json(['error' => 'camera_not_verified', 'message' => $message], 403);
             }
+
             return back()->with('error', $message);
         }
 
         // Resume the open attempt or start one (shared with the extension API's start route)
         $session = $laboratory->findOrStartAttemptFor($user);
-        if (!$session) {
+        if (! $session) {
             $message = 'You have used all your attempts for this lab. Ask your instructor if you need another one.';
             if ($request->wantsJson() || $request->ajax()) {
                 return response()->json(['error' => 'attempts_exhausted', 'message' => $message], 403);
@@ -66,7 +74,7 @@ class LabAttemptController extends Controller
         // detection, so it is recorded as such for the instructor rather than as one face.
         if ($isCameraVerified && $session) {
             $lowLight = (bool) ($cameraCheck['low_light'] ?? false);
-            \App\Models\TelemetryLog::firstOrCreate([
+            TelemetryLog::firstOrCreate([
                 'lab_session_id' => $session->id,
                 'event_type' => 'webcam_prelab_verification',
             ], [
@@ -80,8 +88,8 @@ class LabAttemptController extends Controller
         }
 
         $backendUrl = request()->getSchemeAndHttpHost();
-        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&endpoint=" . urlencode($backendUrl)
-            . "&backendUrl=" . urlencode($backendUrl) . "&token=" . urlencode($session->issueExtensionToken());
+        $vscodeUrl = "vscode://certicode.certicode-labs/connect?sessionId={$session->id}&endpoint=".urlencode($backendUrl)
+            .'&backendUrl='.urlencode($backendUrl).'&token='.urlencode($session->issueExtensionToken());
 
         if ($request->wantsJson() || $request->ajax() || $request->header('Accept') === 'application/json') {
             return response()->json([
@@ -120,11 +128,11 @@ class LabAttemptController extends Controller
     private static function recentCameraCheck(int $labId): ?array
     {
         $check = session("camera_verified_lab_{$labId}");
-        if (!is_array($check) || empty($check['verified_at'])) {
+        if (! is_array($check) || empty($check['verified_at'])) {
             return null;
         }
 
-        $verifiedAt = \Carbon\Carbon::parse($check['verified_at']);
+        $verifiedAt = Carbon::parse($check['verified_at']);
 
         return $verifiedAt->gt(now()->subMinutes(self::CAMERA_CHECK_TTL_MINUTES)) ? $check : null;
     }
@@ -134,7 +142,7 @@ class LabAttemptController extends Controller
      */
     public function showWorkspace(int $id)
     {
-        $session = \App\Models\LabSession::findOrFail($id);
+        $session = LabSession::findOrFail($id);
 
         if (auth()->id() !== $session->user_id) {
             if (auth()->user()->role === 'student') {
@@ -151,7 +159,7 @@ class LabAttemptController extends Controller
      */
     public function completeSession(int $id)
     {
-        $session = \App\Models\LabSession::findOrFail($id);
+        $session = LabSession::findOrFail($id);
 
         // Check ownership
         if (auth()->id() !== $session->user_id) {
@@ -162,7 +170,7 @@ class LabAttemptController extends Controller
         }
 
         // Only an open attempt can be completed: a timed-out or already finished one keeps its result
-        if (!$session->acceptsWork()) {
+        if (! $session->acceptsWork()) {
             return back()->with('error', 'This lab attempt has already ended, so it can no longer be completed.');
         }
 
@@ -170,10 +178,10 @@ class LabAttemptController extends Controller
             'status' => 'completed',
             'ended_at' => now(),
         ]);
-        app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
+        app(CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
 
         // Log completion in telemetry
-        \App\Models\TelemetryLog::create([
+        TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => 'session_completed',
             'payload' => [
@@ -191,13 +199,14 @@ class LabAttemptController extends Controller
         );
         $classId = null;
         if ($lab->module_id) {
-            $module = \App\Models\Module::find($lab->module_id);
+            $module = Module::find($lab->module_id);
             if ($module) {
                 $classId = $module->class_id;
             }
         }
 
         $redirect = $classId ? redirect()->route('classes.show', $classId) : redirect()->route('classes.index');
+
         return $redirect->with('success', "Laboratory session completed successfully! Final Performance Score: {$session->performance_score}%.");
     }
 
@@ -227,9 +236,9 @@ class LabAttemptController extends Controller
         }
 
         // Multiple files: pack into a zip archive
-        $zipName = \Illuminate\Support\Str::slug($laboratory->title) . '-starter-files.zip';
+        $zipName = Str::slug($laboratory->title).'-starter-files.zip';
         $tempPath = tempnam(sys_get_temp_dir(), 'certicode_zip_');
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
 
         if ($zip->open($tempPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
             foreach ($files as $file) {

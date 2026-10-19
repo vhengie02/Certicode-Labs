@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -16,15 +16,18 @@ class IntegrityFlagsTest extends TestCase
     use RefreshDatabase;
 
     private User $owner;
+
     private User $otherInstructor;
+
     private SchoolClass $class;
+
     private LabSession $session;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $make = fn ($name, $role) => User::create(['name' => $name, 'email' => strtolower(str_replace(' ', '.', $name)) . '@example.com', 'password' => bcrypt('password'), 'role' => $role]);
+        $make = fn ($name, $role) => User::create(['name' => $name, 'email' => strtolower(str_replace(' ', '.', $name)).'@example.com', 'password' => bcrypt('password'), 'role' => $role]);
         $this->owner = $make('Owner Instructor', 'instructor');
         $this->otherInstructor = $make('Other Instructor', 'instructor');
         $student = $make('Sam Student', 'student');

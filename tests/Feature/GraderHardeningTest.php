@@ -28,8 +28,11 @@ class GraderHardeningTest extends TestCase
     private const SOLUTION_LINE = 'throw new InvalidAgeException("Age must be between 0 and 150");';
 
     private User $student;
+
     private Laboratory $lab;
+
     private LabSession $session;
+
     private array $history = [];
 
     protected function setUp(): void
@@ -50,7 +53,7 @@ class GraderHardeningTest extends TestCase
                 ['id' => 1, 'task' => 'Implement binary search over the sorted array'],
                 ['id' => 2, 'task' => 'Return negative index when missing'],
             ],
-            'reference_solution' => "class Student {\n    " . self::SOLUTION_LINE . "\n}",
+            'reference_solution' => "class Student {\n    ".self::SOLUTION_LINE."\n}",
         ]);
         $this->session = LabSession::create([
             'lab_id' => $this->lab->id, 'user_id' => $this->student->id, 'status' => 'in_progress', 'started_at' => now(),
@@ -64,9 +67,14 @@ class GraderHardeningTest extends TestCase
         $stack->push(Middleware::history($this->history));
         $transport = new GuzzleClient(['handler' => $stack]);
 
-        return new class($transport) extends LlmEvaluationService {
+        return new class($transport) extends LlmEvaluationService
+        {
             public function __construct(private ClientInterface $transport) {}
-            protected function graderTransport(): ClientInterface { return $this->transport; }
+
+            protected function graderTransport(): ClientInterface
+            {
+                return $this->transport;
+            }
         };
     }
 
@@ -119,7 +127,7 @@ class GraderHardeningTest extends TestCase
         config(['services.anthropic.key' => 'mock']);
         $code = "// Implement binary search over the sorted array\n// Return negative index when missing\nclass Search {}\n";
 
-        $result = (new LlmEvaluationService())->evaluate($this->session, $code, 'java');
+        $result = (new LlmEvaluationService)->evaluate($this->session, $code, 'java');
 
         $this->assertSame([false, false], array_column($result['tasks'], 'completed'));
         $this->assertSame(0, (int) $result['correctness_score']);
@@ -162,7 +170,7 @@ class GraderHardeningTest extends TestCase
     {
         $this->app->instance(LlmEvaluationService::class, $this->grader([$this->apiMessage($this->grade([
             'tasks' => [
-                ['id' => 1, 'completed' => true, 'feedback' => 'Compare with: ' . self::SOLUTION_LINE],
+                ['id' => 1, 'completed' => true, 'feedback' => 'Compare with: '.self::SOLUTION_LINE],
                 ['id' => 2, 'completed' => false, 'feedback' => 'Missing.'],
             ],
         ]))]));

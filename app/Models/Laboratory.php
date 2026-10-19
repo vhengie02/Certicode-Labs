@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Services\CodeSimilarityService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 
 class Laboratory extends Model
 {
@@ -54,7 +57,7 @@ class Laboratory extends Model
      */
     public function getStarterFilesList(): array
     {
-        if (!empty($this->starter_files) && is_array($this->starter_files) && count($this->starter_files) > 0) {
+        if (! empty($this->starter_files) && is_array($this->starter_files) && count($this->starter_files) > 0) {
             return $this->starter_files;
         }
 
@@ -66,7 +69,7 @@ class Laboratory extends Model
                 'content' => $defaultContent,
                 'is_primary' => true,
                 'is_readonly' => false,
-            ]
+            ],
         ];
     }
 
@@ -113,7 +116,7 @@ class Laboratory extends Model
      */
     public function isOpenLab(): bool
     {
-        return !$this->isLiveLab();
+        return ! $this->isLiveLab();
     }
 
     /**
@@ -137,9 +140,10 @@ class Laboratory extends Model
      */
     public function isLiveClosed(): bool
     {
-        if (!$this->isLiveLab()) {
+        if (! $this->isLiveLab()) {
             return false;
         }
+
         return $this->live_status === 'closed' || ($this->live_status === 'active' && $this->getRemainingLiveSeconds() <= 0);
     }
 
@@ -149,6 +153,7 @@ class Laboratory extends Model
     public function getLiveTotalDurationSeconds(): int
     {
         $minutes = $this->live_duration_minutes ?: $this->time_limit ?: 60;
+
         return (int) ($minutes * 60);
     }
 
@@ -157,7 +162,7 @@ class Laboratory extends Model
      */
     public function getLiveElapsedSeconds(): int
     {
-        if (!$this->isLiveLab()) {
+        if (! $this->isLiveLab()) {
             return 0;
         }
 
@@ -169,6 +174,7 @@ class Laboratory extends Model
 
         if ($this->live_status === 'active' && $this->live_started_at) {
             $currentRun = (int) $this->live_started_at->diffInSeconds(now(), true);
+
             return min($this->getLiveTotalDurationSeconds(), $baseElapsed + $currentRun);
         }
 
@@ -180,7 +186,7 @@ class Laboratory extends Model
      */
     public function getRemainingLiveSeconds(): int
     {
-        if (!$this->isLiveLab()) {
+        if (! $this->isLiveLab()) {
             return ($this->time_limit ?? 0) * 60;
         }
 
@@ -201,7 +207,7 @@ class Laboratory extends Model
     {
         if ($durationMinutes && $durationMinutes > 0) {
             $this->live_duration_minutes = $durationMinutes;
-        } elseif (!$this->live_duration_minutes) {
+        } elseif (! $this->live_duration_minutes) {
             $this->live_duration_minutes = $this->time_limit ?: 60;
         }
 
@@ -241,12 +247,12 @@ class Laboratory extends Model
             ]);
 
             // Purge ephemeral chat
-            \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
+            LabSessionChat::where('lab_session_id', $session->id)->delete();
         }
 
         // Those attempts are submissions now: compare them once for the monitoring page
         if ($inProgressSessions->isNotEmpty()) {
-            app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($this->id);
+            app(CodeSimilarityService::class)->refreshLabReportQuietly($this->id);
         }
     }
 
@@ -280,6 +286,7 @@ class Laboratory extends Model
     {
         if ($this->isLiveLab() && $this->live_status === 'active' && $this->getRemainingLiveSeconds() <= 0) {
             $this->closeLive();
+
             return true;
         }
 
@@ -315,7 +322,7 @@ class Laboratory extends Model
      */
     public function recordViewBy(?User $user): void
     {
-        if (!$user || $user->role !== 'student') {
+        if (! $user || $user->role !== 'student') {
             return;
         }
 
@@ -395,20 +402,20 @@ class Laboratory extends Model
         if ($session) {
             return $session;
         }
-        if (!$this->canStartNewAttempt($user)) {
+        if (! $this->canStartNewAttempt($user)) {
             return null;
         }
 
         try {
             // A savepoint when already inside a transaction, so a lost race doesn't abort it
-            return \Illuminate\Support\Facades\DB::transaction(fn () => LabSession::create([
+            return DB::transaction(fn () => LabSession::create([
                 'lab_id' => $this->id,
                 'user_id' => $user->id,
                 'status' => 'in_progress',
                 'started_at' => now(),
                 'performance_score' => 0.0,
             ]));
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+        } catch (UniqueConstraintViolationException $e) {
             // Another request opened it a moment ago
             return $this->openAttemptOf($user);
         }

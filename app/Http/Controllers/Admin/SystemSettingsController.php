@@ -21,15 +21,15 @@ class SystemSettingsController extends Controller
 
         $services = [
             ['AI grading', filled(config('services.anthropic.key')), filled(config('services.anthropic.key'))
-                ? 'Claude, model ' . config('services.anthropic.grader_model', 'default')
+                ? 'Claude, model '.config('services.anthropic.grader_model', 'default')
                 : 'No API key; the rule-based grader is used'],
             ['Code execution', filled(config('services.judge0.url')), filled(config('services.judge0.url'))
                 ? 'Judge0 server configured'
                 : 'No Judge0 server; code is graded without running it'],
-            ['Realtime updates', !in_array(config('broadcasting.default'), [null, '', 'log', 'null'], true),
-                'Driver: ' . (config('broadcasting.default') ?: 'none') . (in_array(config('broadcasting.default'), ['log', 'null', null, ''], true) ? '; pages poll instead' : '')],
-            ['Email', !in_array(config('mail.default'), ['log', 'array', null, ''], true),
-                'Mailer: ' . (config('mail.default') ?: 'none') . (in_array(config('mail.default'), ['log', 'array'], true) ? '; emails are not delivered' : '')],
+            ['Realtime updates', ! in_array(config('broadcasting.default'), [null, '', 'log', 'null'], true),
+                'Driver: '.(config('broadcasting.default') ?: 'none').(in_array(config('broadcasting.default'), ['log', 'null', null, ''], true) ? '; pages poll instead' : '')],
+            ['Email', ! in_array(config('mail.default'), ['log', 'array', null, ''], true),
+                'Mailer: '.(config('mail.default') ?: 'none').(in_array(config('mail.default'), ['log', 'array'], true) ? '; emails are not delivered' : '')],
             ['Google sign-in', filled(config('services.google.client_id')), filled(config('services.google.client_id'))
                 ? 'OAuth configured' : 'Uses the emailed-code fallback'],
             ['GitHub sign-in', filled(config('services.github.client_id')), filled(config('services.github.client_id'))

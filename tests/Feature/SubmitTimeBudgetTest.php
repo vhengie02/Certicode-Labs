@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -22,9 +22,12 @@ class SubmitTimeBudgetTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private LabSession $session;
+
     /** @var list<string> */
     private array $calls = [];
+
     private ?int $executionTimeout = null;
 
     private const CODE = ['code' => 'public class Main { public static void main(String[] a) { System.out.println(1); } }', 'language' => 'java'];
@@ -46,6 +49,7 @@ class SubmitTimeBudgetTest extends TestCase
             ->andReturnUsing(function ($code, $language, $timeout = null) {
                 $this->calls[] = 'execute';
                 $this->executionTimeout = $timeout;
+
                 return ['status' => 'success', 'output' => '1', 'errors' => null, 'execution_time_ms' => 5];
             });
     }
@@ -56,7 +60,8 @@ class SubmitTimeBudgetTest extends TestCase
     private function grader(callable $duringGrading): void
     {
         $test = $this;
-        $this->app->instance(LlmEvaluationService::class, new class($duringGrading, $test) extends LlmEvaluationService {
+        $this->app->instance(LlmEvaluationService::class, new class($duringGrading, $test) extends LlmEvaluationService
+        {
             public function __construct(private $duringGrading, private $test) {}
 
             public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
@@ -113,7 +118,8 @@ class SubmitTimeBudgetTest extends TestCase
 
     public function test_one_claude_attempt_fits_in_the_function_limit(): void
     {
-        $service = new class extends LlmEvaluationService {
+        $service = new class extends LlmEvaluationService
+        {
             public function transport()
             {
                 return $this->graderTransport();

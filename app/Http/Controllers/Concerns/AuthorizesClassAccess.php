@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Concerns;
 
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -45,6 +45,7 @@ trait AuthorizesClassAccess
                 ->whereHas('students', fn ($q) => $q->where('users.id', $user->id)->where('class_student.status', 'enrolled'))
                 ->exists();
             abort_unless($enrolled, 403, 'You are not enrolled in this class.');
+
             return;
         }
 

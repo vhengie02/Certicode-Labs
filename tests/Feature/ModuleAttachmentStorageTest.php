@@ -6,6 +6,7 @@ use App\Models\Module;
 use App\Models\ModuleAttachment;
 use App\Models\SchoolClass;
 use App\Models\User;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -21,7 +22,9 @@ class ModuleAttachmentStorageTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private SchoolClass $class;
 
     protected function setUp(): void
@@ -51,7 +54,7 @@ class ModuleAttachmentStorageTest extends TestCase
     /** Replace the attachments disk with one whose uploads always fail */
     private function failUploads(): void
     {
-        $failing = \Mockery::mock(\Illuminate\Filesystem\FilesystemAdapter::class);
+        $failing = \Mockery::mock(FilesystemAdapter::class);
         $failing->shouldReceive('putFileAs')->andThrow(new \RuntimeException('storage unreachable'));
         Storage::set('supabase', $failing);
     }

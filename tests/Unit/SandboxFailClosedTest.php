@@ -20,7 +20,7 @@ class SandboxFailClosedTest extends TestCase
     {
         parent::setUp();
         config(['services.judge0.url' => null, 'services.judge0.key' => null, 'services.sandbox.host_execution' => null]);
-        $this->sandbox = new SandboxExecutionService();
+        $this->sandbox = new SandboxExecutionService;
     }
 
     public static function hostRunnableCode(): array

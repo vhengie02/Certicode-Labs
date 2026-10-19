@@ -11,7 +11,7 @@ trait RefusesProduction
     protected function refuseInProduction(): void
     {
         if (app()->environment('production')) {
-            throw new \RuntimeException(static::class . ' creates demo accounts with known passwords and never runs in production.');
+            throw new \RuntimeException(static::class.' creates demo accounts with known passwords and never runs in production.');
         }
     }
 }

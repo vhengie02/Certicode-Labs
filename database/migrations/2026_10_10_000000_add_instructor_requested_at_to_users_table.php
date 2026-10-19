@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            if (!Schema::hasColumn('users', 'instructor_requested_at')) {
+            if (! Schema::hasColumn('users', 'instructor_requested_at')) {
                 // Set when someone signs up as an instructor; they stay a student until an admin approves.
                 $table->timestamp('instructor_requested_at')->nullable()->after('role');
             }

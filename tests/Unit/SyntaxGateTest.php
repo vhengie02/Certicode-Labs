@@ -14,7 +14,7 @@ class SyntaxGateTest extends TestCase
 {
     private function errors(string $code, string $language): array
     {
-        return (new LlmEvaluationService())->detectSyntaxErrors($code, $language);
+        return (new LlmEvaluationService)->detectSyntaxErrors($code, $language);
     }
 
     public function test_valid_java_with_long_literals_and_dividers_passes(): void

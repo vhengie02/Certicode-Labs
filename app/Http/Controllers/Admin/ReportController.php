@@ -35,7 +35,7 @@ class ReportController extends Controller
             ['Submissions', (clone $completedInPeriod)->count(), 'Sessions finished and graded'],
             ['Average grade', $this->roundOrNull((clone $completedInPeriod)->avg(DB::raw(LabSession::effectiveGradeSql()))), 'Of submissions, overrides included'],
             ['Certificates', Certificate::query()->when($since, fn ($q) => $q->where('issued_at', '>=', $since))->count(), 'Issued in this period'],
-            ['Integrity flags', Anomaly::query()->when($since, fn ($q) => $q->where('created_at', '>=', $since))->count(), Anomaly::whereRaw('resolved = false')->count() . ' still open overall'],
+            ['Integrity flags', Anomaly::query()->when($since, fn ($q) => $q->where('created_at', '>=', $since))->count(), Anomaly::whereRaw('resolved = false')->count().' still open overall'],
         ];
 
         $roles = User::query()->selectRaw('role, count(*) as total')->groupBy('role')->pluck('total', 'role');
@@ -108,7 +108,7 @@ class ReportController extends Controller
             ],
         };
 
-        $filename = "certicode-{$type}-" . ($period === 'all' ? 'all-time' : "last-{$period}-days") . '-' . now()->format('Y-m-d') . '.csv';
+        $filename = "certicode-{$type}-".($period === 'all' ? 'all-time' : "last-{$period}-days").'-'.now()->format('Y-m-d').'.csv';
 
         return response()->streamDownload(function () use ($header, $rows) {
             $out = fopen('php://output', 'w');
@@ -125,7 +125,7 @@ class ReportController extends Controller
     private function csvSafe(mixed $value): mixed
     {
         if (is_string($value) && $value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
+            return "'".$value;
         }
 
         return $value;
@@ -134,7 +134,7 @@ class ReportController extends Controller
     private function period(Request $request): array
     {
         $period = (string) $request->query('period', '30');
-        if (!array_key_exists($period, self::PERIODS)) {
+        if (! array_key_exists($period, self::PERIODS)) {
             $period = '30';
         }
 
@@ -195,7 +195,7 @@ class ReportController extends Controller
             ->where('lab_sessions.status', 'completed')
             ->when($since, fn ($q) => $q->where('lab_sessions.created_at', '>=', $since))
             ->groupBy('modules.class_id')
-            ->selectRaw('modules.class_id, count(*) as submissions, avg(' . LabSession::effectiveGradeSql() . ') as avg_grade')
+            ->selectRaw('modules.class_id, count(*) as submissions, avg('.LabSession::effectiveGradeSql().') as avg_grade')
             ->get()->keyBy('class_id');
 
         $certificates = DB::table('certificates')->groupBy('class_id')

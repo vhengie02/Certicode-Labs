@@ -4,9 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Laboratory;
 use App\Models\LabSession;
-use App\Models\Anomaly;
 use App\Models\TelemetryLog;
 use App\Models\User;
+use App\Services\CodeSimilarityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -44,7 +44,7 @@ class InstructorMonitoringController extends Controller
 
         $sortBy = $laboratory->is_group_lab ? $request->query('sort', 'name') : 'name'; // 'name' or 'group'
 
-        $sessions = LabSession::with(['user', 'group', 'anomalies' => fn($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
+        $sessions = LabSession::with(['user', 'group', 'anomalies' => fn ($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
             ->where('lab_id', $laboratory->id)
             ->get();
 
@@ -55,22 +55,23 @@ class InstructorMonitoringController extends Controller
             })->values();
         } else {
             $sessions = $sessions->sortBy(function ($s) {
-                if (!$s->user) {
+                if (! $s->user) {
                     return '';
                 }
                 $parts = explode(' ', trim($s->user->name));
+
                 return end($parts); // sort by last name
             })->values();
         }
 
         $totalStudents = $sessions->count();
-        $activeSessions = $sessions->filter(fn($s) => $s->status === 'in_progress' && $s->isActivelyConnected())->count();
+        $activeSessions = $sessions->filter(fn ($s) => $s->status === 'in_progress' && $s->isActivelyConnected())->count();
         $completedSessions = $sessions->where('status', 'completed')->count();
-        $totalAnomalies = $sessions->sum(fn($s) => $s->anomalies->count());
+        $totalAnomalies = $sessions->sum(fn ($s) => $s->anomalies->count());
         $avgWpm = $sessions->count() > 0 ? round($sessions->avg('wpm')) : 0;
 
         // Stored at each submit; comparing every pair on each page view was O(n²) per load
-        $similarityService = app(\App\Services\CodeSimilarityService::class);
+        $similarityService = app(CodeSimilarityService::class);
         $plagiarismAnalysis = $similarityService->labReport($laboratory->id);
 
         return compact(
@@ -99,7 +100,7 @@ class InstructorMonitoringController extends Controller
         $threshold = (float) $request->query('threshold', 75.0);
 
         // "Compare again": the default comparison also replaces the stored one
-        $similarityService = app(\App\Services\CodeSimilarityService::class);
+        $similarityService = app(CodeSimilarityService::class);
         $results = $threshold === 75.0
             ? $similarityService->refreshLabReport($laboratory->id)
             : $similarityService->analyzeLabCohort($laboratory->id, $threshold, 50.0);
@@ -133,7 +134,7 @@ class InstructorMonitoringController extends Controller
             ];
         }
 
-        $sessions = LabSession::with(['user', 'group', 'anomalies' => fn($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
+        $sessions = LabSession::with(['user', 'group', 'anomalies' => fn ($q) => $q->withoutSnapshotData(), 'overriddenByUser'])
             ->where('lab_id', $laboratory->id)
             ->get()
             ->map(function ($s) {
@@ -241,7 +242,7 @@ class InstructorMonitoringController extends Controller
         $session->notifyStudents(
             "Lab reviewed: {$labTitle}",
             "{$instructorName} reviewed your work on '{$labTitle}' and set your score to {$overrideScore}%."
-                . ($reason ? " Note: {$reason}" : '')
+                .($reason ? " Note: {$reason}" : '')
         );
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -270,7 +271,7 @@ class InstructorMonitoringController extends Controller
     protected function authorizeInstructor()
     {
         $user = Auth::user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             abort(403, 'Unauthorized action.');
         }
         $role = $user->role;

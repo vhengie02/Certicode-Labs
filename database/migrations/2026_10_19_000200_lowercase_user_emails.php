@@ -23,7 +23,7 @@ return new class extends Migration
                 ->pluck('u.id');
 
             if ($conflicts->isNotEmpty()) {
-                Log::warning("Users sharing a {$column} apart from letter case, left as they are: " . $conflicts->implode(', '));
+                Log::warning("Users sharing a {$column} apart from letter case, left as they are: ".$conflicts->implode(', '));
             }
 
             DB::table('users')

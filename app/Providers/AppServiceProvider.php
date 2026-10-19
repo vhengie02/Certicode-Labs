@@ -41,8 +41,8 @@ class AppServiceProvider extends ServiceProvider
             $account = $this->throttleIdentity($request, 'email');
 
             return [
-                Limit::perMinute(5)->by('login:' . $account . '|' . $request->ip()),
-                Limit::perMinute(100)->by('login-ip:' . $request->ip()),
+                Limit::perMinute(5)->by('login:'.$account.'|'.$request->ip()),
+                Limit::perMinute(100)->by('login-ip:'.$request->ip()),
             ];
         });
 
@@ -51,8 +51,8 @@ class AppServiceProvider extends ServiceProvider
             $recipient = $this->throttleIdentity($request, 'gmail', 'email');
 
             return [
-                Limit::perMinutes(15, 5)->by('auth-mail-to:' . $recipient),
-                Limit::perHour(100)->by('auth-mail-ip:' . $request->ip()),
+                Limit::perMinutes(15, 5)->by('auth-mail-to:'.$recipient),
+                Limit::perHour(100)->by('auth-mail-ip:'.$request->ip()),
             ];
         });
 
@@ -61,22 +61,22 @@ class AppServiceProvider extends ServiceProvider
             $who = $request->user()?->id ?? ($request->hasSession() ? $request->session()->getId() : $request->ip());
 
             return [
-                Limit::perMinute(10)->by('code-verify:' . $who),
-                Limit::perMinute(100)->by('code-verify-ip:' . $request->ip()),
+                Limit::perMinute(10)->by('code-verify:'.$who),
+                Limit::perMinute(100)->by('code-verify-ip:'.$request->ip()),
             ];
         });
 
         RateLimiter::for('register', function (Request $request) {
-            return Limit::perHour(60)->by('register:' . $request->ip());
+            return Limit::perHour(60)->by('register:'.$request->ip());
         });
 
         // Claude grading (check-progress, submit) and Judge0 runs, per lab session
         RateLimiter::for('lab-grade', function (Request $request) {
-            return Limit::perMinute(6)->by('lab-grade:' . $request->route('sessionId'));
+            return Limit::perMinute(6)->by('lab-grade:'.$request->route('sessionId'));
         });
 
         RateLimiter::for('lab-execute', function (Request $request) {
-            return Limit::perMinute(20)->by('lab-execute:' . $request->route('sessionId'));
+            return Limit::perMinute(20)->by('lab-execute:'.$request->route('sessionId'));
         });
     }
 

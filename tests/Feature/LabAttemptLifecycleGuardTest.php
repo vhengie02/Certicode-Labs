@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -24,7 +24,9 @@ class LabAttemptLifecycleGuardTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private User $instructor;
+
     private Laboratory $laboratory;
 
     private const CODE = ['code' => 'public class Main { public static void main(String[] a) { for (int i = 0; i < 3; i++) { System.out.println(i); } } }', 'language' => 'java'];
@@ -71,7 +73,8 @@ class LabAttemptLifecycleGuardTest extends TestCase
      */
     private function graderThat(callable $duringGrading): void
     {
-        $this->app->instance(LlmEvaluationService::class, new class($duringGrading) extends LlmEvaluationService {
+        $this->app->instance(LlmEvaluationService::class, new class($duringGrading) extends LlmEvaluationService
+        {
             public function __construct(private $duringGrading) {}
 
             public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
@@ -133,7 +136,7 @@ class LabAttemptLifecycleGuardTest extends TestCase
         // their own connection here.
         if (DB::getDriverName() === 'pgsql') {
             config([
-                'database.connections.test_locks' => config('database.connections.' . config('database.default')),
+                'database.connections.test_locks' => config('database.connections.'.config('database.default')),
                 'cache.stores.database.lock_connection' => 'test_locks',
             ]);
             // The rate limiter already built the store at boot, with the old lock connection

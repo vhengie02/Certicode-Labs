@@ -16,6 +16,7 @@ class RealtimeBroadcastTest extends TestCase
     use RefreshDatabase;
 
     protected LabSession $session;
+
     protected string $token;
 
     protected function setUp(): void
@@ -66,7 +67,7 @@ class RealtimeBroadcastTest extends TestCase
         $this->enablePusher();
         $channel = "private-lab-session.{$this->session->id}";
 
-        $expected = 'test-key:' . hash_hmac('sha256', "1234.5678:{$channel}", 'test-secret');
+        $expected = 'test-key:'.hash_hmac('sha256', "1234.5678:{$channel}", 'test-secret');
         $this->auth($channel)->assertOk()->assertJsonPath('auth', $expected);
         $this->auth("{$channel}.chat")->assertOk();
     }
@@ -75,7 +76,7 @@ class RealtimeBroadcastTest extends TestCase
     {
         $this->enablePusher();
 
-        $this->auth('private-lab-session.' . ($this->session->id + 1))->assertStatus(403);
+        $this->auth('private-lab-session.'.($this->session->id + 1))->assertStatus(403);
         $this->auth("private-instructor.lab.{$this->session->lab_id}")->assertStatus(403);
     }
 

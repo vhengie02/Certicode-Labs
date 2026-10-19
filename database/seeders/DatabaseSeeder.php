@@ -2,14 +2,18 @@
 
 namespace Database\Seeders;
 
+use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\Module;
+use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
     use RefusesProduction;
+    use WithoutModelEvents;
 
     /**
      * Seed the application's database.
@@ -40,7 +44,7 @@ class DatabaseSeeder extends Seeder
         );
 
         // 3. Seed Class
-        $class = \App\Models\SchoolClass::firstOrCreate(
+        $class = SchoolClass::firstOrCreate(
             ['code' => 'JAVA101'],
             [
                 'name' => 'Java Programming Essentials',
@@ -53,7 +57,7 @@ class DatabaseSeeder extends Seeder
         $class->students()->syncWithoutDetaching([$student->id => ['status' => 'enrolled']]);
 
         // 4. Seed Module
-        $module = \App\Models\Module::firstOrCreate(
+        $module = Module::firstOrCreate(
             [
                 'class_id' => $class->id,
                 'title' => 'OOP, Encapsulation & Exceptions',
@@ -149,7 +153,7 @@ JAVA;
             ],
         ];
 
-        $laboratory = \App\Models\Laboratory::updateOrCreate(
+        $laboratory = Laboratory::updateOrCreate(
             [
                 'module_id' => $module->id,
                 'title' => 'Java OOP: Custom Exceptions & Encapsulation',
@@ -167,7 +171,7 @@ JAVA;
         );
 
         // 6. Seed initial in-progress lab session for testing
-        \App\Models\LabSession::firstOrCreate(
+        LabSession::firstOrCreate(
             [
                 'lab_id' => $laboratory->id,
                 'user_id' => $student->id,

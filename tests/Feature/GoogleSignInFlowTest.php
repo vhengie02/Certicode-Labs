@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 /**
@@ -173,8 +175,8 @@ class GoogleSignInFlowTest extends TestCase
     public function test_no_cooldown_when_mail_could_not_be_sent()
     {
         $this->app['env'] = 'production';
-        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
-        \Illuminate\Support\Facades\Mail::shouldReceive('send')->andThrow(new \Exception('SMTP down'));
+        $this->withoutMiddleware(ValidateCsrfToken::class);
+        Mail::shouldReceive('send')->andThrow(new \Exception('SMTP down'));
 
         $this->sendCode('first@gmail.com')->assertRedirect('/auth/google')->assertSessionHasErrors('gmail');
         $this->assertNull(session('google_auth_code_sent_at'));

@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -19,6 +19,7 @@ class VSCodeStateAcrossInstancesTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private LabSession $session;
 
     protected function setUp(): void

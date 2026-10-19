@@ -17,7 +17,7 @@ class SkipSessionForExtensionToken
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->headers->has('X-Session-Token') && !$request->cookies->has(config('session.cookie'))) {
+        if ($request->headers->has('X-Session-Token') && ! $request->cookies->has(config('session.cookie'))) {
             config(['session.driver' => 'array']);
         }
 

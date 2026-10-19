@@ -6,6 +6,7 @@ use App\Support\ModuleHtml;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class Module extends Model
 {
@@ -105,7 +106,7 @@ class Module extends Model
 
         $cacheKey = "user_{$user->id}_module_{$this->id}_progress";
 
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, fn () => LabSession::progressOver(
+        return Cache::remember($cacheKey, 180, fn () => LabSession::progressOver(
             $labIds,
             LabSession::completedLabIdsFor($user->id, $labIds)
         ));

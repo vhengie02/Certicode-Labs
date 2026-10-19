@@ -20,6 +20,7 @@ class PollingLoadTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private LabSession $session;
 
     protected function setUp(): void

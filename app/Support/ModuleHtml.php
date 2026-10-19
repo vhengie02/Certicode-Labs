@@ -27,7 +27,7 @@ class ModuleHtml
     private static function sanitizer(): HtmlSanitizer
     {
         return self::$sanitizer ??= new HtmlSanitizer(
-            (new HtmlSanitizerConfig())
+            (new HtmlSanitizerConfig)
                 ->allowSafeElements()
                 ->blockElement('form')
                 ->dropElement('input')

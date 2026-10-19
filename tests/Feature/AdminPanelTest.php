@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Competency;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
@@ -19,9 +19,13 @@ class AdminPanelTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private User $instructor;
+
     private User $student;
+
     private SchoolClass $class;
+
     private Module $module;
 
     protected function setUp(): void
@@ -29,7 +33,7 @@ class AdminPanelTest extends TestCase
         parent::setUp();
         $this->withoutMiddleware(ValidateCsrfToken::class);
 
-        $make = fn ($name, $role) => User::create(['name' => $name, 'email' => strtolower(explode(' ', $name)[0]) . '@example.com', 'password' => bcrypt('password'), 'role' => $role]);
+        $make = fn ($name, $role) => User::create(['name' => $name, 'email' => strtolower(explode(' ', $name)[0]).'@example.com', 'password' => bcrypt('password'), 'role' => $role]);
         $this->admin = $make('Ada Admin', 'admin');
         $this->instructor = $make('Ivan Instructor', 'instructor');
         $this->student = $make('Sam Student', 'student');

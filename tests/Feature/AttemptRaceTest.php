@@ -7,6 +7,7 @@ use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -21,7 +22,9 @@ class AttemptRaceTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private Laboratory $lab;
 
     protected function setUp(): void
@@ -44,7 +47,7 @@ class AttemptRaceTest extends TestCase
     {
         $inserted = false;
         DB::listen(function ($query) use (&$inserted) {
-            if ($inserted || !str_contains($query->sql, 'count(*)') || !str_contains($query->sql, 'lab_sessions')) {
+            if ($inserted || ! str_contains($query->sql, 'count(*)') || ! str_contains($query->sql, 'lab_sessions')) {
                 return;
             }
             $inserted = true;
@@ -111,7 +114,7 @@ class AttemptRaceTest extends TestCase
 
         $this->assertSame('abandoned', $older->fresh()->status);
         $this->assertSame('in_progress', $newer->fresh()->status);
-        $this->expectException(\Illuminate\Database\UniqueConstraintViolationException::class);
+        $this->expectException(UniqueConstraintViolationException::class);
         LabSession::create(['lab_id' => $this->lab->id, 'user_id' => $this->student->id, 'status' => 'in_progress', 'started_at' => now()]);
     }
 }

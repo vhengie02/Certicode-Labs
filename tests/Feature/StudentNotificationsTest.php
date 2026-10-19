@@ -16,8 +16,11 @@ class StudentNotificationsTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student;
+
     protected SchoolClass $schoolClass;
+
     protected Laboratory $laboratory;
 
     protected function setUp(): void

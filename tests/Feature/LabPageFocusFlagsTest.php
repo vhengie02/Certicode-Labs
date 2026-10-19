@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;

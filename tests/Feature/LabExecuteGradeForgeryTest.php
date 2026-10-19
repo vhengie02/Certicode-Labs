@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
@@ -20,6 +20,7 @@ class LabExecuteGradeForgeryTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private Laboratory $laboratory;
 
     protected function setUp(): void

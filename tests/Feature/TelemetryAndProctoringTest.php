@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Events\AnomalyDetected;
 use App\Models\Anomaly;
 use App\Models\Certificate;
+use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
@@ -11,7 +13,9 @@ use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
 use App\Models\User;
+use App\Support\WebcamSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class TelemetryAndProctoringTest extends TestCase
@@ -19,12 +23,19 @@ class TelemetryAndProctoringTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student1;
+
     protected User $student2;
+
     protected SchoolClass $class;
+
     protected Module $module;
+
     protected Laboratory $laboratory;
+
     protected LabSession $session1;
+
     protected LabSession $session2;
 
     /**
@@ -290,7 +301,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_prelab_camera_verification_fails_when_no_face_detected()
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('fake-image-bytes');
+        $dummyBase64 = 'data:image/jpeg;base64,'.base64_encode('fake-image-bytes');
 
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
@@ -314,7 +325,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_prelab_camera_verification_fails_when_multiple_faces_detected()
     {
-        $dummyBase64 = 'data:image/jpeg;base64,' . base64_encode('fake-multi-face-image');
+        $dummyBase64 = 'data:image/jpeg;base64,'.base64_encode('fake-multi-face-image');
 
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
@@ -441,7 +452,7 @@ class TelemetryAndProctoringTest extends TestCase
             'event_type' => 'camera_absence',
             'payload' => [
                 'image_path' => 'https://evil.example/pixel.gif',
-                'image_base64' => 'data:image/jpeg;base64,' . base64_encode('not really a jpeg'),
+                'image_base64' => 'data:image/jpeg;base64,'.base64_encode('not really a jpeg'),
             ],
         ])->assertStatus(200);
 
@@ -455,7 +466,7 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_camera_absence_rejects_an_oversized_snapshot()
     {
-        $huge = 'data:image/png;base64,' . base64_encode(str_repeat('a', \App\Support\WebcamSnapshot::MAX_BYTES + 1));
+        $huge = 'data:image/png;base64,'.base64_encode(str_repeat('a', WebcamSnapshot::MAX_BYTES + 1));
 
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'camera_absence',
@@ -548,12 +559,12 @@ class TelemetryAndProctoringTest extends TestCase
         // The class monitoring page gives the student drawer the same link
         $this->get("/classes/{$this->class->id}/telemetry?lab={$this->laboratory->id}")
             ->assertOk()
-            ->assertSee('\\/anomalies\\/' . $noFaceAnomaly['id'] . '\\/snapshot', false);
+            ->assertSee('\\/anomalies\\/'.$noFaceAnomaly['id'].'\\/snapshot', false);
     }
 
     public function test_camera_anomaly_broadcast_carries_the_snapshot_url()
     {
-        \Illuminate\Support\Facades\Event::fake([\App\Events\AnomalyDetected::class]);
+        Event::fake([AnomalyDetected::class]);
 
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
             'event_type' => 'camera_absence',
@@ -561,8 +572,9 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
 
         $anomaly = $this->latestNoFaceAnomaly();
-        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\AnomalyDetected::class, function ($event) use ($anomaly) {
+        Event::assertDispatched(AnomalyDetected::class, function ($event) use ($anomaly) {
             $data = $event->broadcastWith()['anomaly'];
+
             return $data['snapshot_url'] === "/anomalies/{$anomaly->id}/snapshot"
                 && $data['student_name'] === 'Alice Walker';
         });
@@ -708,7 +720,7 @@ class TelemetryAndProctoringTest extends TestCase
             'description' => "Student {$this->student1->name} has been idle for 10 min",
         ]);
 
-        $anomaly = \App\Models\Anomaly::where('lab_session_id', $this->session1->id)
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)
             ->where('type', 'idle_timeout')
             ->first();
 
@@ -741,7 +753,7 @@ class TelemetryAndProctoringTest extends TestCase
 
         $response->assertStatus(200);
 
-        $anomaly = \App\Models\Anomaly::where('lab_session_id', $this->session1->id)
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)
             ->where('type', 'idle_timeout')
             ->first();
 
@@ -797,7 +809,7 @@ class TelemetryAndProctoringTest extends TestCase
         $this->laboratory->update(['is_group_lab' => true, 'availability_mode' => 'open']);
 
         // Create a team group with student1 and student2
-        $group = \App\Models\Group::create([
+        $group = Group::create([
             'lab_id' => $this->laboratory->id,
             'name' => 'Team Alpha',
         ]);
@@ -845,7 +857,7 @@ class TelemetryAndProctoringTest extends TestCase
     {
         // One open attempt per student and lab: this one replaces the setUp session
         $this->session1->update(['status' => 'abandoned']);
-        $session = \App\Models\LabSession::create([
+        $session = LabSession::create([
             'lab_id' => $this->laboratory->id,
             'user_id' => $this->student1->id,
             'status' => 'in_progress',
@@ -867,5 +879,3 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertEquals(5, $session->wpm);
     }
 }
-
-

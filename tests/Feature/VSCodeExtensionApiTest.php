@@ -2,11 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\Laboratory;
-use App\Models\User;
-use App\Models\LabSession;
 use App\Models\Competency;
-use App\Models\StudentCompetency;
+use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,6 +14,7 @@ class VSCodeExtensionApiTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected Laboratory $laboratory;
 
     protected function setUp(): void
@@ -50,8 +50,8 @@ class VSCodeExtensionApiTest extends TestCase
             'reference_solution' => '// Solution code',
             'rubric' => 'Rubric text',
             'test_cases' => [
-                ['input' => '', 'expected' => 'expected output']
-            ]
+                ['input' => '', 'expected' => 'expected output'],
+            ],
         ]);
     }
 
@@ -81,7 +81,7 @@ class VSCodeExtensionApiTest extends TestCase
                 'title',
                 'description',
                 'tasks_definition',
-            ]
+            ],
         ]);
     }
 
@@ -206,7 +206,7 @@ class VSCodeExtensionApiTest extends TestCase
         $response->assertJsonFragment([
             'status' => 'success',
         ]);
-        
+
         $this->assertEmpty($response->json('completed_tasks'));
     }
 
@@ -245,7 +245,7 @@ class VSCodeExtensionApiTest extends TestCase
             'started_at' => now(),
         ]);
 
-        $brokenCode = <<<JAVA
+        $brokenCode = <<<'JAVA'
 public class Repository<T extends Entity<K>, K> {
     public void save(T entity) {
     }
@@ -283,7 +283,7 @@ JAVA;
             'started_at' => now(),
         ]);
 
-        $markdownContent = <<<MD
+        $markdownContent = <<<'MD'
 # TODO List
 - [ ] Implement pipe IPC
 - [ ] Fork child process
@@ -312,7 +312,7 @@ MD;
             'started_at' => now(),
         ]);
 
-        $validJavaCode = <<<JAVA
+        $validJavaCode = <<<'JAVA'
 class InvalidAgeException extends Exception {}
 class Student {
     private String name;
@@ -343,7 +343,7 @@ JAVA;
             'started_at' => now(),
         ]);
 
-        $validJavaCode = <<<JAVA
+        $validJavaCode = <<<'JAVA'
 class InvalidAgeException extends Exception {}
 class Student {
     private String name;
@@ -372,8 +372,8 @@ JAVA;
     public function test_submit_session_completes_and_maps_competency(): void
     {
         // Grading credits exactly the competencies the lab is tagged with
-        $competency = \App\Models\Competency::create(['code' => 'JAVA-EXC-01', 'name' => 'Custom exceptions in Java']);
-        $untagged = \App\Models\Competency::create(['code' => 'SQL-01', 'name' => 'SQL basics']);
+        $competency = Competency::create(['code' => 'JAVA-EXC-01', 'name' => 'Custom exceptions in Java']);
+        $untagged = Competency::create(['code' => 'SQL-01', 'name' => 'SQL basics']);
         $this->laboratory->competencies()->attach($competency->id);
 
         $session = LabSession::create([
@@ -383,7 +383,7 @@ JAVA;
             'started_at' => now(),
         ]);
 
-        $validJavaCode = <<<JAVA
+        $validJavaCode = <<<'JAVA'
 class InvalidAgeException extends Exception {}
 class Student {
     private String name;
@@ -502,7 +502,7 @@ JAVA;
             'starter_files' => [
                 ['name' => 'TaskManager.java', 'content' => '// Primary', 'is_primary' => true, 'is_readonly' => false],
                 ['name' => 'Task.java', 'content' => '// Model', 'is_primary' => false, 'is_readonly' => false],
-            ]
+            ],
         ]);
 
         $session = LabSession::create([
@@ -540,8 +540,8 @@ JAVA;
                 'lines_deleted' => 10,
                 'lines_modified' => 5,
                 'files' => [
-                    ['name' => 'TaskManager.java', 'added' => 42, 'deleted' => 10]
-                ]
+                    ['name' => 'TaskManager.java', 'added' => 42, 'deleted' => 10],
+                ],
             ]);
 
         $response->assertStatus(200);

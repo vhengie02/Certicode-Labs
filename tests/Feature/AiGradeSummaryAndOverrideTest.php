@@ -2,14 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Competency;
+use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
-use App\Models\SchoolClass;
 use App\Models\Module;
-use App\Models\Group;
-use App\Models\User;
-use App\Models\Competency;
+use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -18,9 +18,13 @@ class AiGradeSummaryAndOverrideTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student;
+
     protected User $student2;
+
     protected Laboratory $lab;
+
     protected LabSession $session;
 
     protected function setUp(): void

@@ -4,9 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Laboratory;
 use App\Models\LabSession;
+use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
-use App\Models\Module;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -16,9 +16,13 @@ class LiveLabAvailabilityTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student1;
+
     protected User $student2;
+
     protected SchoolClass $class;
+
     protected Module $module;
 
     protected function setUp(): void
@@ -488,4 +492,3 @@ class LiveLabAvailabilityTest extends TestCase
             ]);
     }
 }
-

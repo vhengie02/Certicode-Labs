@@ -66,14 +66,14 @@ class ModuleAttachment extends Model
      */
     public static function storageIsDurable(): bool
     {
-        $config = config('filesystems.disks.' . static::diskName());
-        if (!is_array($config)) {
+        $config = config('filesystems.disks.'.static::diskName());
+        if (! is_array($config)) {
             return false;
         }
 
         $driver = $config['driver'] ?? null;
         if ($driver === 'local') {
-            return !config('filesystems.ephemeral_local_storage');
+            return ! config('filesystems.ephemeral_local_storage');
         }
 
         if ($driver === 's3') {
@@ -102,7 +102,7 @@ class ModuleAttachment extends Model
             foreach ($files as $file) {
                 $path = $file->store(static::DIRECTORY, static::diskName());
                 if ($path === false) {
-                    throw new \RuntimeException('Could not store attachment ' . $file->getClientOriginalName());
+                    throw new \RuntimeException('Could not store attachment '.$file->getClientOriginalName());
                 }
 
                 $uploaded[] = [
@@ -137,7 +137,7 @@ class ModuleAttachment extends Model
      */
     public static function usesDirectUploads(): bool
     {
-        return config('filesystems.disks.' . static::diskName() . '.driver') === 's3'
+        return config('filesystems.disks.'.static::diskName().'.driver') === 's3'
             && static::storageIsDurable();
     }
 
@@ -151,7 +151,7 @@ class ModuleAttachment extends Model
     public static function issueDirectUpload(int $classId, string $fileName): array
     {
         $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-        $key = static::DIRECTORY . '/' . Str::random(40) . (preg_match('/^[a-z0-9]{1,10}$/', $extension) ? ".{$extension}" : '');
+        $key = static::DIRECTORY.'/'.Str::random(40).(preg_match('/^[a-z0-9]{1,10}$/', $extension) ? ".{$extension}" : '');
 
         $signed = static::disk()->temporaryUploadUrl($key, now()->addMinutes(5));
 
@@ -190,7 +190,7 @@ class ModuleAttachment extends Model
         $issued = session(self::ISSUED_UPLOADS_SESSION_KEY, []);
         $keys = array_column($uploads, 'key');
         foreach ($keys as $key) {
-            if (!preg_match(self::DIRECT_UPLOAD_KEY_PATTERN, $key) || (int) ($issued[$key] ?? 0) !== $classId) {
+            if (! preg_match(self::DIRECT_UPLOAD_KEY_PATTERN, $key) || (int) ($issued[$key] ?? 0) !== $classId) {
                 throw ValidationException::withMessages(['attachments' => static::UPLOAD_MISSING_MESSAGE]);
             }
         }
@@ -203,7 +203,7 @@ class ModuleAttachment extends Model
         $disk = static::disk();
         $attributes = [];
         foreach ($uploads as $upload) {
-            if (!$disk->exists($upload['key'])) {
+            if (! $disk->exists($upload['key'])) {
                 throw ValidationException::withMessages(['attachments' => static::UPLOAD_MISSING_MESSAGE]);
             }
 
@@ -259,9 +259,9 @@ class ModuleAttachment extends Model
     {
         $disk = static::disk();
         $fileName = str_replace(['/', '\\'], '_', (string) $this->file_name);
-        $isLocal = config('filesystems.disks.' . static::diskName() . '.driver') === 'local';
+        $isLocal = config('filesystems.disks.'.static::diskName().'.driver') === 'local';
 
-        if (!$isLocal && $disk->providesTemporaryUrls()) {
+        if (! $isLocal && $disk->providesTemporaryUrls()) {
             // The ASCII fallback must be printable: Str::ascii keeps some control bytes, which
             // would make makeDisposition throw and the download fail
             $fallback = str_replace(['%', '"'], '', preg_replace('/[^\x20-\x7e]/', '', Str::ascii($fileName))) ?: 'attachment';

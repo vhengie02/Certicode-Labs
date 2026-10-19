@@ -49,7 +49,7 @@ class RegistrationTest extends TestCase
             'email' => 'instructor@example.com',
             'role' => 'student',
         ]);
-        $this->assertNotNull(\App\Models\User::where('email', 'instructor@example.com')->value('instructor_requested_at'));
+        $this->assertNotNull(User::where('email', 'instructor@example.com')->value('instructor_requested_at'));
     }
 
     /**

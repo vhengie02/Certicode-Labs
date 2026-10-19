@@ -3,12 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase
@@ -43,7 +44,7 @@ class DashboardTest extends TestCase
 
         $this->actingAs($instructor)->get('/dashboard')
             ->assertOk()
-            ->assertSee('data-lazy-src="' . route('dashboard.sections') . '"', false)
+            ->assertSee('data-lazy-src="'.route('dashboard.sections').'"', false)
             ->assertSee('skeleton-pulse', false)
             ->assertDontSee('some flag');
     }
@@ -89,7 +90,7 @@ class DashboardTest extends TestCase
         $instructor = $this->user('prof@example.com', 'instructor');
         $class = SchoolClass::create(['name' => 'Java', 'code' => 'JAVA-1', 'instructor_id' => $instructor->id]);
         $class->students()->attach($student->id, ['status' => 'enrolled']);
-        \Illuminate\Support\Facades\Cache::store('file')->flush();
+        Cache::store('file')->flush();
 
         $this->sections($student)->assertSee('1 of 3 done')->assertSee('Download the extension');
         $this->sections($instructor)
@@ -187,13 +188,13 @@ class DashboardTest extends TestCase
 
         $adminPage = $this->actingAs($this->user('admin@example.com', 'admin'))->get('/dashboard')->assertOk();
         foreach ($adminLinks as $link) {
-            $adminPage->assertSee('href="' . $link . '"', false);
+            $adminPage->assertSee('href="'.$link.'"', false);
         }
 
         $instructorPage = $this->actingAs($this->user('prof@example.com', 'instructor'))->get('/dashboard')->assertOk();
-        $instructorPage->assertSee('href="' . route('classes.index') . '"', false);
+        $instructorPage->assertSee('href="'.route('classes.index').'"', false);
         foreach ($adminLinks as $link) {
-            $instructorPage->assertDontSee('href="' . $link . '"', false);
+            $instructorPage->assertDontSee('href="'.$link.'"', false);
         }
     }
 

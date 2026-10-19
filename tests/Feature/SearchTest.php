@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\SchoolClass;
-use App\Models\Module;
 use App\Models\Laboratory;
+use App\Models\Module;
+use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -14,11 +14,17 @@ class SearchTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $otherStudent;
+
     protected User $instructor;
+
     protected SchoolClass $classA;
+
     protected SchoolClass $classB;
+
     protected Module $moduleA;
+
     protected Laboratory $labA;
 
     protected function setUp(): void

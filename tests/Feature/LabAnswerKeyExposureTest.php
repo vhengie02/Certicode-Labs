@@ -19,11 +19,15 @@ class LabAnswerKeyExposureTest extends TestCase
     use RefreshDatabase;
 
     private const SOLUTION = 'class SECRET_REFERENCE_SOLUTION {}';
+
     private const RUBRIC = 'SECRET_RUBRIC_TEXT';
+
     private const EXPECTED = 'SECRET_EXPECTED_OUTPUT';
+
     private const CHECK = 'regex:SECRET_TASK_CHECK';
 
     private User $student;
+
     private Laboratory $lab;
 
     protected function setUp(): void

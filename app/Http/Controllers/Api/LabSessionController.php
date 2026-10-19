@@ -2,21 +2,35 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\AnomalyDetected;
+use App\Events\ChatMessageSent;
+use App\Events\DiffUpdated;
+use App\Events\LeaderboardUpdated;
+use App\Http\Controllers\Concerns\AuthorizesClassAccess;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\LabAttemptController;
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
-use App\Models\Anomaly;
+use App\Services\CodeSimilarityService;
+use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
+use App\Support\Realtime;
 use App\Support\WebcamSnapshot;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class LabSessionController extends Controller
 {
-    use \App\Http\Controllers\Concerns\AuthorizesClassAccess;
+    use AuthorizesClassAccess;
 
     protected SandboxExecutionService $sandboxService;
 
@@ -55,7 +69,7 @@ class LabSessionController extends Controller
 
         // Resume the open attempt or start one (shared with the web start route)
         $session = $lab->findOrStartAttemptFor($user);
-        if (!$session) {
+        if (! $session) {
             return response()->json([
                 'error' => 'attempts_exhausted',
                 'message' => 'You have used all your attempts for this lab. Ask your instructor if you need another one.',
@@ -120,7 +134,7 @@ class LabSessionController extends Controller
         if ($request->event_type === 'wpm_update') {
             $wpm = (int) ($request->payload['wpm'] ?? 0);
             $keystrokes = (int) ($request->payload['keystroke_count'] ?? 0);
-            if ($keystrokes > 0 && (!isset($request->payload['wpm']) || $request->payload['wpm'] === null)) {
+            if ($keystrokes > 0 && (! isset($request->payload['wpm']) || $request->payload['wpm'] === null)) {
                 $session->keystroke_count = $keystrokes;
                 $wpm = $session->calculateOverallWpm();
             }
@@ -150,7 +164,7 @@ class LabSessionController extends Controller
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
                 'severity' => $pastedLen > 100 ? 'high' : 'medium',
-                'description' => 'Unusual external code paste detected (' . $pastedLen . ' chars): ' . \Illuminate\Support\Str::limit($snippet, 70),
+                'description' => 'Unusual external code paste detected ('.$pastedLen.' chars): '.Str::limit($snippet, 70),
                 'metadata' => $metadata,
             ]);
         }
@@ -224,6 +238,7 @@ class LabSessionController extends Controller
                 unset($attributes['severity']);
             }
             $open->update($attributes);
+
             return;
         }
 
@@ -237,7 +252,7 @@ class LabSessionController extends Controller
     {
         $anomaly = Anomaly::create(array_merge(['lab_session_id' => $session->id], $attributes));
         try {
-            event(new \App\Events\AnomalyDetected($session->id, [
+            event(new AnomalyDetected($session->id, [
                 'id' => $anomaly->id,
                 'type' => $anomaly->type,
                 'severity' => $anomaly->severity,
@@ -248,8 +263,9 @@ class LabSessionController extends Controller
                 'student_name' => $session->user->name ?? 'Student',
             ]));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
+            Log::warning('Failed to broadcast AnomalyDetected: '.$e->getMessage());
         }
+
         return $anomaly;
     }
 
@@ -379,15 +395,15 @@ class LabSessionController extends Controller
         $session = LabSession::findOrFail($sessionId);
         $user = $session->user;
 
-        if (!$session->github_repo_url) {
+        if (! $session->github_repo_url) {
             return response()->json([
-                'error' => 'No GitHub repository linked to this session.'
+                'error' => 'No GitHub repository linked to this session.',
             ], 400);
         }
 
-        if (!$user->github_username) {
+        if (! $user->github_username) {
             return response()->json([
-                'error' => 'Student does not have a linked GitHub account.'
+                'error' => 'Student does not have a linked GitHub account.',
             ], 400);
         }
 
@@ -409,7 +425,7 @@ class LabSessionController extends Controller
 
         if ($response->failed()) {
             return response()->json([
-                'error' => 'Failed to retrieve stats from GitHub. Code: ' . $response->status(),
+                'error' => 'Failed to retrieve stats from GitHub. Code: '.$response->status(),
                 'details' => $response->json(),
             ], 500);
         }
@@ -425,10 +441,10 @@ class LabSessionController extends Controller
             }
         }
 
-        if (!$userStats) {
+        if (! $userStats) {
             return response()->json([
-                'message' => 'No commits found for GitHub user: ' . $user->github_username,
-                'stats' => []
+                'message' => 'No commits found for GitHub user: '.$user->github_username,
+                'stats' => [],
             ]);
         }
 
@@ -460,7 +476,7 @@ class LabSessionController extends Controller
                 'commits' => $commitsCount,
                 'lines_added' => $additions,
                 'lines_deleted' => $deletions,
-            ]
+            ],
         ]);
     }
 
@@ -474,7 +490,7 @@ class LabSessionController extends Controller
      */
     public function authorizeBroadcast(Request $request, int $sessionId)
     {
-        if (!\App\Support\Realtime::enabled()) {
+        if (! Realtime::enabled()) {
             return response()->json(['error' => 'Live updates are not enabled.'], 404);
         }
 
@@ -484,11 +500,11 @@ class LabSessionController extends Controller
         ]);
 
         $allowed = ["private-lab-session.{$sessionId}", "private-lab-session.{$sessionId}.chat"];
-        if (!in_array($validated['channel_name'], $allowed, true)) {
+        if (! in_array($validated['channel_name'], $allowed, true)) {
             return response()->json(['error' => 'This channel does not belong to the session.'], 403);
         }
 
-        return response()->json(\App\Support\Realtime::authorize($validated['channel_name'], $validated['socket_id']));
+        return response()->json(Realtime::authorize($validated['channel_name'], $validated['socket_id']));
     }
 
     public function getSession(Request $request, int $sessionId)
@@ -525,7 +541,7 @@ class LabSessionController extends Controller
         // Reading the session is not a heartbeat: the lab page polls this while it waits for
         // VS Code and pings /ping on its own. Only the extension's read below counts.
 
-        $colors =['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
+        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $currentUser = $request->user() ?? $session->user;
         $userId = $currentUser ? $currentUser->id : 1;
         $userName = $currentUser ? $currentUser->name : 'Student';
@@ -536,7 +552,7 @@ class LabSessionController extends Controller
             foreach ($session->group->members as $member) {
                 $mColor = $colors[$member->id % count($colors)];
                 $nameParts = explode(' ', $member->name);
-                $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+                $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
                 $teammates[] = [
                     'id' => $member->id,
                     'name' => $member->name,
@@ -547,7 +563,7 @@ class LabSessionController extends Controller
             }
         }
 
-        $isVscodeSource = $request->input('source') === 'vscode' 
+        $isVscodeSource = $request->input('source') === 'vscode'
             || $request->header('X-Client') === 'vscode'
             || $request->input('client') === 'vscode_extension';
 
@@ -571,7 +587,7 @@ class LabSessionController extends Controller
         $vscode = $this->vscodeConnection($session->id);
         $vscodePing = $vscode['last_ping'];
         $vscodeDisconnected = $vscode['disconnected'];
-        $isVscodeConnected = !$vscodeDisconnected && $vscodePing && $vscodePing->diffInSeconds(now(), true) < 45;
+        $isVscodeConnected = ! $vscodeDisconnected && $vscodePing && $vscodePing->diffInSeconds(now(), true) < 45;
 
         $isCameraVerified = TelemetryLog::where('lab_session_id', $session->id)
             ->where('event_type', 'webcam_prelab_verification')
@@ -602,7 +618,7 @@ class LabSessionController extends Controller
             'completed_tasks' => $session->completed_tasks ?? [],
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
             'code_contributions' => $session->code_contributions ?? [],
-            'realtime' => \App\Support\Realtime::clientConfig(),
+            'realtime' => Realtime::clientConfig(),
             'current_user' => [
                 'id' => $userId,
                 'name' => $userName,
@@ -637,7 +653,8 @@ class LabSessionController extends Controller
 
         return array_values(array_filter($diagnostics, function ($diag) use ($fileNames) {
             $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
-            return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/' . $name));
+
+            return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
         }));
     }
 
@@ -645,7 +662,7 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
-        if (!$session->acceptsWork()) {
+        if (! $session->acceptsWork()) {
             return $this->attemptClosedResponse($session);
         }
 
@@ -662,9 +679,9 @@ class LabSessionController extends Controller
     private function gradeProgress(Request $request, LabSession $session)
     {
         $code = $request->code;
-        if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
+        if (empty($code) && ! empty($request->input('files')) && is_array($request->input('files'))) {
             foreach ($request->input('files') as $f) {
-                if (!empty($f['is_primary']) && !empty($f['content'])) {
+                if (! empty($f['is_primary']) && ! empty($f['content'])) {
                     $code = $f['content'];
                     break;
                 }
@@ -676,13 +693,13 @@ class LabSessionController extends Controller
         $code = $code ?? '';
 
         $diagnostics = $this->submittedFileDiagnostics($request);
-        $evaluationService = app(\App\Services\LlmEvaluationService::class);
+        $evaluationService = app(LlmEvaluationService::class);
         $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
             foreach ($evaluation['tasks'] as $taskEval) {
-                if (!empty($taskEval['completed'])) {
+                if (! empty($taskEval['completed'])) {
                     $completedTasks[] = (int) $taskEval['id'];
                 }
             }
@@ -712,7 +729,7 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
-        $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
+        $studentEvaluation = Arr::except($evaluation, [
             'ai_grade_summary',
             'competencies',
             'code_quality_notes',
@@ -735,7 +752,7 @@ class LabSessionController extends Controller
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
 
         // A finished, timed-out or live-closed attempt keeps its grade: no regrading
-        if (!$session->acceptsWork()) {
+        if (! $session->acceptsWork()) {
             return $this->attemptClosedResponse($session);
         }
 
@@ -757,9 +774,9 @@ class LabSessionController extends Controller
         $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
 
         $code = $request->code;
-        if (empty($code) && !empty($request->input('files')) && is_array($request->input('files'))) {
+        if (empty($code) && ! empty($request->input('files')) && is_array($request->input('files'))) {
             foreach ($request->input('files') as $f) {
-                if (!empty($f['is_primary']) && !empty($f['content'])) {
+                if (! empty($f['is_primary']) && ! empty($f['content'])) {
                     $code = $f['content'];
                     break;
                 }
@@ -772,19 +789,19 @@ class LabSessionController extends Controller
 
         // Keep the code before grading, so a request cut off mid-grade doesn't lose it.
         // The attempt stays open, so the student can submit again.
-        if (!$this->updateIfInProgress($session, null, ['submitted_code' => $code, 'submitted_files' => $request->input('files')])) {
+        if (! $this->updateIfInProgress($session, null, ['submitted_code' => $code, 'submitted_files' => $request->input('files')])) {
             return $this->attemptClosedResponse($session->refresh());
         }
 
         // AI task-completion evaluation
         $diagnostics = $this->submittedFileDiagnostics($request);
-        $evaluationService = app(\App\Services\LlmEvaluationService::class);
+        $evaluationService = app(LlmEvaluationService::class);
         $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
             foreach ($evaluation['tasks'] as $taskEval) {
-                if (!empty($taskEval['completed'])) {
+                if (! empty($taskEval['completed'])) {
                     $completedTasks[] = (int) $taskEval['id'];
                 }
             }
@@ -801,7 +818,7 @@ class LabSessionController extends Controller
             'submitted_files' => $request->input('files'),
         ]);
 
-        if (!$completed) {
+        if (! $completed) {
             return $this->attemptClosedResponse($session->refresh());
         }
         $session = $completed;
@@ -831,16 +848,16 @@ class LabSessionController extends Controller
 
         // Compare the new submission with the cohort once, here, rather than on every view
         // of the monitoring page
-        app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
+        app(CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
 
         $labTitle = $session->laboratory->title ?? 'your lab';
         $session->notifyStudents(
             "Lab submitted: {$labTitle}",
-            "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (" . count($completedTasks) . ' tasks passed).'
-                . (!empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : '')
+            "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (".count($completedTasks).' tasks passed).'
+                .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : '')
         );
 
-        $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
+        $studentEvaluation = Arr::except($evaluation, [
             'ai_grade_summary',
             'competencies',
             'code_quality_notes',
@@ -861,6 +878,7 @@ class LabSessionController extends Controller
 
     /** Seconds a submit may use in all (Vercel stops the function at 60), and the least worth giving a code run. */
     private const SUBMIT_BUDGET_SECONDS = 50;
+
     private const MIN_EXECUTION_SECONDS = 5;
 
     /**
@@ -884,9 +902,9 @@ class LabSessionController extends Controller
      */
     private function whileGrading(LabSession $session, \Closure $grade)
     {
-        $lock = \Illuminate\Support\Facades\Cache::store('database')->lock("lab_session_{$session->id}_grading", 90);
+        $lock = Cache::store('database')->lock("lab_session_{$session->id}_grading", 90);
 
-        if (!$lock->get()) {
+        if (! $lock->get()) {
             return response()->json([
                 'error' => 'grading_in_progress',
                 'message' => 'This lab is already being graded. Wait for that result before trying again.',
@@ -905,14 +923,14 @@ class LabSessionController extends Controller
      * also lands if the attempt was closed after its grading began (time ran out or the live
      * lab ended mid-grade), since it was sent in time. Returns null when nothing was saved.
      */
-    private function updateIfInProgress(LabSession $session, ?\Carbon\CarbonInterface $acceptClosedSince, array $attributes): ?LabSession
+    private function updateIfInProgress(LabSession $session, ?CarbonInterface $acceptClosedSince, array $attributes): ?LabSession
     {
         return \Illuminate\Support\Facades\DB::transaction(function () use ($session, $acceptClosedSince, $attributes) {
             $current = LabSession::whereKey($session->id)->lockForUpdate()->first();
 
             $open = $current && ($current->status === 'in_progress'
                 || ($acceptClosedSince && $current->ended_at && $current->ended_at->gte($acceptClosedSince)));
-            if (!$open) {
+            if (! $open) {
                 return null;
             }
 
@@ -1051,9 +1069,9 @@ class LabSessionController extends Controller
 
         // Broadcast real-time line diff update
         try {
-            event(new \App\Events\DiffUpdated($session->id, $diffStats, $contributions));
+            event(new DiffUpdated($session->id, $diffStats, $contributions));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to broadcast DiffUpdated: " . $e->getMessage());
+            Log::warning('Failed to broadcast DiffUpdated: '.$e->getMessage());
         }
 
         return response()->json([
@@ -1076,7 +1094,8 @@ class LabSessionController extends Controller
             ->get()
             ->map(function ($chat) {
                 $nameParts = explode(' ', $chat->user_name);
-                $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+                $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+
                 return [
                     'id' => $chat->id,
                     'user_id' => $chat->user_id,
@@ -1124,7 +1143,7 @@ class LabSessionController extends Controller
         ]);
 
         $nameParts = explode(' ', $chat->user_name);
-        $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+        $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
 
         $chatPayload = [
             'id' => $chat->id,
@@ -1140,9 +1159,9 @@ class LabSessionController extends Controller
 
         // Broadcast real-time ephemeral chat to team channel
         try {
-            event(new \App\Events\ChatMessageSent($session->id, $chatPayload));
+            event(new ChatMessageSent($session->id, $chatPayload));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to broadcast ChatMessageSent: " . $e->getMessage());
+            Log::warning('Failed to broadcast ChatMessageSent: '.$e->getMessage());
         }
 
         return response()->json([
@@ -1163,9 +1182,9 @@ class LabSessionController extends Controller
         $sessions = LabSession::with(['user', 'group'])
             ->where('lab_id', $session->lab_id)
             ->get()
-            ->filter(fn($s) => $s->user !== null)
+            ->filter(fn ($s) => $s->user !== null)
             ->groupBy(function ($s) {
-                return $s->group_id ? 'g_' . $s->group_id : 'u_' . $s->user_id;
+                return $s->group_id ? 'g_'.$s->group_id : 'u_'.$s->user_id;
             })
             ->map(function ($userSessions) use ($timeLimitSeconds) {
                 $bestSession = $userSessions->sort(function ($a, $b) {
@@ -1181,6 +1200,7 @@ class LabSessionController extends Controller
                     if ($aDur !== $bDur) {
                         return $aDur <=> $bDur;
                     }
+
                     return $b->id <=> $a->id;
                 })->first();
 
@@ -1197,7 +1217,7 @@ class LabSessionController extends Controller
 
                 $name = $s->user->name ?? 'Student';
                 $nameParts = explode(' ', $name);
-                $initials = strtoupper(substr($nameParts[0], 0, 1) . (isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
+                $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
 
                 $hours = floor($duration / 3600);
                 $mins = floor(($duration % 3600) / 60);
@@ -1228,12 +1248,14 @@ class LabSessionController extends Controller
                 if ($a['tasks_completed'] !== $b['tasks_completed']) {
                     return $b['tasks_completed'] <=> $a['tasks_completed'];
                 }
+
                 // Priority 2: Elapsed time asc
                 return $a['elapsed_seconds'] <=> $b['elapsed_seconds'];
             })
             ->values()
             ->map(function ($item, $index) {
                 $item['rank'] = $index + 1;
+
                 return $item;
             });
 
@@ -1264,9 +1286,9 @@ class LabSessionController extends Controller
         try {
             $lbResponse = $this->getLeaderboard($session->id);
             $lbData = $lbResponse->getData(true);
-            event(new \App\Events\LeaderboardUpdated($session->id, $lbData));
+            event(new LeaderboardUpdated($session->id, $lbData));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to broadcast LeaderboardUpdated: " . $e->getMessage());
+            Log::warning('Failed to broadcast LeaderboardUpdated: '.$e->getMessage());
         }
     }
 
@@ -1282,7 +1304,7 @@ class LabSessionController extends Controller
     {
         $session = LabSession::findOrFail($sessionId);
 
-        if (!in_array($request->user()?->role, ['admin', 'instructor'], true)) {
+        if (! in_array($request->user()?->role, ['admin', 'instructor'], true)) {
             if ($session->status === 'in_progress') {
                 TelemetryLog::create([
                     'lab_session_id' => $session->id,
@@ -1320,7 +1342,7 @@ class LabSessionController extends Controller
     public function reopenSession(Request $request, int $sessionId)
     {
         // Reopening a completed session allows resubmission, so only staff may do it.
-        if (!in_array($request->user()?->role, ['admin', 'instructor'], true)) {
+        if (! in_array($request->user()?->role, ['admin', 'instructor'], true)) {
             return response()->json([
                 'error' => 'Unauthorized action. Only instructors or admins can reopen a session.',
             ], 403);
@@ -1352,7 +1374,7 @@ class LabSessionController extends Controller
     public function pingSession(Request $request, int $sessionId)
     {
         $session = LabSession::with('laboratory')->find($sessionId);
-        if (!$session) {
+        if (! $session) {
             return response()->json(['error' => 'Session not found'], 404);
         }
 
@@ -1368,6 +1390,7 @@ class LabSessionController extends Controller
                 'ended_at' => now(),
                 'last_ping_at' => now(),
             ]);
+
             return response()->json([
                 'status' => 'abandoned',
                 'is_active' => false,
@@ -1385,7 +1408,7 @@ class LabSessionController extends Controller
             ]);
         }
 
-        $isVscode = $request->input('source') === 'vscode' 
+        $isVscode = $request->input('source') === 'vscode'
             || $request->header('X-Client') === 'vscode'
             || $request->input('client') === 'vscode_extension';
 
@@ -1445,7 +1468,7 @@ class LabSessionController extends Controller
      * (the cache is per request on Vercel): its last ping time, the build that sent it, and
      * whether a clean shutdown came after it.
      *
-     * @return array{last_ping: ?\Carbon\Carbon, extension_version: ?string, disconnected: bool}
+     * @return array{last_ping: ?Carbon, extension_version: ?string, disconnected: bool}
      */
     private function vscodeConnection(int $sessionId): array
     {
@@ -1457,11 +1480,11 @@ class LabSessionController extends Controller
             ->where('event_type', 'vscode_disconnected')
             ->max('id');
 
-        $disconnected = $lastDisconnectId !== null && (!$lastPing || $lastDisconnectId > $lastPing->id);
+        $disconnected = $lastDisconnectId !== null && (! $lastPing || $lastDisconnectId > $lastPing->id);
 
         return [
             // created_at is filled in by the database, so the model holds it as a string
-            'last_ping' => $disconnected || !$lastPing ? null : \Carbon\Carbon::parse($lastPing->created_at),
+            'last_ping' => $disconnected || ! $lastPing ? null : Carbon::parse($lastPing->created_at),
             // Pings logged before versions were recorded say nothing about the build
             'extension_version' => $lastPing && is_array($lastPing->payload) && array_key_exists('extension_version', $lastPing->payload)
                 ? (string) $lastPing->payload['extension_version']
@@ -1493,7 +1516,7 @@ class LabSessionController extends Controller
     public function vscodeDisconnect(int $sessionId)
     {
         $session = LabSession::find($sessionId);
-        if (!$session) {
+        if (! $session) {
             return response()->json(['error' => 'Session not found'], 404);
         }
 
@@ -1516,7 +1539,7 @@ class LabSessionController extends Controller
     public function openLive(Request $request, int $labId)
     {
         $user = $request->user();
-        if (!$user || !in_array($user->role, ['admin', 'instructor'])) {
+        if (! $user || ! in_array($user->role, ['admin', 'instructor'])) {
             return response()->json([
                 'error' => 'Unauthorized action. Only instructors or admins can manage Live Labs.',
             ], 403);
@@ -1541,7 +1564,7 @@ class LabSessionController extends Controller
     public function endLive(Request $request, int $labId)
     {
         $user = $request->user();
-        if (!$user || !in_array($user->role, ['admin', 'instructor'])) {
+        if (! $user || ! in_array($user->role, ['admin', 'instructor'])) {
             return response()->json([
                 'error' => 'Unauthorized action. Only instructors or admins can manage Live Labs.',
             ], 403);
@@ -1564,7 +1587,7 @@ class LabSessionController extends Controller
     public function reopenLive(Request $request, int $labId)
     {
         $user = $request->user();
-        if (!$user || !in_array($user->role, ['admin', 'instructor'])) {
+        if (! $user || ! in_array($user->role, ['admin', 'instructor'])) {
             return response()->json([
                 'error' => 'Unauthorized action. Only instructors or admins can manage Live Labs.',
             ], 403);
@@ -1576,7 +1599,7 @@ class LabSessionController extends Controller
         $extendMinutes = $extendMinutes ? (int) $extendMinutes : null;
         $success = $lab->reopenLive($extendMinutes);
 
-        if (!$success) {
+        if (! $success) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Cannot reopen Live Lab: countdown duration has already fully expired. Live Labs do not grant a fresh duration.',
@@ -1665,7 +1688,7 @@ class LabSessionController extends Controller
             ],
         ]);
 
-        \App\Http\Controllers\LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'));
+        LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'));
 
         return response()->json([
             'status' => 'success',
@@ -1712,7 +1735,7 @@ class LabSessionController extends Controller
             ], 422);
         }
 
-        \App\Http\Controllers\LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
+        LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
 
         return response()->json([
             'status' => 'success',

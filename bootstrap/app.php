@@ -1,5 +1,10 @@
 <?php
 
+use App\Http\Middleware\AuthorizeLabSession;
+use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\PreventAuthenticatedCaching;
+use App\Http\Middleware\ServerTiming;
+use App\Http\Middleware\SkipSessionForExtensionToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,13 +20,13 @@ $app = Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         // First, so its numbers include session start and auth lookups
-        $middleware->prepend(\App\Http\Middleware\ServerTiming::class);
-        $middleware->appendToGroup('web', \App\Http\Middleware\PreventAuthenticatedCaching::class);
+        $middleware->prepend(ServerTiming::class);
+        $middleware->appendToGroup('web', PreventAuthenticatedCaching::class);
         // Before StartSession: the extension's cookieless token calls must not create session rows
-        $middleware->prependToGroup('web', \App\Http\Middleware\SkipSessionForExtensionToken::class);
+        $middleware->prependToGroup('web', SkipSessionForExtensionToken::class);
         $middleware->alias([
-            'lab.session' => \App\Http\Middleware\AuthorizeLabSession::class,
-            'admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'lab.session' => AuthorizeLabSession::class,
+            'admin' => EnsureAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -29,7 +34,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
     })->create();
 
 // Auto-detect serverless environment (e.g. Vercel) where base storage is read-only
-if (file_exists('/tmp') && (!is_writable(dirname(__DIR__) . '/storage') || isset($_ENV['VERCEL']) || isset($_SERVER['VERCEL']))) {
+if (file_exists('/tmp') && (! is_writable(dirname(__DIR__).'/storage') || isset($_ENV['VERCEL']) || isset($_SERVER['VERCEL']))) {
     $app->useStoragePath('/tmp/storage');
 }
 

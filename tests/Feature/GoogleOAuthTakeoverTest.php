@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\GithubProvider;
+use Laravel\Socialite\Two\GoogleProvider;
 use Mockery;
 use Tests\TestCase;
 
@@ -26,7 +28,7 @@ class GoogleOAuthTakeoverTest extends TestCase
         $socialUser->shouldReceive('getName')->andReturn('OAuth User');
         $socialUser->shouldReceive('getNickname')->andReturn(null);
 
-        $provider = Mockery::mock(\Laravel\Socialite\Two\GoogleProvider::class);
+        $provider = Mockery::mock(GoogleProvider::class);
         $provider->shouldReceive('user')->andReturn($socialUser);
 
         Socialite::shouldReceive('driver')->with('google')->andReturn($provider);
@@ -84,7 +86,7 @@ class GoogleOAuthTakeoverTest extends TestCase
         $githubUser->shouldReceive('getEmail')->andReturn('attacker@example.com');
         $githubUser->shouldReceive('getName')->andReturn('Attacker Name');
         $githubUser->shouldReceive('getNickname')->andReturn('attacker-gh');
-        $provider = Mockery::mock(\Laravel\Socialite\Two\GithubProvider::class);
+        $provider = Mockery::mock(GithubProvider::class);
         $provider->shouldReceive('user')->andReturn($githubUser);
         Socialite::shouldReceive('driver')->with('github')->andReturn($provider);
 

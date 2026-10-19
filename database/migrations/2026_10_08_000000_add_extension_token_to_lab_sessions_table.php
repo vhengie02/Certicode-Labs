@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('lab_sessions', function (Blueprint $table) {
-            if (!Schema::hasColumn('lab_sessions', 'extension_token')) {
+            if (! Schema::hasColumn('lab_sessions', 'extension_token')) {
                 // Encrypted per-session secret the VS Code extension sends as X-Session-Token.
                 $table->text('extension_token')->nullable()->after('last_ping_at');
             }

@@ -22,7 +22,9 @@ class ModuleAttachmentDirectUploadTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private SchoolClass $class;
 
     protected function setUp(): void
@@ -170,7 +172,7 @@ class ModuleAttachmentDirectUploadTest extends TestCase
             $existing,
             'secrets/leak.pdf',
             'module_attachments/../secrets/leak.pdf',
-            'module_attachments/' . str_repeat('a', 40) . '.pdf',
+            'module_attachments/'.str_repeat('a', 40).'.pdf',
         ];
         foreach ($forged as $key) {
             $this->createModule([['key' => $key, 'name' => 'stolen.pdf']])
@@ -230,7 +232,7 @@ class ModuleAttachmentDirectUploadTest extends TestCase
                 'uploaded_attachments' => [['key' => $key, 'name' => 'Week 1 slides.pdf']],
             ])
             ->assertSee('Week 1 slides.pdf')
-            ->assertSee('value="' . $key . '"', false);
+            ->assertSee('value="'.$key.'"', false);
 
         // Still accepted on the next try
         $this->createModule([['key' => $key, 'name' => 'Week 1 slides.pdf']])->assertSessionHasNoErrors();

@@ -17,7 +17,7 @@ class UniqueEmail implements ValidationRule
         private ?int $ignoreUserId = null,
         private ?string $message = null,
     ) {
-        if (!in_array($column, ['email', 'gmail'], true)) {
+        if (! in_array($column, ['email', 'gmail'], true)) {
             throw new \InvalidArgumentException("UniqueEmail cannot check the {$column} column.");
         }
     }

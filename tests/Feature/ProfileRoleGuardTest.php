@@ -16,6 +16,7 @@ class ProfileRoleGuardTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private User $instructor;
 
     protected function setUp(): void
@@ -32,7 +33,7 @@ class ProfileRoleGuardTest extends TestCase
         return $this->actingAs($this->admin)->put(route('profiles.update', $user->id), [
             'first_name' => 'Some',
             'last_name' => 'Name',
-            'username' => 'user' . $user->id,
+            'username' => 'user'.$user->id,
             'email' => $user->email,
             'role' => $role,
         ]);

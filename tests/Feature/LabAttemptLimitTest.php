@@ -19,7 +19,9 @@ class LabAttemptLimitTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private Module $module;
 
     protected function setUp(): void

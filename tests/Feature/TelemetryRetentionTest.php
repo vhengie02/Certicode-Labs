@@ -25,6 +25,7 @@ class TelemetryRetentionTest extends TestCase
     private const SNAPSHOT = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
     private User $instructor;
+
     private LabSession $session;
 
     protected function setUp(): void

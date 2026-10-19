@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Admin\UserController;
 use App\Models\User;
+use App\Rules\UniqueEmail;
 use Illuminate\Http\Request;
 
 class StudentProfileController extends Controller
@@ -36,16 +38,16 @@ class StudentProfileController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
-            'username' => 'required|string|max:255|unique:users,username,' . $user->id,
+            'username' => 'required|string|max:255|unique:users,username,'.$user->id,
             'gender' => 'nullable|string|in:male,female,other',
-            'email' => ['sometimes', 'required', 'string', 'email', 'max:255', new \App\Rules\UniqueEmail(ignoreUserId: $user->id)],
+            'email' => ['sometimes', 'required', 'string', 'email', 'max:255', new UniqueEmail(ignoreUserId: $user->id)],
             'github_username' => 'nullable|string|max:255',
         ]);
 
         // No role here: roles change only through Admin\UserController::updateRole, whose
         // checks (not your own role, not the last admin, not an instructor still teaching)
         // this form used to skip
-        $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];
+        $validated['name'] = $validated['first_name'].' '.$validated['last_name'];
         $user->update($validated);
 
         // Redirect appropriately
@@ -70,6 +72,6 @@ class StudentProfileController extends Controller
         }
 
         // Same safeguards as Admin > Users (no self-delete, keep an admin, don't cascade classes)
-        return app(\App\Http\Controllers\Admin\UserController::class)->destroy(request(), User::findOrFail($id));
+        return app(UserController::class)->destroy(request(), User::findOrFail($id));
     }
 }

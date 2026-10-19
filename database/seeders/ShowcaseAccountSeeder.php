@@ -280,7 +280,7 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 3, 'task' => 'Implement Optional<T> findById method', 'command' => 'regex:Optional<T>\\s+findById'],
                     ['id' => 4, 'task' => 'Implement filter using Predicate<T>', 'command' => 'regex:filter\\s*\\(\\s*Predicate<T>'],
                 ],
-                'reference_solution' => "// Generic repository with HashMap",
+                'reference_solution' => '// Generic repository with HashMap',
                 'rubric' => "1. Correct type parameter bounds.\n2. Type-safe save and lookup.\n3. Functional predicate filter.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'Found entity: 1'],
@@ -313,13 +313,13 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 2, 'task' => 'Implement take() with wait when empty', 'command' => 'regex:synchronized.*take.*wait'],
                     ['id' => 3, 'task' => 'Notify waiting threads on state change', 'command' => 'regex:notifyAll\\(\\)'],
                 ],
-                'reference_solution' => "// Bounded Blocking Queue implementation",
+                'reference_solution' => '// Bounded Blocking Queue implementation',
                 'rubric' => "1. Thread safety.\n2. Bounded capacity check.\n3. Correct notifyAll behavior.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'Queue processed 50 items'],
                 ],
                 'starter_files' => [
-                    ['name' => 'BlockingQueue.java', 'content' => "public class BlockingQueue {\n    // Implement bounded queue\n}", 'is_primary' => true, 'is_readonly' => false]
+                    ['name' => 'BlockingQueue.java', 'content' => "public class BlockingQueue {\n    // Implement bounded queue\n}", 'is_primary' => true, 'is_readonly' => false],
                 ],
                 'time_limit' => 50,
                 'is_group_lab' => false,
@@ -391,12 +391,12 @@ class ShowcaseAccountSeeder extends Seeder
             ]);
 
             // Add Certificate for Class 1 (100% completed)
-            $certCode = 'CERT-JAVA-' . strtoupper(substr(md5($student->id . $class1->id), 0, 8));
+            $certCode = 'CERT-JAVA-'.strtoupper(substr(md5($student->id.$class1->id), 0, 8));
             $certificate = Certificate::updateOrCreate(
                 ['user_id' => $student->id, 'class_id' => $class1->id],
                 [
                     'verification_code' => $certCode,
-                    'qr_code_path' => 'certificates/qr-' . $certCode . '.svg',
+                    'qr_code_path' => 'certificates/qr-'.$certCode.'.svg',
                     'issued_at' => now()->subDays(2),
                 ]
             );
@@ -543,13 +543,13 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 2, 'task' => 'Implement search(int val) returning boolean in O(h) time', 'command' => 'regex:boolean\\s+search\\(int'],
                     ['id' => 3, 'task' => 'Implement inOrderTraversal() collecting sorted list', 'command' => 'regex:inOrderTraversal\\('],
                 ],
-                'reference_solution' => "// BST implementation with recursive helper methods",
+                'reference_solution' => '// BST implementation with recursive helper methods',
                 'rubric' => "1. Correct BST property on insert.\n2. Efficient logarithmic search.\n3. Sorted in-order traversal.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'In-order: [2, 5, 8, 12, 18]'],
                 ],
                 'starter_files' => [
-                    ['name' => 'BinarySearchTree.java', 'content' => "public class BinarySearchTree {\n    // Node and BST implementation\n}", 'is_primary' => true, 'is_readonly' => false]
+                    ['name' => 'BinarySearchTree.java', 'content' => "public class BinarySearchTree {\n    // Node and BST implementation\n}", 'is_primary' => true, 'is_readonly' => false],
                 ],
                 'time_limit' => 60,
                 'is_group_lab' => false,
@@ -577,13 +577,13 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 2, 'task' => 'Implement edge relaxation loop', 'command' => 'regex:if\\s*\\(dist\\[u\\]\\s*\\+\\s*weight\\s*<\\s*dist\\[v\\]\\)'],
                     ['id' => 3, 'task' => 'Handle unreachable nodes with infinity sentinel', 'command' => 'regex:Integer\\.MAX_VALUE'],
                 ],
-                'reference_solution' => "// Dijkstra with PriorityQueue",
+                'reference_solution' => '// Dijkstra with PriorityQueue',
                 'rubric' => "1. Optimal O((V+E)logV) runtime.\n2. Accurate shortest distances.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'Distance to Node 4: 7'],
                 ],
                 'starter_files' => [
-                    ['name' => 'Dijkstra.java', 'content' => "public class Dijkstra {\n    // Dijkstra implementation\n}", 'is_primary' => true, 'is_readonly' => false]
+                    ['name' => 'Dijkstra.java', 'content' => "public class Dijkstra {\n    // Dijkstra implementation\n}", 'is_primary' => true, 'is_readonly' => false],
                 ],
                 'time_limit' => 60,
                 'is_group_lab' => false,
@@ -670,13 +670,13 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 2, 'task' => 'Hash password using PBKDF2WithHmacSHA256', 'command' => 'regex:PBKDF2WithHmacSHA256'],
                     ['id' => 3, 'task' => 'Implement constant-time comparison MessageDigest.isEqual', 'command' => 'regex:MessageDigest\\.isEqual'],
                 ],
-                'reference_solution' => "// PBKDF2 salted hasher",
+                'reference_solution' => '// PBKDF2 salted hasher',
                 'rubric' => "1. Cryptographically secure random salt.\n2. Correct iteration count.\n3. Constant-time verification.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'Password verification: SUCCESS'],
                 ],
                 'starter_files' => [
-                    ['name' => 'PasswordHasher.java', 'content' => "public class PasswordHasher {\n    // Implement secure hashing\n}", 'is_primary' => true, 'is_readonly' => false]
+                    ['name' => 'PasswordHasher.java', 'content' => "public class PasswordHasher {\n    // Implement secure hashing\n}", 'is_primary' => true, 'is_readonly' => false],
                 ],
                 'time_limit' => 45,
                 'is_group_lab' => false,
@@ -705,7 +705,7 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 2, 'task' => 'Track TCP handshake connection states in memory', 'command' => 'regex:ConnectionState'],
                     ['id' => 3, 'task' => 'Drop invalid state transitions and log security alerts', 'command' => 'regex:dropPacket'],
                 ],
-                'reference_solution' => "// Team Firewall rule engine",
+                'reference_solution' => '// Team Firewall rule engine',
                 'rubric' => "1. Precise CIDR matching.\n2. Proper state transition table.\n3. Team code contributions.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'Firewall test passed: 100 packets analyzed'],
@@ -821,13 +821,13 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 1, 'task' => 'Validate Authorization Header format', 'command' => 'regex:Bearer\s+'],
                     ['id' => 2, 'task' => 'Verify HMAC-SHA256 signature', 'command' => 'regex:hash_hmac|verifyToken'],
                 ],
-                'reference_solution' => "// JWT Token Verification",
+                'reference_solution' => '// JWT Token Verification',
                 'rubric' => "1. Secure secret key parsing.\n2. Expiration and signature checks.",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'JWT Verification Success: 200 OK'],
                 ],
                 'starter_files' => [
-                    ['name' => 'auth.js', 'content' => "// Implement JWT validation\nfunction verifyToken(token) {}\n", 'is_primary' => true, 'is_readonly' => false]
+                    ['name' => 'auth.js', 'content' => "// Implement JWT validation\nfunction verifyToken(token) {}\n", 'is_primary' => true, 'is_readonly' => false],
                 ],
                 'time_limit' => 45,
                 'is_group_lab' => false,
@@ -875,13 +875,13 @@ class ShowcaseAccountSeeder extends Seeder
                     ['id' => 2, 'task' => 'Fork child and write message to pipe', 'command' => 'regex:fork\\(\\)'],
                     ['id' => 3, 'task' => 'Parent reads message and waits for child termination', 'command' => 'regex:waitpid|wait\\('],
                 ],
-                'reference_solution' => "// POSIX pipe solution",
+                'reference_solution' => '// POSIX pipe solution',
                 'rubric' => "1. Proper pipe file descriptor hygiene.\n2. Avoid zombie processes with wait().",
                 'test_cases' => [
                     ['input' => '', 'expected' => 'Child sent: Ping | Parent received: Ping'],
                 ],
                 'starter_files' => [
-                    ['name' => 'main.c', 'content' => "#include <stdio.h>\n#include <unistd.h>\n\nint main() {\n    // Implement pipe IPC\n    return 0;\n}\n", 'is_primary' => true, 'is_readonly' => false]
+                    ['name' => 'main.c', 'content' => "#include <stdio.h>\n#include <unistd.h>\n\nint main() {\n    // Implement pipe IPC\n    return 0;\n}\n", 'is_primary' => true, 'is_readonly' => false],
                 ],
                 'time_limit' => 45,
                 'is_group_lab' => false,
@@ -931,8 +931,8 @@ class ShowcaseAccountSeeder extends Seeder
             // In a transaction: without Supabase's auth schema the error rolls back to a savepoint
             // instead of aborting a caller's transaction, and the two inserts land together
             return DB::transaction(function () use ($email, $name, $role, $password) {
-                $existing = DB::select("SELECT id FROM auth.users WHERE email = ? LIMIT 1", [$email]);
-                if (!empty($existing)) {
+                $existing = DB::select('SELECT id FROM auth.users WHERE email = ? LIMIT 1', [$email]);
+                if (! empty($existing)) {
                     return $existing[0]->id;
                 }
 
@@ -976,7 +976,8 @@ class ShowcaseAccountSeeder extends Seeder
                 return $uuid;
             });
         } catch (\Throwable $e) {
-            Log::warning("Could not sync with auth.users: " . $e->getMessage());
+            Log::warning('Could not sync with auth.users: '.$e->getMessage());
+
             return null;
         }
     }

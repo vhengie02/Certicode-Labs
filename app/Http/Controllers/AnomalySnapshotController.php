@@ -29,7 +29,7 @@ class AnomalySnapshotController extends Controller
 
         // Rows from before snapshots moved into the database point at a file instead.
         if ($anomaly->hasSnapshot() && $anomaly->image_path !== Anomaly::DB_SNAPSHOT) {
-            $file = storage_path('app/public/' . substr($anomaly->image_path, strlen('storage/')));
+            $file = storage_path('app/public/'.substr($anomaly->image_path, strlen('storage/')));
             if (is_file($file)) {
                 return response()->file($file, $headers);
             }

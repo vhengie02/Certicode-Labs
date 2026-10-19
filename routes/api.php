@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\LabSessionController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\CronController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -46,4 +46,4 @@ Route::prefix('v1')->group(function () {
 });
 
 // Vercel / Cloud Scheduled Cron Trigger Endpoint (also registered as /cron/tick in web.php)
-Route::get('/cron/tick', \App\Http\Controllers\CronController::class);
+Route::get('/cron/tick', CronController::class);

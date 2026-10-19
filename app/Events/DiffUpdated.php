@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Models\LabSession;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -14,7 +15,9 @@ class DiffUpdated implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public int $sessionId;
+
     public array $diffStats;
+
     public array $contributions;
 
     /**
@@ -30,13 +33,13 @@ class DiffUpdated implements ShouldBroadcastNow
     /**
      * Get the channels the event should broadcast on.
      *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
+     * @return array<int, Channel>
      */
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('lab-session.' . $this->sessionId),
-            new PrivateChannel('instructor.lab.' . $this->labId()),
+            new PrivateChannel('lab-session.'.$this->sessionId),
+            new PrivateChannel('instructor.lab.'.$this->labId()),
         ];
     }
 
@@ -66,6 +69,6 @@ class DiffUpdated implements ShouldBroadcastNow
      */
     private function labId(): int
     {
-        return (int) \App\Models\LabSession::whereKey($this->sessionId)->value('lab_id');
+        return (int) LabSession::whereKey($this->sessionId)->value('lab_id');
     }
 }

@@ -10,6 +10,7 @@ use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -21,9 +22,13 @@ class CompetencyCreditTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private Competency $competency;
+
     private Laboratory $labA;
+
     private Laboratory $labB;
 
     protected function setUp(): void
@@ -159,9 +164,9 @@ class CompetencyCreditTest extends TestCase
         $row = StudentCompetency::where('user_id', $this->student->id)->firstOrFail();
         $this->travel(5)->minutes();
 
-        \Illuminate\Support\Facades\DB::enableQueryLog();
+        DB::enableQueryLog();
         $session->update(['last_ping_at' => now()]);
-        $queries = collect(\Illuminate\Support\Facades\DB::getQueryLog())->pluck('query')->implode("\n");
+        $queries = collect(DB::getQueryLog())->pluck('query')->implode("\n");
 
         $this->assertStringNotContainsString('laboratory_competency', $queries);
         $this->assertEquals($row->updated_at, $row->fresh()->updated_at);

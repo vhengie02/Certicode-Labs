@@ -20,10 +20,15 @@ class LabProgressTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private SchoolClass $class;
+
     private Module $module;
+
     private Laboratory $labA;
+
     private Laboratory $labB;
 
     protected function setUp(): void

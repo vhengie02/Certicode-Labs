@@ -55,7 +55,7 @@ class ModuleAttachmentS3Test extends TestCase
 
     public function test_odd_file_names_still_produce_a_download(): void
     {
-        foreach (["quote \"Q1\".pdf", "caf\u{00e9} ü.pdf", "ctrl\x10\x13.pdf", '100%.pdf', "\x10"] as $name) {
+        foreach (['quote "Q1".pdf', "caf\u{00e9} ü.pdf", "ctrl\x10\x13.pdf", '100%.pdf', "\x10"] as $name) {
             [, $query] = $this->signedUrlFor($name);
             $this->assertStringStartsWith('attachment;', $query['response-content-disposition'], "Failed for {$name}");
         }
@@ -71,7 +71,7 @@ class ModuleAttachmentS3Test extends TestCase
 
         $this->assertMatchesRegularExpression('#^module_attachments/[A-Za-z0-9]{40}\.pdf$#', $upload['key']);
         $this->assertSame('abc123.storage.supabase.co', $url['host']);
-        $this->assertSame('/storage/v1/s3/attachments/' . $upload['key'], $url['path']);
+        $this->assertSame('/storage/v1/s3/attachments/'.$upload['key'], $url['path']);
         $this->assertContains((int) $query['X-Amz-Expires'], [299, 300]);
         $this->assertNotEmpty($query['X-Amz-Signature']);
         // Only Host is signed and the browser sets it itself; a signed checksum or content

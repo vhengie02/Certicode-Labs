@@ -12,7 +12,7 @@ use Tests\TestCase;
  */
 class SupabaseSignupRoleTest extends TestCase
 {
-    private const MIGRATIONS = __DIR__ . '/../../database/migrations';
+    private const MIGRATIONS = __DIR__.'/../../database/migrations';
 
     /**
      * The SQL a migration sends when it runs against Postgres.
@@ -23,6 +23,7 @@ class SupabaseSignupRoleTest extends TestCase
         DB::shouldReceive('getDriverName')->andReturn('pgsql');
         DB::shouldReceive('statement')->andReturnUsing(function ($sql) use (&$statements) {
             $statements[] = $sql;
+
             return true;
         });
 
@@ -34,7 +35,7 @@ class SupabaseSignupRoleTest extends TestCase
     public function test_new_supabase_users_are_always_students(): void
     {
         // The newest migration defining the function is the one Postgres ends up with
-        $definitions = array_filter(glob(self::MIGRATIONS . '/*.php'), fn ($f) => str_contains(file_get_contents($f), 'FUNCTION public.handle_new_auth_user'));
+        $definitions = array_filter(glob(self::MIGRATIONS.'/*.php'), fn ($f) => str_contains(file_get_contents($f), 'FUNCTION public.handle_new_auth_user'));
         sort($definitions);
         $latest = end($definitions);
 

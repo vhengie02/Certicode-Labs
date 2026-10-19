@@ -4,8 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Certificate;
 use App\Models\SchoolClass;
-use App\Models\User;
-use Illuminate\Http\Request;
 
 class CertificateController extends Controller
 {
@@ -19,13 +17,13 @@ class CertificateController extends Controller
 
         // Access check: must be enrolled
         $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
-        if (!$isEnrolled) {
+        if (! $isEnrolled) {
             abort(403, 'You are not enrolled in this class.');
         }
 
         $result = Certificate::issueFor($class, $user);
         $certificate = $result['certificate'];
-        if (!$certificate) {
+        if (! $certificate) {
             return redirect()->back()->with('error', "You must meet the course passing threshold ({$result['threshold']}%) to claim a certificate. Current: {$result['progress']['percent']}%.");
         }
 
@@ -49,7 +47,7 @@ class CertificateController extends Controller
         $user = auth()->user();
 
         // The student it was issued to, the class's instructor, or an admin
-        if ($user->id !== $certificate->user_id && !$user->canManageClass($certificate->schoolClass)) {
+        if ($user->id !== $certificate->user_id && ! $user->canManageClass($certificate->schoolClass)) {
             abort(403, 'Unauthorized.');
         }
 
@@ -65,7 +63,7 @@ class CertificateController extends Controller
             ->where('verification_code', strtoupper(trim((string) $code)))
             ->first();
 
-        if (!$certificate || !$certificate->user || !$certificate->schoolClass) {
+        if (! $certificate || ! $certificate->user || ! $certificate->schoolClass) {
             return response()->view('certificates.verify-failed', ['code' => mb_substr((string) $code, 0, 64)], 404);
         }
 

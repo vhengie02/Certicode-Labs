@@ -2,12 +2,16 @@
 
 namespace App\Models;
 
+use App\Notifications\ClassActivityNotification;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class Certificate extends Model
 {
@@ -61,8 +65,8 @@ class Certificate extends Model
 
         // Lock the student's enrollment row so a double-clicked claim, or a claim racing the
         // class ending, can't both see "no certificate" and issue two
-        return \Illuminate\Support\Facades\DB::transaction(function () use ($class, $student, $result) {
-            \Illuminate\Support\Facades\DB::table('class_student')
+        return DB::transaction(function () use ($class, $student, $result) {
+            DB::table('class_student')
                 ->where('class_id', $class->id)->where('student_id', $student->id)
                 ->lockForUpdate()->first();
 
@@ -72,14 +76,14 @@ class Certificate extends Model
             }
 
             do {
-                $code = 'CERT-' . strtoupper(\Illuminate\Support\Str::random(12));
+                $code = 'CERT-'.strtoupper(Str::random(12));
             } while (static::where('verification_code', $code)->exists());
 
             $result['certificate'] = static::create([
                 'user_id' => $student->id,
                 'class_id' => $class->id,
                 'verification_code' => $code,
-                'qr_code_path' => 'certificates/qr-' . $code . '.svg',
+                'qr_code_path' => 'certificates/qr-'.$code.'.svg',
                 'issued_at' => now(),
             ]);
             $result['created'] = true;
@@ -94,14 +98,14 @@ class Certificate extends Model
     public function notifyOwner(string $title, string $message): void
     {
         try {
-            $this->user->notify(new \App\Notifications\ClassActivityNotification(
+            $this->user->notify(new ClassActivityNotification(
                 $title,
                 $message,
                 route('certificates.show', $this->id),
                 'certificate'
             ));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Certificate notification failed: ' . $e->getMessage());
+            Log::warning('Certificate notification failed: '.$e->getMessage());
         }
     }
 
@@ -118,7 +122,7 @@ class Certificate extends Model
      */
     public function qrSvg(int $size = 160): string
     {
-        $writer = new Writer(new ImageRenderer(new RendererStyle($size, 1), new SvgImageBackEnd()));
+        $writer = new Writer(new ImageRenderer(new RendererStyle($size, 1), new SvgImageBackEnd));
         $svg = $writer->writeString($this->verificationUrl());
 
         // Drop the XML declaration so the SVG can be inlined in HTML

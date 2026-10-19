@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Laboratory;
 use App\Models\LabSession;
-use App\Models\SchoolClass;
 use App\Models\Module;
+use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -15,8 +15,11 @@ class InstructorPlagiarismTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student1;
+
     protected User $student2;
+
     protected Laboratory $lab;
 
     protected function setUp(): void
@@ -92,7 +95,7 @@ class InstructorPlagiarismTest extends TestCase
                 'flagged_pairs_count',
                 'flagged_pairs',
                 'matrix',
-            ]
+            ],
         ]);
 
         $data = $response->json('analysis');
@@ -121,7 +124,7 @@ class InstructorPlagiarismTest extends TestCase
         $response->assertDontSee('Live Telemetry');
         // The lab view sits inside the class monitoring page, with an "All labs" tab back to the overview
         $response->assertSee('All labs');
-        $response->assertSee('href="' . route('classes.telemetry', $this->lab->module->schoolClass->id) . '"', false);
+        $response->assertSee('href="'.route('classes.telemetry', $this->lab->module->schoolClass->id).'"', false);
     }
 
     public function test_monitoring_view_for_solo_lab_hides_group_controls(): void
@@ -172,7 +175,7 @@ class InstructorPlagiarismTest extends TestCase
         $overview->assertOk()
             ->assertSee('Integrity flags')
             ->assertSee('Binary Trees')
-            ->assertSee('href="' . route('classes.telemetry', ['class_id' => $classId, 'lab' => $this->lab->id]) . '"', false)
+            ->assertSee('href="'.route('classes.telemetry', ['class_id' => $classId, 'lab' => $this->lab->id]).'"', false)
             ->assertSee('role="tooltip"', false);
 
         $this->actingAs($this->instructor)->get(route('classes.telemetry', ['class_id' => $classId, 'lab' => $this->lab->id]))

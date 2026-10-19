@@ -22,9 +22,13 @@ class EndToEndLabLifecycleTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student;
+
     protected SchoolClass $class;
+
     protected Module $module;
+
     protected Laboratory $laboratory;
 
     protected function setUp(): void
@@ -253,7 +257,7 @@ class EndToEndLabLifecycleTest extends TestCase
         $this->assertStringStartsWith('CERT-', $certificate->verification_code);
 
         // Step 11: Public Certificate Verification Portal validation
-        $portalResponse = $this->get('/certificates/' . $certificate->id);
+        $portalResponse = $this->get('/certificates/'.$certificate->id);
         $portalResponse->assertStatus(200)
             ->assertSee($certificate->verification_code)
             ->assertSee($this->student->name)

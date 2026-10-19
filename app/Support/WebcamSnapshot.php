@@ -23,7 +23,7 @@ class WebcamSnapshot
     {
         $decoded = self::decode($input);
 
-        return $decoded ? 'data:' . $decoded['mime'] . ';base64,' . base64_encode($decoded['bytes']) : null;
+        return $decoded ? 'data:'.$decoded['mime'].';base64,'.base64_encode($decoded['bytes']) : null;
     }
 
     /**
@@ -31,12 +31,12 @@ class WebcamSnapshot
      */
     public static function decode(mixed $input): ?array
     {
-        if (!is_string($input) || $input === '') {
+        if (! is_string($input) || $input === '') {
             return null;
         }
 
         if (str_starts_with($input, 'data:')) {
-            if (!preg_match('/^data:image\/(jpeg|jpg|png);base64,/i', $input)) {
+            if (! preg_match('/^data:image\/(jpeg|jpg|png);base64,/i', $input)) {
                 return null;
             }
             $input = substr($input, strpos($input, ',') + 1);
@@ -54,7 +54,7 @@ class WebcamSnapshot
 
         $info = @getimagesizefromstring($bytes);
         $mime = $info ? (self::MIME_BY_TYPE[$info[2]] ?? null) : null;
-        if (!$mime || $info[0] < 1 || $info[1] < 1 || $info[0] > 4096 || $info[1] > 4096) {
+        if (! $mime || $info[0] < 1 || $info[1] < 1 || $info[0] > 4096 || $info[1] > 4096) {
             return null;
         }
 

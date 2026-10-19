@@ -14,6 +14,7 @@ class ChatMessageSent implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public int $sessionId;
+
     public array $chat;
 
     /**
@@ -29,12 +30,12 @@ class ChatMessageSent implements ShouldBroadcastNow
      * Get the channels the event should broadcast on.
      * Note: Instructor monitoring strictly excluded per specification.
      *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
+     * @return array<int, Channel>
      */
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('lab-session.' . $this->sessionId . '.chat'),
+            new PrivateChannel('lab-session.'.$this->sessionId.'.chat'),
         ];
     }
 

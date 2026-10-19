@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
+use App\Models\Certificate;
 use App\Models\Laboratory;
 use App\Models\LabSession;
-use App\Models\Certificate;
+use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -16,9 +16,13 @@ class CertificatePortalTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $instructor;
+
     protected SchoolClass $class;
+
     protected Module $module;
+
     protected Laboratory $lab;
 
     protected function setUp(): void
@@ -157,7 +161,7 @@ class CertificatePortalTest extends TestCase
             'issued_at' => now(),
         ]);
 
-        $response = $this->get("/verify-certificate/CERT-VERIFIED");
+        $response = $this->get('/verify-certificate/CERT-VERIFIED');
 
         $response->assertStatus(200);
         $response->assertSee('This certificate is genuine');
@@ -170,7 +174,7 @@ class CertificatePortalTest extends TestCase
      */
     public function test_public_certificate_verification_failure(): void
     {
-        $response = $this->get("/verify-certificate/CERT-INVALIDCODE");
+        $response = $this->get('/verify-certificate/CERT-INVALIDCODE');
 
         $response->assertNotFound();
         $response->assertSee("We couldn't find this certificate", false);

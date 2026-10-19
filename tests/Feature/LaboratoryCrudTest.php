@@ -3,9 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Laboratory;
-use App\Models\User;
-use App\Models\SchoolClass;
 use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -14,6 +14,7 @@ class LaboratoryCrudTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $instructor;
 
     protected function setUp(): void
@@ -112,13 +113,13 @@ class LaboratoryCrudTest extends TestCase
      */
     public function test_instructor_can_create_and_update_laboratory_with_starter_files(): void
     {
-        $class = \App\Models\SchoolClass::create([
+        $class = SchoolClass::create([
             'name' => 'CS 101',
             'code' => 'CS101-01',
             'instructor_id' => $this->instructor->id,
         ]);
 
-        $module = \App\Models\Module::create([
+        $module = Module::create([
             'title' => 'Intro to OOP',
             'class_id' => $class->id,
             'order' => 1,

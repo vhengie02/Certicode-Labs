@@ -15,7 +15,7 @@ class Judge0ExecutionTest extends TestCase
     {
         parent::setUp();
         config(['services.judge0.url' => 'https://judge0.test', 'services.judge0.key' => null, 'services.judge0.rapidapi_host' => null]);
-        $this->service = new SandboxExecutionService();
+        $this->service = new SandboxExecutionService;
     }
 
     private function fakeJudge0(array $result): void
@@ -34,10 +34,11 @@ class Judge0ExecutionTest extends TestCase
 
         Http::assertSent(function (Request $request) {
             $source = base64_decode($request['source_code']);
+
             return $request['language_id'] === 62
                 && str_contains($request->url(), 'base64_encoded=true')
                 && str_contains($request->url(), 'wait=true')
-                && !str_contains($source, 'public class Hello')        // public dropped: Judge0 compiles Main.java
+                && ! str_contains($source, 'public class Hello')        // public dropped: Judge0 compiles Main.java
                 && str_contains($source, 'class Main')
                 && str_contains($source, 'Hello.main(args);');         // Main delegates to the student's entry point
         });

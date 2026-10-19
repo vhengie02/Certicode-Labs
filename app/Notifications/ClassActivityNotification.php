@@ -2,7 +2,9 @@
 
 namespace App\Notifications;
 
+use App\Support\InternalUrl;
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class ClassActivityNotification extends Notification
@@ -10,8 +12,11 @@ class ClassActivityNotification extends Notification
     use Queueable;
 
     protected string $title;
+
     protected string $message;
+
     protected string $url;
+
     protected string $type;
 
     /**
@@ -22,7 +27,7 @@ class ClassActivityNotification extends Notification
         $this->title = $title;
         $this->message = $message;
         // Stored as a path so it works on any host the app runs on (see InternalUrl)
-        $this->url = \App\Support\InternalUrl::path($url);
+        $this->url = InternalUrl::path($url);
         $this->type = $type; // class, module, lab
     }
 
@@ -35,7 +40,7 @@ class ClassActivityNotification extends Notification
 
         // Send via email if email notifications are enabled, and the user has either a verified Gmail or a primary email address
         $wantsEmail = $notifiable->notify_email_channel ?? true;
-        $hasEmail = !empty($notifiable->gmail) ? !empty($notifiable->gmail_verified_at) : !empty($notifiable->email);
+        $hasEmail = ! empty($notifiable->gmail) ? ! empty($notifiable->gmail_verified_at) : ! empty($notifiable->email);
 
         if ($wantsEmail && $hasEmail) {
             $type = $this->type ?? 'info';
@@ -61,10 +66,10 @@ class ClassActivityNotification extends Notification
                     if ($defaultMailer === 'smtp') {
                         $host = config('mail.mailers.smtp.host');
                         $user = config('mail.mailers.smtp.username');
-                        if (!empty($host) && !in_array($host, ['127.0.0.1', 'localhost']) && !empty($user)) {
+                        if (! empty($host) && ! in_array($host, ['127.0.0.1', 'localhost']) && ! empty($user)) {
                             $channels[] = 'mail';
                         }
-                    } elseif (!empty($defaultMailer) && $defaultMailer !== 'array') {
+                    } elseif (! empty($defaultMailer) && $defaultMailer !== 'array') {
                         $channels[] = 'mail';
                     }
                 }
@@ -77,11 +82,11 @@ class ClassActivityNotification extends Notification
     /**
      * Get the mail representation of the notification.
      */
-    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
+    public function toMail(object $notifiable): MailMessage
     {
-        return (new \Illuminate\Notifications\Messages\MailMessage)
-            ->subject("Certicode Alert: " . $this->title)
-            ->greeting("Hello " . $notifiable->name . ",")
+        return (new MailMessage)
+            ->subject('Certicode Alert: '.$this->title)
+            ->greeting('Hello '.$notifiable->name.',')
             ->line($this->message)
             ->action('View Details on Certicode', $this->url === '#' ? url('/') : url($this->url))
             ->line('Thank you for participating in Certicode Labs!')

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
+use App\Models\LabSimilarityReport;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -42,7 +43,9 @@ public class TaskManager {
 JAVA;
 
     private User $instructor;
+
     private SchoolClass $class;
+
     private Laboratory $lab;
 
     protected function setUp(): void
@@ -65,7 +68,7 @@ JAVA;
 
     private function student(string $name): User
     {
-        $user = User::create(['name' => $name, 'email' => strtolower($name) . '@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
+        $user = User::create(['name' => $name, 'email' => strtolower($name).'@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $this->class->students()->attach([$user->id => ['status' => 'enrolled']]);
 
         return $user;
@@ -129,11 +132,14 @@ JAVA;
         $this->submission($this->student('Ana'), self::SOLUTION);
         $this->submission($this->student('Ben'), self::SOLUTION);
 
-        $counter = new class extends CodeSimilarityService {
+        $counter = new class extends CodeSimilarityService
+        {
             public int $runs = 0;
+
             public function analyzeLabCohort(int $labId, float $highRiskThreshold = 75.0, float $mediumRiskThreshold = 50.0): array
             {
                 $this->runs++;
+
                 return parent::analyzeLabCohort($labId, $highRiskThreshold, $mediumRiskThreshold);
             }
         };
@@ -158,7 +164,7 @@ JAVA;
             'language' => 'java',
         ])->assertOk();
 
-        $report = \App\Models\LabSimilarityReport::where('lab_id', $this->lab->id)->firstOrFail();
+        $report = LabSimilarityReport::where('lab_id', $this->lab->id)->firstOrFail();
         $this->assertSame(2, $report->analysis['total_students_with_code']);
         $this->assertSame(1, $report->analysis['flagged_pairs_count']);
     }

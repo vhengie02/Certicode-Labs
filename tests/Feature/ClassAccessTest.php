@@ -12,7 +12,9 @@ class ClassAccessTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $instructor;
+
     protected SchoolClass $schoolClass;
 
     protected function setUp(): void
@@ -51,8 +53,8 @@ class ClassAccessTest extends TestCase
                 'code' => 'CLASS-FS101',
             ]);
 
-        $response->assertRedirect('/classes/' . $this->schoolClass->id);
-        
+        $response->assertRedirect('/classes/'.$this->schoolClass->id);
+
         $this->assertDatabaseHas('class_student', [
             'class_id' => $this->schoolClass->id,
             'student_id' => $this->student->id,
@@ -71,7 +73,7 @@ class ClassAccessTest extends TestCase
             ]);
 
         $response->assertRedirect();
-        
+
         $this->assertDatabaseHas('class_student', [
             'class_id' => $this->schoolClass->id,
             'student_id' => $this->student->id,
@@ -98,7 +100,7 @@ class ClassAccessTest extends TestCase
         $response = $this->actingAs($this->student)
             ->post("/classes/{$this->schoolClass->id}/invite-accept");
 
-        $response->assertRedirect('/classes/' . $this->schoolClass->id);
+        $response->assertRedirect('/classes/'.$this->schoolClass->id);
 
         $this->assertDatabaseHas('class_student', [
             'class_id' => $this->schoolClass->id,

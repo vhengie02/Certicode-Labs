@@ -2,27 +2,33 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
-use App\Models\Anomaly;
+use App\Models\Module;
+use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Socialite\Facades\Socialite;
-use Tests\TestCase;
 use Mockery;
+use Tests\TestCase;
 
 class InstructorTelemetryAndOAuthTest extends TestCase
 {
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student;
+
     protected SchoolClass $schoolClass;
+
     protected Laboratory $laboratory;
+
     protected LabSession $labSession;
+
     protected Anomaly $anomaly;
 
     protected function setUp(): void
@@ -63,7 +69,7 @@ class InstructorTelemetryAndOAuthTest extends TestCase
             'time_limit' => 60,
             'module_id' => $module->id,
             'tasks_definition' => [
-                ['id' => 1, 'task' => 'Overflow the buffer', 'command' => 'run.sh']
+                ['id' => 1, 'task' => 'Overflow the buffer', 'command' => 'run.sh'],
             ],
         ]);
 
@@ -385,8 +391,8 @@ class InstructorTelemetryAndOAuthTest extends TestCase
 
         $response->assertRedirect('/settings');
         $response->assertSessionHasNoErrors();
-        
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
+
+        $this->assertTrue(Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
     }
 
     /**
@@ -402,6 +408,6 @@ class InstructorTelemetryAndOAuthTest extends TestCase
             ]);
 
         $response->assertSessionHasErrors(['current_password']);
-        $this->assertFalse(\Illuminate\Support\Facades\Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
+        $this->assertFalse(Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
     }
 }

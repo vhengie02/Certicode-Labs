@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class StudentCompetency extends Model
 {
@@ -49,7 +50,7 @@ class StudentCompetency extends Model
     public static function refreshFor(?User $user, ?Laboratory $lab): array
     {
         $outcome = ['created' => 0, 'changed' => 0, 'removed' => 0, 'unchanged' => 0];
-        if (!$user || !$lab) {
+        if (! $user || ! $lab) {
             return $outcome;
         }
 
@@ -67,10 +68,10 @@ class StudentCompetency extends Model
      */
     public static function refreshCompetency(int $userId, int $competencyId): string
     {
-        return \Illuminate\Support\Facades\DB::transaction(function () use ($userId, $competencyId) {
+        return DB::transaction(function () use ($userId, $competencyId) {
             User::whereKey($userId)->lockForUpdate()->value('id');
 
-            $labIds = \Illuminate\Support\Facades\DB::table('laboratory_competency')
+            $labIds = DB::table('laboratory_competency')
                 ->where('competency_id', $competencyId)
                 ->pluck('laboratory_id');
 
@@ -78,7 +79,7 @@ class StudentCompetency extends Model
                 ->whereIn('lab_id', $labIds)
                 ->where('status', 'completed')
                 ->groupBy('lab_id')
-                ->selectRaw('lab_id, max(' . LabSession::effectiveGradeSql() . ') as best')
+                ->selectRaw('lab_id, max('.LabSession::effectiveGradeSql().') as best')
                 ->pluck('best');
 
             $existing = static::where('user_id', $userId)->where('competency_id', $competencyId)->first();
@@ -86,16 +87,18 @@ class StudentCompetency extends Model
             // No completed work left for this competency (e.g. the only session was reopened):
             // the score goes, rather than staying at what it was
             if ($bestPerLab->isEmpty()) {
-                if (!$existing) {
+                if (! $existing) {
                     return 'unchanged';
                 }
                 $existing->delete();
+
                 return 'removed';
             }
 
             $score = round(max(0.0, (float) $bestPerLab->avg()), 2);
-            if (!$existing) {
+            if (! $existing) {
                 static::create(['user_id' => $userId, 'competency_id' => $competencyId, 'score_achieved' => $score]);
+
                 return 'created';
             }
             // Compare at the stored precision, so a float column's round-trip isn't a "change"
@@ -103,6 +106,7 @@ class StudentCompetency extends Model
                 return 'unchanged';
             }
             $existing->update(['score_achieved' => $score]);
+
             return 'changed';
         });
     }

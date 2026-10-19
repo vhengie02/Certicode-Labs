@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSimilarityReport;
-use App\Models\Laboratory;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 
@@ -32,7 +32,7 @@ class CodeSimilarityService
             $report = LabSimilarityReport::where('lab_id', $labId)->first();
         } catch (QueryException $e) {
             // The table's migration hasn't run on this database yet
-            Log::warning('lab_similarity_reports is unavailable; comparing without storing: ' . $e->getMessage());
+            Log::warning('lab_similarity_reports is unavailable; comparing without storing: '.$e->getMessage());
 
             return $this->analyzeLabCohort($labId);
         }
@@ -53,7 +53,7 @@ class CodeSimilarityService
         try {
             LabSimilarityReport::updateOrCreate(['lab_id' => $labId], ['analysis' => $analysis, 'computed_at' => $computedAt]);
         } catch (QueryException $e) {
-            Log::warning('Could not store the similarity report for lab ' . $labId . ': ' . $e->getMessage());
+            Log::warning('Could not store the similarity report for lab '.$labId.': '.$e->getMessage());
         }
 
         return $analysis + ['computed_at' => $computedAt->toIso8601String()];
@@ -68,7 +68,7 @@ class CodeSimilarityService
         try {
             $this->refreshLabReport($labId);
         } catch (\Throwable $e) {
-            Log::warning("Similarity report for lab {$labId} not refreshed: " . $e->getMessage());
+            Log::warning("Similarity report for lab {$labId} not refreshed: ".$e->getMessage());
         }
     }
 
@@ -78,10 +78,8 @@ class CodeSimilarityService
      * group lab are not compared with each other, and code that came from the lab's starter
      * files doesn't count towards a match.
      *
-     * @param int $labId
-     * @param float $highRiskThreshold Percentage above which a pair is flagged as high risk (default: 75.0)
-     * @param float $mediumRiskThreshold Percentage above which a pair is flagged as medium risk (default: 50.0)
-     * @return array
+     * @param  float  $highRiskThreshold  Percentage above which a pair is flagged as high risk (default: 75.0)
+     * @param  float  $mediumRiskThreshold  Percentage above which a pair is flagged as medium risk (default: 50.0)
      */
     public function analyzeLabCohort(int $labId, float $highRiskThreshold = 75.0, float $mediumRiskThreshold = 50.0): array
     {
@@ -93,7 +91,7 @@ class CodeSimilarityService
 
         // A retake is not copied from the student's own earlier attempt
         $sessions = $sessions
-            ->groupBy(fn ($s) => $s->user_id ?? 'session_' . $s->id)
+            ->groupBy(fn ($s) => $s->user_id ?? 'session_'.$s->id)
             ->map(fn ($own) => $own->where('status', 'completed')->sortByDesc('id')->first() ?? $own->sortByDesc('id')->first())
             ->values();
 
@@ -103,7 +101,7 @@ class CodeSimilarityService
         $preprocessed = [];
 
         foreach ($sessions as $session) {
-            $name = $session->user ? $session->user->name : 'Student #' . $session->id;
+            $name = $session->user ? $session->user->name : 'Student #'.$session->id;
             $code = $session->submitted_code;
 
             $tokens = $this->tokenize($code);
@@ -149,12 +147,14 @@ class CodeSimilarityService
 
                 if ($i === $j) {
                     $matrix[$idA][$idB] = 100.0;
+
                     continue;
                 }
 
                 if ($j < $i) {
                     // Mirror symmetric value
                     $matrix[$idA][$idB] = $matrix[$idB][$idA];
+
                     continue;
                 }
 
@@ -163,6 +163,7 @@ class CodeSimilarityService
                 $sameStudent = $students[$idA]['user_id'] !== null && $students[$idA]['user_id'] === $students[$idB]['user_id'];
                 if ($sameTeam || $sameStudent) {
                     $matrix[$idA][$idB] = null;
+
                     continue;
                 }
 
@@ -183,8 +184,8 @@ class CodeSimilarityService
                         'student_b' => $students[$idB],
                         'similarity' => round($score, 1),
                         'risk' => $risk,
-                        'reason' => $risk === 'high' 
-                            ? 'Suspiciously identical code structure and token sequence.' 
+                        'reason' => $risk === 'high'
+                            ? 'Suspiciously identical code structure and token sequence.'
                             : 'Moderate structural and algorithmic overlap detected.',
                     ];
                 }
@@ -192,13 +193,13 @@ class CodeSimilarityService
         }
 
         // Sort flagged pairs by similarity descending
-        usort($flaggedPairs, fn($a, $b) => $b['similarity'] <=> $a['similarity']);
+        usort($flaggedPairs, fn ($a, $b) => $b['similarity'] <=> $a['similarity']);
 
         return [
             'total_students_with_code' => $count,
             'flagged_pairs_count' => count($flaggedPairs),
-            'high_risk_count' => count(array_filter($flaggedPairs, fn($p) => $p['risk'] === 'high')),
-            'medium_risk_count' => count(array_filter($flaggedPairs, fn($p) => $p['risk'] === 'medium')),
+            'high_risk_count' => count(array_filter($flaggedPairs, fn ($p) => $p['risk'] === 'high')),
+            'medium_risk_count' => count(array_filter($flaggedPairs, fn ($p) => $p['risk'] === 'medium')),
             'flagged_pairs' => $flaggedPairs,
             'students' => array_values($students),
             'matrix' => $matrix,
@@ -234,6 +235,7 @@ class CodeSimilarityService
         foreach ($items as $item) {
             if (($counts[$item] ?? 0) > 0) {
                 $counts[$item]--;
+
                 continue;
             }
             $kept[] = $item;
@@ -245,8 +247,6 @@ class CodeSimilarityService
     /**
      * Calculate similarity percentage between two raw code strings.
      *
-     * @param string $codeA
-     * @param string $codeB
      * @return float 0.0 to 100.0
      */
     public function calculatePairSimilarity(string $codeA, string $codeB): float
@@ -336,6 +336,7 @@ class CodeSimilarityService
         }
 
         $avgTotal = (count($tokensA) + count($tokensB)) / 2.0;
+
         return $avgTotal > 0 ? ($commonCount / $avgTotal) * 100.0 : 0.0;
     }
 
@@ -375,7 +376,7 @@ class CodeSimilarityService
             'echo', 'print', 'println', 'printf', 'console', 'log',
             'int', 'integer', 'float', 'double', 'bool', 'boolean', 'string', 'char', 'void', 'array', 'object',
             'true', 'false', 'null', 'nil', 'none', 'undefined', 'this', 'self', 'super',
-            'str_lit', 'num_lit'
+            'str_lit', 'num_lit',
         ];
         $keywordMap = array_flip($keywords);
 

@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
 use App\Models\Laboratory;
 use App\Models\LabSession;
+use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,7 +15,9 @@ class SubModuleAndTrackingTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $instructor;
+
     protected SchoolClass $class;
 
     protected function setUp(): void
@@ -250,4 +252,3 @@ class SubModuleAndTrackingTest extends TestCase
         $response->assertRedirect(route('laboratories.show', $lab->id));
     }
 }
-

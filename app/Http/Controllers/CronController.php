@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Anomaly;
+use App\Models\TelemetryLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
@@ -13,7 +15,7 @@ class CronController extends Controller
 {
     public function __invoke(Request $request)
     {
-        if (env('CRON_SECRET') && $request->header('Authorization') !== 'Bearer ' . env('CRON_SECRET')) {
+        if (env('CRON_SECRET') && $request->header('Authorization') !== 'Bearer '.env('CRON_SECRET')) {
             return response()->json(['error' => 'unauthorized'], 401);
         }
 
@@ -24,7 +26,7 @@ class CronController extends Controller
         $classesOutput = trim(Artisan::output());
 
         // The Laravel scheduler doesn't run on Vercel, so the daily prune from routes/console.php runs here too.
-        Artisan::call('model:prune', ['--model' => [\App\Models\Anomaly::class, \App\Models\TelemetryLog::class]]);
+        Artisan::call('model:prune', ['--model' => [Anomaly::class, TelemetryLog::class]]);
         $pruneOutput = trim(Artisan::output());
 
         Artisan::call('certicode:expire-old-snapshots');

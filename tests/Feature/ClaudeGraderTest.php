@@ -35,6 +35,7 @@ class Student {
 JAVA;
 
     private LabSession $session;
+
     private array $history = [];
 
     protected function setUp(): void
@@ -63,9 +64,14 @@ JAVA;
         $stack->push(Middleware::history($this->history));
         $transport = new GuzzleClient(['handler' => $stack]);
 
-        return new class($transport) extends LlmEvaluationService {
+        return new class($transport) extends LlmEvaluationService
+        {
             public function __construct(private ClientInterface $transport) {}
-            protected function graderTransport(): ClientInterface { return $this->transport; }
+
+            protected function graderTransport(): ClientInterface
+            {
+                return $this->transport;
+            }
         };
     }
 
