@@ -117,13 +117,7 @@ jobs:
         with:
           php-version: '8.3'
 
-      # Non-blocking: 119 PHP files were not Pint-formatted on 2026-10-19. Once the codebase
-      # has been run through `vendor/bin/pint`, remove continue-on-error and the warning step.
+      # Blocking: the codebase is Pint-formatted (default Laravel preset, no pint.json).
+      # If this fails, run `vendor/bin/pint` locally and commit the result.
       - name: Check code style
-        id: pint
-        continue-on-error: true
         run: vendor/bin/pint --test
-
-      - name: Report code style issues
-        if: steps.pint.outcome == 'failure'
-        run: echo "::warning title=Pint::Code style issues found (not blocking yet). Run vendor/bin/pint to fix them."
