@@ -87,3 +87,6 @@ credentials.txt
 
 # graphify knowledge graph output (regenerate with /graphify)
 graphify-out/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+.playwright/
