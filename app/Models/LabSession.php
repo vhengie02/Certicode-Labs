@@ -335,6 +335,19 @@ class LabSession extends Model
     public const LATE_GRACE_SECONDS = 60;
 
     /**
+     * Whether the same student has another attempt open on this lab. Only one may be open at
+     * a time (a partial unique index), so this one can't be reopened until that one ends.
+     */
+    public function hasOtherOpenAttempt(): bool
+    {
+        return $this->user_id !== null && static::where('lab_id', $this->lab_id)
+            ->where('user_id', $this->user_id)
+            ->where('status', 'in_progress')
+            ->whereKeyNot($this->id)
+            ->exists();
+    }
+
+    /**
      * Whether this attempt can still be graded: it is in progress, and its time limit (or,
      * in a live lab, the shared countdown) hasn't run out beyond the grace period.
      */

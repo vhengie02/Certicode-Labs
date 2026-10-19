@@ -31,7 +31,7 @@ class LoginController extends Controller
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $credentials['email'])->first();
+        $user = User::findByEmail($credentials['email']);
         if (!$user) {
             return back()->withErrors([
                 'email' => 'This email address is not registered.',
@@ -156,8 +156,8 @@ class LoginController extends Controller
      */
     private function findGoogleUser(string $gmail): ?User
     {
-        return User::where('gmail', $gmail)->whereNotNull('gmail_verified_at')->first()
-            ?? User::where('email', $gmail)->first();
+        return User::whereGmailIs($gmail)->whereNotNull('gmail_verified_at')->first()
+            ?? User::findByEmail($gmail);
     }
 
     /**
@@ -382,7 +382,7 @@ class LoginController extends Controller
 
         $dbUser = User::where('github_username', $nickname)->first();
         if (!$dbUser) {
-            $dbUser = User::where('email', $email)->first();
+            $dbUser = User::findByEmail($email);
             if ($dbUser) {
                 $dbUser->update(['github_username' => $nickname]);
             }
@@ -479,12 +479,12 @@ class LoginController extends Controller
                 return redirect()->route('login')->withErrors(['email' => 'Unable to retrieve your email from Google. Please try again.']);
             }
 
-            $user = User::where('gmail', $email)
+            $user = User::whereGmailIs($email)
                 ->whereNotNull('gmail_verified_at')
                 ->first();
 
             if (!$user) {
-                $user = User::where('email', $email)->first();
+                $user = User::findByEmail($email);
                 if ($user) {
                     $user->update([
                         'gmail' => $email,
@@ -508,7 +508,7 @@ class LoginController extends Controller
             $user = User::where('github_username', $nickname)->first();
 
             if (!$user && !empty($email)) {
-                $user = User::where('email', $email)->first();
+                $user = User::findByEmail($email);
                 if ($user) {
                     $user->update(['github_username' => $nickname]);
                 }
@@ -590,10 +590,11 @@ class LoginController extends Controller
     public function sendResetLinkEmail(Request $request)
     {
         $request->validate([
-            'email' => 'required|email|exists:users,email',
+            'email' => ['required', 'email', $this->registeredEmailRule()],
         ]);
 
-        $email = $request->email;
+        // Tokens are keyed by the normalized address, whatever case was typed
+        $email = User::normalizeEmail($request->email);
         $token = Str::random(60);
 
         \DB::table('password_reset_tokens')->updateOrInsert(
@@ -637,6 +638,18 @@ class LoginController extends Controller
     }
 
     /**
+     * exists:users,email, but case-insensitive (Postgres compares case-sensitively).
+     */
+    private function registeredEmailRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) {
+            if (!User::findByEmail((string) $value)) {
+                $fail('validation.exists')->translate();
+            }
+        };
+    }
+
+    /**
      * Show the reset password form.
      */
     public function showResetPasswordForm($token, Request $request)
@@ -652,11 +665,11 @@ class LoginController extends Controller
     {
         $request->validate([
             'token' => 'required|string',
-            'email' => 'required|email|exists:users,email',
+            'email' => ['required', 'email', $this->registeredEmailRule()],
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $email = $request->email;
+        $email = User::normalizeEmail($request->email);
         $token = $request->token;
 
         $record = \DB::table('password_reset_tokens')->where('email', $email)->first();
@@ -670,7 +683,7 @@ class LoginController extends Controller
             return back()->withErrors(['email' => 'This password reset token has expired.']);
         }
 
-        $user = User::where('email', $email)->firstOrFail();
+        $user = User::findByEmail($email) ?? abort(404);
         $user->update([
             'password' => Hash::make($request->password),
         ]);
@@ -691,9 +704,9 @@ class LoginController extends Controller
         }
 
         // Find user by Gmail or Email
-        $user = User::where('gmail', $gmail)->whereNotNull('gmail_verified_at')->first();
+        $user = User::whereGmailIs($gmail)->whereNotNull('gmail_verified_at')->first();
         if (!$user) {
-            $user = User::where('email', $gmail)->first();
+            $user = User::findByEmail($gmail);
         }
 
         if (!$user) {

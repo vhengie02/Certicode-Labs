@@ -417,33 +417,53 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         // Live updates connect after the first session sync (see syncSessionState), which carries the config.
         this.disconnectWebSocket();
 
-        // Run sync and heartbeat ping immediately
-        this.sendVsCodePing();
+        // Sync immediately. The session read is also the heartbeat: the server records an
+        // extension ping for it (X-Client: vscode), so there is no separate /ping call.
+        this._syncFailures = 0;
         this.syncSessionState();
         this.fetchLeaderboard();
 
-        // Run sync every 15 seconds to detect dropped connections / keepalive
+        // Sync every 15 seconds to detect dropped connections / keepalive. While the server
+        // keeps failing, back off: every 30 s, 60 s, then 2 min until a sync succeeds.
+        let syncTick = 0;
         this._pingInterval = setInterval(() => {
-            this.syncSessionState();
-            this.sendVsCodePing();
+            syncTick++;
+            if (syncTick % this.syncEveryTicks() === 0) {
+                this.syncSessionState();
+            }
         }, 15000);
 
         // Chat sync every 4 seconds while the sidebar is visible, every 16 seconds while hidden.
         // It keeps running when hidden because recent chat snippets feed paste suppression rule B.
+        // Only team labs have a chat, and nothing is polled while the server is unreachable.
         let chatTick = 0;
         this._chatPollInterval = setInterval(() => {
             chatTick++;
-            if (!this._wsSubscribed && (this._view?.visible || chatTick % 4 === 0)) {
+            if (this._wsSubscribed || this._isReconnecting || !this.isGroupLab()) {
+                return;
+            }
+            if (this._view?.visible || chatTick % 4 === 0) {
                 this.fetchChatMessages();
             }
         }, 4000);
 
         // Leaderboard sync every 10 seconds, only while visible (display only)
         this._leaderboardInterval = setInterval(() => {
-            if (!this._wsSubscribed && this._view?.visible) {
+            if (!this._wsSubscribed && !this._isReconnecting && this._view?.visible) {
                 this.fetchLeaderboard();
             }
         }, 10000);
+    }
+
+    /** Sync failures in a row; each one doubles the gap between syncs, up to 2 minutes. */
+    private _syncFailures: number = 0;
+
+    private syncEveryTicks(): number {
+        return Math.min(8, 2 ** this._syncFailures);
+    }
+
+    private isGroupLab(): boolean {
+        return this._lastSessionData?.is_group_lab === true;
     }
 
     /**
@@ -633,6 +653,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
             if (result.status === 200) {
                 this._isReconnecting = false;
+                this._syncFailures = 0;
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
                 this.warnIfOutdated(data);
@@ -662,7 +683,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 });
 
                 // Fetch chats if group lab
-                this.fetchChatMessages();
+                if (this.isGroupLab()) {
+                    this.fetchChatMessages();
+                }
             } else if (result.status === 401) {
                 // Missing or wrong session token (e.g. connected by typing the ID instead of using the link).
                 this._isReconnecting = false;
@@ -693,6 +716,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }
         } catch (err) {
             this._isReconnecting = true;
+            this._syncFailures++;
             this._view?.webview.postMessage({
                 type: 'reconnecting',
                 isReconnecting: true

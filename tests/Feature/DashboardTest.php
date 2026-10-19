@@ -156,7 +156,7 @@ class DashboardTest extends TestCase
     {
         $instructor = $this->user('prof@example.com', 'instructor');
         $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
-        $student = User::where('email', 'student-CLASS-A@example.com')->firstOrFail();
+        $student = User::findByEmail('student-CLASS-A@example.com') ?? $this->fail('student not found');
 
         $this->sections($student)
             ->assertOk()
@@ -169,7 +169,7 @@ class DashboardTest extends TestCase
     {
         $instructor = $this->user('prof@example.com', 'instructor');
         $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
-        $student = User::where('email', 'student-CLASS-A@example.com')->firstOrFail();
+        $student = User::findByEmail('student-CLASS-A@example.com') ?? $this->fail('student not found');
         // Started yesterday on a 60-minute lab, never closed
         $session = LabSession::firstOrFail();
         $session->forceFill(['started_at' => now()->subDay(), 'last_ping_at' => now()->subDay()])->save();

@@ -3,7 +3,10 @@
 namespace App\Services;
 
 use App\Models\LabSession;
+use App\Models\LabSimilarityReport;
 use App\Models\Laboratory;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Log;
 
 class CodeSimilarityService
 {
@@ -13,7 +16,67 @@ class CodeSimilarityService
     protected int $ngramSize = 4;
 
     /**
-     * Analyze all student submissions in a laboratory session cohort.
+     * A submission with fewer n-grams of its own than this, once the starter code is taken
+     * out, is essentially the starter code and isn't compared.
+     */
+    protected int $minOwnNgrams = 5;
+
+    /**
+     * The lab's stored comparison, computed now only if there is none yet. Students' submits
+     * keep it current (refreshLabReport), so loading the monitoring page doesn't compare
+     * every pair again.
+     */
+    public function labReport(int $labId): array
+    {
+        try {
+            $report = LabSimilarityReport::where('lab_id', $labId)->first();
+        } catch (QueryException $e) {
+            // The table's migration hasn't run on this database yet
+            Log::warning('lab_similarity_reports is unavailable; comparing without storing: ' . $e->getMessage());
+
+            return $this->analyzeLabCohort($labId);
+        }
+
+        return $report
+            ? $report->analysis + ['computed_at' => $report->computed_at?->toIso8601String()]
+            : $this->refreshLabReport($labId);
+    }
+
+    /**
+     * Compare the lab's submissions again and store the result.
+     */
+    public function refreshLabReport(int $labId): array
+    {
+        $analysis = $this->analyzeLabCohort($labId);
+        $computedAt = now();
+
+        try {
+            LabSimilarityReport::updateOrCreate(['lab_id' => $labId], ['analysis' => $analysis, 'computed_at' => $computedAt]);
+        } catch (QueryException $e) {
+            Log::warning('Could not store the similarity report for lab ' . $labId . ': ' . $e->getMessage());
+        }
+
+        return $analysis + ['computed_at' => $computedAt->toIso8601String()];
+    }
+
+    /**
+     * refreshLabReport for a request that has already done its real work (a submit): a
+     * failure here is logged, never thrown.
+     */
+    public function refreshLabReportQuietly(int $labId): void
+    {
+        try {
+            $this->refreshLabReport($labId);
+        } catch (\Throwable $e) {
+            Log::warning("Similarity report for lab {$labId} not refreshed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Analyze all student submissions in a laboratory session cohort. Each student counts once
+     * (their latest submitted attempt, else their latest attempt with code), teammates in a
+     * group lab are not compared with each other, and code that came from the lab's starter
+     * files doesn't count towards a match.
      *
      * @param int $labId
      * @param float $highRiskThreshold Percentage above which a pair is flagged as high risk (default: 75.0)
@@ -28,6 +91,14 @@ class CodeSimilarityService
             ->where('submitted_code', '!=', '')
             ->get();
 
+        // A retake is not copied from the student's own earlier attempt
+        $sessions = $sessions
+            ->groupBy(fn ($s) => $s->user_id ?? 'session_' . $s->id)
+            ->map(fn ($own) => $own->where('status', 'completed')->sortByDesc('id')->first() ?? $own->sortByDesc('id')->first())
+            ->values();
+
+        $starter = $this->starterProfile(Laboratory::find($labId));
+
         $students = [];
         $preprocessed = [];
 
@@ -40,9 +111,16 @@ class CodeSimilarityService
                 continue;
             }
 
+            // Everyone was given the starter code, so sharing it is not a match
+            $ownNgrams = $this->withoutMultiset($this->generateNgrams($tokens, $this->ngramSize), $starter['ngrams']);
+            if (count($ownNgrams) < $this->minOwnNgrams) {
+                continue;
+            }
+
             $students[$session->id] = [
                 'session_id' => $session->id,
                 'user_id' => $session->user_id,
+                'group_id' => $session->group_id,
                 'name' => $name,
                 'group' => $session->group ? $session->group->name : null,
                 'code_length' => strlen($code),
@@ -51,9 +129,8 @@ class CodeSimilarityService
             ];
 
             $preprocessed[$session->id] = [
-                'tokens' => $tokens,
-                'ngrams' => $this->generateNgrams($tokens, $this->ngramSize),
-                'code' => $code,
+                'tokens' => $this->withoutMultiset($tokens, $starter['tokens']),
+                'ngrams' => $ownNgrams,
             ];
         }
 
@@ -78,6 +155,14 @@ class CodeSimilarityService
                 if ($j < $i) {
                     // Mirror symmetric value
                     $matrix[$idA][$idB] = $matrix[$idB][$idA];
+                    continue;
+                }
+
+                // Teammates write the same code on purpose (null: not compared)
+                $sameTeam = $students[$idA]['group_id'] !== null && $students[$idA]['group_id'] === $students[$idB]['group_id'];
+                $sameStudent = $students[$idA]['user_id'] !== null && $students[$idA]['user_id'] === $students[$idB]['user_id'];
+                if ($sameTeam || $sameStudent) {
+                    $matrix[$idA][$idB] = null;
                     continue;
                 }
 
@@ -118,6 +203,43 @@ class CodeSimilarityService
             'students' => array_values($students),
             'matrix' => $matrix,
         ];
+    }
+
+    /**
+     * Token and n-gram counts of the lab's starter files, the code every student starts from.
+     */
+    protected function starterProfile(?Laboratory $lab): array
+    {
+        $tokens = [];
+        $ngrams = [];
+
+        foreach ($lab ? $lab->getStarterFilesList() : [] as $file) {
+            $fileTokens = $this->tokenize((string) ($file['content'] ?? ''));
+            if (empty($fileTokens)) {
+                continue;
+            }
+            array_push($tokens, ...$fileTokens);
+            array_push($ngrams, ...$this->generateNgrams($fileTokens, $this->ngramSize));
+        }
+
+        return ['tokens' => array_count_values($tokens), 'ngrams' => array_count_values($ngrams)];
+    }
+
+    /**
+     * $items with each value removed as many times as $counts has it (multiset difference).
+     */
+    protected function withoutMultiset(array $items, array $counts): array
+    {
+        $kept = [];
+        foreach ($items as $item) {
+            if (($counts[$item] ?? 0) > 0) {
+                $counts[$item]--;
+                continue;
+            }
+            $kept[] = $item;
+        }
+
+        return $kept;
     }
 
     /**

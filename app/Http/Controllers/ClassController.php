@@ -300,16 +300,21 @@ class ClassController extends Controller
             'email' => 'required|email|max:255',
         ]);
 
-        $student = User::where('email', $request->email)->first();
+        $student = User::findByEmail($request->email);
 
-        if (!$student) {
-            return redirect()->back()->with('error', 'Student email not found in Certicode system. Ask them to register first.');
+        if (!$student || $student->role !== 'student') {
+            return redirect()->back()->with('error', 'No student account uses that email. Ask them to register first.');
         }
 
-        // Enroll them as invited
-        $class->students()->syncWithoutDetaching([
-            $student->id => ['status' => 'invited']
-        ]);
+        // Only a new invitation is added. Writing 'invited' over an existing row would take an
+        // enrolled student out of the class until they accepted again.
+        $existing = $class->students()->where('users.id', $student->id)->first();
+        if ($existing && $existing->pivot->status === 'enrolled') {
+            return redirect()->route('classes.show', $class->id)->with('success', "{$student->name} is already enrolled in this class.");
+        }
+        if (!$existing) {
+            $class->students()->attach($student->id, ['status' => 'invited']);
+        }
         self::clearClassesCache($student->id);
 
         // Send invite notification
@@ -824,7 +829,10 @@ class ClassController extends Controller
                 && (int) ($log->payload['face_count'] ?? 1) === 1)
             ->values();
 
+        // The view links to each snapshot; loading every base64 image here would pull them
+        // all into memory at once
         $anomalies = \App\Models\Anomaly::where('lab_session_id', $session->id)
+            ->withoutSnapshotData()
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
@@ -930,6 +938,13 @@ class ClassController extends Controller
         $this->authorizeInstructor();
         $session = \App\Models\LabSession::findOrFail($id);
         $this->authorizeSessionManager($session);
+
+        if ($session->hasOtherOpenAttempt()) {
+            $message = 'This student has another attempt open on this lab. End that one before reopening this one.';
+            return $request->wantsJson()
+                ? response()->json(['error' => 'other_attempt_open', 'message' => $message], 409)
+                : back()->with('error', $message);
+        }
 
         $session->update([
             'status' => 'in_progress',

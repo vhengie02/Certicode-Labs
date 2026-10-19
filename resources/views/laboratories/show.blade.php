@@ -236,10 +236,19 @@
                      init() {
                          this.fetchChats();
                          this.fetchSessionStats();
+                         // Only while the page is in view: nobody reads it in a background tab,
+                         // and coming back to it catches up at once
                          setInterval(() => {
+                             if (document.hidden) return;
                              this.fetchChats();
                              this.fetchSessionStats();
                          }, 5000);
+                         document.addEventListener('visibilitychange', () => {
+                             if (!document.hidden) {
+                                 this.fetchChats();
+                                 this.fetchSessionStats();
+                             }
+                         });
                      },
                      async fetchChats() {
                          try {
@@ -590,12 +599,16 @@
                                     <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span><span>Download the Certicode extension file with the button below.</span></li>
                                     <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span><span>In VS Code open Extensions (<kbd class="rounded border border-[#2e2e2e] bg-[#141414] px-1 font-mono text-[11px] text-[#ededed]">Ctrl+Shift+X</kbd>), then the <strong class="text-[#ededed] font-medium">…</strong> menu, then <strong class="text-[#ededed] font-medium">Install from VSIX</strong>, and pick the downloaded file.</span></li>
                                     <li class="flex gap-2.5"><span class="font-mono text-[#666666]">4</span><span>If VS Code asks whether to trust this Certicode server, choose to trust it.</span></li>
-                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">5</span><span>Click <strong class="text-[#ededed] font-medium">Open lab again</strong>. This page keeps checking and continues on its own once the extension answers.</span></li>
+                                    <li class="flex gap-2.5"><span class="font-mono text-[#666666]">5</span><span>Click <strong class="text-[#ededed] font-medium">Open lab again</strong>. This page checks for two minutes and continues on its own once the extension answers.</span></li>
                                 </ol>
                                 <div class="flex flex-col sm:flex-row gap-2">
                                     <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="ui-btn ui-btn-secondary flex-1 text-xs">Download extension (.vsix)</a>
                                     <button type="button" @click="reopenVsCode()" class="ui-btn ui-btn-primary flex-1 text-xs">Open lab again</button>
                                 </div>
+                                <p x-show="vscodePollGaveUp" x-cloak class="text-xs text-[#888888]">
+                                    Stopped checking. VS Code already open?
+                                    <button type="button" @click="pollForVsCodePing()" class="text-[#3ecf8e] hover:underline">Check again</button>
+                                </p>
                             </div>
 
                             <!-- Progress checklist -->
@@ -735,9 +748,15 @@ function preLabCameraGate(labId, initialSessionId) {
         modelLoading: false,
         launchingVsCode: false,
         vscodeConnected: false,
+        // Timer of the next connect check (a setTimeout chain that backs off, not an interval)
         vscodePollInterval: null,
+        vscodePollFirstDelayMs: 1500,
+        vscodePollMaxDelayMs: 10000,
+        vscodePollGiveUpMs: 120000,
+        vscodePollGaveUp: false,
         // Set when the extension has not pinged within vscodeDetectTimeoutMs of launch,
-        // which usually means it is not installed. Polling keeps going so a late ping still connects.
+        // which usually means it is not installed. Polling keeps going for a while so a late
+        // ping still connects.
         vscodeNotDetected: false,
         vscodeDetectTimer: null,
         vscodeDetectTimeoutMs: 25000,
@@ -1143,13 +1162,15 @@ function preLabCameraGate(labId, initialSessionId) {
             }
         },
 
+        // Wait for the extension's first ping. Checks start quick and back off (each one is a
+        // server request), and stop after vscodePollGiveUpMs; "Check again" starts over.
         pollForVsCodePing() {
-            if (this.vscodePollInterval) {
-                clearInterval(this.vscodePollInterval);
-            }
+            clearTimeout(this.vscodePollInterval);
+            this.vscodePollInterval = null;
             if (!this.activeSessionId) return;
 
             this.vscodeNotDetected = false;
+            this.vscodePollGaveUp = false;
             clearTimeout(this.vscodeDetectTimer);
             this.vscodeDetectTimer = setTimeout(() => {
                 if (!this.vscodeConnected) {
@@ -1157,7 +1178,11 @@ function preLabCameraGate(labId, initialSessionId) {
                 }
             }, this.vscodeDetectTimeoutMs);
 
+            const startedAt = Date.now();
+            let delay = this.vscodePollFirstDelayMs;
+
             const checkPing = async () => {
+                this.vscodePollInterval = null;
                 try {
                     const res = await fetch(`/v1/sessions/${this.activeSessionId}`);
                     if (res.ok) {
@@ -1167,24 +1192,28 @@ function preLabCameraGate(labId, initialSessionId) {
                             this.vscodeConnected = true;
                             this.vscodeNotDetected = false;
                             clearTimeout(this.vscodeDetectTimer);
-                            if (this.vscodePollInterval) {
-                                clearInterval(this.vscodePollInterval);
-                                this.vscodePollInterval = null;
-                            }
                             // Brief confirmation delay so student sees the green checkmark
                             setTimeout(() => {
                                 this.launchingVsCode = false;
                             }, 800);
                             this.watchVsCodeConnection();
+                            return;
                         }
                     }
                 } catch (e) {
                     console.warn('Poll session status warning:', e);
                 }
+
+                if (Date.now() - startedAt >= this.vscodePollGiveUpMs) {
+                    this.vscodePollGaveUp = true;
+                    this.vscodeNotDetected = true;
+                    return;
+                }
+                delay = Math.min(this.vscodePollMaxDelayMs, Math.round(delay * 1.6));
+                this.vscodePollInterval = setTimeout(checkPing, delay);
             };
 
-            setTimeout(checkPing, 800);
-            this.vscodePollInterval = setInterval(checkPing, 1200);
+            this.vscodePollInterval = setTimeout(checkPing, 800);
         },
 
         // Once VS Code is connected, keep checking it is still open. When the student
@@ -1192,9 +1221,13 @@ function preLabCameraGate(labId, initialSessionId) {
         watchVsCodeConnection() {
             clearInterval(this.vscodeWatchInterval);
             let missedChecks = 0;
+            let tick = 0;
 
             const check = async () => {
                 if (!this.browserProctorActive || !this.activeSessionId) return;
+                // While the student is in VS Code this page is hidden: check every third tick
+                tick++;
+                if (document.hidden && tick % 3 !== 0) return;
                 try {
                     const res = await fetch(`/v1/sessions/${this.activeSessionId}`, { headers: { 'Accept': 'application/json' } });
                     if (!res.ok) return;
@@ -1613,10 +1646,8 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         stopProctoring() {
-            if (this.vscodePollInterval) {
-                clearInterval(this.vscodePollInterval);
-                this.vscodePollInterval = null;
-            }
+            clearTimeout(this.vscodePollInterval);
+            this.vscodePollInterval = null;
             clearTimeout(this.vscodeDetectTimer);
             clearInterval(this.vscodeWatchInterval);
             this.vscodeWatchInterval = null;
@@ -1642,10 +1673,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.stream.getTracks().forEach(t => t.stop());
                 this.stream = null;
             }
-            if (this.vscodePollInterval) {
-                clearInterval(this.vscodePollInterval);
-                this.vscodePollInterval = null;
-            }
+            clearTimeout(this.vscodePollInterval);
+            this.vscodePollInterval = null;
             clearTimeout(this.vscodeDetectTimer);
             this.vscodeNotDetected = false;
             this.showModal = false;

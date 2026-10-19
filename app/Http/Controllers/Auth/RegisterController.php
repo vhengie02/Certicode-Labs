@@ -30,11 +30,11 @@ class RegisterController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => ['required', 'string', 'email', 'max:255', new \App\Rules\UniqueEmail(
+                message: 'An account with this email already exists. Sign in instead, or use Continue with Google to get a sign-in code by email.',
+            )],
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => 'required|string|in:student,instructor',
-        ], [
-            'email.unique' => 'An account with this email already exists. Sign in instead, or use Continue with Google to get a sign-in code by email.',
         ]);
 
         // Instructors see every student's work, so that role needs an admin's approval:

@@ -53,45 +53,18 @@ class LabSessionController extends Controller
             }
         }
 
-        // Find or create session
-        $session = LabSession::where('lab_id', $lab->id)
-            ->where('user_id', $user->id)
-            ->where('status', 'in_progress')
-            ->latest()
-            ->first();
-
-        // If session exists but has exceeded its time limit, mark it abandoned and start fresh
-        if ($session && $lab->time_limit > 0) {
-            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
-            if ($elapsed >= ($lab->time_limit * 60)) {
-                $session->update([
-                    'status' => 'abandoned',
-                    'ended_at' => now(),
-                ]);
-                $session = null;
-            }
-        }
-
-        if (!$session && !$lab->canStartNewAttempt($user)) {
+        // Resume the open attempt or start one (shared with the web start route)
+        $session = $lab->findOrStartAttemptFor($user);
+        if (!$session) {
             return response()->json([
                 'error' => 'attempts_exhausted',
                 'message' => 'You have used all your attempts for this lab. Ask your instructor if you need another one.',
             ], 403);
         }
 
-        if (!$session) {
-            $session = LabSession::create([
-                'lab_id' => $lab->id,
-                'user_id' => $user->id,
-                'status' => 'in_progress',
-                'started_at' => now(),
-                'performance_score' => 0.0,
-            ]);
-        }
-
         return response()->json([
             'message' => 'Lab session started.',
-            'session' => $session->load('laboratory'),
+            'session' => array_merge($session->toArray(), ['laboratory' => $lab->studentPayload()]),
         ]);
     }
 
@@ -124,7 +97,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $logPayload,
+            'payload' => $this->boundedPayload($logPayload),
         ]);
 
         // Smart anomaly checks
@@ -172,6 +145,7 @@ class LabSessionController extends Controller
             $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
             $metadata = $request->payload;
             $metadata['snippet'] = $snippet;
+            $metadata = $this->boundedPayload($metadata);
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
@@ -253,7 +227,7 @@ class LabSessionController extends Controller
             return;
         }
 
-        $this->recordAndBroadcastAnomaly($session, ['type' => $type, 'metadata' => $payload] + $attributes);
+        $this->recordAndBroadcastAnomaly($session, ['type' => $type, 'metadata' => $this->boundedPayload($payload)] + $attributes);
     }
 
     /**
@@ -282,19 +256,58 @@ class LabSessionController extends Controller
     /**
      * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
      * a flag without a picture (e.g. the camera was unplugged) is raised once per
-     * 5 minutes, and one with a picture at most every 20 seconds.
+     * 5 minutes, and one with a picture at most every 20 seconds. The picture itself is
+     * stored at most once every SNAPSHOT_INTERVAL_SECONDS per type: a covered camera sends
+     * the same dark frame all lab long.
      */
     protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
     {
         $attributes += $this->cameraSnapshotAttributes($payload, $extraMetadata);
         $hasSnapshot = $attributes['image_path'] !== null;
 
-        $isRepeat = Anomaly::where('lab_session_id', $session->id)
-            ->where('type', $attributes['type'])
+        $recent = Anomaly::where('lab_session_id', $session->id)
+            ->where('type', $attributes['type']);
+
+        $isRepeat = (clone $recent)
             ->where('created_at', '>=', $hasSnapshot ? now()->subSeconds(20) : now()->subMinutes(5))
             ->exists();
+        if ($isRepeat) {
+            return null;
+        }
 
-        return $isRepeat ? null : $this->recordAndBroadcastAnomaly($session, $attributes);
+        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)
+            ->where('created_at', '>=', now()->subSeconds(self::SNAPSHOT_INTERVAL_SECONDS))->exists()) {
+            unset($attributes['metadata']['image_base64']);
+            $attributes['image_path'] = null;
+        }
+
+        return $this->recordAndBroadcastAnomaly($session, $attributes);
+    }
+
+    private const SNAPSHOT_INTERVAL_SECONDS = 120;
+
+    /** Largest client telemetry payload or flag metadata kept as sent (webcam snapshot not counted). */
+    private const MAX_PAYLOAD_BYTES = 8192;
+
+    /**
+     * A client-sent payload, cut down if it is too large to store. Small scalar fields are
+     * kept so the event still says what happened.
+     */
+    private function boundedPayload(?array $payload): ?array
+    {
+        if ($payload === null || strlen((string) json_encode($payload)) <= self::MAX_PAYLOAD_BYTES) {
+            return $payload;
+        }
+
+        $kept = collect($payload)
+            ->filter(fn ($value) => is_scalar($value) || $value === null)
+            ->map(fn ($value) => is_string($value) ? mb_substr($value, 0, 500) : $value)
+            ->take(20)
+            ->all();
+
+        return strlen((string) json_encode($kept)) <= self::MAX_PAYLOAD_BYTES
+            ? $kept + ['truncated' => true]
+            : ['truncated' => true];
     }
 
     /**
@@ -306,6 +319,7 @@ class LabSessionController extends Controller
         $payload = $payload ?? [];
         $snapshot = WebcamSnapshot::normalize($payload['image_base64'] ?? null);
         unset($payload['image_base64'], $payload['image_path']);
+        $payload = $this->boundedPayload($payload) ?? [];
 
         if ($snapshot) {
             $payload['image_base64'] = $snapshot;
@@ -508,11 +522,10 @@ class LabSessionController extends Controller
             $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
         }
 
-        if ($session->status === 'in_progress') {
-            $session->update(['last_ping_at' => now()]);
-        }
+        // Reading the session is not a heartbeat: the lab page polls this while it waits for
+        // VS Code and pings /ping on its own. Only the extension's read below counts.
 
-        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
+        $colors =['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $currentUser = $request->user() ?? $session->user;
         $userId = $currentUser ? $currentUser->id : 1;
         $userName = $currentUser ? $currentUser->name : 'Student';
@@ -598,17 +611,7 @@ class LabSessionController extends Controller
             ],
             'is_group_lab' => (bool) $lab->is_group_lab,
             'teammates' => $teammates,
-            'laboratory' => [
-                'id' => $lab->id,
-                'title' => $lab->title,
-                'description' => $lab->description,
-                'is_group_lab' => (bool) $lab->is_group_lab,
-                'availability_mode' => $lab->availability_mode ?? 'open',
-                'live_status' => $lab->live_status ?? 'not_started',
-                'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
-                'tasks_definition' => $lab->tasks_definition ?? [],
-                'starter_files' => $lab->getStarterFilesList(),
-            ]
+            'laboratory' => $lab->studentPayload(),
         ]);
     }
 
@@ -826,10 +829,15 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        // Compare the new submission with the cohort once, here, rather than on every view
+        // of the monitoring page
+        app(\App\Services\CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
+
         $labTitle = $session->laboratory->title ?? 'your lab';
         $session->notifyStudents(
             "Lab submitted: {$labTitle}",
             "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (" . count($completedTasks) . ' tasks passed).'
+                . (!empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : '')
         );
 
         $studentEvaluation = \Illuminate\Support\Arr::except($evaluation, [
@@ -1319,6 +1327,12 @@ class LabSessionController extends Controller
         }
 
         $session = LabSession::findOrFail($sessionId);
+        if ($session->hasOtherOpenAttempt()) {
+            return response()->json([
+                'error' => 'other_attempt_open',
+                'message' => 'This student has another attempt open on this lab. End that one before reopening this one.',
+            ], 409);
+        }
         $session->update([
             'status' => 'in_progress',
             'ended_at' => null,

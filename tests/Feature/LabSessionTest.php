@@ -199,9 +199,11 @@ class LabSessionTest extends TestCase
             'started_at' => now()->subMinutes(120),
         ]);
 
+        // Another student: one student has at most one open attempt per lab
+        $otherStudent = User::create(['name' => 'Other', 'email' => 'other-student@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $activeSession = LabSession::create([
             'lab_id' => $this->laboratory->id,
-            'user_id' => $this->student->id,
+            'user_id' => $otherStudent->id,
             'status' => 'in_progress',
             'started_at' => now()->subMinutes(10),
             'last_ping_at' => now(),
