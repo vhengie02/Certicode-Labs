@@ -3,10 +3,14 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\ClassActivityNotification;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class User extends Authenticatable
 {
@@ -55,6 +59,44 @@ class User extends Authenticatable
      *
      * @return array<string, string>
      */
+    /**
+     * Email addresses are stored trimmed and lowercased. Postgres compares strings case-
+     * sensitively, so 'Ana@x.com' and 'ana@x.com' would otherwise be two accounts.
+     */
+    public static function normalizeEmail(?string $email): ?string
+    {
+        return $email === null ? null : mb_strtolower(trim($email));
+    }
+
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => static::normalizeEmail($value));
+    }
+
+    protected function gmail(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => static::normalizeEmail($value));
+    }
+
+    /**
+     * Match an account email whatever its case, so accounts saved before emails were
+     * lowercased are still found.
+     */
+    public function scopeWhereEmailIs($query, ?string $email)
+    {
+        return $query->whereRaw('lower(email) = ?', [static::normalizeEmail((string) $email)]);
+    }
+
+    public function scopeWhereGmailIs($query, ?string $gmail)
+    {
+        return $query->whereRaw('lower(gmail) = ?', [static::normalizeEmail((string) $gmail)]);
+    }
+
+    public static function findByEmail(?string $email): ?self
+    {
+        return $email === null || trim($email) === '' ? null : static::query()->whereEmailIs($email)->first();
+    }
+
     protected function casts(): array
     {
         return [
@@ -76,9 +118,9 @@ class User extends Authenticatable
     public function classes()
     {
         return $this->belongsToMany(SchoolClass::class, 'class_student', 'student_id', 'class_id')
-                    ->wherePivot('status', 'enrolled')
-                    ->withPivot('status')
-                    ->withTimestamps();
+            ->wherePivot('status', 'enrolled')
+            ->withPivot('status')
+            ->withTimestamps();
     }
 
     /**
@@ -87,9 +129,9 @@ class User extends Authenticatable
     public function invitedClasses()
     {
         return $this->belongsToMany(SchoolClass::class, 'class_student', 'student_id', 'class_id')
-                    ->wherePivot('status', 'invited')
-                    ->withPivot('status')
-                    ->withTimestamps();
+            ->wherePivot('status', 'invited')
+            ->withPivot('status')
+            ->withTimestamps();
     }
 
     /**
@@ -130,19 +172,19 @@ class User extends Authenticatable
     public function groups()
     {
         return $this->belongsToMany(Group::class, 'group_members')
-                    ->withPivot('contribution_score')
-                    ->withTimestamps();
+            ->withPivot('contribution_score')
+            ->withTimestamps();
     }
 
     /**
      * Route notifications for the mail channel.
      *
-     * @param  \Illuminate\Notifications\Notification  $notification
+     * @param  Notification  $notification
      * @return array<string, string>|string
      */
     public function routeNotificationForMail($notification)
     {
-        if (!empty($this->gmail) && !empty($this->gmail_verified_at)) {
+        if (! empty($this->gmail) && ! empty($this->gmail_verified_at)) {
             return $this->gmail;
         }
 
@@ -159,7 +201,7 @@ class User extends Authenticatable
             return;
         }
         // Admin > System can stop accepting instructor requests
-        if (!SystemSetting::read('instructor_requests_open')) {
+        if (! SystemSetting::read('instructor_requests_open')) {
             return;
         }
 
@@ -167,14 +209,14 @@ class User extends Authenticatable
 
         foreach (static::where('role', 'admin')->get() as $admin) {
             try {
-                $admin->notify(new \App\Notifications\ClassActivityNotification(
+                $admin->notify(new ClassActivityNotification(
                     'Instructor access requested',
                     "{$this->name} ({$this->email}) asked for instructor access.",
                     route('admin.instructor-requests.index'),
                     'info'
                 ));
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Could not notify admin about instructor request: ' . $e->getMessage());
+                Log::warning('Could not notify admin about instructor request: '.$e->getMessage());
             }
         }
     }

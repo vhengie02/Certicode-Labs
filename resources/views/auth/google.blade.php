@@ -18,12 +18,15 @@
     <form class="mt-8 space-y-5 cc-rise" style="--d:1" method="POST" action="{{ route('auth.google.email') }}">
         @csrf
 
-        @include('auth.partials.notices')
+        @include('auth.partials.notices', ['inlineFields' => ['gmail']])
 
         <div>
             <label for="gmail" class="cc-label">Google email</label>
             <input id="gmail" name="gmail" type="email" value="{{ old('gmail') }}" required autofocus autocomplete="email"
-                   class="cc-field" placeholder="you@gmail.com" @error('gmail') aria-invalid="true" @enderror>
+                   class="cc-field" placeholder="you@gmail.com" @error('gmail') aria-invalid="true" aria-describedby="gmail-error" @enderror>
+            @error('gmail')
+                <p id="gmail-error" class="mt-2 text-[13px] text-[#fca5a5]" role="alert">{{ $message }}</p>
+            @enderror
         </div>
 
         <button type="submit" class="cc-btn cc-btn-brand w-full">

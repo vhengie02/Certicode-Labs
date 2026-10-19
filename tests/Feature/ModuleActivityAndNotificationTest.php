@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
 use App\Models\Laboratory;
+use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -16,7 +16,9 @@ class ModuleActivityAndNotificationTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $instructor;
+
     protected SchoolClass $class;
 
     protected function setUp(): void
@@ -55,7 +57,7 @@ class ModuleActivityAndNotificationTest extends TestCase
             ]);
 
         $response->assertRedirect();
-        
+
         $this->assertDatabaseHas('notifications', [
             'notifiable_id' => $this->student->id,
             'type' => 'App\Notifications\ClassActivityNotification',
@@ -85,7 +87,7 @@ class ModuleActivityAndNotificationTest extends TestCase
             ]);
 
         $response->assertRedirect();
-        
+
         $module = Module::first();
         $this->assertNotNull($module);
         $this->assertEquals('Splunk Essentials', $module->title);
@@ -120,7 +122,7 @@ class ModuleActivityAndNotificationTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->instructor)
-            ->post("/laboratories", [
+            ->post('/laboratories', [
                 'title' => 'Packet Tracer Lab',
                 'description' => 'Configuring static routes',
                 'time_limit' => 60,
@@ -150,7 +152,7 @@ class ModuleActivityAndNotificationTest extends TestCase
         $response = $this->actingAs($this->student)
             ->get("/classes/{$this->class->id}/modules/create");
         $response->assertStatus(403);
-     }
+    }
 
     /**
      * Test accepting invitation notifies instructor.
@@ -178,7 +180,7 @@ class ModuleActivityAndNotificationTest extends TestCase
         $notification = $this->instructor->notifications()->first();
         $this->assertNotNull($notification);
         $this->assertEquals("Student Joined Class: {$this->class->name}", $notification->data['title']);
-        $this->assertStringContainsString("has accepted your invitation and joined the class", $notification->data['message']);
+        $this->assertStringContainsString('has accepted your invitation and joined the class', $notification->data['message']);
     }
 
     /**
@@ -206,10 +208,10 @@ class ModuleActivityAndNotificationTest extends TestCase
                     'message',
                     'type',
                     'time',
-                ]
-            ]
+                ],
+            ],
         ]);
-        
+
         $this->assertEquals(1, $response->json('unreadCount'));
         $this->assertEquals("Student Joined Class: {$this->class->name}", $response->json('notifications.0.title'));
     }

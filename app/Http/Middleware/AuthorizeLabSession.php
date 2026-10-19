@@ -17,7 +17,7 @@ class AuthorizeLabSession
     public function handle(Request $request, Closure $next): Response
     {
         $session = LabSession::find((int) $request->route('sessionId'));
-        if (!$session) {
+        if (! $session) {
             return response()->json(['error' => 'Session not found.'], 404);
         }
 
@@ -25,7 +25,7 @@ class AuthorizeLabSession
         $storedToken = $session->currentExtensionToken();
         $tokenValid = $token !== '' && $storedToken && hash_equals($storedToken, $token);
 
-        if (!$tokenValid && !$session->isAccessibleBy($request->user())) {
+        if (! $tokenValid && ! $session->isAccessibleBy($request->user())) {
             return response()->json(['error' => 'unauthorized', 'message' => 'You do not have access to this lab session.'], $request->user() ? 403 : 401);
         }
 

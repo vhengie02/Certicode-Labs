@@ -2,8 +2,15 @@
 
 namespace App\Models;
 
+use App\Events\AnomalyDetected;
+use App\Notifications\ClassActivityNotification;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class LabSession extends Model
 {
@@ -67,11 +74,11 @@ class LabSession extends Model
     public function issueExtensionToken(): string
     {
         $token = $this->currentExtensionToken();
-        if (!$token) {
-            $token = \Illuminate\Support\Str::random(48);
+        if (! $token) {
+            $token = Str::random(48);
             // Written with a query rather than save(): save() decrypts the old value to detect changes,
             // which throws when that value was encrypted with a previous APP_KEY.
-            $encrypted = \Illuminate\Support\Facades\Crypt::encryptString($token);
+            $encrypted = Crypt::encryptString($token);
             static::whereKey($this->getKey())->update(['extension_token' => $encrypted]);
             $this->setRawAttributes(['extension_token' => $encrypted] + $this->getAttributes(), true);
         }
@@ -87,7 +94,7 @@ class LabSession extends Model
     {
         try {
             return $this->extension_token ?: null;
-        } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+        } catch (DecryptException) {
             return null;
         }
     }
@@ -98,7 +105,7 @@ class LabSession extends Model
      */
     public function isAccessibleBy(?User $user): bool
     {
-        if (!$user) {
+        if (! $user) {
             return false;
         }
 
@@ -108,6 +115,7 @@ class LabSession extends Model
 
         if ($user->role === 'instructor') {
             $classId = Module::whereKey(Laboratory::whereKey($this->lab_id)->value('module_id'))->value('class_id');
+
             return $user->canManageClass($classId);
         }
 
@@ -136,7 +144,7 @@ class LabSession extends Model
             }
         });
         static::updated(function (LabSession $session) {
-            if (!$session->changesCompetencyEvidence()) {
+            if (! $session->changesCompetencyEvidence()) {
                 return;
             }
             // A session moved to another student or lab no longer counts for the old one either
@@ -164,7 +172,7 @@ class LabSession extends Model
      */
     private function changesCompetencyEvidence(): bool
     {
-        if (!$this->wasChanged(['status', 'performance_score', 'instructor_grade_override', 'lab_id', 'user_id'])) {
+        if (! $this->wasChanged(['status', 'performance_score', 'instructor_grade_override', 'lab_id', 'user_id'])) {
             return false;
         }
 
@@ -174,18 +182,18 @@ class LabSession extends Model
     private function forgetCachedProgress(): void
     {
         $lab = $this->laboratory ?: Laboratory::find($this->lab_id);
-        if (!$lab || !$lab->module_id) {
+        if (! $lab || ! $lab->module_id) {
             return;
         }
 
-        \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_module_{$lab->module_id}_progress");
+        Cache::forget("user_{$this->user_id}_module_{$lab->module_id}_progress");
         $module = $lab->module ?: Module::find($lab->module_id);
         if ($module) {
             if ($module->parent_id) {
-                \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_module_{$module->parent_id}_progress");
+                Cache::forget("user_{$this->user_id}_module_{$module->parent_id}_progress");
             }
             if ($module->class_id) {
-                \Illuminate\Support\Facades\Cache::forget("user_{$this->user_id}_class_{$module->class_id}_progress");
+                Cache::forget("user_{$this->user_id}_class_{$module->class_id}_progress");
             }
         }
     }
@@ -212,6 +220,31 @@ class LabSession extends Model
     public function group()
     {
         return $this->belongsTo(Group::class);
+    }
+
+    /**
+     * Send a lab notification to whoever owns this attempt: the student, plus every
+     * member of the team on a group lab. A failed send never breaks the caller.
+     */
+    public function notifyStudents(string $title, string $message): void
+    {
+        $recipients = collect([$this->user])
+            ->merge($this->group_id ? ($this->group?->members ?? collect()) : collect())
+            ->filter()
+            ->unique('id');
+
+        foreach ($recipients as $student) {
+            try {
+                $student->notify(new ClassActivityNotification(
+                    $title,
+                    $message,
+                    route('laboratories.show', $this->lab_id),
+                    'lab'
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Lab notification failed: '.$e->getMessage());
+            }
+        }
     }
 
     /**
@@ -304,6 +337,58 @@ class LabSession extends Model
     }
 
     /**
+     * How long after the time limit or live countdown runs out work is still taken, so a
+     * submit sent just before the end isn't lost to network lag.
+     */
+    public const LATE_GRACE_SECONDS = 60;
+
+    /**
+     * Whether the same student has another attempt open on this lab. Only one may be open at
+     * a time (a partial unique index), so this one can't be reopened until that one ends.
+     */
+    public function hasOtherOpenAttempt(): bool
+    {
+        return $this->user_id !== null && static::where('lab_id', $this->lab_id)
+            ->where('user_id', $this->user_id)
+            ->where('status', 'in_progress')
+            ->whereKeyNot($this->id)
+            ->exists();
+    }
+
+    /**
+     * Whether this attempt can still be graded: it is in progress, and its time limit (or,
+     * in a live lab, the shared countdown) hasn't run out beyond the grace period.
+     */
+    public function acceptsWork(): bool
+    {
+        if ($this->status !== 'in_progress') {
+            return false;
+        }
+
+        $lab = $this->laboratory;
+        if (! $lab) {
+            return true;
+        }
+
+        if ($lab->isLiveLab()) {
+            if ($lab->live_status === 'closed') {
+                return false;
+            }
+            if ($lab->live_status === 'active') {
+                return $lab->getLiveElapsedSeconds() < $lab->getLiveTotalDurationSeconds() + self::LATE_GRACE_SECONDS;
+            }
+
+            return true;
+        }
+
+        if ($lab->time_limit > 0 && $this->started_at) {
+            return $this->started_at->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
+        }
+
+        return true;
+    }
+
+    /**
      * Check if the session is currently actively connected with a recent heartbeat.
      * Pings are dispatched every 15-20s. A 75-second window accommodates minor network jitter.
      */
@@ -332,11 +417,13 @@ class LabSession extends Model
 
         if ($this->last_ping_at) {
             $diff = $this->last_ping_at->diffInSeconds(now());
+
             return $diff > 75 && $diff <= 300;
         }
 
         if ($this->started_at) {
             $diff = $this->started_at->diffInSeconds(now());
+
             return $diff > 60 && $diff <= 300;
         }
 
@@ -352,7 +439,7 @@ class LabSession extends Model
             return false;
         }
 
-        return !$this->isActivelyConnected() && !$this->isIdle();
+        return ! $this->isActivelyConnected() && ! $this->isIdle();
     }
 
     /**
@@ -373,19 +460,24 @@ class LabSession extends Model
             if ($this->isIdle()) {
                 return 'idle';
             }
+
             return 'offline';
         }
+
         return $this->status;
     }
 
     /**
      * Automatically sweep and expire abandoned or time-limit-exceeded in-progress sessions.
      */
-    public static function autoExpireStaleSessions(?int $labId = null): int
+    public static function autoExpireStaleSessions(?int $labId = null, ?int $userId = null): int
     {
         $query = static::where('status', 'in_progress')->with('laboratory');
         if ($labId) {
             $query->where('lab_id', $labId);
+        }
+        if ($userId) {
+            $query->where('user_id', $userId);
         }
 
         $sessions = $query->get();
@@ -455,7 +547,7 @@ class LabSession extends Model
         ]);
 
         try {
-            event(new \App\Events\AnomalyDetected($this->id, [
+            event(new AnomalyDetected($this->id, [
                 'id' => $anomaly->id,
                 'type' => $anomaly->type,
                 'severity' => $anomaly->severity,
@@ -466,7 +558,7 @@ class LabSession extends Model
                 'student_name' => $studentName,
             ]));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to broadcast AnomalyDetected: " . $e->getMessage());
+            Log::warning('Failed to broadcast AnomalyDetected: '.$e->getMessage());
         }
 
         return $anomaly;
@@ -488,6 +580,7 @@ class LabSession extends Model
         $elapsedMinutes = max($started->diffInSeconds($ended, true) / 60, 0.1);
 
         $words = $keystrokes / 5.0;
+
         return (int) round($words / $elapsedMinutes);
     }
 }

@@ -88,6 +88,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Integrity Flag Retention
+    |--------------------------------------------------------------------------
+    |
+    | Resolved anomalies older than this many days are deleted by the daily
+    | `model:prune` run. Open (unresolved) anomalies are always kept.
+    |
+    */
+
+    'anomaly_retention_days' => (int) env('ANOMALY_RETENTION_DAYS', 90),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Telemetry and Snapshot Retention
+    |--------------------------------------------------------------------------
+    |
+    | VS Code heartbeats and typing-speed samples (one every few seconds per
+    | student) are deleted after `telemetry_retention_days`; every other
+    | telemetry event is kept. Webcam snapshots are removed from flags after
+    | `snapshot_retention_days`, open or resolved: the flag itself stays.
+    |
+    */
+
+    'telemetry_retention_days' => (int) env('TELEMETRY_RETENTION_DAYS', 7),
+
+    'snapshot_retention_days' => (int) env('SNAPSHOT_RETENTION_DAYS', 30),
+
+    /*
+    |--------------------------------------------------------------------------
     | Encryption Key
     |--------------------------------------------------------------------------
     |

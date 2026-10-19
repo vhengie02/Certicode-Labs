@@ -17,6 +17,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Module Attachments
+    |--------------------------------------------------------------------------
+    |
+    | The local disks are not durable on Vercel: storage there is each function
+    | instance's own /tmp, wiped when the instance goes away. Production keeps
+    | attachments in Supabase Storage through its S3 API: ATTACHMENTS_DISK=supabase.
+    | api/index.php sets EPHEMERAL_LOCAL_STORAGE so uploads to a local disk there
+    | are refused instead of silently lost.
+    |
+    */
+
+    'attachments_disk' => env('ATTACHMENTS_DISK', 'public'),
+
+    'ephemeral_local_storage' => (bool) env('EPHEMERAL_LOCAL_STORAGE', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |
@@ -57,6 +74,21 @@ return [
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
+            'report' => false,
+        ],
+
+        // Supabase Storage through its S3 API (Dashboard > Storage > Settings > S3 Connection).
+        // Use a private bucket: files are only reached through the app's download route,
+        // which checks access and then hands out a short-lived signed URL.
+        'supabase' => [
+            'driver' => 's3',
+            'key' => env('SUPABASE_STORAGE_KEY'),
+            'secret' => env('SUPABASE_STORAGE_SECRET'),
+            'region' => env('SUPABASE_STORAGE_REGION'),
+            'bucket' => env('SUPABASE_STORAGE_BUCKET', 'attachments'),
+            'endpoint' => env('SUPABASE_STORAGE_ENDPOINT'), // https://<project-ref>.storage.supabase.co/storage/v1/s3
+            'use_path_style_endpoint' => true,
+            'throw' => true,
             'report' => false,
         ],
 

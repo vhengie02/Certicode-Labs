@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Illuminate\Broadcasting\BroadcastManager;
+
 /**
  * Client-side settings for live updates over Pusher Channels. Only public values are exposed:
  * the app key and cluster. The secret stays on the server and is used to sign private channels.
@@ -11,8 +13,8 @@ class Realtime
     public static function enabled(): bool
     {
         return config('broadcasting.default') === 'pusher'
-            && !empty(config('broadcasting.connections.pusher.key'))
-            && !empty(config('broadcasting.connections.pusher.secret'));
+            && ! empty(config('broadcasting.connections.pusher.key'))
+            && ! empty(config('broadcasting.connections.pusher.secret'));
     }
 
     /**
@@ -20,7 +22,7 @@ class Realtime
      */
     public static function clientConfig(): ?array
     {
-        if (!self::enabled()) {
+        if (! self::enabled()) {
             return null;
         }
 
@@ -39,7 +41,7 @@ class Realtime
      */
     public static function authorize(string $channel, string $socketId): array
     {
-        $pusher = app(\Illuminate\Broadcasting\BroadcastManager::class)->connection('pusher')->getPusher();
+        $pusher = app(BroadcastManager::class)->connection('pusher')->getPusher();
 
         return json_decode($pusher->authorizeChannel($channel, $socketId), true);
     }

@@ -65,5 +65,92 @@
                 describe();
             }
         });
+
+        const form = input.closest('form');
+        form.querySelectorAll('[data-remove-upload]').forEach((button) => {
+            button.addEventListener('click', () => button.closest('li').remove());
+        });
+
+        // Cloud storage: upload each chosen file straight to it with a signed URL, then post
+        // only the keys and names. Vercel refuses request bodies over 4.5 MB, so files up to
+        // 20 MB can't go through the form post itself.
+        const signUrl = input.dataset.directUploadUrl;
+        if (!signUrl) return;
+        const maxBytes = Number(input.dataset.maxBytes);
+        const keyInputs = form.querySelector('.direct-upload-inputs');
+        const errorBox = form.querySelector('.direct-upload-error');
+        let nextIndex = form.querySelectorAll('[data-pending-upload]').length;
+
+        const showError = (message) => {
+            errorBox.textContent = message;
+            errorBox.hidden = false;
+        };
+
+        const put = (url, headers, file, onProgress) => new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', url);
+            Object.entries(headers || {}).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+            xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); });
+            xhr.addEventListener('load', () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`“${file.name}” could not be uploaded.`))));
+            xhr.addEventListener('error', () => reject(new Error(`“${file.name}” could not be uploaded.`)));
+            xhr.send(file);
+        });
+
+        form.addEventListener('submit', async (e) => {
+            // Once the files are uploaded the input is cleared, so the final submit goes through
+            if (!input.files.length) return;
+            e.preventDefault();
+
+            const files = Array.from(input.files);
+            const tooBig = files.find((file) => file.size > maxBytes);
+            if (tooBig) {
+                showError(`“${tooBig.name}” is larger than 20 MB.`);
+                return;
+            }
+
+            const submit = form.querySelector('button[type="submit"]');
+            submit.disabled = true;
+            errorBox.hidden = true;
+            const added = [];
+            try {
+                for (const [i, file] of files.entries()) {
+                    const response = await fetch(signUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': form.querySelector('input[name="_token"]').value,
+                        },
+                        body: JSON.stringify({ file_name: file.name, file_size: file.size }),
+                    });
+                    const upload = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(upload.message || `“${file.name}” could not be uploaded.`);
+
+                    await put(upload.url, upload.headers, file, (done) => {
+                        list.textContent = `Uploading ${i + 1} of ${files.length}: ${file.name} (${Math.round(done * 100)}%)`;
+                    });
+
+                    const index = nextIndex++;
+                    for (const [field, value] of [['key', upload.key], ['name', file.name]]) {
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = `uploaded_attachments[${index}][${field}]`;
+                        hidden.value = value;
+                        keyInputs.appendChild(hidden);
+                        added.push(hidden);
+                    }
+                }
+            } catch (error) {
+                added.forEach((hidden) => hidden.remove());
+                describe();
+                showError(`${error.message} Nothing was saved. Please try again.`);
+                submit.disabled = false;
+                return;
+            }
+
+            input.value = '';
+            list.textContent = `Uploaded ${files.length} ${files.length === 1 ? 'file' : 'files'}. Saving…`;
+            form.requestSubmit ? form.requestSubmit() : form.submit();
+        });
     });
 </script>

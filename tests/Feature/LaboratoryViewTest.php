@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
 use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,7 +18,7 @@ class LaboratoryViewTest extends TestCase
     private function labForEnrolledStudent(User $student, array $attributes): Laboratory
     {
         $instructor = User::firstOrCreate(['email' => 'lab-owner@example.com'], ['name' => 'Lab Owner', 'password' => bcrypt('password'), 'role' => 'instructor']);
-        $class = SchoolClass::create(['name' => 'Class ' . $student->id, 'code' => 'CLS-' . $student->id . '-' . uniqid(), 'instructor_id' => $instructor->id]);
+        $class = SchoolClass::create(['name' => 'Class '.$student->id, 'code' => 'CLS-'.$student->id.'-'.uniqid(), 'instructor_id' => $instructor->id]);
         $class->students()->attach($student->id, ['status' => 'enrolled']);
         $module = Module::create(['class_id' => $class->id, 'title' => 'Module', 'content' => 'Content']);
 
@@ -121,7 +122,7 @@ class LaboratoryViewTest extends TestCase
             'views_count' => 0,
         ]);
 
-        $session = \App\Models\LabSession::create([
+        $session = LabSession::create([
             'lab_id' => $laboratory->id,
             'user_id' => $student->id,
             'status' => 'in_progress',
@@ -131,7 +132,7 @@ class LaboratoryViewTest extends TestCase
         $this->assertEquals(0, $laboratory->views_count);
 
         // Start workspace session with camera verified
-        $response = $this->actingAs($student)->withSession(["camera_verified_lab_{$laboratory->id}" => true])->post(route('laboratories.start', $laboratory->id));
+        $response = $this->actingAs($student)->withCameraCheck($laboratory->id)->post(route('laboratories.start', $laboratory->id));
         $response->assertRedirect();
         $this->assertStringContainsString('vscode://', $response->headers->get('Location'));
 
@@ -201,4 +202,3 @@ class LaboratoryViewTest extends TestCase
         $this->assertStringContainsString('.zip', $response->headers->get('Content-Disposition'));
     }
 }
-

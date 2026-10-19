@@ -2,11 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\Laboratory;
-use App\Models\User;
-use App\Models\LabSession;
 use App\Models\Competency;
-use App\Models\StudentCompetency;
+use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,6 +14,7 @@ class VSCodeExtensionApiTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected Laboratory $laboratory;
 
     protected function setUp(): void
@@ -50,8 +50,8 @@ class VSCodeExtensionApiTest extends TestCase
             'reference_solution' => '// Solution code',
             'rubric' => 'Rubric text',
             'test_cases' => [
-                ['input' => '', 'expected' => 'expected output']
-            ]
+                ['input' => '', 'expected' => 'expected output'],
+            ],
         ]);
     }
 
@@ -81,8 +81,107 @@ class VSCodeExtensionApiTest extends TestCase
                 'title',
                 'description',
                 'tasks_definition',
-            ]
+            ],
         ]);
+    }
+
+    /**
+     * Closing VS Code reports a disconnect, so the browser page leaves the lab.
+     * A later extension ping (VS Code reopened) connects again.
+     */
+    public function test_vscode_disconnect_marks_session_as_closed_until_next_ping(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
+
+        $this->postJson("/api/v1/sessions/{$session->id}/vscode-disconnect", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('telemetry_logs', [
+            'lab_session_id' => $session->id,
+            'event_type' => 'vscode_disconnected',
+        ]);
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => false, 'vscode_closed' => true]);
+
+        $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
+    }
+
+    /**
+     * The extension reports its version on every request; old builds are flagged as outdated.
+     */
+    public function test_extension_version_is_checked_against_minimum(): void
+    {
+        config(['services.vscode_extension.min_version' => '1.6.0']);
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+        $this->actingAs($this->student);
+
+        // Nothing known until the extension pings.
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertJson(['extension_outdated' => null, 'extension_min_version' => '1.6.0']);
+
+        // Builds from before version reporting send no header.
+        $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertJson(['extension_outdated' => true]);
+
+        $this->withHeaders(['X-Extension-Version' => '1.5.0'])
+            ->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertJson(['extension_outdated' => true, 'extension_version' => '1.5.0']);
+
+        $this->withHeaders(['X-Extension-Version' => '1.6.0', 'X-Client' => 'vscode'])
+            ->getJson("/api/v1/sessions/{$session->id}")
+            ->assertJson(['extension_outdated' => false, 'extension_version' => '1.6.0']);
+
+        // The browser page reads the version the extension reported.
+        $this->withHeaders(['X-Extension-Version' => '', 'X-Client' => ''])
+            ->getJson("/v1/sessions/{$session->id}")
+            ->assertJson(['extension_outdated' => false, 'extension_version' => '1.6.0']);
+    }
+
+    /**
+     * Browser pings keep last_ping_at fresh, so they must not count as VS Code being open.
+     */
+    public function test_browser_ping_does_not_count_as_vscode_connected(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+            'wpm' => 40,
+            'keystroke_count' => 200,
+        ]);
+
+        $this->actingAs($this->student)
+            ->postJson("/v1/sessions/{$session->id}/ping", ['face_count' => 1])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => false]);
     }
 
     /**
@@ -107,7 +206,7 @@ class VSCodeExtensionApiTest extends TestCase
         $response->assertJsonFragment([
             'status' => 'success',
         ]);
-        
+
         $this->assertEmpty($response->json('completed_tasks'));
     }
 
@@ -146,7 +245,7 @@ class VSCodeExtensionApiTest extends TestCase
             'started_at' => now(),
         ]);
 
-        $brokenCode = <<<JAVA
+        $brokenCode = <<<'JAVA'
 public class Repository<T extends Entity<K>, K> {
     public void save(T entity) {
     }
@@ -184,7 +283,7 @@ JAVA;
             'started_at' => now(),
         ]);
 
-        $markdownContent = <<<MD
+        $markdownContent = <<<'MD'
 # TODO List
 - [ ] Implement pipe IPC
 - [ ] Fork child process
@@ -213,7 +312,7 @@ MD;
             'started_at' => now(),
         ]);
 
-        $validJavaCode = <<<JAVA
+        $validJavaCode = <<<'JAVA'
 class InvalidAgeException extends Exception {}
 class Student {
     private String name;
@@ -244,7 +343,7 @@ JAVA;
             'started_at' => now(),
         ]);
 
-        $validJavaCode = <<<JAVA
+        $validJavaCode = <<<'JAVA'
 class InvalidAgeException extends Exception {}
 class Student {
     private String name;
@@ -273,8 +372,8 @@ JAVA;
     public function test_submit_session_completes_and_maps_competency(): void
     {
         // Grading credits exactly the competencies the lab is tagged with
-        $competency = \App\Models\Competency::create(['code' => 'JAVA-EXC-01', 'name' => 'Custom exceptions in Java']);
-        $untagged = \App\Models\Competency::create(['code' => 'SQL-01', 'name' => 'SQL basics']);
+        $competency = Competency::create(['code' => 'JAVA-EXC-01', 'name' => 'Custom exceptions in Java']);
+        $untagged = Competency::create(['code' => 'SQL-01', 'name' => 'SQL basics']);
         $this->laboratory->competencies()->attach($competency->id);
 
         $session = LabSession::create([
@@ -284,7 +383,7 @@ JAVA;
             'started_at' => now(),
         ]);
 
-        $validJavaCode = <<<JAVA
+        $validJavaCode = <<<'JAVA'
 class InvalidAgeException extends Exception {}
 class Student {
     private String name;
@@ -320,6 +419,81 @@ JAVA;
     }
 
     /**
+     * Test submission returns a summary; an open lab has no leaderboard place.
+     */
+    public function test_submit_returns_summary_without_place_for_open_lab(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(10),
+            'keystroke_count' => 1000,
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/submit", [
+                'code' => 'class InvalidAgeException extends Exception {}',
+                'language' => 'java',
+            ]);
+
+        $response->assertOk();
+        $summary = $response->json('summary');
+        $this->assertEqualsWithDelta(600, $summary['time_spent_seconds'], 5);
+        $this->assertSame(2, $summary['tasks_total']);
+        $this->assertSame(20, $summary['wpm']);
+        $this->assertFalse($summary['is_live']);
+        $this->assertNull($summary['place']);
+    }
+
+    /**
+     * Test a live lab submission reports the student's leaderboard place.
+     */
+    public function test_submit_returns_place_for_live_lab(): void
+    {
+        $this->laboratory->update([
+            'availability_mode' => 'live',
+            'live_status' => 'active',
+            'live_started_at' => now()->subMinutes(5),
+            'live_duration_minutes' => 60,
+        ]);
+
+        // A classmate already finished both tasks, so this student can't beat them
+        $rival = User::create([
+            'name' => 'Rival Student',
+            'email' => 'rival@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'student',
+        ]);
+        LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $rival->id,
+            'status' => 'completed',
+            'started_at' => now()->subMinutes(5),
+            'ended_at' => now()->subMinutes(4),
+            'completed_tasks' => [1, 2],
+        ]);
+
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(5),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/submit", [
+                'code' => '// nothing yet',
+                'language' => 'java',
+            ]);
+
+        $response->assertOk();
+        $this->assertTrue($response->json('summary.is_live'));
+        $this->assertSame(2, $response->json('summary.place'));
+        $this->assertSame(2, $response->json('summary.participants'));
+    }
+
+    /**
      * Test retrieving session info includes starter files manifest.
      */
     public function test_session_info_includes_starter_files(): void
@@ -328,7 +502,7 @@ JAVA;
             'starter_files' => [
                 ['name' => 'TaskManager.java', 'content' => '// Primary', 'is_primary' => true, 'is_readonly' => false],
                 ['name' => 'Task.java', 'content' => '// Model', 'is_primary' => false, 'is_readonly' => false],
-            ]
+            ],
         ]);
 
         $session = LabSession::create([
@@ -366,8 +540,8 @@ JAVA;
                 'lines_deleted' => 10,
                 'lines_modified' => 5,
                 'files' => [
-                    ['name' => 'TaskManager.java', 'added' => 42, 'deleted' => 10]
-                ]
+                    ['name' => 'TaskManager.java', 'added' => 42, 'deleted' => 10],
+                ],
             ]);
 
         $response->assertStatus(200);

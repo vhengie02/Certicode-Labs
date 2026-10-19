@@ -12,8 +12,11 @@ use Illuminate\Support\Facades\Cache;
 class SystemSetting extends Model
 {
     protected $primaryKey = 'key';
+
     public $incrementing = false;
+
     protected $keyType = 'string';
+
     protected $fillable = ['key', 'value'];
 
     /** key => [type, default] */
@@ -32,7 +35,7 @@ class SystemSetting extends Model
         [$type, $default] = self::DEFINITIONS[$key] ?? ['string', null];
         $all = self::allValues();
 
-        if (!array_key_exists($key, $all) || $all[$key] === null) {
+        if (! array_key_exists($key, $all) || $all[$key] === null) {
             return $default;
         }
 
@@ -46,7 +49,7 @@ class SystemSetting extends Model
     public static function write(array $values): void
     {
         foreach ($values as $key => $value) {
-            if (!array_key_exists($key, self::DEFINITIONS)) {
+            if (! array_key_exists($key, self::DEFINITIONS)) {
                 continue;
             }
             $stored = is_bool($value) ? ($value ? '1' : '0') : (string) ($value ?? '');

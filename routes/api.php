@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\LabSessionController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\CronController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -29,10 +29,11 @@ Route::prefix('v1')->group(function () {
         Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
+        Route::post('/sessions/{sessionId}/vscode-disconnect', [LabSessionController::class, 'vscodeDisconnect']);
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
-        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
-        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
-        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);
+        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode'])->middleware('throttle:lab-execute');
+        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress'])->middleware('throttle:lab-grade');
+        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession'])->middleware('throttle:lab-grade');
         Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions']);
         Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
         Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
@@ -45,4 +46,4 @@ Route::prefix('v1')->group(function () {
 });
 
 // Vercel / Cloud Scheduled Cron Trigger Endpoint (also registered as /cron/tick in web.php)
-Route::get('/cron/tick', \App\Http\Controllers\CronController::class);
+Route::get('/cron/tick', CronController::class);

@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 
@@ -31,25 +33,15 @@ class LoginController extends Controller
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $credentials['email'])->first();
-        if (!$user) {
+        $user = User::findByEmail($credentials['email']);
+        if (! $user) {
             return back()->withErrors([
                 'email' => 'This email address is not registered.',
             ])->onlyInput('email');
         }
 
-        $passwordMatches = Hash::check($credentials['password'], $user->password)
-            || ($user->username && strtolower($credentials['password']) === strtolower($user->username))
-            || ($credentials['password'] === 'password')
-            || ($credentials['password'] === 'alexmercer');
-
-        if ($passwordMatches) {
-            // Rehash to the provided password if necessary to stay synchronized
-            if (!Hash::check($credentials['password'], $user->password)) {
-                $user->password = Hash::make($credentials['password']);
-                $user->save();
-            }
-
+        // Only the account's real password signs in. Demo accounts are seeded with a hashed "password".
+        if (Hash::check($credentials['password'], $user->password)) {
             Auth::login($user, $request->filled('remember'));
             $request->session()->regenerate();
 
@@ -74,39 +66,50 @@ class LoginController extends Controller
      */
     public function submitGoogleEmail(Request $request)
     {
+        // Validate before anything else, so a typo never touches the resend cooldown.
+        // email:filter rejects addresses like "you@gmail" that the RFC rule lets through.
         $request->validate([
-            'gmail' => 'required|string|email',
+            'gmail' => 'required|string|max:255|email:rfc,filter',
+        ], [
+            'gmail.required' => 'Enter your Google email address.',
+            'gmail.email' => 'Enter a valid Google email address, like you@gmail.com.',
+            'gmail.max' => 'Enter a valid Google email address, like you@gmail.com.',
         ]);
 
-        $gmail = $request->gmail;
+        $gmail = strtolower(trim($request->gmail));
 
-        if (!app()->runningUnitTests()) {
-            $lastSent = session('google_auth_code_sent_at');
-            $elapsed = $lastSent ? (int) now()->diffInSeconds($lastSent, true) : null;
-            if ($lastSent && $elapsed < 60) {
+        // Typing an address switches to the emailed-code flow, so an earlier OAuth sign-up (its
+        // proof, provider name and GitHub identity) no longer applies to whoever continues here.
+        session()->forget(['google_auth_oauth_email', 'github_auth_username', 'google_auth_name']);
+
+        // Existing accounts and new addresses both prove ownership with an emailed code;
+        // only the step after the code differs (sign in vs. pick a role).
+        $verifyParams = $this->findGoogleUser($gmail) ? [] : ['needs_role' => 1];
+
+        // The cooldown only covers resending to the address that last got a code.
+        // A different address (e.g. fixing a typo) is sent right away.
+        $lastSent = session('google_auth_code_sent_at');
+        if ($lastSent && session('google_auth_code_sent_to') === $gmail
+            && session('google_auth_code') && session('google_auth_code_for') === $gmail) {
+            $elapsed = (int) now()->diffInSeconds($lastSent, true);
+            if ($elapsed < 60) {
                 $secondsLeft = 60 - $elapsed;
-                return back()->withErrors(['code' => "Please wait {$secondsLeft} seconds before requesting a new code."]);
+                session()->put('google_auth_gmail', $gmail);
+
+                return redirect()->route('auth.google.verify', $verifyParams)
+                    ->withErrors(['code' => "We already sent a code to {$gmail}. Enter it below, or wait {$secondsLeft} seconds to request a new one."]);
             }
         }
 
-        // Check if user exists with this verified Gmail or registered email
-        $userExists = User::where('gmail', $gmail)
-            ->whereNotNull('gmail_verified_at')
-            ->exists() || User::where('email', $gmail)->exists();
-
         session()->put('google_auth_gmail', $gmail);
-
-        if ($userExists) {
-            return redirect()->route('auth.google.password');
-        }
 
         $code = (string) random_int(100000, 999999);
 
-        // Save target gmail and verification code in session
+        // Save target gmail and verification code in session. The code is bound to the address it
+        // was emailed to, so it can never sign in to a different address put in the session later.
         session()->put('google_auth_code', $code);
+        session()->put('google_auth_code_for', $gmail);
         session()->forget('google_auth_code_attempts'); // a fresh code gets a fresh set of attempts
-        session()->put('gmail_code_debug', $code);
-        session()->put('google_auth_code_sent_at', now());
 
         if ($this->mayRevealAuthSecrets()) {
             Log::info("Google Sign-In/Up verification code for {$gmail}: {$code}");
@@ -114,34 +117,51 @@ class LoginController extends Controller
 
         $mailError = null;
         try {
-            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+            Mail::send('emails.generic', [
                 'title' => 'Google Authentication Code',
                 'greeting' => 'Hello developer,',
                 'messageLines' => [
                     'We received a request to access your Certicode Labs account using this Google-linked email address.',
-                    'Use the verification code below to complete your authentication process.'
+                    'Use the verification code below to complete your authentication process.',
                 ],
                 'code' => $code,
             ], function ($message) use ($gmail) {
                 $message->to($gmail)
-                        ->subject('Certicode Labs: Google Authentication Code');
+                    ->subject('Certicode Labs: Google Authentication Code');
             });
         } catch (\Exception $e) {
-            Log::error("Failed to send Google verification email: " . $e->getMessage());
+            Log::error('Failed to send Google verification email: '.$e->getMessage());
             $mailError = "Note: Real email delivery failed. (Error: {$e->getMessage()}). However, you can still complete verification using the code below for local testing.";
         }
 
-        if ($mailError) {
-            if (!$this->mayRevealAuthSecrets()) {
-                return back()->withErrors(['email' => "We couldn't send the email right now. Please try again in a few minutes."]);
-            }
-            return redirect()->route('auth.google.verify', ['needs_role' => 1])
-                ->with('warning', $mailError)
-                ->with('success', 'Verification code (local testing): ' . $code);
+        if ($mailError && ! $this->mayRevealAuthSecrets()) {
+            // Nothing reached the user, so don't start a cooldown for a code they never got
+            session()->forget(['google_auth_code', 'google_auth_code_for', 'gmail_code_debug']);
+
+            return back()->withInput()->withErrors(['gmail' => "We couldn't send the email right now. Please try again in a few minutes."]);
         }
 
-        return redirect()->route('auth.google.verify', ['needs_role' => 1])
-            ->with('success', 'A verification code has been successfully sent to ' . $gmail);
+        // Start the resend cooldown only once a code has actually gone out (or, locally, been shown)
+        session()->put('google_auth_code_sent_at', now());
+        session()->put('google_auth_code_sent_to', $gmail);
+
+        if ($mailError) {
+            return redirect()->route('auth.google.verify', $verifyParams)
+                ->with('warning', $mailError)
+                ->with('success', 'Verification code (local testing): '.$code);
+        }
+
+        return redirect()->route('auth.google.verify', $verifyParams)
+            ->with('success', 'A verification code has been successfully sent to '.$gmail);
+    }
+
+    /**
+     * The account a Google address belongs to: a verified linked Gmail first, then the account email.
+     */
+    private function findGoogleUser(string $gmail): ?User
+    {
+        return User::whereGmailIs($gmail)->whereNotNull('gmail_verified_at')->first()
+            ?? User::findByEmail($gmail);
     }
 
     /**
@@ -149,9 +169,10 @@ class LoginController extends Controller
      */
     public function showGoogleVerify()
     {
-        if (!session()->has('google_auth_gmail')) {
+        if (! session()->has('google_auth_gmail')) {
             return redirect()->route('auth.google')->withErrors(['email' => 'Please enter your Gmail address first.']);
         }
+
         return view('auth.google-verify');
     }
 
@@ -160,37 +181,72 @@ class LoginController extends Controller
      */
     public function handleGoogleCallback(Request $request)
     {
+        $gmail = session('google_auth_gmail');
+
+        // An OAuth sign-up proved the address the provider returned, and only that address.
+        // It skips the emailed code; any other address in the session still needs one.
+        $oauthEmail = session('google_auth_oauth_email');
+        $provedByOAuth = is_string($gmail) && is_string($oauthEmail) && hash_equals($oauthEmail, $gmail);
+
         $request->validate([
-            'code' => 'required|string|min:6|max:20',
+            'code' => $provedByOAuth ? 'nullable|string|max:20' : 'required|string|min:6|max:20',
             'role' => 'nullable|string|in:student,instructor',
         ]);
 
-        $gmail = session('google_auth_gmail');
-        $expectedCode = session('google_auth_code');
-
-        if (!$gmail || !$expectedCode) {
+        if (! $gmail) {
             return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
         }
 
-        // Check verification code. After 5 wrong guesses the code is discarded, so a 6-digit
-        // code can't be brute-forced; the user requests a new one.
-        if ($request->code !== $expectedCode) {
-            $attempts = (int) session('google_auth_code_attempts', 0) + 1;
-            if ($attempts >= 5) {
-                session()->forget(['google_auth_code', 'google_auth_code_attempts']);
-                return redirect()->route('auth.google')->withErrors(['email' => 'Too many incorrect codes. Request a new code to try again.']);
-            }
-            session()->put('google_auth_code_attempts', $attempts);
-            return back()->withErrors(['code' => 'Incorrect verification code. Please try again.']);
-        }
-        session()->forget('google_auth_code_attempts');
+        if (! $provedByOAuth) {
+            $expectedCode = session('google_auth_code');
 
-        // 1. Check if user already exists with this verified Gmail
-        $user = User::where('gmail', $gmail)
-            ->whereNotNull('gmail_verified_at')
-            ->first();
+            // The code must have been emailed to this exact address
+            if (! is_string($expectedCode) || $expectedCode === '' || session('google_auth_code_for') !== $gmail) {
+                return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
+            }
+
+            // Check verification code. After 5 wrong guesses the code is discarded, so a 6-digit
+            // code can't be brute-forced; the user requests a new one.
+            if (! hash_equals($expectedCode, (string) $request->code)) {
+                $attempts = (int) session('google_auth_code_attempts', 0) + 1;
+                if ($attempts >= 5) {
+                    session()->forget(['google_auth_code', 'google_auth_code_for', 'google_auth_code_attempts']);
+
+                    return redirect()->route('auth.google')->withErrors(['email' => 'Too many incorrect codes. Request a new code to try again.']);
+                }
+                session()->put('google_auth_code_attempts', $attempts);
+
+                return back()->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+            }
+            session()->forget('google_auth_code_attempts');
+        }
+
+        // 1. Existing account (verified Gmail, or the same account email). The code just proved the
+        // user owns this mailbox, so sign them in without a password and link the Gmail if needed.
+        $user = $this->findGoogleUser($gmail);
+
+        // The provider's name and GitHub identity belong to the OAuth sign-up only. An emailed-code
+        // sign-up must never pick them up, or a GitHub login would later open this account.
+        $githubUsername = $provedByOAuth ? session('github_auth_username') : null;
+        $providerName = $provedByOAuth ? session('google_auth_name') : null;
+
+        // A GitHub sign-up only asserts the email, it never proved the mailbox; don't hand it an existing account
+        if ($user && $githubUsername) {
+            $this->clearAuthSessions();
+
+            return redirect()->route('login')->withErrors([
+                'email' => 'This email address ('.$gmail.') is already registered. Please log in, then link GitHub from Settings.',
+            ]);
+        }
 
         if ($user) {
+            // Link only when no other Gmail is verified on the account, so a linked Gmail is never replaced
+            if (! $user->gmail_verified_at || ! $user->gmail) {
+                // Another account may hold this address as an unverified claim; ownership is now proven here
+                User::where('gmail', $gmail)->where('id', '!=', $user->id)->whereNull('gmail_verified_at')->update(['gmail' => null]);
+                $user->update(['gmail' => $gmail, 'gmail_verified_at' => now()]);
+            }
+
             Auth::login($user);
             $request->session()->regenerate();
             $this->clearAuthSessions();
@@ -198,19 +254,10 @@ class LoginController extends Controller
             return redirect()->intended('/dashboard')->with('success', 'Logged in with Google successfully!');
         }
 
-        // 2. Check if user exists with this email address but has no Gmail linked
-        $emailUser = User::where('email', $gmail)->first();
-        if ($emailUser) {
-            $this->clearAuthSessions();
-            return redirect()->route('login')->withErrors([
-                'email' => 'This email address (' . $gmail . ') is already registered. Please log in with your password to link your Google account.',
-            ]);
-        }
-
         // 3. Register user if role is selected
         if ($request->filled('role')) {
             $passwordRules = 'nullable|string|min:8';
-            if ($request->has('role') && !$request->has('password') && app()->runningUnitTests()) {
+            if ($request->has('role') && ! $request->has('password') && app()->runningUnitTests()) {
                 // Backward compatibility in existing tests
             } else {
                 $passwordRules = 'required|string|min:8';
@@ -222,19 +269,22 @@ class LoginController extends Controller
 
             $password = $request->password ?: Str::random(16);
             $name = ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $gmail)[0]));
-            
-            if (!\App\Models\SystemSetting::read('registration_open')) {
+
+            if (! SystemSetting::read('registration_open')) {
                 return redirect()->route('login')->withErrors(['email' => 'New sign-ups are closed right now. If you already have an account, sign in; otherwise ask your instructor or a Certicode admin.']);
             }
 
+            // Drop any stale unverified claim on this Gmail so the unique column doesn't block sign-up
+            User::where('gmail', $gmail)->whereNull('gmail_verified_at')->update(['gmail' => null]);
+
             $newUser = User::create([
-                'name' => session('google_auth_name') ?: $name,
+                'name' => $providerName ?: $name,
                 'email' => $gmail,
                 'gmail' => $gmail,
                 'gmail_verified_at' => now(),
                 'password' => Hash::make($password),
                 'role' => 'student', // instructor access needs an admin's approval
-                'github_username' => session('github_auth_username'),
+                'github_username' => $githubUsername,
             ]);
 
             if ($request->role === 'instructor') {
@@ -260,7 +310,7 @@ class LoginController extends Controller
     public function redirectToProvider($provider)
     {
         $provider = strtolower($provider);
-        if (!in_array($provider, ['google', 'github'])) {
+        if (! in_array($provider, ['google', 'github'])) {
             abort(404, 'Provider not found.');
         }
 
@@ -271,12 +321,14 @@ class LoginController extends Controller
                 return redirect()->route('auth.google');
             }
             if ($provider === 'github') {
-                if (!$this->mockGithubAllowed()) {
+                if (! $this->mockGithubAllowed()) {
                     return redirect()->route('login')->withErrors(['email' => "GitHub sign-in isn't set up yet. Sign in with your email or Google instead."]);
                 }
+
                 return redirect()->route('auth.github')->with('warning', 'GitHub OAuth not configured locally. Falling back to Mock authentication.');
             }
-            return redirect()->route('login')->withErrors(["email" => "{$provider} OAuth credentials not configured in system services."]);
+
+            return redirect()->route('login')->withErrors(['email' => "{$provider} OAuth credentials not configured in system services."]);
         }
 
         return Socialite::driver($provider)->redirect();
@@ -324,6 +376,7 @@ class LoginController extends Controller
             }
 
             $user->update(['github_username' => $username]);
+
             return redirect()->route('settings.show')->with('success', 'GitHub account connected successfully!');
         }
 
@@ -339,8 +392,8 @@ class LoginController extends Controller
         $name = $request->github_name ?: explode('@', $email)[0];
 
         $dbUser = User::where('github_username', $nickname)->first();
-        if (!$dbUser) {
-            $dbUser = User::where('email', $email)->first();
+        if (! $dbUser) {
+            $dbUser = User::findByEmail($email);
             if ($dbUser) {
                 $dbUser->update(['github_username' => $nickname]);
             }
@@ -349,15 +402,32 @@ class LoginController extends Controller
         if ($dbUser) {
             Auth::login($dbUser);
             $request->session()->regenerate();
+
             return redirect()->intended('/dashboard')->with('success', 'Logged in via GitHub successfully!');
         }
 
-        session()->put('google_auth_gmail', $email);
-        session()->put('google_auth_code', 'OAUTH_VERIFIED');
-        session()->put('google_auth_name', $name);
-        session()->put('github_auth_username', $nickname);
+        $this->startOAuthSignup($email, $name, $nickname);
 
         return redirect()->route('auth.google.verify', ['needs_role' => 1]);
+    }
+
+    /**
+     * Hand a new OAuth identity to the "finish creating your account" step. The proof covers
+     * only the address the provider returned, and it is kept apart from emailed codes so the
+     * code flow can never inherit it for a different address.
+     */
+    private function startOAuthSignup(string $email, string $name, ?string $githubUsername = null): void
+    {
+        session()->forget(['google_auth_code', 'google_auth_code_for', 'google_auth_code_attempts', 'gmail_code_debug']);
+        session()->put('google_auth_gmail', $email);
+        session()->put('google_auth_oauth_email', $email);
+        session()->put('google_auth_name', $name);
+
+        if ($githubUsername !== null) {
+            session()->put('github_auth_username', $githubUsername);
+        } else {
+            session()->forget('github_auth_username');
+        }
     }
 
     /**
@@ -366,19 +436,20 @@ class LoginController extends Controller
     public function handleProviderCallback(Request $request, $provider)
     {
         $provider = strtolower($provider);
-        if (!in_array($provider, ['google', 'github'])) {
+        if (! in_array($provider, ['google', 'github'])) {
             abort(404, 'Provider not found.');
         }
 
         // Fallback check if credentials are missing
         if (empty(config("services.{$provider}.client_id")) || empty(config("services.{$provider}.client_secret"))) {
-            return redirect()->route('login')->withErrors(["email" => "{$provider} OAuth credentials not configured in system services."]);
+            return redirect()->route('login')->withErrors(['email' => "{$provider} OAuth credentials not configured in system services."]);
         }
 
         try {
             $socialUser = Socialite::driver($provider)->user();
         } catch (\Exception $e) {
-            Log::error("OAuth callback failed for provider {$provider}: " . $e->getMessage());
+            Log::error("OAuth callback failed for provider {$provider}: ".$e->getMessage());
+
             return redirect()->route('login')->withErrors(['email' => 'OAuth authentication failed. Please try again.']);
         }
 
@@ -400,6 +471,7 @@ class LoginController extends Controller
                 }
 
                 $currentUser->update(['github_username' => $nickname]);
+
                 return redirect()->route('settings.show')->with('success', 'GitHub account linked successfully!');
             } elseif ($provider === 'google') {
                 $existing = User::where('gmail', $email)->where('id', '!=', $currentUser->id)->exists();
@@ -411,18 +483,23 @@ class LoginController extends Controller
                     'gmail' => $email,
                     'gmail_verified_at' => now(),
                 ]);
+
                 return redirect()->route('settings.show')->with('success', 'Google account linked successfully!');
             }
         }
 
         // 2. Authentication/Login case
         if ($provider === 'google') {
-            $user = User::where('gmail', $email)
+            if (empty($email)) {
+                return redirect()->route('login')->withErrors(['email' => 'Unable to retrieve your email from Google. Please try again.']);
+            }
+
+            $user = User::whereGmailIs($email)
                 ->whereNotNull('gmail_verified_at')
                 ->first();
 
-            if (!$user) {
-                $user = User::where('email', $email)->first();
+            if (! $user) {
+                $user = User::findByEmail($email);
                 if ($user) {
                     $user->update([
                         'gmail' => $email,
@@ -434,12 +511,11 @@ class LoginController extends Controller
             if ($user) {
                 Auth::login($user);
                 $request->session()->regenerate();
+
                 return redirect()->intended('/dashboard')->with('success', 'Logged in via Google successfully!');
             }
 
-            session()->put('google_auth_gmail', $email);
-            session()->put('google_auth_code', 'OAUTH_VERIFIED');
-            session()->put('google_auth_name', $name);
+            $this->startOAuthSignup($email, $name);
 
             return redirect()->route('auth.google.verify', ['needs_role' => 1]);
         }
@@ -447,8 +523,8 @@ class LoginController extends Controller
         if ($provider === 'github') {
             $user = User::where('github_username', $nickname)->first();
 
-            if (!$user && !empty($email)) {
-                $user = User::where('email', $email)->first();
+            if (! $user && ! empty($email)) {
+                $user = User::findByEmail($email);
                 if ($user) {
                     $user->update(['github_username' => $nickname]);
                 }
@@ -457,6 +533,7 @@ class LoginController extends Controller
             if ($user) {
                 Auth::login($user);
                 $request->session()->regenerate();
+
                 return redirect()->intended('/dashboard')->with('success', 'Logged in via GitHub successfully!');
             }
 
@@ -464,10 +541,7 @@ class LoginController extends Controller
                 return redirect()->route('login')->withErrors(['email' => 'Unable to retrieve your email from GitHub. Please register an account first.']);
             }
 
-            session()->put('google_auth_gmail', $email);
-            session()->put('google_auth_code', 'OAUTH_VERIFIED');
-            session()->put('google_auth_name', $name);
-            session()->put('github_auth_username', $nickname);
+            $this->startOAuthSignup($email, $name, $nickname);
 
             return redirect()->route('auth.google.verify', ['needs_role' => 1]);
         }
@@ -478,9 +552,10 @@ class LoginController extends Controller
      */
     public function showGooglePassword()
     {
-        if (!session()->has('google_auth_gmail')) {
+        if (! session()->has('google_auth_gmail')) {
             return redirect()->route('auth.google')->withErrors(['email' => 'Please enter your Gmail address first.']);
         }
+
         return view('auth.google-password');
     }
 
@@ -494,21 +569,18 @@ class LoginController extends Controller
         ]);
 
         $gmail = session('google_auth_gmail');
-        if (!$gmail) {
+        if (! $gmail) {
             return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
         }
 
-        $user = User::where('gmail', $gmail)->whereNotNull('gmail_verified_at')->first();
-        if (!$user) {
-            $user = User::where('email', $gmail)->first();
-        }
+        $user = $this->findGoogleUser($gmail);
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if (! $user || ! Hash::check($request->password, $user->password)) {
             return back()->withErrors(['password' => 'Incorrect password. Please try again.']);
         }
 
         // Link Gmail if not already linked (e.g. if logging in with email matching gmail but not linked)
-        if (!$user->gmail || !$user->gmail_verified_at) {
+        if (! $user->gmail || ! $user->gmail_verified_at) {
             $user->update([
                 'gmail' => $gmail,
                 'gmail_verified_at' => now(),
@@ -536,10 +608,11 @@ class LoginController extends Controller
     public function sendResetLinkEmail(Request $request)
     {
         $request->validate([
-            'email' => 'required|email|exists:users,email',
+            'email' => ['required', 'email', $this->registeredEmailRule()],
         ]);
 
-        $email = $request->email;
+        // Tokens are keyed by the normalized address, whatever case was typed
+        $email = User::normalizeEmail($request->email);
         $token = Str::random(60);
 
         \DB::table('password_reset_tokens')->updateOrInsert(
@@ -557,29 +630,42 @@ class LoginController extends Controller
         }
 
         try {
-            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+            Mail::send('emails.generic', [
                 'title' => 'Reset Password Link',
                 'greeting' => 'Hello developer,',
                 'messageLines' => [
                     'You are receiving this email because we received a password reset request for your account.',
-                    'Please click the button below to reset your password. If you did not request this, no action is required.'
+                    'Please click the button below to reset your password. If you did not request this, no action is required.',
                 ],
                 'actionUrl' => $resetLink,
                 'actionText' => 'Reset Password',
             ], function ($message) use ($email) {
                 $message->to($email)
-                        ->subject('Certicode Labs: Reset Password Link');
+                    ->subject('Certicode Labs: Reset Password Link');
             });
         } catch (\Exception $e) {
-            Log::error("Failed to send password reset email: " . $e->getMessage());
-            if (!$this->mayRevealAuthSecrets()) {
+            Log::error('Failed to send password reset email: '.$e->getMessage());
+            if (! $this->mayRevealAuthSecrets()) {
                 return back()->withErrors(['email' => "We couldn't send the email right now. Please try again in a few minutes."]);
             }
+
             // Local development only: show the link so the flow can be completed without email
-            return back()->with('status', 'We have generated your reset link (local testing). Check logs or copy link: ' . $resetLink);
+            return back()->with('status', 'We have generated your reset link (local testing). Check logs or copy link: '.$resetLink);
         }
 
         return back()->with('status', 'We have emailed your password reset link!');
+    }
+
+    /**
+     * exists:users,email, but case-insensitive (Postgres compares case-sensitively).
+     */
+    private function registeredEmailRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) {
+            if (! User::findByEmail((string) $value)) {
+                $fail('validation.exists')->translate();
+            }
+        };
     }
 
     /**
@@ -588,6 +674,7 @@ class LoginController extends Controller
     public function showResetPasswordForm($token, Request $request)
     {
         $email = $request->query('email');
+
         return view('auth.reset-password', compact('token', 'email'));
     }
 
@@ -598,25 +685,26 @@ class LoginController extends Controller
     {
         $request->validate([
             'token' => 'required|string',
-            'email' => 'required|email|exists:users,email',
+            'email' => ['required', 'email', $this->registeredEmailRule()],
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $email = $request->email;
+        $email = User::normalizeEmail($request->email);
         $token = $request->token;
 
         $record = \DB::table('password_reset_tokens')->where('email', $email)->first();
 
-        if (!$record || !Hash::check($token, $record->token)) {
+        if (! $record || ! Hash::check($token, $record->token)) {
             return back()->withErrors(['email' => 'This password reset token is invalid.']);
         }
 
         if (now()->subMinutes(60)->gt($record->created_at)) {
             \DB::table('password_reset_tokens')->where('email', $email)->delete();
+
             return back()->withErrors(['email' => 'This password reset token has expired.']);
         }
 
-        $user = User::where('email', $email)->firstOrFail();
+        $user = User::findByEmail($email) ?? abort(404);
         $user->update([
             'password' => Hash::make($request->password),
         ]);
@@ -632,17 +720,17 @@ class LoginController extends Controller
     public function sendGoogleResetLink(Request $request)
     {
         $gmail = session('google_auth_gmail');
-        if (!$gmail) {
+        if (! $gmail) {
             return redirect()->route('auth.google')->withErrors(['email' => 'Session expired. Please sign in again.']);
         }
 
         // Find user by Gmail or Email
-        $user = User::where('gmail', $gmail)->whereNotNull('gmail_verified_at')->first();
-        if (!$user) {
-            $user = User::where('email', $gmail)->first();
+        $user = User::whereGmailIs($gmail)->whereNotNull('gmail_verified_at')->first();
+        if (! $user) {
+            $user = User::findByEmail($gmail);
         }
 
-        if (!$user) {
+        if (! $user) {
             return redirect()->route('auth.google')->withErrors(['email' => 'User not found.']);
         }
 
@@ -664,28 +752,29 @@ class LoginController extends Controller
         }
 
         try {
-            \Illuminate\Support\Facades\Mail::send('emails.generic', [
+            Mail::send('emails.generic', [
                 'title' => 'Reset Password Link (Google)',
                 'greeting' => 'Hello developer,',
                 'messageLines' => [
                     'You are receiving this email because we received a password reset request for your Google-linked account.',
-                    'Please click the button below to reset your password. If you did not request this, no action is required.'
+                    'Please click the button below to reset your password. If you did not request this, no action is required.',
                 ],
                 'actionUrl' => $resetLink,
                 'actionText' => 'Reset Password',
             ], function ($message) use ($gmail) {
                 $message->to($gmail)
-                        ->subject('Certicode Labs: Reset Password Link (Google)');
+                    ->subject('Certicode Labs: Reset Password Link (Google)');
             });
         } catch (\Exception $e) {
-            Log::error("Failed to send Google password reset email: " . $e->getMessage());
-            if (!$this->mayRevealAuthSecrets()) {
+            Log::error('Failed to send Google password reset email: '.$e->getMessage());
+            if (! $this->mayRevealAuthSecrets()) {
                 return redirect()->route('login')->withErrors(['email' => "We couldn't send the email right now. Please try again in a few minutes."]);
             }
-            return redirect()->route('login')->with('status', 'Password reset link (local testing): ' . $resetLink);
+
+            return redirect()->route('login')->with('status', 'Password reset link (local testing): '.$resetLink);
         }
 
-        return redirect()->route('login')->with('status', 'We have emailed your password reset link to ' . $gmail);
+        return redirect()->route('login')->with('status', 'We have emailed your password reset link to '.$gmail);
     }
 
     /**
@@ -696,6 +785,11 @@ class LoginController extends Controller
         session()->forget([
             'google_auth_gmail',
             'google_auth_code',
+            'google_auth_code_for',
+            'google_auth_code_attempts',
+            'google_auth_oauth_email',
+            'google_auth_code_sent_at',
+            'google_auth_code_sent_to',
             'gmail_code_debug',
             'google_auth_name',
             'github_auth_username',

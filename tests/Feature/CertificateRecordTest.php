@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Certificate;
 use App\Models\Competency;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
@@ -18,6 +18,7 @@ class CertificateRecordTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private Certificate $certificate;
 
     protected function setUp(): void

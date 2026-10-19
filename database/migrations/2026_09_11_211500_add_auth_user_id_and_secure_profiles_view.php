@@ -12,7 +12,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasColumn('users', 'auth_user_id')) {
+        if (! Schema::hasColumn('users', 'auth_user_id')) {
             Schema::table('users', function (Blueprint $table) {
                 $table->uuid('auth_user_id')->nullable()->unique()->after('gender');
             });
@@ -20,7 +20,7 @@ return new class extends Migration
 
         if (DB::getDriverName() === 'pgsql') {
             // 1. Create or replace public.profiles view with security_invoker = true
-            DB::statement("
+            DB::statement('
                 CREATE OR REPLACE VIEW public.profiles
                 WITH (security_invoker = true)
                 AS
@@ -46,30 +46,30 @@ return new class extends Migration
                     created_at,
                     updated_at
                 FROM public.users;
-            ");
+            ');
 
             // 2. Grant permissions on public.profiles to authenticated and anon
-            DB::statement("GRANT SELECT ON public.profiles TO authenticated, anon;");
-            DB::statement("
+            DB::statement('GRANT SELECT ON public.profiles TO authenticated, anon;');
+            DB::statement('
                 GRANT UPDATE (name, first_name, last_name, username, gender, github_username, notify_class, notify_module, notify_lab, notify_certificate, notify_email_channel) 
                 ON public.profiles TO authenticated;
-            ");
+            ');
 
             // 3. Ensure sensitive columns on public.users are restricted from frontend roles
-            DB::statement("REVOKE ALL ON TABLE public.users FROM anon, authenticated;");
-            DB::statement("
+            DB::statement('REVOKE ALL ON TABLE public.users FROM anon, authenticated;');
+            DB::statement('
                 GRANT SELECT (
                     id, auth_user_id, name, first_name, last_name, username, email, email_verified_at, role,
                     github_username, gmail, gmail_verified_at, gender, notify_class, notify_module, notify_lab,
                     notify_certificate, notify_email_channel, created_at, updated_at
                 ) ON TABLE public.users TO authenticated;
-            ");
-            DB::statement("
+            ');
+            DB::statement('
                 GRANT UPDATE (
                     name, first_name, last_name, username, gender, github_username,
                     notify_class, notify_module, notify_lab, notify_certificate, notify_email_channel
                 ) ON TABLE public.users TO authenticated;
-            ");
+            ');
 
             // 4. Backfill any existing users without auth_user_id into auth.users
             DB::statement("
@@ -131,7 +131,7 @@ return new class extends Migration
     public function down(): void
     {
         if (DB::getDriverName() === 'pgsql') {
-            DB::statement("DROP VIEW IF EXISTS public.profiles;");
+            DB::statement('DROP VIEW IF EXISTS public.profiles;');
         }
 
         if (Schema::hasColumn('users', 'auth_user_id')) {

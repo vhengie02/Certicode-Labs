@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class SchoolClass extends Model
 {
@@ -37,6 +39,7 @@ class SchoolClass extends Model
         if ($this->scheduled_end_date && now()->gte($this->scheduled_end_date)) {
             return true;
         }
+
         return false;
     }
 
@@ -54,8 +57,8 @@ class SchoolClass extends Model
     public function students()
     {
         return $this->belongsToMany(User::class, 'class_student', 'class_id', 'student_id')
-                    ->withPivot('status')
-                    ->withTimestamps();
+            ->withPivot('status')
+            ->withTimestamps();
     }
 
     /**
@@ -77,7 +80,7 @@ class SchoolClass extends Model
 
         $childrenByParent = $this->modules->groupBy('parent_id');
         foreach ($this->modules as $module) {
-            $children = $childrenByParent[$module->id] ?? new \Illuminate\Database\Eloquent\Collection();
+            $children = $childrenByParent[$module->id] ?? new Collection;
             $module->setRelation('children', $children->sortBy('order_index')->values());
         }
 
@@ -137,7 +140,7 @@ class SchoolClass extends Model
 
         $cacheKey = "user_{$student->id}_class_{$this->id}_progress";
 
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 180, fn () => LabSession::progressOver(
+        return Cache::remember($cacheKey, 180, fn () => LabSession::progressOver(
             $labIds,
             LabSession::completedLabIdsFor($student->id, $labIds)
         ));

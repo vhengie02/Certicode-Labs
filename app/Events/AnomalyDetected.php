@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Models\LabSession;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -14,6 +15,7 @@ class AnomalyDetected implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public int $sessionId;
+
     public array $anomaly;
 
     /**
@@ -29,12 +31,12 @@ class AnomalyDetected implements ShouldBroadcastNow
      * Get the channels the event should broadcast on.
      * Note: Student blindness strictly preserved; broadcasts solely to instructor monitoring.
      *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
+     * @return array<int, Channel>
      */
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('instructor.lab.' . $this->labId()),
+            new PrivateChannel('instructor.lab.'.$this->labId()),
         ];
     }
 
@@ -63,6 +65,6 @@ class AnomalyDetected implements ShouldBroadcastNow
      */
     private function labId(): int
     {
-        return (int) \App\Models\LabSession::whereKey($this->sessionId)->value('lab_id');
+        return (int) LabSession::whereKey($this->sessionId)->value('lab_id');
     }
 }

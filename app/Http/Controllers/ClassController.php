@@ -2,12 +2,26 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SchoolClass;
+use App\Models\Anomaly;
+use App\Models\Certificate;
+use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\LabSessionChat;
 use App\Models\Module;
+use App\Models\ModuleAttachment;
+use App\Models\ModuleView;
+use App\Models\SchoolClass;
+use App\Models\TelemetryLog;
 use App\Models\User;
+use App\Notifications\ClassActivityNotification;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ClassController extends Controller
 {
@@ -19,13 +33,13 @@ class ClassController extends Controller
     public function index()
     {
         $user = Auth::user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return redirect()->route('login');
         }
 
         $cacheKey = "user_classes_index_{$user->id}_{$user->role}";
 
-        [$classes, $invitedClasses] = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
+        [$classes, $invitedClasses] = Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
             $invitedClasses = collect();
 
             if ($user->role === 'student') {
@@ -53,9 +67,9 @@ class ClassController extends Controller
     public static function clearClassesCache(?int $userId = null): void
     {
         if ($userId) {
-            \Illuminate\Support\Facades\Cache::store('file')->forget("user_classes_index_{$userId}_student");
-            \Illuminate\Support\Facades\Cache::store('file')->forget("user_classes_index_{$userId}_instructor");
-            \Illuminate\Support\Facades\Cache::store('file')->forget("user_classes_index_{$userId}_admin");
+            Cache::store('file')->forget("user_classes_index_{$userId}_student");
+            Cache::store('file')->forget("user_classes_index_{$userId}_instructor");
+            Cache::store('file')->forget("user_classes_index_{$userId}_admin");
         }
     }
 
@@ -65,6 +79,7 @@ class ClassController extends Controller
     public function create()
     {
         $this->authorizeInstructor();
+
         return view('classes.create');
     }
 
@@ -83,9 +98,9 @@ class ClassController extends Controller
         ]);
 
         // Generate unique 8-character code: CLASS-XXXX
-        $code = 'CLASS-' . strtoupper(Str::random(6));
+        $code = 'CLASS-'.strtoupper(Str::random(6));
         while (SchoolClass::where('code', $code)->exists()) {
-            $code = 'CLASS-' . strtoupper(Str::random(6));
+            $code = 'CLASS-'.strtoupper(Str::random(6));
         }
 
         SchoolClass::create([
@@ -100,7 +115,7 @@ class ClassController extends Controller
 
         self::clearClassesCache((int) Auth::id());
 
-        return redirect()->route('classes.index')->with('success', 'Class created successfully with join code: ' . $code);
+        return redirect()->route('classes.index')->with('success', 'Class created successfully with join code: '.$code);
     }
 
     /**
@@ -109,13 +124,13 @@ class ClassController extends Controller
     public function show(int $id)
     {
         $user = Auth::user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return redirect()->route('login');
         }
 
         $class = SchoolClass::with(['students', 'instructor'])->findOrFail($id);
         $class->loadModuleTree($user->role !== 'student'
-            ? fn($q) => $q->withCount(['labSessions as completed_count' => fn($sq) => $sq->where('status', 'completed')])
+            ? fn ($q) => $q->withCount(['labSessions as completed_count' => fn ($sq) => $sq->where('status', 'completed')])
             : null);
 
         // Authorize student access using the already loaded students collection
@@ -123,8 +138,8 @@ class ClassController extends Controller
             $studentPivot = $class->students->firstWhere('id', $user->id)?->pivot;
             $isEnrolled = $studentPivot && $studentPivot->status === 'enrolled';
             $isInvited = $studentPivot && $studentPivot->status === 'invited';
-            
-            if (!$isEnrolled && !$isInvited) {
+
+            if (! $isEnrolled && ! $isInvited) {
                 abort(403, 'You are not enrolled in this class.');
             }
 
@@ -138,7 +153,7 @@ class ClassController extends Controller
         $completedLabIds = [];
         $existingCertificate = null;
         if ($user->role === 'student') {
-            $completedLabIds = \App\Models\LabSession::completedLabIdsFor($user->id);
+            $completedLabIds = LabSession::completedLabIdsFor($user->id);
             $existingCertificate = $user->certificates()->where('class_id', $class->id)->first();
         }
 
@@ -153,6 +168,7 @@ class ClassController extends Controller
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
         $this->authorizeClassManager($class);
+
         return view('classes.edit', compact('class'));
     }
 
@@ -171,7 +187,7 @@ class ClassController extends Controller
             'passing_threshold' => 'nullable|integer|min:1|max:100',
             'scheduled_end_date' => 'nullable|date',
             'status' => 'nullable|string|in:active,completed,closed',
-            'instructor_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('role', 'instructor')],
+            'instructor_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('role', 'instructor')],
         ]);
 
         $previousInstructorId = (int) $class->instructor_id;
@@ -186,14 +202,14 @@ class ClassController extends Controller
             self::clearClassesCache($previousInstructorId);
             self::clearClassesCache((int) $validated['instructor_id']);
             try {
-                $class->refresh()->instructor?->notify(new \App\Notifications\ClassActivityNotification(
+                $class->refresh()->instructor?->notify(new ClassActivityNotification(
                     "You now teach {$class->name}",
                     "An admin made you the instructor of '{$class->name}'.",
                     route('classes.show', $class->id),
                     'class'
                 ));
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Class reassignment notification failed: ' . $e->getMessage());
+                Log::warning('Class reassignment notification failed: '.$e->getMessage());
             }
         }
 
@@ -208,6 +224,22 @@ class ClassController extends Controller
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
         $this->authorizeClassManager($class);
+
+        // Deleting would take issued certificates with it (their verify links would fail) and
+        // leave the class's labs and student attempts reachable only by admins
+        $certificateCount = Certificate::where('class_id', $class->id)->count();
+        $labCount = Laboratory::whereIn('module_id', Module::where('class_id', $class->id)->select('id'))->count();
+        if ($certificateCount > 0 || $labCount > 0) {
+            $parts = array_filter([
+                $certificateCount > 0 ? "{$certificateCount} issued ".Str::plural('certificate', $certificateCount) : null,
+                $labCount > 0 ? "{$labCount} ".Str::plural('lab', $labCount) : null,
+            ]);
+
+            return redirect()->route('classes.index')->with('error',
+                "“{$class->name}” can't be deleted: it has ".implode(' and ', $parts).'. '
+                .($certificateCount > 0 ? 'Issued certificates must stay verifiable, so end the course instead.' : 'Delete or move its labs first.'));
+        }
+
         $class->delete();
         self::clearClassesCache((int) Auth::id());
 
@@ -225,15 +257,20 @@ class ClassController extends Controller
 
         $class = SchoolClass::where('code', strtoupper($request->code))->first();
 
-        if (!$class) {
+        if (! $class) {
             return redirect()->back()->with('error', 'Invalid enrollment code. Please check with your instructor.');
         }
 
         $userId = Auth::id();
+        $wasEnrolled = $userId && $class->students()
+            ->where('users.id', $userId)
+            ->wherePivot('status', 'enrolled')
+            ->exists();
+
         if ($userId) {
             // Attach student
             $class->students()->syncWithoutDetaching([
-                $userId => ['status' => 'enrolled']
+                $userId => ['status' => 'enrolled'],
             ]);
 
             // If they had an invitation, make sure it is updated to enrolled
@@ -241,7 +278,27 @@ class ClassController extends Controller
             self::clearClassesCache($userId);
         }
 
-        return redirect()->route('classes.show', $class->id)->with('success', 'Successfully enrolled in ' . $class->name);
+        // Tell the student and the instructor, but only on the first join, not a repeat code entry
+        if ($userId && ! $wasEnrolled) {
+            try {
+                Auth::user()->notify(new ClassActivityNotification(
+                    "Joined class: {$class->name}",
+                    "You're now enrolled in '{$class->name}'".($class->instructor ? " with {$class->instructor->name}." : '.'),
+                    route('classes.show', $class->id),
+                    'class'
+                ));
+                $class->instructor?->notify(new ClassActivityNotification(
+                    "Student Joined Class: {$class->name}",
+                    Auth::user()->name." joined '{$class->name}' with the class code.",
+                    route('classes.show', $class->id),
+                    'class'
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Class join notification failed: '.$e->getMessage());
+            }
+        }
+
+        return redirect()->route('classes.show', $class->id)->with('success', 'Successfully enrolled in '.$class->name);
     }
 
     /**
@@ -257,31 +314,36 @@ class ClassController extends Controller
             'email' => 'required|email|max:255',
         ]);
 
-        $student = User::where('email', $request->email)->first();
+        $student = User::findByEmail($request->email);
 
-        if (!$student) {
-            return redirect()->back()->with('error', 'Student email not found in Certicode system. Ask them to register first.');
+        if (! $student || $student->role !== 'student') {
+            return redirect()->back()->with('error', 'No student account uses that email. Ask them to register first.');
         }
 
-        // Enroll them as invited
-        $class->students()->syncWithoutDetaching([
-            $student->id => ['status' => 'invited']
-        ]);
+        // Only a new invitation is added. Writing 'invited' over an existing row would take an
+        // enrolled student out of the class until they accepted again.
+        $existing = $class->students()->where('users.id', $student->id)->first();
+        if ($existing && $existing->pivot->status === 'enrolled') {
+            return redirect()->route('classes.show', $class->id)->with('success', "{$student->name} is already enrolled in this class.");
+        }
+        if (! $existing) {
+            $class->students()->attach($student->id, ['status' => 'invited']);
+        }
         self::clearClassesCache($student->id);
 
         // Send invite notification
         try {
-            $student->notify(new \App\Notifications\ClassActivityNotification(
+            $student->notify(new ClassActivityNotification(
                 "Invited to Class: {$class->name}",
                 "Instructor {$class->instructor->name} has invited you to join the class '{$class->name}'.",
                 route('classes.index'),
                 'class'
             ));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("Class invitation notification failed: " . $e->getMessage());
+            Log::warning('Class invitation notification failed: '.$e->getMessage());
         }
 
-        return redirect()->route('classes.show', $class->id)->with('success', 'Student invitation sent successfully to ' . $student->email);
+        return redirect()->route('classes.show', $class->id)->with('success', 'Student invitation sent successfully to '.$student->email);
     }
 
     /**
@@ -291,30 +353,30 @@ class ClassController extends Controller
     {
         $class = SchoolClass::findOrFail($class_id);
         $student = Auth::user();
-        if (!$student instanceof User) {
+        if (! $student instanceof User) {
             return redirect()->route('login');
         }
-        
+
         $class->students()->updateExistingPivot($student->id, [
-            'status' => 'enrolled'
+            'status' => 'enrolled',
         ]);
         self::clearClassesCache($student->id);
 
         // Notify the instructor
         if ($class->instructor) {
             try {
-                $class->instructor->notify(new \App\Notifications\ClassActivityNotification(
+                $class->instructor->notify(new ClassActivityNotification(
                     "Student Joined Class: {$class->name}",
                     "{$student->name} has accepted your invitation and joined the class '{$class->name}'.",
                     route('classes.show', $class->id),
                     'class'
                 ));
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("Instructor join notification failed: " . $e->getMessage());
+                Log::warning('Instructor join notification failed: '.$e->getMessage());
             }
         }
 
-        return redirect()->route('classes.show', $class->id)->with('success', 'Invitation accepted. Welcome to ' . $class->name . '!');
+        return redirect()->route('classes.show', $class->id)->with('success', 'Invitation accepted. Welcome to '.$class->name.'!');
     }
 
     /**
@@ -343,10 +405,18 @@ class ClassController extends Controller
             'description' => 'nullable|string',
             'content' => 'required|string',
             'order_index' => 'integer',
-            'parent_id' => 'nullable|exists:modules,id,class_id,' . $class->id,
+            'parent_id' => 'nullable|exists:modules,id,class_id,'.$class->id,
             'attachments' => 'nullable|array',
-            'attachments.*' => 'file|max:20480', // Max 20MB
+            'attachments.*' => 'file|max:'.ModuleAttachment::MAX_SIZE_KB,
+            ...$this->directUploadRules(),
         ]);
+
+        if ($this->hasAttachments($request) && ! ModuleAttachment::storageIsDurable()) {
+            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
+        }
+
+        // Upload first, so a storage failure saves nothing instead of leaving a module without its files
+        $uploads = $this->collectUploads($request, $class, $validated['uploaded_attachments'] ?? []);
 
         $parentId = $validated['parent_id'] ?? null;
         $existingCount = Module::where('class_id', $class->id)
@@ -354,46 +424,107 @@ class ClassController extends Controller
             ->count();
 
         $orderIndex = isset($validated['order_index'])
-            ? min(max(0, (int)$validated['order_index']), $existingCount)
+            ? min(max(0, (int) $validated['order_index']), $existingCount)
             : $existingCount;
 
-        $module = Module::create([
-            'class_id' => $class->id,
-            'parent_id' => $parentId,
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'content' => $validated['content'],
-            'order_index' => $orderIndex,
-        ]);
-
-        // Handle file attachments
-        if ($request->hasFile('attachments')) {
-            foreach ($request->file('attachments') as $file) {
-                $path = $file->store('module_attachments', 'public');
-                $module->attachments()->create([
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                    'file_size' => $file->getSize(),
+        try {
+            $module = DB::transaction(function () use ($class, $parentId, $validated, $orderIndex, $uploads) {
+                $module = Module::create([
+                    'class_id' => $class->id,
+                    'parent_id' => $parentId,
+                    'title' => $validated['title'],
+                    'description' => $validated['description'] ?? null,
+                    'content' => $validated['content'],
+                    'order_index' => $orderIndex,
                 ]);
-            }
+                $module->attachments()->createMany($uploads);
+
+                return $module;
+            });
+        } catch (\Throwable $e) {
+            ModuleAttachment::discardUploads($uploads);
+            throw $e;
         }
+        ModuleAttachment::forgetDirectUploads(array_column($uploads, 'file_path'));
 
         // Notify enrolled students
         $students = $class->students()->wherePivot('status', 'enrolled')->get();
         foreach ($students as $student) {
             try {
-                $student->notify(new \App\Notifications\ClassActivityNotification(
+                $student->notify(new ClassActivityNotification(
                     "New Module: {$module->title}",
                     "A new module '{$module->title}' has been uploaded in {$class->name}.",
                     route('modules.show', [$class->id, $module->id]),
                     'module'
                 ));
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("Module notification failed: " . $e->getMessage());
+                Log::warning('Module notification failed: '.$e->getMessage());
             }
         }
 
         return redirect()->route('classes.show', $class->id)->with('success', 'Module created successfully.');
+    }
+
+    /**
+     * Start a direct upload: a signed URL the module form PUTs one file to, so the file goes
+     * straight to cloud storage. Vercel refuses request bodies over 4.5 MB, which is less than
+     * the 20 MB the form allows.
+     */
+    public function attachmentUpload(Request $request, int $class_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
+        abort_unless(ModuleAttachment::usesDirectUploads(), 404);
+
+        $validated = $request->validate([
+            'file_name' => 'required|string|max:255',
+            'file_size' => 'required|integer|min:0|max:'.ModuleAttachment::MAX_SIZE_KB * 1024,
+        ], [
+            'file_size.max' => 'Files can be up to 20 MB each.',
+        ]);
+
+        return response()->json(ModuleAttachment::issueDirectUpload($class->id, $validated['file_name']));
+    }
+
+    /**
+     * Files the browser already uploaded with attachmentUpload(): their keys and names. The
+     * size is read from storage, not taken from the form.
+     */
+    private function directUploadRules(): array
+    {
+        return [
+            'uploaded_attachments' => 'nullable|array|max:50',
+            'uploaded_attachments.*' => 'array:key,name',
+            'uploaded_attachments.*.key' => 'required|string|distinct',
+            'uploaded_attachments.*.name' => 'required|string|max:255',
+        ];
+    }
+
+    private function hasAttachments(Request $request): bool
+    {
+        return $request->hasFile('attachments') || filled($request->input('uploaded_attachments'));
+    }
+
+    /**
+     * Attachments to save with the module: files the browser already sent to cloud storage,
+     * then files posted with the form, which are uploaded now. Runs before any database write,
+     * so a storage failure saves nothing.
+     *
+     * @throws ValidationException
+     */
+    private function collectUploads(Request $request, SchoolClass $class, array $directUploads): array
+    {
+        try {
+            $claimed = ModuleAttachment::claimDirectUploads($class->id, $directUploads);
+
+            return array_merge($claimed, ModuleAttachment::uploadAll($request->file('attachments', [])));
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            throw ValidationException::withMessages(['attachments' => ModuleAttachment::UPLOAD_FAILED_MESSAGE]);
+        }
     }
 
     /**
@@ -406,7 +537,7 @@ class ClassController extends Controller
         $module = $class->modules->firstWhere('id', $module_id) ?? abort(404);
         $module->load('attachments');
         $user = Auth::user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return redirect()->route('login');
         }
 
@@ -415,16 +546,16 @@ class ClassController extends Controller
         // Check if student is enrolled in the class
         if ($user->role === 'student') {
             $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
-            if (!$isEnrolled) {
+            if (! $isEnrolled) {
                 abort(403, 'Unauthorized.');
             }
 
             // Record unique view and increment if first time
-            $alreadyViewed = \App\Models\ModuleView::where('module_id', $module->id)
+            $alreadyViewed = ModuleView::where('module_id', $module->id)
                 ->where('user_id', $user->id)
                 ->exists();
-            if (!$alreadyViewed) {
-                \App\Models\ModuleView::create([
+            if (! $alreadyViewed) {
+                ModuleView::create([
                     'module_id' => $module->id,
                     'user_id' => $user->id,
                 ]);
@@ -432,7 +563,7 @@ class ClassController extends Controller
             }
 
             // One query for the whole outline instead of one progress count per module.
-            $completedLabIds = \App\Models\LabSession::completedLabIdsFor($user->id);
+            $completedLabIds = LabSession::completedLabIdsFor($user->id);
         } else {
             $this->authorizeClassManager($class);
         }
@@ -468,12 +599,17 @@ class ClassController extends Controller
             'description' => 'nullable|string',
             'content' => 'required|string',
             'order_index' => 'integer',
-            'parent_id' => 'nullable|exists:modules,id,class_id,' . $class->id . '|not_in:' . $module->id,
+            'parent_id' => 'nullable|exists:modules,id,class_id,'.$class->id.'|not_in:'.$module->id,
             'attachments' => 'nullable|array',
-            'attachments.*' => 'file|max:20480',
+            'attachments.*' => 'file|max:'.ModuleAttachment::MAX_SIZE_KB,
+            ...$this->directUploadRules(),
             'remove_attachments' => 'nullable|array',
             'remove_attachments.*' => 'exists:module_attachments,id',
         ]);
+
+        if ($this->hasAttachments($request) && ! ModuleAttachment::storageIsDurable()) {
+            return back()->withInput()->withErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
+        }
 
         $parentId = $validated['parent_id'] ?? null;
         $existingCount = Module::where('class_id', $class->id)
@@ -482,39 +618,38 @@ class ClassController extends Controller
             ->count();
 
         $orderIndex = isset($validated['order_index'])
-            ? min(max(0, (int)$validated['order_index']), $existingCount)
+            ? min(max(0, (int) $validated['order_index']), $existingCount)
             : $existingCount;
 
-        $module->update([
-            'parent_id' => $parentId,
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'content' => $validated['content'],
-            'order_index' => $orderIndex,
-        ]);
+        // Upload first, so a storage failure changes nothing (not even the removals)
+        $uploads = $this->collectUploads($request, $class, $validated['uploaded_attachments'] ?? []);
 
-        // Remove marked attachments
-        if (!empty($validated['remove_attachments'])) {
-            foreach ($validated['remove_attachments'] as $attId) {
-                $attachment = $module->attachments()->find($attId);
-                if ($attachment) {
-                    \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
-                    $attachment->delete();
-                }
-            }
-        }
-
-        // Add new attachments
-        if ($request->hasFile('attachments')) {
-            foreach ($request->file('attachments') as $file) {
-                $path = $file->store('module_attachments', 'public');
-                $module->attachments()->create([
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                    'file_size' => $file->getSize(),
+        try {
+            $removed = DB::transaction(function () use ($module, $parentId, $validated, $orderIndex, $uploads) {
+                $module->update([
+                    'parent_id' => $parentId,
+                    'title' => $validated['title'],
+                    'description' => $validated['description'] ?? null,
+                    'content' => $validated['content'],
+                    'order_index' => $orderIndex,
                 ]);
-            }
+
+                // Remove marked attachments (only this module's)
+                $removed = $module->attachments()->whereIn('id', $validated['remove_attachments'] ?? [])->get();
+                ModuleAttachment::whereIn('id', $removed->modelKeys())->delete();
+
+                $module->attachments()->createMany($uploads);
+
+                return $removed;
+            });
+        } catch (\Throwable $e) {
+            ModuleAttachment::discardUploads($uploads);
+            throw $e;
         }
+        ModuleAttachment::forgetDirectUploads(array_column($uploads, 'file_path'));
+
+        // Files go only once the rows are gone for good
+        $removed->each->deleteFile();
 
         return redirect()->route('modules.show', [$class->id, $module->id])->with('success', 'Module updated successfully.');
     }
@@ -533,20 +668,20 @@ class ClassController extends Controller
 
         // Labs would be detached (module_id set to null) and then nobody but an admin could
         // reach them, so they have to be moved or deleted first
-        $labCount = \App\Models\Laboratory::whereIn('module_id', $moduleIds)->count();
+        $labCount = Laboratory::whereIn('module_id', $moduleIds)->count();
         if ($labCount > 0) {
             return redirect()->route('classes.show', $class_id)->with('error',
-                "“{$module->title}” still has {$labCount} " . Str::plural('lab', $labCount)
-                . '. Move ' . ($labCount === 1 ? 'it' : 'them') . ' to another module (Edit lab, then Module) or delete '
-                . ($labCount === 1 ? 'it' : 'them') . ' first.');
+                "“{$module->title}” still has {$labCount} ".Str::plural('lab', $labCount)
+                .'. Move '.($labCount === 1 ? 'it' : 'them').' to another module (Edit lab, then Module) or delete '
+                .($labCount === 1 ? 'it' : 'them').' first.');
         }
 
-        // Delete attachment files for the module and its sections
-        foreach (\App\Models\ModuleAttachment::whereIn('module_id', $moduleIds)->get() as $attachment) {
-            \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
-        }
+        // Delete attachment files for the module and its sections, once their rows are gone
+        $attachments = ModuleAttachment::whereIn('module_id', $moduleIds)->get();
 
         $module->delete();
+
+        $attachments->each->deleteFile();
 
         return redirect()->route('classes.show', $class_id)->with('success', 'Module deleted successfully.');
     }
@@ -556,33 +691,29 @@ class ClassController extends Controller
      */
     public function downloadAttachment(int $id)
     {
-        $attachment = \App\Models\ModuleAttachment::findOrFail($id);
+        $attachment = ModuleAttachment::findOrFail($id);
         $module = $attachment->module;
         $class = $module->schoolClass;
         $user = Auth::user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return redirect()->route('login');
         }
 
         // Authorize access to attachment (must be enrolled in the class or instructor)
         if ($user->role === 'student') {
             $isEnrolled = $class->students()->where('student_id', $user->id)->wherePivot('status', 'enrolled')->exists();
-            if (!$isEnrolled) {
+            if (! $isEnrolled) {
                 abort(403, 'Unauthorized.');
             }
         } else {
             $this->authorizeClassManager($class);
         }
 
-        if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+        if (! ModuleAttachment::disk()->exists($attachment->file_path)) {
             abort(404, 'File not found.');
         }
 
-        $filePath = (string) $attachment->file_path;
-        $fileName = (string) $attachment->file_name;
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        return $disk->download($filePath, $fileName);
+        return $attachment->downloadResponse();
     }
 
     /**
@@ -608,18 +739,40 @@ class ClassController extends Controller
             ->values();
 
         $selectedLab = $request->filled('lab') ? $labs->firstWhere('id', (int) $request->query('lab')) : null;
-        abort_if($request->filled('lab') && !$selectedLab, 404);
+        abort_if($request->filled('lab') && ! $selectedLab, 404);
 
         if ($selectedLab) {
             $selectedLab->module->setRelation('schoolClass', $class);
-            $panel = app(\App\Http\Controllers\InstructorMonitoringController::class)->labPanelData($request, $selectedLab);
+            $panel = app(InstructorMonitoringController::class)->labPanelData($request, $selectedLab);
 
             return view('classes.telemetry', compact('class', 'labs', 'selectedLab') + $panel);
         }
 
         [$sessions, $anomalies] = $this->classTelemetryOverview($class);
+        [$anomalies, $flagSort, $flagDir] = $this->sortAnomalies($anomalies, $request);
 
-        return view('classes.telemetry', compact('class', 'labs', 'selectedLab', 'sessions', 'anomalies'));
+        return view('classes.telemetry', compact('class', 'labs', 'selectedLab', 'sessions', 'anomalies', 'flagSort', 'flagDir'));
+    }
+
+    /**
+     * Sort the integrity flags table by the `sort` and `dir` query parameters (newest first by default).
+     * Ties keep the newest-first order the overview loads them in.
+     */
+    private function sortAnomalies($anomalies, Request $request): array
+    {
+        $keys = [
+            'student' => fn ($a) => mb_strtolower($a->labSession?->user?->name ?? ''),
+            'lab' => fn ($a) => mb_strtolower($a->labSession?->laboratory?->title ?? ''),
+            'type' => fn ($a) => $a->type,
+            'severity' => fn ($a) => ['high' => 3, 'medium' => 2][$a->severity] ?? 1,
+            'when' => fn ($a) => $a->created_at?->getTimestamp() ?? 0,
+            'status' => fn ($a) => $a->resolved ? 1 : 0,
+        ];
+
+        $sort = array_key_exists($request->query('sort'), $keys) ? $request->query('sort') : 'when';
+        $dir = $request->query('dir') === 'asc' ? 'asc' : ($request->query('dir') === 'desc' ? 'desc' : ($sort === 'when' || $sort === 'severity' ? 'desc' : 'asc'));
+
+        return [$anomalies->sortBy($keys[$sort], SORT_REGULAR, $dir === 'desc')->values(), $sort, $dir];
     }
 
     /**
@@ -629,7 +782,7 @@ class ClassController extends Controller
     {
         $class_id = $class->id;
         $cacheKey = "class_telemetry_{$class_id}";
-        [$sessions, $anomalies] = \Illuminate\Support\Facades\Cache::store('file')->remember($cacheKey, 15, function () use ($class) {
+        [$sessions, $anomalies] = Cache::store('file')->remember($cacheKey, 15, function () use ($class) {
             $labIds = [];
             foreach ($class->modules as $mod) {
                 $labIds = array_merge($labIds, $mod->getAllLaboratoryIds());
@@ -640,7 +793,7 @@ class ClassController extends Controller
                 return [collect(), collect()];
             }
 
-            $sessions = \App\Models\LabSession::with(['user', 'laboratory'])
+            $sessions = LabSession::with(['user', 'laboratory'])
                 ->whereIn('lab_id', $labIds)
                 ->latest()
                 ->get();
@@ -652,7 +805,7 @@ class ClassController extends Controller
 
             $sessionsById = $sessions->keyBy('id');
 
-            $anomalies = \App\Models\Anomaly::withoutSnapshotData()
+            $anomalies = Anomaly::withoutSnapshotData()
                 ->whereIn('lab_session_id', $sessionIds)
                 ->latest()
                 ->get();
@@ -676,15 +829,26 @@ class ClassController extends Controller
     public function telemetryTimeline(int $id)
     {
         $this->authorizeInstructor();
-        $session = \App\Models\LabSession::with(['user', 'laboratory.module.schoolClass'])->findOrFail($id);
+        $session = LabSession::with(['user', 'laboratory.module.schoolClass'])->findOrFail($id);
         $this->authorizeClassManager($session->laboratory?->module?->schoolClass);
 
-        $logs = \App\Models\TelemetryLog::where('lab_session_id', $session->id)
-            ->latest()
-            ->get();
+        // Heartbeats and typing-speed samples arrive every few seconds and say nothing on
+        // their own, so the timeline keeps only events an instructor acts on, oldest first.
+        $logs = TelemetryLog::where('lab_session_id', $session->id)
+            ->whereNotIn('event_type', ['vscode_ping', 'wpm_update'])
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->reject(fn ($log) => $log->event_type === 'webcam_check'
+                && (int) ($log->payload['face_count'] ?? 1) === 1)
+            ->values();
 
-        $anomalies = \App\Models\Anomaly::where('lab_session_id', $session->id)
-            ->latest()
+        // The view links to each snapshot; loading every base64 image here would pull them
+        // all into memory at once
+        $anomalies = Anomaly::where('lab_session_id', $session->id)
+            ->withoutSnapshotData()
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->get();
 
         return view('classes.telemetry-timeline', compact('session', 'logs', 'anomalies'));
@@ -696,16 +860,44 @@ class ClassController extends Controller
     public function resolveAnomaly(int $id)
     {
         $this->authorizeInstructor();
-        $anomaly = \App\Models\Anomaly::with('labSession.laboratory.module')->findOrFail($id);
+        $anomaly = Anomaly::with('labSession.laboratory.module')->findOrFail($id);
         $classId = $anomaly->labSession?->laboratory?->module?->class_id;
         $this->authorizeClassManager($classId);
         $anomaly->update(['resolved' => true]);
 
         if ($classId) {
-            \Illuminate\Support\Facades\Cache::store('file')->forget("class_telemetry_{$classId}");
+            Cache::store('file')->forget("class_telemetry_{$classId}");
         }
 
         return back()->with('success', 'Anomaly marked as resolved.');
+    }
+
+    /**
+     * Mark several of a class's open anomalies as resolved at once.
+     * IDs outside the class are ignored.
+     */
+    public function resolveAnomalies(Request $request, int $class_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($class_id);
+        $this->authorizeClassManager($class);
+
+        $ids = $request->validate([
+            'ids' => ['required', 'array', 'max:1000'],
+            'ids.*' => ['integer'],
+        ])['ids'];
+
+        $class->loadModuleTree();
+        $labIds = $class->modules->flatMap(fn ($module) => $module->getAllLaboratoryIds())->unique()->values();
+
+        $count = Anomaly::whereIn('id', $ids)
+            ->where('resolved', false)
+            ->whereHas('labSession', fn ($q) => $q->whereIn('lab_id', $labIds))
+            ->update(['resolved' => true]);
+
+        Cache::store('file')->forget("class_telemetry_{$class->id}");
+
+        return back()->with('success', $count === 1 ? '1 flag marked as resolved.' : "{$count} flags marked as resolved.");
     }
 
     /**
@@ -729,7 +921,7 @@ class ClassController extends Controller
     public function endSession(Request $request, int $id)
     {
         $this->authorizeInstructor();
-        $session = \App\Models\LabSession::findOrFail($id);
+        $session = LabSession::findOrFail($id);
         $this->authorizeSessionManager($session);
 
         $session->update([
@@ -739,7 +931,7 @@ class ClassController extends Controller
         ]);
 
         // Clean ephemeral chat records
-        \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
+        LabSessionChat::where('lab_session_id', $session->id)->delete();
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -758,8 +950,16 @@ class ClassController extends Controller
     public function reopenSession(Request $request, int $id)
     {
         $this->authorizeInstructor();
-        $session = \App\Models\LabSession::findOrFail($id);
+        $session = LabSession::findOrFail($id);
         $this->authorizeSessionManager($session);
+
+        if ($session->hasOtherOpenAttempt()) {
+            $message = 'This student has another attempt open on this lab. End that one before reopening this one.';
+
+            return $request->wantsJson()
+                ? response()->json(['error' => 'other_attempt_open', 'message' => $message], 409)
+                : back()->with('error', $message);
+        }
 
         $session->update([
             'status' => 'in_progress',
@@ -784,7 +984,7 @@ class ClassController extends Controller
     protected function authorizeInstructor()
     {
         $user = Auth::user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             abort(403, 'Unauthorized action.');
         }
         $role = $user->role;

@@ -84,14 +84,17 @@ return [
             ]) : [],
         ],
 
+        // Defaults stay generic: this repo is public, so real hosts and credentials go in the
+        // environment only (DB_URL, or DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD;
+        // Vercel > Settings > Environment Variables). api/index.php refuses to boot without them.
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
-            'host' => env('DB_HOST', 'aws-0-ap-northeast-2.pooler.supabase.com'),
+            'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '5432'),
             'database' => env('DB_DATABASE', 'postgres'),
-            'username' => env('DB_USERNAME', 'postgres.lwhfimvxbdsugcrouajg'),
-            'password' => env('DB_PASSWORD', 'Lyracodelabs'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,

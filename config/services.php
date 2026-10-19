@@ -63,4 +63,20 @@ return [
         'rapidapi_host' => env('JUDGE0_RAPIDAPI_HOST'),
     ],
 
+    // Without Judge0, student code would run on this server itself (Docker, or the host's
+    // php/python/node/javac) with the app's environment, database and API secrets included.
+    // Unset: allowed only in local and testing. SANDBOX_HOST_EXECUTION=false forbids it everywhere;
+    // =true allows it anywhere, which is only safe on a machine with nothing worth stealing.
+    'sandbox' => [
+        'host_execution' => env('SANDBOX_HOST_EXECUTION'),
+    ],
+
+    // Certicode VS Code extension. Builds older than min_version (or old builds that send
+    // no version) are flagged as outdated to the student. Bump it with every release that
+    // the web app depends on.
+    'vscode_extension' => [
+        'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.6.0'),
+        'download_path' => 'downloads/certicode-labs.vsix',
+    ],
+
 ];

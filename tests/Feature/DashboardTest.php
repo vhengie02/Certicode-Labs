@@ -3,12 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase
@@ -43,7 +44,7 @@ class DashboardTest extends TestCase
 
         $this->actingAs($instructor)->get('/dashboard')
             ->assertOk()
-            ->assertSee('data-lazy-src="' . route('dashboard.sections') . '"', false)
+            ->assertSee('data-lazy-src="'.route('dashboard.sections').'"', false)
             ->assertSee('skeleton-pulse', false)
             ->assertDontSee('some flag');
     }
@@ -81,16 +82,17 @@ class DashboardTest extends TestCase
     {
         $student = $this->user('kid@example.com', 'student');
         $this->sections($student)
-            ->assertSee('Your path to a certificate')
-            ->assertSee('0 of 4 done')
-            ->assertSee('Enter a class code');
+            ->assertSee('Get ready for your first lab')
+            ->assertSee('0 of 3 done')
+            ->assertSee('Enter a class code')
+            ->assertDontSee('Earn your certificate');
 
         $instructor = $this->user('prof@example.com', 'instructor');
         $class = SchoolClass::create(['name' => 'Java', 'code' => 'JAVA-1', 'instructor_id' => $instructor->id]);
         $class->students()->attach($student->id, ['status' => 'enrolled']);
-        \Illuminate\Support\Facades\Cache::store('file')->flush();
+        Cache::store('file')->flush();
 
-        $this->sections($student)->assertSee('1 of 4 done')->assertSee('Download the extension');
+        $this->sections($student)->assertSee('1 of 3 done')->assertSee('Download the extension');
         $this->sections($instructor)
             ->assertSee('Set up your first class')
             ->assertSee('2 of 5 done') // class created, student enrolled
@@ -155,7 +157,7 @@ class DashboardTest extends TestCase
     {
         $instructor = $this->user('prof@example.com', 'instructor');
         $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
-        $student = User::where('email', 'student-CLASS-A@example.com')->firstOrFail();
+        $student = User::findByEmail('student-CLASS-A@example.com') ?? $this->fail('student not found');
 
         $this->sections($student)
             ->assertOk()
@@ -164,19 +166,35 @@ class DashboardTest extends TestCase
             ->assertDontSee('some flag');
     }
 
+    public function test_timed_out_sessions_are_not_offered_to_continue()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
+        $student = User::findByEmail('student-CLASS-A@example.com') ?? $this->fail('student not found');
+        // Started yesterday on a 60-minute lab, never closed
+        $session = LabSession::firstOrFail();
+        $session->forceFill(['started_at' => now()->subDay(), 'last_ping_at' => now()->subDay()])->save();
+
+        $this->sections($student)
+            ->assertOk()
+            ->assertSee('No labs in progress')
+            ->assertDontSee('Resume');
+        $this->assertSame('abandoned', $session->fresh()->status);
+    }
+
     public function test_main_menu_shows_admin_pages_only_to_admins()
     {
         $adminLinks = [route('admin.users.index'), route('admin.competencies.index'), route('admin.reports.index'), route('admin.system.edit')];
 
         $adminPage = $this->actingAs($this->user('admin@example.com', 'admin'))->get('/dashboard')->assertOk();
         foreach ($adminLinks as $link) {
-            $adminPage->assertSee('href="' . $link . '"', false);
+            $adminPage->assertSee('href="'.$link.'"', false);
         }
 
         $instructorPage = $this->actingAs($this->user('prof@example.com', 'instructor'))->get('/dashboard')->assertOk();
-        $instructorPage->assertSee('href="' . route('classes.index') . '"', false);
+        $instructorPage->assertSee('href="'.route('classes.index').'"', false);
         foreach ($adminLinks as $link) {
-            $instructorPage->assertDontSee('href="' . $link . '"', false);
+            $instructorPage->assertDontSee('href="'.$link.'"', false);
         }
     }
 

@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Anomaly;
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -31,15 +31,15 @@ class DashboardController extends Controller
     {
         return match ($user->role) {
             'admin' => false,
-            'instructor' => !$user->instructedClasses()->exists(),
-            default => !$user->classes()->exists() && !$user->labSessions()->exists(),
+            'instructor' => ! $user->instructedClasses()->exists(),
+            default => ! $user->classes()->exists() && ! $user->labSessions()->exists(),
         };
     }
 
     public function sections(Request $request)
     {
         // It's a fragment; opened directly it would render without the app layout
-        if (!$request->ajax()) {
+        if (! $request->ajax()) {
             return redirect()->route('dashboard');
         }
 
@@ -62,6 +62,9 @@ class DashboardController extends Controller
 
     private function studentData(User $user): array
     {
+        // Close timed-out or silent sessions first, so "Continue" never offers a lab that can't resume
+        LabSession::autoExpireStaleSessions(userId: $user->id);
+
         $sessionCounts = $user->labSessions()
             ->selectRaw("count(distinct case when status = 'completed' then lab_id end) as completed")
             ->selectRaw("count(case when status = 'in_progress' then 1 end) as in_progress")
@@ -80,10 +83,9 @@ class DashboardController extends Controller
             ],
             // Getting-started steps tick themselves off from real activity
             'setup' => [
-                ['title' => 'Join a class', 'body' => 'Ask your instructor for the class code and enter it on the Classes page, or accept an invitation.', 'done' => $classCount > 0, 'action' => 'Enter a class code', 'href' => route('classes.index') . '#join_class_code'],
+                ['title' => 'Join a class', 'body' => 'Ask your instructor for the class code and enter it on the Classes page, or accept an invitation.', 'done' => $classCount > 0, 'action' => 'Enter a class code', 'href' => route('classes.index').'#join_class_code'],
                 ['title' => 'Install the VS Code extension', 'body' => 'Labs run inside VS Code. Install the Certicode extension and sign in with this account.', 'done' => $user->labSessions()->exists(), 'action' => 'Download the extension', 'href' => asset('downloads/certicode-labs.vsix'), 'download' => true],
                 ['title' => 'Take your first lab', 'body' => 'Start a lab from your class. Your camera is checked while you work, and your code is graded when you submit.', 'done' => $completed > 0, 'action' => 'Open my classes', 'href' => route('classes.index')],
-                ['title' => 'Earn your certificate', 'body' => "Pass the class's labs above its pass mark, then claim a certificate anyone can verify with its QR code.", 'done' => $certificateCount > 0, 'action' => 'Open my classes', 'href' => route('classes.index')],
             ],
             'invitations' => $user->invitedClasses()->count(),
             'inProgress' => $user->labSessions()

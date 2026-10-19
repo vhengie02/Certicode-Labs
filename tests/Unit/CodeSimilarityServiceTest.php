@@ -2,6 +2,9 @@
 
 namespace Tests\Unit;
 
+use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\User;
 use App\Services\CodeSimilarityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -15,7 +18,7 @@ class CodeSimilarityServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new CodeSimilarityService();
+        $this->service = new CodeSimilarityService;
     }
 
     /**
@@ -90,7 +93,7 @@ CODE;
      */
     public function test_tokenize_strips_comments(): void
     {
-        $code = '// single line comment' . "\n" . '/* multi line */ $x = "hello" + 42;';
+        $code = '// single line comment'."\n".'/* multi line */ $x = "hello" + 42;';
         $tokens = $this->service->tokenize($code);
 
         $this->assertNotContains('single', $tokens);
@@ -106,14 +109,14 @@ CODE;
      */
     public function test_cohort_analysis_detects_plagiarism_pair(): void
     {
-        $lab = \App\Models\Laboratory::create([
+        $lab = Laboratory::create([
             'title' => 'Sorting Algorithms',
             'description' => 'Implement sorting',
             'language' => 'php',
         ]);
-        $user1 = \App\Models\User::create(['name' => 'Alice', 'email' => 'alice_test@test.com', 'password' => bcrypt('secret')]);
-        $user2 = \App\Models\User::create(['name' => 'Bob', 'email' => 'bob_test@test.com', 'password' => bcrypt('secret')]);
-        $user3 = \App\Models\User::create(['name' => 'Charlie', 'email' => 'charlie_test@test.com', 'password' => bcrypt('secret')]);
+        $user1 = User::create(['name' => 'Alice', 'email' => 'alice_test@test.com', 'password' => bcrypt('secret')]);
+        $user2 = User::create(['name' => 'Bob', 'email' => 'bob_test@test.com', 'password' => bcrypt('secret')]);
+        $user3 = User::create(['name' => 'Charlie', 'email' => 'charlie_test@test.com', 'password' => bcrypt('secret')]);
 
         $codeOriginal = <<<'CODE'
 function bubbleSort($arr) {
@@ -159,21 +162,21 @@ function reverseString($str) {
 }
 CODE;
 
-        \App\Models\LabSession::create([
+        LabSession::create([
             'lab_id' => $lab->id,
             'user_id' => $user1->id,
             'status' => 'completed',
             'submitted_code' => $codeOriginal,
         ]);
 
-        \App\Models\LabSession::create([
+        LabSession::create([
             'lab_id' => $lab->id,
             'user_id' => $user2->id,
             'status' => 'completed',
             'submitted_code' => $codeCopied,
         ]);
 
-        \App\Models\LabSession::create([
+        LabSession::create([
             'lab_id' => $lab->id,
             'user_id' => $user3->id,
             'status' => 'completed',
@@ -193,4 +196,3 @@ CODE;
         $this->assertContains('Bob', $names);
     }
 }
-

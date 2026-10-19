@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (Schema::hasTable('laboratories') && !Schema::hasColumn('laboratories', 'starter_files')) {
+        if (Schema::hasTable('laboratories') && ! Schema::hasColumn('laboratories', 'starter_files')) {
             Schema::table('laboratories', function (Blueprint $table) {
                 $table->json('starter_files')->nullable()->after('tasks_definition');
             });
@@ -19,16 +19,16 @@ return new class extends Migration
 
         if (Schema::hasTable('lab_sessions')) {
             Schema::table('lab_sessions', function (Blueprint $table) {
-                if (!Schema::hasColumn('lab_sessions', 'diff_stats')) {
+                if (! Schema::hasColumn('lab_sessions', 'diff_stats')) {
                     $table->json('diff_stats')->nullable()->after('completed_tasks');
                 }
-                if (!Schema::hasColumn('lab_sessions', 'code_contributions')) {
+                if (! Schema::hasColumn('lab_sessions', 'code_contributions')) {
                     $table->json('code_contributions')->nullable()->after('diff_stats');
                 }
             });
         }
 
-        if (!Schema::hasTable('lab_session_chats')) {
+        if (! Schema::hasTable('lab_session_chats')) {
             Schema::create('lab_session_chats', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('lab_session_id')->constrained('lab_sessions')->cascadeOnDelete();

@@ -34,5 +34,11 @@
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="OPENAI_API_KEY" value="mock"/>
         <env name="AI_API_KEY" value="mock"/>
+        <!-- Forced, so a developer's .env or shell can't send test runs to the real Claude API or Judge0.
+             Laravel reads $_SERVER first, where an exported shell variable lives, so set it there too. -->
+        <env name="ANTHROPIC_API_KEY" value="mock" force="true"/>
+        <env name="JUDGE0_URL" value="" force="true"/>
+        <server name="ANTHROPIC_API_KEY" value="mock"/>
+        <server name="JUDGE0_URL" value=""/>
     </php>
 </phpunit>

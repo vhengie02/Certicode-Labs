@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\LabSession;
 use App\Models\Laboratory;
+use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
@@ -19,9 +19,13 @@ class RedesignedPagesTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private SchoolClass $class;
+
     private Module $module;
+
     private Laboratory $lab;
 
     protected function setUp(): void

@@ -35,6 +35,7 @@ class Student {
 JAVA;
 
     private LabSession $session;
+
     private array $history = [];
 
     protected function setUp(): void
@@ -63,9 +64,14 @@ JAVA;
         $stack->push(Middleware::history($this->history));
         $transport = new GuzzleClient(['handler' => $stack]);
 
-        return new class($transport) extends LlmEvaluationService {
+        return new class($transport) extends LlmEvaluationService
+        {
             public function __construct(private ClientInterface $transport) {}
-            protected function graderTransport(): ClientInterface { return $this->transport; }
+
+            protected function graderTransport(): ClientInterface
+            {
+                return $this->transport;
+            }
         };
     }
 
@@ -99,6 +105,7 @@ JAVA;
             'test_cases_total' => 5,
             'code_quality_notes' => 'Clear names.',
             'summary' => 'Half the tasks are done.',
+            'student_feedback' => 'Good start: add getters next.',
         ];
     }
 
@@ -130,14 +137,18 @@ JAVA;
         $this->assertSame(64, $result['correctness_score']);
         $this->assertSame([1 => true, 2 => false], array_column($result['tasks'], 'completed', 'id'));
         $this->assertSame(['passed' => false, 'reason' => 'No accessors.'], $result['competencies']['encapsulation']);
-        $this->assertSame('Half the tasks are done.', $result['overall_feedback']);
+        // The student sees the student feedback; the summary is the instructor's
+        $this->assertSame('Good start: add getters next.', $result['overall_feedback']);
+        $this->assertSame('Half the tasks are done.', $result['ai_grade_summary']['summary']);
         $this->assertSame('Clear names.', $result['code_quality_feedback']);
         $this->assertSame(3, $result['ai_grade_summary']['test_cases_passed']);
+        $this->assertSame('claude', $result['ai_grade_summary']['grader']);
     }
 
     public function test_out_of_range_score_is_clamped()
     {
         $grade = $this->sampleGrade();
+        $grade['tasks'][1]['completed'] = true;
         $grade['correctness_score'] = 140;
 
         $result = $this->grader([$this->apiMessage($grade)])->evaluate($this->session, self::CODE, 'java');
@@ -152,6 +163,8 @@ JAVA;
         $this->assertCount(1, $this->history);
         $this->assertArrayHasKey('tasks', $result);
         $this->assertCount(2, $result['tasks']); // the rule-based grader still grades every task
+        $this->assertSame('rule_based', $result['ai_grade_summary']['grader']);
+        $this->assertTrue($result['ai_grade_summary']['needs_review']);
     }
 
     public function test_api_error_falls_back_to_the_rule_based_grader()

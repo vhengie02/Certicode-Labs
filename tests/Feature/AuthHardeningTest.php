@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -13,7 +14,7 @@ class AuthHardeningTest extends TestCase
     private function asProduction(): void
     {
         $this->app['env'] = 'production';
-        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
+        $this->withoutMiddleware(ValidateCsrfToken::class);
     }
 
     /**
@@ -45,7 +46,7 @@ class AuthHardeningTest extends TestCase
 
     public function test_google_code_is_discarded_after_five_wrong_guesses()
     {
-        $this->withSession(['google_auth_gmail' => 'someone@gmail.com', 'google_auth_code' => '123456']);
+        $this->withSession(['google_auth_gmail' => 'someone@gmail.com', 'google_auth_code' => '123456', 'google_auth_code_for' => 'someone@gmail.com']);
 
         for ($i = 0; $i < 4; $i++) {
             $this->post('/auth/google/callback', ['code' => '000000'])->assertSessionHasErrors('code');

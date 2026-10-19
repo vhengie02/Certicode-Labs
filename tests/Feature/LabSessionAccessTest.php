@@ -8,7 +8,9 @@ use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class LabSessionAccessTest extends TestCase
@@ -16,9 +18,13 @@ class LabSessionAccessTest extends TestCase
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $alice;
+
     protected User $bob;
+
     protected Laboratory $laboratory;
+
     protected LabSession $aliceSession;
 
     protected function setUp(): void
@@ -83,8 +89,8 @@ class LabSessionAccessTest extends TestCase
     public function test_token_encrypted_with_a_previous_app_key_is_treated_as_missing()
     {
         // Simulate an APP_KEY rotation: the stored ciphertext no longer decrypts.
-        $oldKey = new \Illuminate\Encryption\Encrypter(random_bytes(32), 'AES-256-CBC');
-        \Illuminate\Support\Facades\DB::table('lab_sessions')
+        $oldKey = new Encrypter(random_bytes(32), 'AES-256-CBC');
+        DB::table('lab_sessions')
             ->where('id', $this->aliceSession->id)
             ->update(['extension_token' => $oldKey->encryptString('old-token')]);
         $session = $this->aliceSession->fresh();
@@ -153,10 +159,11 @@ class LabSessionAccessTest extends TestCase
     public function test_vscode_deep_link_carries_the_session_token()
     {
         $response = $this->actingAs($this->alice)
-            ->postJson("/laboratories/{$this->laboratory->id}/start", ['camera_verified' => true])
+            ->withCameraCheck($this->laboratory->id)
+            ->postJson("/laboratories/{$this->laboratory->id}/start")
             ->assertOk();
 
         $session = LabSession::find($response->json('session_id'));
-        $this->assertStringContainsString('token=' . urlencode($session->issueExtensionToken()), $response->json('vscode_url'));
+        $this->assertStringContainsString('token='.urlencode($session->issueExtensionToken()), $response->json('vscode_url'));
     }
 }

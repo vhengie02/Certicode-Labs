@@ -3,7 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Laboratory;
+use App\Models\LabSession;
+use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Notifications\ClassActivityNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class LaboratoryController extends Controller
 {
@@ -24,12 +29,13 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
 
-        if (!$class_id) {
+        if (! $class_id) {
             return redirect()->route('classes.index')->with('error', 'Select a class to add a laboratory.');
         }
 
-        $class = \App\Models\SchoolClass::with('modules')->findOrFail($class_id);
+        $class = SchoolClass::with('modules')->findOrFail($class_id);
         $this->authorizeClassManager($class);
+
         return view('laboratories.create', compact('class'));
     }
 
@@ -45,6 +51,7 @@ class LaboratoryController extends Controller
             'description' => 'required|string',
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
+            'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
             'availability_mode' => 'nullable|in:open,live',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
@@ -61,7 +68,7 @@ class LaboratoryController extends Controller
 
         // Convert key-value tasks to JSON structures
         $tasksDefinition = [];
-        if (!empty($validated['tasks'])) {
+        if (! empty($validated['tasks'])) {
             foreach ($validated['tasks'] as $index => $taskData) {
                 $tasksDefinition[] = [
                     'id' => $index + 1,
@@ -73,11 +80,11 @@ class LaboratoryController extends Controller
 
         // Process starter files manifest
         $starterFiles = [];
-        if (!empty($request->input('starter_files')) && is_array($request->input('starter_files'))) {
+        if (! empty($request->input('starter_files')) && is_array($request->input('starter_files'))) {
             $hasPrimary = false;
             foreach ($request->input('starter_files') as $file) {
-                if (!empty($file['name'])) {
-                    $isPrimary = !empty($file['is_primary']);
+                if (! empty($file['name'])) {
+                    $isPrimary = ! empty($file['is_primary']);
                     if ($isPrimary) {
                         $hasPrimary = true;
                     }
@@ -85,16 +92,16 @@ class LaboratoryController extends Controller
                         'name' => trim($file['name']),
                         'content' => $file['content'] ?? '',
                         'is_primary' => $isPrimary,
-                        'is_readonly' => !empty($file['is_readonly']),
+                        'is_readonly' => ! empty($file['is_readonly']),
                     ];
                 }
             }
-            if (!$hasPrimary && count($starterFiles) > 0) {
+            if (! $hasPrimary && count($starterFiles) > 0) {
                 $starterFiles[0]['is_primary'] = true;
             }
         }
 
-        $module = \App\Models\Module::findOrFail($validated['module_id']);
+        $module = Module::findOrFail($validated['module_id']);
         $this->authorizeModuleManager($module);
 
         $availabilityMode = $validated['availability_mode'] ?? 'open';
@@ -105,30 +112,31 @@ class LaboratoryController extends Controller
             'description' => $validated['description'],
             'github_repo_template' => $validated['github_repo_template'] ?? null,
             'time_limit' => $validated['time_limit'],
+            'max_attempts' => $validated['max_attempts'] ?? 1,
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'live_status' => $availabilityMode === 'live' ? 'not_started' : 'active',
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
-            'starter_files' => !empty($starterFiles) ? $starterFiles : null,
+            'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ]);
 
         $lab->competencies()->sync($validated['competencies'] ?? []);
 
         // Send notifications to enrolled students
-        $class = \App\Models\SchoolClass::findOrFail($module->class_id);
+        $class = SchoolClass::findOrFail($module->class_id);
         $students = $class->students()->wherePivot('status', 'enrolled')->get();
         foreach ($students as $student) {
             try {
-                $student->notify(new \App\Notifications\ClassActivityNotification(
+                $student->notify(new ClassActivityNotification(
                     "New Lab Challenge: {$lab->title}",
                     "A new laboratory exercise '{$lab->title}' has been added to module '{$module->title}' in {$class->name}.",
                     route('modules.show', [$class->id, $module->id]),
                     'lab'
                 ));
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("Failed to deliver lab notification to student {$student->id}: " . $e->getMessage());
+                Log::warning("Failed to deliver lab notification to student {$student->id}: ".$e->getMessage());
             }
         }
 
@@ -144,13 +152,19 @@ class LaboratoryController extends Controller
         $laboratory->recordViewBy(auth()->user());
         $laboratory->load(['module.schoolClass']);
 
-        // Check if student already has a session
+        // Check if student already has a session (stale ones are closed first)
+        LabSession::autoExpireStaleSessions($laboratory->id, auth()->id());
         $activeSession = $laboratory->labSessions()
             ->where('user_id', auth()->id())
             ->where('status', 'in_progress')
             ->first();
 
-        return view('laboratories.show', compact('laboratory', 'activeSession'));
+        $user = auth()->user();
+        $attempts = $user->role === 'student'
+            ? ['limit' => $laboratory->attemptLimit(), 'used' => $laboratory->attemptsUsedBy($user), 'canStart' => $laboratory->canStartNewAttempt($user)]
+            : null;
+
+        return view('laboratories.show', compact('laboratory', 'activeSession', 'attempts'));
     }
 
     /**
@@ -160,8 +174,8 @@ class LaboratoryController extends Controller
     {
         $this->authorizeAdminOrInstructor();
 
-        $module = \App\Models\Module::findOrFail($laboratory->module_id);
-        $class = \App\Models\SchoolClass::with('modules')->findOrFail($module->class_id);
+        $module = Module::findOrFail($laboratory->module_id);
+        $class = SchoolClass::with('modules')->findOrFail($module->class_id);
         $this->authorizeClassManager($class);
 
         return view('laboratories.edit', compact('laboratory', 'class'));
@@ -180,6 +194,7 @@ class LaboratoryController extends Controller
             'description' => 'required|string',
             'github_repo_template' => 'nullable|string|max:255',
             'time_limit' => 'required|integer|min:5|max:300',
+            'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
             'availability_mode' => 'nullable|in:open,live',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
@@ -195,7 +210,7 @@ class LaboratoryController extends Controller
         ]);
 
         $tasksDefinition = [];
-        if (!empty($validated['tasks'])) {
+        if (! empty($validated['tasks'])) {
             foreach ($validated['tasks'] as $index => $taskData) {
                 $tasksDefinition[] = [
                     'id' => $index + 1,
@@ -207,11 +222,11 @@ class LaboratoryController extends Controller
 
         // Process starter files manifest
         $starterFiles = [];
-        if (!empty($request->input('starter_files')) && is_array($request->input('starter_files'))) {
+        if (! empty($request->input('starter_files')) && is_array($request->input('starter_files'))) {
             $hasPrimary = false;
             foreach ($request->input('starter_files') as $file) {
-                if (!empty($file['name'])) {
-                    $isPrimary = !empty($file['is_primary']);
+                if (! empty($file['name'])) {
+                    $isPrimary = ! empty($file['is_primary']);
                     if ($isPrimary) {
                         $hasPrimary = true;
                     }
@@ -219,16 +234,16 @@ class LaboratoryController extends Controller
                         'name' => trim($file['name']),
                         'content' => $file['content'] ?? '',
                         'is_primary' => $isPrimary,
-                        'is_readonly' => !empty($file['is_readonly']),
+                        'is_readonly' => ! empty($file['is_readonly']),
                     ];
                 }
             }
-            if (!$hasPrimary && count($starterFiles) > 0) {
+            if (! $hasPrimary && count($starterFiles) > 0) {
                 $starterFiles[0]['is_primary'] = true;
             }
         }
 
-        $module = \App\Models\Module::findOrFail($validated['module_id']);
+        $module = Module::findOrFail($validated['module_id']);
         // Moving the lab is only allowed into a module of a class you also manage
         $this->authorizeModuleManager($module);
 
@@ -241,12 +256,13 @@ class LaboratoryController extends Controller
             // No longer on the form; keep whatever was saved before
             'github_repo_template' => $validated['github_repo_template'] ?? $laboratory->github_repo_template,
             'time_limit' => $validated['time_limit'],
+            'max_attempts' => $validated['max_attempts'] ?? $laboratory->max_attempts ?? 1,
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
-            'starter_files' => !empty($starterFiles) ? $starterFiles : null,
+            'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ];
 
         if ($availabilityMode === 'live' && empty($laboratory->live_status)) {
@@ -269,7 +285,7 @@ class LaboratoryController extends Controller
 
         $classId = null;
         if ($laboratory->module_id) {
-            $module = \App\Models\Module::find($laboratory->module_id);
+            $module = Module::find($laboratory->module_id);
             if ($module) {
                 $classId = $module->class_id;
             }
@@ -308,6 +324,7 @@ class LaboratoryController extends Controller
         $laboratory->openLive($duration);
 
         $mins = (int) ($laboratory->getLiveTotalDurationSeconds() / 60);
+
         return back()->with('success', "Live Lab opened! The {$mins}-minute countdown has started for all students.");
     }
 
@@ -338,12 +355,12 @@ class LaboratoryController extends Controller
         $extendMinutes = $extendMinutes ? (int) $extendMinutes : null;
         $success = $laboratory->reopenLive($extendMinutes);
 
-        if (!$success) {
+        if (! $success) {
             return back()->with('error', 'Cannot reopen Live Lab: The countdown duration has already fully expired. Live Labs do not grant a fresh duration.');
         }
 
         $remainingMin = max(1, (int) ceil($laboratory->getRemainingLiveSeconds() / 60));
+
         return back()->with('success', "Live Lab reopened! Countdown resumed with {$remainingMin} minute(s) remaining.");
     }
 }
-

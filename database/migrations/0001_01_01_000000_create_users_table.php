@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('password');
             $table->string('role')->default('student'); // student, instructor, admin
             $table->string('github_username')->nullable();
-            
+
             // Gmail connection fields
             $table->string('gmail')->nullable()->unique();
             $table->timestamp('gmail_verified_at')->nullable();

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SchoolClass;
-use App\Models\Module;
 use App\Models\Laboratory;
+use App\Models\Module;
+use App\Models\SchoolClass;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class SearchController extends Controller
 {
@@ -24,7 +26,7 @@ class SearchController extends Controller
         }
 
         $user = auth()->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'classes' => [],
                 'modules' => [],
@@ -32,10 +34,10 @@ class SearchController extends Controller
             ], 401);
         }
 
-        $cacheKey = "search_{$user->id}_" . md5(strtolower(trim($q)));
+        $cacheKey = "search_{$user->id}_".md5(strtolower(trim($q)));
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($q, $user) {
-            $driver = \Illuminate\Support\Facades\DB::connection()->getDriverName();
+        $data = Cache::remember($cacheKey, 60, function () use ($q, $user) {
+            $driver = DB::connection()->getDriverName();
             $likeOp = $driver === 'pgsql' ? 'ilike' : 'like';
 
             // 1. Resolve Class query based on user role
@@ -46,11 +48,11 @@ class SearchController extends Controller
             } else {
                 $classQuery = SchoolClass::query();
             }
-            $classes = $classQuery->where(function($query) use ($q, $likeOp) {
-                    $query->where('name', $likeOp, "%{$q}%")
-                          ->orWhere('code', $likeOp, "%{$q}%")
-                          ->orWhere('description', $likeOp, "%{$q}%");
-                })
+            $classes = $classQuery->where(function ($query) use ($q, $likeOp) {
+                $query->where('name', $likeOp, "%{$q}%")
+                    ->orWhere('code', $likeOp, "%{$q}%")
+                    ->orWhere('description', $likeOp, "%{$q}%");
+            })
                 ->limit(5)
                 ->get(['school_classes.id', 'name', 'code']);
 
@@ -68,11 +70,11 @@ class SearchController extends Controller
             if ($classIds !== null) {
                 $moduleQuery->whereIn('class_id', $classIds);
             }
-            $modules = $moduleQuery->where(function($query) use ($q, $likeOp) {
-                    $query->where('title', $likeOp, "%{$q}%")
-                          ->orWhere('description', $likeOp, "%{$q}%")
-                          ->orWhere('content', $likeOp, "%{$q}%");
-                })
+            $modules = $moduleQuery->where(function ($query) use ($q, $likeOp) {
+                $query->where('title', $likeOp, "%{$q}%")
+                    ->orWhere('description', $likeOp, "%{$q}%")
+                    ->orWhere('content', $likeOp, "%{$q}%");
+            })
                 ->limit(5)
                 ->get(['id', 'title', 'class_id']);
 
@@ -82,29 +84,29 @@ class SearchController extends Controller
                 $moduleIds = Module::whereIn('class_id', $classIds)->pluck('id');
                 $labQuery->whereIn('module_id', $moduleIds);
             }
-            $laboratories = $labQuery->where(function($query) use ($q, $likeOp) {
-                    $query->where('title', $likeOp, "%{$q}%")
-                          ->orWhere('description', $likeOp, "%{$q}%");
-                })
+            $laboratories = $labQuery->where(function ($query) use ($q, $likeOp) {
+                $query->where('title', $likeOp, "%{$q}%")
+                    ->orWhere('description', $likeOp, "%{$q}%");
+            })
                 ->limit(5)
                 ->get(['id', 'title', 'module_id']);
 
             return [
-                'classes' => $classes->map(function($c) {
+                'classes' => $classes->map(function ($c) {
                     return [
-                        'label' => $c->name . " ({$c->code})",
+                        'label' => $c->name." ({$c->code})",
                         'url' => route('classes.show', $c->id),
                         'type' => 'Class',
                     ];
                 }),
-                'modules' => $modules->map(function($m) {
+                'modules' => $modules->map(function ($m) {
                     return [
                         'label' => $m->title,
                         'url' => route('modules.show', [$m->class_id, $m->id]),
                         'type' => 'Module',
                     ];
                 }),
-                'laboratories' => $laboratories->map(function($l) {
+                'laboratories' => $laboratories->map(function ($l) {
                     return [
                         'label' => $l->title,
                         'url' => route('laboratories.show', $l->id),

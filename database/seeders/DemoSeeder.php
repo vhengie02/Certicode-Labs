@@ -2,24 +2,27 @@
 
 namespace Database\Seeders;
 
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
-use App\Models\Anomaly;
-use App\Models\TelemetryLog;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class DemoSeeder extends Seeder
 {
+    use RefusesProduction;
+
     /**
      * Seed a realistic, ready-to-test CertiCode Labs environment.
      */
     public function run(): void
     {
-        $this->command->info("⚡ Seeding CertiCode Labs instant demo environment...");
+        $this->refuseInProduction();
+
+        $this->command->info('⚡ Seeding CertiCode Labs instant demo environment...');
 
         // 1. Seed Instructor
         $instructor = User::updateOrCreate(
@@ -185,7 +188,7 @@ if ($sorted === [3, 9, 10, 27, 38, 43, 82]) {
     echo "VERIFICATION_FAILED\n";
 }
 PHP
-            ]
+            ],
         ];
 
         // 6. Seed Lab 1: Live Lab (Synchronized Countdown)
@@ -230,7 +233,7 @@ PHP
                         'is_primary' => true,
                         'is_readonly' => false,
                         'content' => "<?php\n\nclass BST {\n    // TODO: Implement binary search\n}\n",
-                    ]
+                    ],
                 ],
                 'availability_mode' => 'open',
                 'time_limit' => 45,
@@ -406,14 +409,14 @@ PHP;
                     'metadata' => [
                         'snippet' => 'public function sort(array $arr): array { ... }',
                         'length' => 450,
-                    ]
+                    ],
                 ]
             );
         }
 
         // Print Summary Table to CLI
         $this->command->newLine();
-        $this->command->info("🎉 Instant Demo Environment Seeded Successfully!");
+        $this->command->info('🎉 Instant Demo Environment Seeded Successfully!');
         $this->command->table(
             ['Role', 'Name', 'Email', 'Password', 'Notes'],
             [

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Admin\UserController;
 use App\Models\User;
+use App\Rules\UniqueEmail;
 use Illuminate\Http\Request;
 
 class StudentProfileController extends Controller
@@ -36,25 +38,17 @@ class StudentProfileController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
-            'username' => 'required|string|max:255|unique:users,username,' . $user->id,
+            'username' => 'required|string|max:255|unique:users,username,'.$user->id,
             'gender' => 'nullable|string|in:male,female,other',
-            'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $user->id,
+            'email' => ['sometimes', 'required', 'string', 'email', 'max:255', new UniqueEmail(ignoreUserId: $user->id)],
             'github_username' => 'nullable|string|max:255',
-            'role' => 'required|string|in:student,instructor,admin',
         ]);
 
-        // Restrict role modification to admin users only
-        if (auth()->user()->role !== 'admin') {
-            unset($validated['role']);
-        }
-
-        $validated['name'] = $validated['first_name'] . ' ' . $validated['last_name'];
+        // No role here: roles change only through Admin\UserController::updateRole, whose
+        // checks (not your own role, not the last admin, not an instructor still teaching)
+        // this form used to skip
+        $validated['name'] = $validated['first_name'].' '.$validated['last_name'];
         $user->update($validated);
-
-        // An admin setting the role directly settles any pending instructor request
-        if (isset($validated['role']) && $validated['role'] !== 'student' && $user->instructor_requested_at) {
-            $user->forceFill(['instructor_requested_at' => null])->save();
-        }
 
         // Redirect appropriately
         if ($user->id === auth()->id()) {
@@ -78,6 +72,6 @@ class StudentProfileController extends Controller
         }
 
         // Same safeguards as Admin > Users (no self-delete, keep an admin, don't cascade classes)
-        return app(\App\Http\Controllers\Admin\UserController::class)->destroy(request(), User::findOrFail($id));
+        return app(UserController::class)->destroy(request(), User::findOrFail($id));
     }
 }

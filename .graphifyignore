@@ -11,3 +11,15 @@ tsconfig.json
 
 # Local graphify tooling
 scripts/graphify/
+
+# Agent skills and tooling (not project code)
+.agents/
+.claude/
+
+# Images: logo explorations, icons, landing screenshots and diagrams. Each one needs its own
+# vision pass and adds little to a code graph.
+branding/
+*.png
+*.jpg
+*.jpeg
+*.svg

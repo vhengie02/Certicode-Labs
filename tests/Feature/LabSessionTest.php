@@ -3,12 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Laboratory;
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
 use App\Models\LabSession;
-use App\Models\TelemetryLog;
-use App\Models\Anomaly;
+use App\Models\Module;
+use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,6 +15,7 @@ class LabSessionTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected Laboratory $laboratory;
 
     protected function setUp(): void
@@ -199,9 +198,11 @@ class LabSessionTest extends TestCase
             'started_at' => now()->subMinutes(120),
         ]);
 
+        // Another student: one student has at most one open attempt per lab
+        $otherStudent = User::create(['name' => 'Other', 'email' => 'other-student@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $activeSession = LabSession::create([
             'lab_id' => $this->laboratory->id,
-            'user_id' => $this->student->id,
+            'user_id' => $otherStudent->id,
             'status' => 'in_progress',
             'started_at' => now()->subMinutes(10),
             'last_ping_at' => now(),

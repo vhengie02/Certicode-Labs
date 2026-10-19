@@ -18,17 +18,17 @@ class InternalUrl
         }
 
         // Already a root-relative path (but not protocol-relative "//host")
-        if (str_starts_with($url, '/') && !str_starts_with($url, '//')) {
+        if (str_starts_with($url, '/') && ! str_starts_with($url, '//')) {
             return $url;
         }
 
         $parts = parse_url($url);
-        if ($parts === false || !in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)) {
+        if ($parts === false || ! in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)) {
             return '#';
         }
 
         return ($parts['path'] ?? '/')
-            . (isset($parts['query']) ? '?' . $parts['query'] : '')
-            . (isset($parts['fragment']) ? '#' . $parts['fragment'] : '');
+            .(isset($parts['query']) ? '?'.$parts['query'] : '')
+            .(isset($parts['fragment']) ? '#'.$parts['fragment'] : '');
     }
 }

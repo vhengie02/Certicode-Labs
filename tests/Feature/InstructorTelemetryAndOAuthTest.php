@@ -2,27 +2,33 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\SchoolClass;
-use App\Models\Module;
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
-use App\Models\Anomaly;
+use App\Models\Module;
+use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Socialite\Facades\Socialite;
-use Tests\TestCase;
 use Mockery;
+use Tests\TestCase;
 
 class InstructorTelemetryAndOAuthTest extends TestCase
 {
     use RefreshDatabase;
 
     protected User $instructor;
+
     protected User $student;
+
     protected SchoolClass $schoolClass;
+
     protected Laboratory $laboratory;
+
     protected LabSession $labSession;
+
     protected Anomaly $anomaly;
 
     protected function setUp(): void
@@ -63,7 +69,7 @@ class InstructorTelemetryAndOAuthTest extends TestCase
             'time_limit' => 60,
             'module_id' => $module->id,
             'tasks_definition' => [
-                ['id' => 1, 'task' => 'Overflow the buffer', 'command' => 'run.sh']
+                ['id' => 1, 'task' => 'Overflow the buffer', 'command' => 'run.sh'],
             ],
         ]);
 
@@ -93,7 +99,7 @@ class InstructorTelemetryAndOAuthTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertSee('Monitoring');
-        $response->assertSee('excessive tab switch');
+        $response->assertSee('Excessive tab switch');
         $response->assertSee($this->student->name);
     }
 
@@ -125,6 +131,37 @@ class InstructorTelemetryAndOAuthTest extends TestCase
         $response->assertStatus(200);
         $response->assertSee('Session Metadata');
         $response->assertSee('Cheat Sheet');
+    }
+
+    /**
+     * Test the timeline hides heartbeat noise and lists events oldest first.
+     */
+    public function test_session_timeline_hides_noise_and_lists_oldest_first(): void
+    {
+        TelemetryLog::create([
+            'lab_session_id' => $this->labSession->id,
+            'event_type' => 'vscode_ping',
+            'payload' => ['source' => 'vscode'],
+        ]);
+        TelemetryLog::create([
+            'lab_session_id' => $this->labSession->id,
+            'event_type' => 'paste_anomaly',
+            'payload' => ['pasted_length' => 321, 'snippet' => 'int x = 1;'],
+            'created_at' => now()->subMinutes(5),
+        ]);
+        TelemetryLog::create([
+            'lab_session_id' => $this->labSession->id,
+            'event_type' => 'tab_switch',
+            'payload' => ['tab_title' => 'Cheat Sheet'],
+        ]);
+
+        $response = $this->actingAs($this->instructor)
+            ->get("/sessions/{$this->labSession->id}/telemetry-timeline");
+
+        $response->assertOk();
+        $response->assertDontSee('vscode ping');
+        $response->assertDontSee('Telemetry event logged.');
+        $response->assertSeeInOrder(['321 chars', 'Cheat Sheet']);
     }
 
     /**
@@ -230,15 +267,15 @@ class InstructorTelemetryAndOAuthTest extends TestCase
         $response = $this->get('/auth/google/callback');
         $response->assertRedirect('/auth/google/verify?needs_role=1');
         $this->assertEquals('new-oauth@gmail.com', session('google_auth_gmail'));
-        $this->assertEquals('OAUTH_VERIFIED', session('google_auth_code'));
+        $this->assertEquals('new-oauth@gmail.com', session('google_auth_oauth_email'));
+        $this->assertNull(session('google_auth_code'));
 
-        // Completing verification form registration with role
+        // Completing verification form registration with role: the OAuth proof replaces the emailed code
         $response2 = $this->withSession([
             'google_auth_gmail' => 'new-oauth@gmail.com',
-            'google_auth_code' => 'OAUTH_VERIFIED',
+            'google_auth_oauth_email' => 'new-oauth@gmail.com',
             'google_auth_name' => 'New Google User',
         ])->post('/auth/google/callback', [
-            'code' => 'OAUTH_VERIFIED',
             'role' => 'student',
         ]);
 
@@ -300,6 +337,8 @@ class InstructorTelemetryAndOAuthTest extends TestCase
      */
     public function test_github_oauth_redirects_to_mock_github(): void
     {
+        config(['services.github.client_id' => null, 'services.github.client_secret' => null]);
+
         $response = $this->get('/auth/github/redirect');
         $response->assertRedirect('/auth/github');
     }
@@ -352,8 +391,8 @@ class InstructorTelemetryAndOAuthTest extends TestCase
 
         $response->assertRedirect('/settings');
         $response->assertSessionHasNoErrors();
-        
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
+
+        $this->assertTrue(Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
     }
 
     /**
@@ -369,6 +408,6 @@ class InstructorTelemetryAndOAuthTest extends TestCase
             ]);
 
         $response->assertSessionHasErrors(['current_password']);
-        $this->assertFalse(\Illuminate\Support\Facades\Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
+        $this->assertFalse(Hash::check('NewSecurePassword123!', $this->student->fresh()->password));
     }
 }

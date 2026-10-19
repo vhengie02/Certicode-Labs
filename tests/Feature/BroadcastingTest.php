@@ -18,7 +18,9 @@ class BroadcastingTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected Laboratory $lab;
+
     protected LabSession $session;
 
     protected function setUp(): void

@@ -8,6 +8,10 @@
         ? [(string) $module->order_index => 'Keep its current position', '0' => 'Move to the top', '9999' => 'Move to the end']
         : ['9999' => 'At the end', '0' => 'At the top'];
     $selectedPosition = (string) old('order_index', $module ? $module->order_index : 9999);
+    // Cloud storage: the browser uploads each file straight to it, because Vercel refuses
+    // request bodies over 4.5 MB. Files already uploaded come back here if the form bounced.
+    $directUploadUrl = \App\Models\ModuleAttachment::usesDirectUploads() ? route('modules.attachment-uploads', $class->id) : null;
+    $pendingUploads = $directUploadUrl ? array_values(array_filter((array) old('uploaded_attachments', []), 'is_array')) : [];
 @endphp
 
 <div class="ui-card">
@@ -65,12 +69,34 @@
             </ul>
         @endif
 
+        @if ($pendingUploads)
+            <ul class="space-y-2" role="list">
+                @foreach ($pendingUploads as $upload)
+                    <li class="flex items-center gap-3 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-2.5" data-pending-upload>
+                        <svg class="w-4 h-4 shrink-0 text-[#888888]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z M14 3v5h5"/></svg>
+                        <span class="min-w-0 flex-1">
+                            <span class="block truncate text-sm text-[#ededed]">{{ $upload['name'] ?? '' }}</span>
+                            <span class="block text-xs text-[#888888]">Uploaded. It's added when you save.</span>
+                        </span>
+                        <input type="hidden" name="uploaded_attachments[{{ $loop->index }}][key]" value="{{ $upload['key'] ?? '' }}">
+                        <input type="hidden" name="uploaded_attachments[{{ $loop->index }}][name]" value="{{ $upload['name'] ?? '' }}">
+                        <button type="button" class="text-sm text-[#a3a3a3] hover:text-red-400" data-remove-upload>Remove</button>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+
         <label for="attachments" class="file-drop flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#3a3a3a] bg-[#141414] px-4 py-7 text-center cursor-pointer hover:border-[#3ecf8e]/50 transition-colors">
             <svg class="w-6 h-6 text-[#888888]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
             <span class="text-sm text-[#ededed]"><span class="font-medium text-[#3ecf8e]">Choose files</span> or drop them here</span>
             <span class="file-drop-list text-xs text-[#888888]">{{ $module ? 'Adds to the files above' : 'Optional' }}</span>
-            <input type="file" name="attachments[]" id="attachments" multiple class="sr-only">
+            <input type="file" name="attachments[]" id="attachments" multiple class="sr-only"
+                   data-max-bytes="{{ \App\Models\ModuleAttachment::MAX_SIZE_KB * 1024 }}"
+                   @if($directUploadUrl) data-direct-upload-url="{{ $directUploadUrl }}" @endif>
         </label>
+        <div class="direct-upload-inputs" hidden></div>
+        <p class="direct-upload-error ui-error" role="alert" hidden></p>
+        @error('attachments') <p class="ui-error">{{ $message }}</p> @enderror
         @error('attachments.*') <p class="ui-error">{{ $message }}</p> @enderror
     </div>
 </div>

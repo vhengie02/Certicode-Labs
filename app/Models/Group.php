@@ -28,8 +28,8 @@ class Group extends Model
     public function members()
     {
         return $this->belongsToMany(User::class, 'group_members')
-                    ->withPivot('contribution_score')
-                    ->withTimestamps();
+            ->withPivot('contribution_score')
+            ->withTimestamps();
     }
 
     /**

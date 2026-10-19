@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Services\CodeSimilarityService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 
 class Laboratory extends Model
 {
@@ -27,9 +30,11 @@ class Laboratory extends Model
         'live_status',
         'live_started_at',
         'live_elapsed_seconds',
+        'max_attempts',
     ];
 
     protected $casts = [
+        'max_attempts' => 'integer',
         'tasks_definition' => 'array',
         'test_cases' => 'array',
         'is_group_lab' => 'boolean',
@@ -39,16 +44,24 @@ class Laboratory extends Model
         'live_elapsed_seconds' => 'integer',
     ];
 
+    /** The grading key. Never serialized, so a lab sent as JSON can't hand it to a student. */
+    protected $hidden = [
+        'reference_solution',
+        'rubric',
+        'test_cases',
+    ];
+
     /**
-     * Get normalized starter files with backward-compatibility fallback.
+     * Get normalized starter files with backward-compatibility fallback. The fallback is a
+     * neutral stub, never the reference solution: that is the grading key.
      */
     public function getStarterFilesList(): array
     {
-        if (!empty($this->starter_files) && is_array($this->starter_files) && count($this->starter_files) > 0) {
+        if (! empty($this->starter_files) && is_array($this->starter_files) && count($this->starter_files) > 0) {
             return $this->starter_files;
         }
 
-        $defaultContent = $this->reference_solution ?: "// CertiCode Labs - Starter Code\npublic class TaskManager {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, CertiCode Labs!\");\n    }\n}\n";
+        $defaultContent = "// CertiCode Labs - Starter Code\npublic class TaskManager {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, CertiCode Labs!\");\n    }\n}\n";
 
         return [
             [
@@ -56,7 +69,37 @@ class Laboratory extends Model
                 'content' => $defaultContent,
                 'is_primary' => true,
                 'is_readonly' => false,
-            ]
+            ],
+        ];
+    }
+
+    /**
+     * The task checklist as students may see it: id and text only. Each task's 'command' is a
+     * grading check, and showing it tells the student exactly what string to write.
+     */
+    public function studentTasks(): array
+    {
+        return collect(is_array($this->tasks_definition) ? $this->tasks_definition : [])
+            ->filter(fn ($task) => is_array($task))
+            ->map(fn ($task) => ['id' => $task['id'] ?? null, 'task' => $task['task'] ?? ''])
+            ->values()
+            ->all();
+    }
+
+    /** The lab as the student-facing API sends it: no grading key, no task checks. */
+    public function studentPayload(): array
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'description' => $this->description,
+            'is_group_lab' => (bool) $this->is_group_lab,
+            'availability_mode' => $this->availability_mode ?? 'open',
+            'live_status' => $this->live_status ?? 'not_started',
+            'live_duration_minutes' => $this->live_duration_minutes ?? $this->time_limit ?? 60,
+            'time_limit' => $this->time_limit,
+            'tasks_definition' => $this->studentTasks(),
+            'starter_files' => $this->getStarterFilesList(),
         ];
     }
 
@@ -73,7 +116,7 @@ class Laboratory extends Model
      */
     public function isOpenLab(): bool
     {
-        return !$this->isLiveLab();
+        return ! $this->isLiveLab();
     }
 
     /**
@@ -97,9 +140,10 @@ class Laboratory extends Model
      */
     public function isLiveClosed(): bool
     {
-        if (!$this->isLiveLab()) {
+        if (! $this->isLiveLab()) {
             return false;
         }
+
         return $this->live_status === 'closed' || ($this->live_status === 'active' && $this->getRemainingLiveSeconds() <= 0);
     }
 
@@ -109,6 +153,7 @@ class Laboratory extends Model
     public function getLiveTotalDurationSeconds(): int
     {
         $minutes = $this->live_duration_minutes ?: $this->time_limit ?: 60;
+
         return (int) ($minutes * 60);
     }
 
@@ -117,7 +162,7 @@ class Laboratory extends Model
      */
     public function getLiveElapsedSeconds(): int
     {
-        if (!$this->isLiveLab()) {
+        if (! $this->isLiveLab()) {
             return 0;
         }
 
@@ -129,6 +174,7 @@ class Laboratory extends Model
 
         if ($this->live_status === 'active' && $this->live_started_at) {
             $currentRun = (int) $this->live_started_at->diffInSeconds(now(), true);
+
             return min($this->getLiveTotalDurationSeconds(), $baseElapsed + $currentRun);
         }
 
@@ -140,7 +186,7 @@ class Laboratory extends Model
      */
     public function getRemainingLiveSeconds(): int
     {
-        if (!$this->isLiveLab()) {
+        if (! $this->isLiveLab()) {
             return ($this->time_limit ?? 0) * 60;
         }
 
@@ -161,7 +207,7 @@ class Laboratory extends Model
     {
         if ($durationMinutes && $durationMinutes > 0) {
             $this->live_duration_minutes = $durationMinutes;
-        } elseif (!$this->live_duration_minutes) {
+        } elseif (! $this->live_duration_minutes) {
             $this->live_duration_minutes = $this->time_limit ?: 60;
         }
 
@@ -201,7 +247,12 @@ class Laboratory extends Model
             ]);
 
             // Purge ephemeral chat
-            \App\Models\LabSessionChat::where('lab_session_id', $session->id)->delete();
+            LabSessionChat::where('lab_session_id', $session->id)->delete();
+        }
+
+        // Those attempts are submissions now: compare them once for the monitoring page
+        if ($inProgressSessions->isNotEmpty()) {
+            app(CodeSimilarityService::class)->refreshLabReportQuietly($this->id);
         }
     }
 
@@ -235,6 +286,7 @@ class Laboratory extends Model
     {
         if ($this->isLiveLab() && $this->live_status === 'active' && $this->getRemainingLiveSeconds() <= 0) {
             $this->closeLive();
+
             return true;
         }
 
@@ -270,7 +322,7 @@ class Laboratory extends Model
      */
     public function recordViewBy(?User $user): void
     {
-        if (!$user || $user->role !== 'student') {
+        if (! $user || $user->role !== 'student') {
             return;
         }
 
@@ -286,6 +338,97 @@ class Laboratory extends Model
     public function labSessions()
     {
         return $this->hasMany(LabSession::class, 'lab_id');
+    }
+
+    /**
+     * Sessions a student may start on this lab; null means unlimited. Stored as 0 for unlimited,
+     * and a lab saved before the column existed allows one.
+     */
+    public function attemptLimit(): ?int
+    {
+        $limit = $this->max_attempts ?? 1;
+
+        return $limit > 0 ? $limit : null;
+    }
+
+    /**
+     * Every session the student has started counts, whether it was finished, timed out or
+     * left: otherwise abandoning a lab would be a free retake.
+     */
+    public function attemptsUsedBy(User $user): int
+    {
+        return $this->labSessions()->where('user_id', $user->id)->count();
+    }
+
+    /** Remaining new sessions for the student, or null when unlimited. */
+    public function attemptsLeftFor(User $user): ?int
+    {
+        $limit = $this->attemptLimit();
+
+        return $limit === null ? null : max(0, $limit - $this->attemptsUsedBy($user));
+    }
+
+    /**
+     * Whether the user may start a fresh session (resuming an unfinished one is always allowed).
+     * Only students are limited; instructors and admins can try their own labs freely.
+     */
+    public function canStartNewAttempt(User $user): bool
+    {
+        return $user->role !== 'student' || $this->attemptsLeftFor($user) !== 0;
+    }
+
+    /**
+     * The user's open attempt on this lab, or a new one if they may start one; null when they
+     * have used all their attempts. An open attempt past the lab's time limit is abandoned
+     * first. The database allows one open attempt per user and lab (a partial unique index),
+     * so two starts at once (a double click, the page and the extension together) both end
+     * up with the same attempt instead of two.
+     */
+    public function findOrStartAttemptFor(User $user): ?LabSession
+    {
+        $session = $this->openAttemptOf($user);
+
+        if ($session && $this->time_limit > 0) {
+            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
+            if ($elapsed >= ($this->time_limit * 60)) {
+                $session->update([
+                    'status' => 'abandoned',
+                    'ended_at' => now(),
+                ]);
+                $session = null;
+            }
+        }
+
+        if ($session) {
+            return $session;
+        }
+        if (! $this->canStartNewAttempt($user)) {
+            return null;
+        }
+
+        try {
+            // A savepoint when already inside a transaction, so a lost race doesn't abort it
+            return DB::transaction(fn () => LabSession::create([
+                'lab_id' => $this->id,
+                'user_id' => $user->id,
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'performance_score' => 0.0,
+            ]));
+        } catch (UniqueConstraintViolationException $e) {
+            // Another request opened it a moment ago
+            return $this->openAttemptOf($user);
+        }
+    }
+
+    private function openAttemptOf(User $user): ?LabSession
+    {
+        return $this->labSessions()
+            ->where('user_id', $user->id)
+            ->where('status', 'in_progress')
+            ->latest()
+            ->latest('id')
+            ->first();
     }
 
     /**

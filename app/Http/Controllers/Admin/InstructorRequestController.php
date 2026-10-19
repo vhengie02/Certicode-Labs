@@ -25,7 +25,7 @@ class InstructorRequestController extends Controller
 
     public function approve(User $user)
     {
-        if (!$user->hasPendingInstructorRequest()) {
+        if (! $user->hasPendingInstructorRequest()) {
             return back()->with('error', "{$user->name} has no pending instructor request.");
         }
 
@@ -37,7 +37,7 @@ class InstructorRequestController extends Controller
 
     public function decline(User $user)
     {
-        if (!$user->hasPendingInstructorRequest()) {
+        if (! $user->hasPendingInstructorRequest()) {
             return back()->with('error', "{$user->name} has no pending instructor request.");
         }
 
@@ -52,7 +52,7 @@ class InstructorRequestController extends Controller
         try {
             $user->notify(new ClassActivityNotification($title, $message, $url, 'info'));
         } catch (\Throwable $e) {
-            Log::warning("Could not notify {$user->email} about their instructor request: " . $e->getMessage());
+            Log::warning("Could not notify {$user->email} about their instructor request: ".$e->getMessage());
         }
     }
 }

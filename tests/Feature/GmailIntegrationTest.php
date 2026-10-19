@@ -3,10 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Models\SchoolClass;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Notification;
 use App\Notifications\ClassActivityNotification;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class GmailIntegrationTest extends TestCase
@@ -25,6 +26,25 @@ class GmailIntegrationTest extends TestCase
             'password' => bcrypt('password'),
             'role' => 'student',
         ]);
+    }
+
+    /**
+     * Request a Gmail code and return it. Only a hash is stored, so the code is read from the
+     * log line that local and test environments write.
+     */
+    private function requestGmailCode(string $gmail = 'john.doe@gmail.com'): string
+    {
+        $code = null;
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$code) {
+            if (preg_match('/^Gmail connection code .*: (\d{6})$/', $event->message, $m)) {
+                $code = $m[1];
+            }
+        });
+
+        $this->actingAs($this->user)->post('/settings/gmail/connect', ['gmail' => $gmail]);
+        $this->assertNotNull($code, 'No Gmail code was logged');
+
+        return $code;
     }
 
     /**
@@ -80,7 +100,7 @@ class GmailIntegrationTest extends TestCase
         $this->assertEquals('john.doe@gmail.com', $this->user->gmail);
         $this->assertNotNull($this->user->gmail_verification_code);
         $this->assertNull($this->user->gmail_verified_at);
-        $this->assertNotEmpty(session('gmail_code_debug'));
+        $this->assertNull(session('gmail_code_debug'));
     }
 
     /**
@@ -89,13 +109,7 @@ class GmailIntegrationTest extends TestCase
     public function test_submitting_correct_code_verifies_gmail(): void
     {
         // First request connection
-        $this->actingAs($this->user)
-            ->post('/settings/gmail/connect', [
-                'gmail' => 'john.doe@gmail.com',
-            ]);
-
-        $this->user->refresh();
-        $correctCode = $this->user->gmail_verification_code;
+        $correctCode = $this->requestGmailCode();
 
         // Verify code
         $response = $this->actingAs($this->user)
@@ -160,6 +174,7 @@ class GmailIntegrationTest extends TestCase
         $response = $this->withSession([
             'google_auth_gmail' => 'verified@gmail.com',
             'google_auth_code' => '123456',
+            'google_auth_code_for' => 'verified@gmail.com',
         ])->post('/auth/google/callback', [
             'code' => '123456',
         ]);
@@ -169,9 +184,10 @@ class GmailIntegrationTest extends TestCase
     }
 
     /**
-     * Test failed login via mock Google Callback for unverified/unlinked Gmail.
+     * The emailed code proves the user owns the account's address, so an unverified Gmail
+     * on that account is verified and the user is signed in (no password loop back to /login).
      */
-    public function test_google_callback_rejects_unverified_gmail(): void
+    public function test_google_callback_verifies_gmail_and_signs_in_account_owner(): void
     {
         // Unverified gmail address
         $this->user->update([
@@ -183,13 +199,14 @@ class GmailIntegrationTest extends TestCase
         $response = $this->withSession([
             'google_auth_gmail' => 'unverified@gmail.com',
             'google_auth_code' => '123456',
+            'google_auth_code_for' => 'unverified@gmail.com',
         ])->post('/auth/google/callback', [
             'code' => '123456',
         ]);
 
-        $response->assertRedirect('/login');
-        $response->assertSessionHasErrors();
-        $this->assertGuest();
+        $response->assertRedirect('/dashboard');
+        $this->assertAuthenticatedAs($this->user);
+        $this->assertNotNull($this->user->fresh()->gmail_verified_at);
     }
 
     /**
@@ -225,7 +242,7 @@ class GmailIntegrationTest extends TestCase
 
         $this->user->notify(new ClassActivityNotification('Title', 'Message', '/url', 'class'));
         Notification::assertSentTo($this->user, ClassActivityNotification::class, function ($notification, $channels) {
-            return in_array('database', $channels) && !in_array('mail', $channels);
+            return in_array('database', $channels) && ! in_array('mail', $channels);
         });
     }
 
@@ -242,9 +259,9 @@ class GmailIntegrationTest extends TestCase
     }
 
     /**
-     * Test a user is prompted for password when Gmail already exists.
+     * An existing account gets an emailed code too (not a password prompt), without the role step.
      */
-    public function test_google_email_submission_redirects_to_password_if_exists(): void
+    public function test_google_email_submission_sends_code_if_exists(): void
     {
         $this->user->update([
             'gmail' => 'john@example.com',
@@ -255,7 +272,8 @@ class GmailIntegrationTest extends TestCase
             'gmail' => 'john@example.com',
         ]);
 
-        $response->assertRedirect('/auth/google/password');
+        $response->assertRedirect('/auth/google/verify');
+        $this->assertNotNull(session('google_auth_code'));
     }
 
     /**
@@ -306,6 +324,7 @@ class GmailIntegrationTest extends TestCase
         $response = $this->withSession([
             'google_auth_gmail' => 'newuser@gmail.com',
             'google_auth_code' => '123456',
+            'google_auth_code_for' => 'newuser@gmail.com',
         ])->post('/auth/google/callback', [
             'code' => '123456',
             'role' => 'student',
@@ -317,7 +336,7 @@ class GmailIntegrationTest extends TestCase
             'gmail' => 'newuser@gmail.com',
             'role' => 'student',
         ]);
-        
+
         $user = User::where('email', 'newuser@gmail.com')->first();
         $this->assertNotNull($user->gmail_verified_at);
         $this->assertAuthenticatedAs($user);

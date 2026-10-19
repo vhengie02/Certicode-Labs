@@ -12,7 +12,7 @@ class SandboxExecutionServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->sandbox = new SandboxExecutionService();
+        $this->sandbox = new SandboxExecutionService;
     }
 
     /**
@@ -21,7 +21,7 @@ class SandboxExecutionServiceTest extends TestCase
     public function test_unsupported_language_returns_error(): void
     {
         $result = $this->sandbox->execute('print("hello")', 'unsupported_lang');
-        
+
         $this->assertEquals('error', $result['status']);
         $this->assertStringContainsString('Unsupported language', $result['errors']);
     }
@@ -60,9 +60,9 @@ class SandboxExecutionServiceTest extends TestCase
     {
         // An infinite loop code that executes longer than the 5.0 seconds timeout limit
         $code = '<?php while(true) { usleep(100); }';
-        
+
         $result = $this->sandbox->execute($code, 'php');
-        
+
         $this->assertEquals('error', $result['status']);
         $this->assertStringContainsString('Timed Out', $result['errors']);
     }

@@ -1,18 +1,35 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Admin\CompetencyController;
+use App\Http\Controllers\Admin\InstructorRequestController;
+use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\SystemSettingsController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\AnomalySnapshotController;
+use App\Http\Controllers\Api\LabSessionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
-use App\Http\Controllers\ClassController;
-use App\Http\Controllers\LaboratoryController;
-use App\Http\Controllers\LabAttemptController;
-use App\Http\Controllers\StudentProfileController;
+use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\CertificateController;
-use App\Http\Controllers\SettingsController;
-use App\Http\Controllers\SearchController;
+use App\Http\Controllers\ClassController;
+use App\Http\Controllers\CronController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InstructorMonitoringController;
-use App\Http\Controllers\Api\LabSessionController;
+use App\Http\Controllers\LabAttemptController;
+use App\Http\Controllers\LaboratoryController;
+use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\StudentProfileController;
+use App\Models\User;
+use App\Support\InternalUrl;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 // High-performance cached favicon routes
 Route::get('/favicon.ico', function () {
@@ -20,14 +37,14 @@ Route::get('/favicon.ico', function () {
         'Content-Type' => 'image/x-icon',
         'Cache-Control' => 'public, max-age=31536000, immutable',
     ]);
-})->withoutMiddleware([\Illuminate\Session\Middleware\StartSession::class, \Illuminate\View\Middleware\ShareErrorsFromSession::class]);
+})->withoutMiddleware([StartSession::class, ShareErrorsFromSession::class]);
 
 Route::get('/favicon.svg', function () {
     return response()->file(public_path('favicon.svg'), [
         'Content-Type' => 'image/svg+xml',
         'Cache-Control' => 'public, max-age=31536000, immutable',
     ]);
-})->withoutMiddleware([\Illuminate\Session\Middleware\StartSession::class, \Illuminate\View\Middleware\ShareErrorsFromSession::class]);
+})->withoutMiddleware([StartSession::class, ShareErrorsFromSession::class]);
 
 // Diagnostic Health Check for Serverless & Monitoring (bypasses session/cookie middleware)
 Route::get('/health-check', function () {
@@ -35,20 +52,20 @@ Route::get('/health-check', function () {
     $dbError = null;
     $sampleTables = [];
     try {
-        \Illuminate\Support\Facades\DB::connection()->getPdo();
+        DB::connection()->getPdo();
         $dbOk = true;
         if (config('database.default') === 'pgsql') {
-            $tables = \Illuminate\Support\Facades\DB::select("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' LIMIT 5");
+            $tables = DB::select("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' LIMIT 5");
             $sampleTables = array_column($tables, 'table_name');
         }
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         $dbError = $e->getMessage();
     }
 
     return response()->json([
         'status' => $dbOk ? 'healthy' : 'degraded',
         'php_version' => PHP_VERSION,
-        'app_key_configured' => !empty(config('app.key')),
+        'app_key_configured' => ! empty(config('app.key')),
         'db_connection' => config('database.default'),
         'db_connected' => $dbOk,
         'db_error' => $dbError,
@@ -59,10 +76,10 @@ Route::get('/health-check', function () {
         'session_lifetime' => config('session.lifetime'),
     ]);
 })->withoutMiddleware([
-    \Illuminate\Cookie\Middleware\EncryptCookies::class,
-    \Illuminate\Session\Middleware\StartSession::class,
-    \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-    \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+    EncryptCookies::class,
+    StartSession::class,
+    ShareErrorsFromSession::class,
+    VerifyCsrfToken::class,
 ]);
 
 Route::get('/', function () {
@@ -74,18 +91,18 @@ Route::get('/verify-certificate/{code}', [CertificateController::class, 'verify'
 
 // Public Google Authentication Mock
 Route::get('/auth/google', [LoginController::class, 'redirectToGoogle'])->name('auth.google');
-Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email');
+Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email')->middleware('throttle:auth-mail');
 Route::get('/auth/google/verify', [LoginController::class, 'showGoogleVerify'])->name('auth.google.verify');
-Route::post('/auth/google/callback', [LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+Route::post('/auth/google/callback', [LoginController::class, 'handleGoogleCallback'])->name('auth.google.callback')->middleware('throttle:code-verify');
 Route::get('/auth/google/password', [LoginController::class, 'showGooglePassword'])->name('auth.google.password');
-Route::post('/auth/google/password', [LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit');
-Route::post('/auth/google/forgot-password', [LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot');
+Route::post('/auth/google/password', [LoginController::class, 'handleGooglePassword'])->name('auth.google.password.submit')->middleware('throttle:login');
+Route::post('/auth/google/forgot-password', [LoginController::class, 'sendGoogleResetLink'])->name('auth.google.forgot')->middleware('throttle:auth-mail');
 
 // Password Reset Routes
 Route::get('/forgot-password', [LoginController::class, 'showForgotPasswordForm'])->name('password.request');
-Route::post('/forgot-password', [LoginController::class, 'sendResetLinkEmail'])->name('password.email');
+Route::post('/forgot-password', [LoginController::class, 'sendResetLinkEmail'])->name('password.email')->middleware('throttle:auth-mail');
 Route::get('/reset-password/{token}', [LoginController::class, 'showResetPasswordForm'])->name('password.reset');
-Route::post('/reset-password', [LoginController::class, 'resetPassword'])->name('password.update');
+Route::post('/reset-password', [LoginController::class, 'resetPassword'])->name('password.update')->middleware('throttle:code-verify');
 
 // Public GitHub Authentication Mock (Local Fallback)
 Route::get('/auth/github', [LoginController::class, 'redirectToGithub'])->name('auth.github');
@@ -97,25 +114,25 @@ Route::get('/auth/{provider}/callback', [LoginController::class, 'handleProvider
 
 // Authentication Routes
 Route::get('/register', [RegisterController::class, 'show'])->name('register.show');
-Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
+Route::post('/register', [RegisterController::class, 'store'])->name('register.store')->middleware('throttle:register');
 
 Route::get('/login', [LoginController::class, 'show'])->name('login');
-Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+Route::post('/login', [LoginController::class, 'store'])->name('login.store')->middleware('throttle:login');
 
 Route::post('/logout', LogoutController::class)->name('logout')->middleware('auth');
 
 // Protected Routes
 Route::middleware('auth')->group(function () {
-    Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'show'])->name('dashboard');
-    Route::get('/dashboard/sections', [\App\Http\Controllers\DashboardController::class, 'sections'])->name('dashboard.sections');
+    Route::get('/dashboard', [DashboardController::class, 'show'])->name('dashboard');
+    Route::get('/dashboard/sections', [DashboardController::class, 'sections'])->name('dashboard.sections');
 
     // Settings & Account preferences
     Route::get('/settings', [SettingsController::class, 'show'])->name('settings.show');
     Route::put('/settings/profile', [SettingsController::class, 'updateProfile'])->name('settings.profile.update');
     Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password.update');
     Route::post('/settings/notifications', [SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
-    Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect');
-    Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify');
+    Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect')->middleware('throttle:auth-mail');
+    Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify')->middleware('throttle:code-verify');
     Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
     Route::post('/settings/github/disconnect', [SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
 
@@ -128,13 +145,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
+    Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
+    Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
     Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
     Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
     Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
-    
+
     // Modules routing
     Route::get('/classes/{class_id}/modules/create', [ClassController::class, 'createModule'])->name('modules.create');
     Route::post('/classes/{class_id}/modules', [ClassController::class, 'storeModule'])->name('modules.store');
+    Route::post('/classes/{class_id}/modules/attachment-uploads', [ClassController::class, 'attachmentUpload'])->name('modules.attachment-uploads');
     Route::get('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'showModule'])->name('modules.show');
     Route::get('/classes/{class_id}/modules/{module_id}/edit', [ClassController::class, 'editModule'])->name('modules.edit');
     Route::put('/classes/{class_id}/modules/{module_id}', [ClassController::class, 'updateModule'])->name('modules.update');
@@ -172,24 +192,24 @@ Route::middleware('auth')->group(function () {
 
     // Admin: review instructor access requests
     Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {
-        Route::get('/instructor-requests', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'index'])->name('instructor-requests.index');
-        Route::post('/instructor-requests/{user}/approve', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'approve'])->name('instructor-requests.approve');
-        Route::post('/instructor-requests/{user}/decline', [\App\Http\Controllers\Admin\InstructorRequestController::class, 'decline'])->name('instructor-requests.decline');
+        Route::get('/instructor-requests', [InstructorRequestController::class, 'index'])->name('instructor-requests.index');
+        Route::post('/instructor-requests/{user}/approve', [InstructorRequestController::class, 'approve'])->name('instructor-requests.approve');
+        Route::post('/instructor-requests/{user}/decline', [InstructorRequestController::class, 'decline'])->name('instructor-requests.decline');
 
-        Route::get('/users', [\App\Http\Controllers\Admin\UserController::class, 'index'])->name('users.index');
-        Route::patch('/users/{user}/role', [\App\Http\Controllers\Admin\UserController::class, 'updateRole'])->name('users.role');
-        Route::delete('/users/{user}', [\App\Http\Controllers\Admin\UserController::class, 'destroy'])->name('users.destroy');
+        Route::get('/users', [UserController::class, 'index'])->name('users.index');
+        Route::patch('/users/{user}/role', [UserController::class, 'updateRole'])->name('users.role');
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
 
-        Route::get('/competencies', [\App\Http\Controllers\Admin\CompetencyController::class, 'index'])->name('competencies.index');
-        Route::post('/competencies', [\App\Http\Controllers\Admin\CompetencyController::class, 'store'])->name('competencies.store');
-        Route::put('/competencies/{competency}', [\App\Http\Controllers\Admin\CompetencyController::class, 'update'])->name('competencies.update');
-        Route::delete('/competencies/{competency}', [\App\Http\Controllers\Admin\CompetencyController::class, 'destroy'])->name('competencies.destroy');
+        Route::get('/competencies', [CompetencyController::class, 'index'])->name('competencies.index');
+        Route::post('/competencies', [CompetencyController::class, 'store'])->name('competencies.store');
+        Route::put('/competencies/{competency}', [CompetencyController::class, 'update'])->name('competencies.update');
+        Route::delete('/competencies/{competency}', [CompetencyController::class, 'destroy'])->name('competencies.destroy');
 
-        Route::get('/system', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'edit'])->name('system.edit');
-        Route::put('/system', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('system.update');
+        Route::get('/system', [SystemSettingsController::class, 'edit'])->name('system.edit');
+        Route::put('/system', [SystemSettingsController::class, 'update'])->name('system.update');
 
-        Route::get('/reports', [\App\Http\Controllers\Admin\ReportController::class, 'index'])->name('reports.index');
-        Route::get('/reports/export/{type}', [\App\Http\Controllers\Admin\ReportController::class, 'export'])->name('reports.export');
+        Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/export/{type}', [ReportController::class, 'export'])->name('reports.export');
     });
 
     // Global Search
@@ -197,20 +217,20 @@ Route::middleware('auth')->group(function () {
 
     // Notifications
     Route::get('/notifications/fetch', function () {
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = auth()->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json(['unreadCount' => 0, 'notifications' => []]);
         }
 
         $cacheKey = "user_notifs_{$user->id}";
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 15, function () use ($user) {
+        $data = Cache::remember($cacheKey, 15, function () use ($user) {
             $unreadCount = $user->unreadNotifications()->count();
             $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
                 return [
                     'id' => $notif->id,
                     'unread' => $notif->unread(),
-                    'url' => \App\Support\InternalUrl::path($notif->data['url'] ?? null),
+                    'url' => InternalUrl::path($notif->data['url'] ?? null),
                     'title' => $notif->data['title'] ?? 'Notification',
                     'message' => $notif->data['message'] ?? '',
                     'type' => $notif->data['type'] ?? 'info',
@@ -229,18 +249,18 @@ Route::middleware('auth')->group(function () {
     })->name('notifications.fetch');
 
     Route::post('/notifications/mark-as-read', function () {
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = auth()->user();
         if ($user) {
             $user->unreadNotifications->markAsRead();
-            \Illuminate\Support\Facades\Cache::forget("user_notifs_{$user->id}");
-            \Illuminate\Support\Facades\Cache::store('file')->forget("user_notifs_summary_{$user->id}");
+            Cache::forget("user_notifs_{$user->id}");
+            Cache::store('file')->forget("user_notifs_summary_{$user->id}");
 
             $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
                 return [
                     'id' => $notif->id,
                     'unread' => false,
-                    'url' => \App\Support\InternalUrl::path($notif->data['url'] ?? null),
+                    'url' => InternalUrl::path($notif->data['url'] ?? null),
                     'title' => $notif->data['title'] ?? 'Notification',
                     'message' => $notif->data['message'] ?? '',
                     'type' => $notif->data['type'] ?? 'info',
@@ -254,6 +274,7 @@ Route::middleware('auth')->group(function () {
                 'notifications' => $notifications,
             ]);
         }
+
         return response()->json(['status' => 'success', 'unreadCount' => 0, 'notifications' => []]);
     })->name('notifications.mark-as-read');
 });
@@ -264,8 +285,8 @@ Route::middleware('auth')->group(function () {
 // token or a signed-in user (lab.session); lab-level routes require login.
 // CSRF-exempt for client-side API & webcam verification; the session cookie is SameSite=Lax.
 Route::prefix('v1')->withoutMiddleware([
-    \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
-    \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+    ValidateCsrfToken::class,
+    VerifyCsrfToken::class,
 ])->group(function () {
     Route::middleware('auth')->group(function () {
         Route::post('/labs/{labId}/verify-camera', [LabSessionController::class, 'verifyCameraLab']);
@@ -279,10 +300,11 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
+        Route::post('/sessions/{sessionId}/vscode-disconnect', [LabSessionController::class, 'vscodeDisconnect']);
         Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
-        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode']);
-        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress']);
-        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession']);
+        Route::post('/sessions/{sessionId}/execute', [LabSessionController::class, 'executeCode'])->middleware('throttle:lab-execute');
+        Route::post('/sessions/{sessionId}/check-progress', [LabSessionController::class, 'checkProgress'])->middleware('throttle:lab-grade');
+        Route::post('/sessions/{sessionId}/submit', [LabSessionController::class, 'submitSession'])->middleware('throttle:lab-grade');
         Route::post('/sessions/{sessionId}/github-contributions', [LabSessionController::class, 'syncGithubContributions']);
         Route::post('/sessions/{sessionId}/diff', [LabSessionController::class, 'recordDiff']);
         Route::get('/sessions/{sessionId}/chat', [LabSessionController::class, 'getChats']);
@@ -295,4 +317,4 @@ Route::prefix('v1')->withoutMiddleware([
 });
 
 // Scheduled tick: Vercel calls /api/cron/tick, which reaches Laravel as /cron/tick
-Route::get('/cron/tick', \App\Http\Controllers\CronController::class);
+Route::get('/cron/tick', CronController::class);

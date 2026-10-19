@@ -10,6 +10,7 @@ use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -21,9 +22,13 @@ class CompetencyCreditTest extends TestCase
     use RefreshDatabase;
 
     private User $instructor;
+
     private User $student;
+
     private Competency $competency;
+
     private Laboratory $labA;
+
     private Laboratory $labB;
 
     protected function setUp(): void
@@ -80,7 +85,7 @@ class CompetencyCreditTest extends TestCase
         $this->assertSame(70.0, $this->score());
     }
 
-    public function test_extension_ending_a_session_credits_competencies()
+    public function test_leaving_from_the_extension_keeps_the_attempt_open_and_uncredited()
     {
         $session = $this->inProgress($this->labA, 65);
 
@@ -88,7 +93,8 @@ class CompetencyCreditTest extends TestCase
             ->postJson("/api/v1/sessions/{$session->id}/end")
             ->assertOk();
 
-        $this->assertSame(65.0, $this->score());
+        $this->assertSame('in_progress', $session->fresh()->status);
+        $this->assertNull($this->score());
     }
 
     public function test_extension_polling_an_expired_live_lab_credits_competencies()
@@ -158,9 +164,9 @@ class CompetencyCreditTest extends TestCase
         $row = StudentCompetency::where('user_id', $this->student->id)->firstOrFail();
         $this->travel(5)->minutes();
 
-        \Illuminate\Support\Facades\DB::enableQueryLog();
+        DB::enableQueryLog();
         $session->update(['last_ping_at' => now()]);
-        $queries = collect(\Illuminate\Support\Facades\DB::getQueryLog())->pluck('query')->implode("\n");
+        $queries = collect(DB::getQueryLog())->pluck('query')->implode("\n");
 
         $this->assertStringNotContainsString('laboratory_competency', $queries);
         $this->assertEquals($row->updated_at, $row->fresh()->updated_at);

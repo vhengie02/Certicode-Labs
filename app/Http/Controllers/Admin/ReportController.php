@@ -35,7 +35,7 @@ class ReportController extends Controller
             ['Submissions', (clone $completedInPeriod)->count(), 'Sessions finished and graded'],
             ['Average grade', $this->roundOrNull((clone $completedInPeriod)->avg(DB::raw(LabSession::effectiveGradeSql()))), 'Of submissions, overrides included'],
             ['Certificates', Certificate::query()->when($since, fn ($q) => $q->where('issued_at', '>=', $since))->count(), 'Issued in this period'],
-            ['Integrity flags', Anomaly::query()->when($since, fn ($q) => $q->where('created_at', '>=', $since))->count(), Anomaly::whereRaw('resolved = false')->count() . ' still open overall'],
+            ['Integrity flags', Anomaly::query()->when($since, fn ($q) => $q->where('created_at', '>=', $since))->count(), Anomaly::whereRaw('resolved = false')->count().' still open overall'],
         ];
 
         $roles = User::query()->selectRaw('role, count(*) as total')->groupBy('role')->pluck('total', 'role');
@@ -65,6 +65,8 @@ class ReportController extends Controller
         [$period, $since] = $this->period($request);
         abort_unless(in_array($type, ['users', 'classes', 'sessions', 'flags', 'certificates'], true), 404);
 
+        // Exports with relations use lazyById, not cursor(): cursor() ignores with(), so every
+        // row would load its student, lab and class with queries of its own
         [$header, $rows] = match ($type) {
             'users' => [
                 ['ID', 'Name', 'Email', 'Role', 'Joined', 'Lab sessions'],
@@ -82,7 +84,7 @@ class ReportController extends Controller
                 ['Session', 'Student', 'Email', 'Lab', 'Class', 'Status', 'AI grade', 'Override', 'Started', 'Ended'],
                 LabSession::with(['user:id,name,email', 'laboratory:id,title,module_id', 'laboratory.module:id,class_id', 'laboratory.module.schoolClass:id,name'])
                     ->when($since, fn ($q) => $q->where('created_at', '>=', $since))
-                    ->orderBy('id')->cursor()->map(fn ($s) => [
+                    ->lazyById(500)->map(fn ($s) => [
                         $s->id, $s->user?->name, $s->user?->email, $s->laboratory?->title, $s->laboratory?->module?->schoolClass?->name,
                         $s->status, $s->performance_score, $s->instructor_grade_override, $s->started_at, $s->ended_at,
                     ]),
@@ -91,7 +93,7 @@ class ReportController extends Controller
                 ['Flag', 'Session', 'Student', 'Type', 'Severity', 'Description', 'Resolved', 'Raised'],
                 Anomaly::withoutSnapshotData()->with('labSession:id,user_id', 'labSession.user:id,name')
                     ->when($since, fn ($q) => $q->where('anomalies.created_at', '>=', $since))
-                    ->orderBy('anomalies.id')->cursor()->map(fn ($a) => [
+                    ->lazyById(500, 'anomalies.id', 'id')->map(fn ($a) => [
                         $a->id, $a->lab_session_id, $a->labSession?->user?->name, $a->type, $a->severity, $a->description,
                         $a->resolved ? 'yes' : 'no', $a->created_at?->toDateTimeString(),
                     ]),
@@ -100,13 +102,13 @@ class ReportController extends Controller
                 ['Certificate', 'Student', 'Email', 'Class', 'Verification code', 'Issued'],
                 Certificate::with(['user:id,name,email', 'schoolClass:id,name'])
                     ->when($since, fn ($q) => $q->where('issued_at', '>=', $since))
-                    ->orderBy('id')->cursor()->map(fn ($c) => [
+                    ->lazyById(500)->map(fn ($c) => [
                         $c->id, $c->user?->name, $c->user?->email, $c->schoolClass?->name, $c->verification_code, $c->issued_at,
                     ]),
             ],
         };
 
-        $filename = "certicode-{$type}-" . ($period === 'all' ? 'all-time' : "last-{$period}-days") . '-' . now()->format('Y-m-d') . '.csv';
+        $filename = "certicode-{$type}-".($period === 'all' ? 'all-time' : "last-{$period}-days").'-'.now()->format('Y-m-d').'.csv';
 
         return response()->streamDownload(function () use ($header, $rows) {
             $out = fopen('php://output', 'w');
@@ -123,7 +125,7 @@ class ReportController extends Controller
     private function csvSafe(mixed $value): mixed
     {
         if (is_string($value) && $value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
+            return "'".$value;
         }
 
         return $value;
@@ -132,7 +134,7 @@ class ReportController extends Controller
     private function period(Request $request): array
     {
         $period = (string) $request->query('period', '30');
-        if (!array_key_exists($period, self::PERIODS)) {
+        if (! array_key_exists($period, self::PERIODS)) {
             $period = '30';
         }
 
@@ -193,7 +195,7 @@ class ReportController extends Controller
             ->where('lab_sessions.status', 'completed')
             ->when($since, fn ($q) => $q->where('lab_sessions.created_at', '>=', $since))
             ->groupBy('modules.class_id')
-            ->selectRaw('modules.class_id, count(*) as submissions, avg(' . LabSession::effectiveGradeSql() . ') as avg_grade')
+            ->selectRaw('modules.class_id, count(*) as submissions, avg('.LabSession::effectiveGradeSql().') as avg_grade')
             ->get()->keyBy('class_id');
 
         $certificates = DB::table('certificates')->groupBy('class_id')

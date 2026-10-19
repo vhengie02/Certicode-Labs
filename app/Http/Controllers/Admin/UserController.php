@@ -7,6 +7,8 @@ use App\Models\SchoolClass;
 use App\Models\User;
 use App\Notifications\ClassActivityNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Admin → Users: every account in one place, with role changes and removal guarded so the
@@ -24,7 +26,7 @@ class UserController extends Controller
         $users = User::query()
             ->when($role, fn ($q) => $q->where('role', $role))
             ->when($search !== '', function ($q) use ($search) {
-                $like = '%' . mb_strtolower($search) . '%';
+                $like = '%'.mb_strtolower($search).'%';
                 $q->where(fn ($w) => $w->whereRaw('lower(name) like ?', [$like])
                     ->orWhereRaw('lower(email) like ?', [$like])
                     ->orWhereRaw('lower(username) like ?', [$like]));
@@ -43,7 +45,7 @@ class UserController extends Controller
 
     public function updateRole(Request $request, User $user)
     {
-        $validated = $request->validate(['role' => 'required|in:' . implode(',', self::ROLES)]);
+        $validated = $request->validate(['role' => 'required|in:'.implode(',', self::ROLES)]);
         $newRole = $validated['role'];
 
         if ($newRole === $user->role) {
@@ -64,15 +66,15 @@ class UserController extends Controller
         try {
             $user->notify(new ClassActivityNotification(
                 'Your role changed',
-                'An admin changed your Certicode role to ' . $newRole . '.',
+                'An admin changed your Certicode role to '.$newRole.'.',
                 route('dashboard'),
                 'info'
             ));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Role change notification failed: ' . $e->getMessage());
+            Log::warning('Role change notification failed: '.$e->getMessage());
         }
 
-        return back()->with('success', "{$user->name} is now " . ($newRole === 'admin' ? 'an admin' : 'a ' . $newRole) . '.');
+        return back()->with('success', "{$user->name} is now ".($newRole === 'admin' ? 'an admin' : 'a '.$newRole).'.');
     }
 
     public function destroy(Request $request, User $user)
@@ -86,8 +88,8 @@ class UserController extends Controller
         // Classes cascade-delete with their instructor, taking every student's work with them
         $classCount = SchoolClass::where('instructor_id', $user->id)->count();
         if ($classCount > 0) {
-            return back()->with('error', "{$user->name} teaches {$classCount} " . \Illuminate\Support\Str::plural('class', $classCount)
-                . '. Reassign ' . ($classCount === 1 ? 'it' : 'them') . ' to another instructor before deleting this account.');
+            return back()->with('error', "{$user->name} teaches {$classCount} ".Str::plural('class', $classCount)
+                .'. Reassign '.($classCount === 1 ? 'it' : 'them').' to another instructor before deleting this account.');
         }
 
         $name = $user->name;

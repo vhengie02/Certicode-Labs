@@ -12,19 +12,19 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('lab_sessions', function (Blueprint $table) {
-            if (!Schema::hasColumn('lab_sessions', 'ai_grade_summary')) {
+            if (! Schema::hasColumn('lab_sessions', 'ai_grade_summary')) {
                 $table->json('ai_grade_summary')->nullable()->after('submitted_files');
             }
-            if (!Schema::hasColumn('lab_sessions', 'instructor_grade_override')) {
+            if (! Schema::hasColumn('lab_sessions', 'instructor_grade_override')) {
                 $table->float('instructor_grade_override')->nullable()->after('ai_grade_summary');
             }
-            if (!Schema::hasColumn('lab_sessions', 'instructor_override_reason')) {
+            if (! Schema::hasColumn('lab_sessions', 'instructor_override_reason')) {
                 $table->text('instructor_override_reason')->nullable()->after('instructor_grade_override');
             }
-            if (!Schema::hasColumn('lab_sessions', 'instructor_overridden_at')) {
+            if (! Schema::hasColumn('lab_sessions', 'instructor_overridden_at')) {
                 $table->timestamp('instructor_overridden_at')->nullable()->after('instructor_override_reason');
             }
-            if (!Schema::hasColumn('lab_sessions', 'overridden_by')) {
+            if (! Schema::hasColumn('lab_sessions', 'overridden_by')) {
                 $table->foreignId('overridden_by')->nullable()->after('instructor_overridden_at')->constrained('users')->nullOnDelete();
             }
         });

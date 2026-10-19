@@ -87,3 +87,12 @@ credentials.txt
 
 # graphify knowledge graph output (regenerate with /graphify)
 graphify-out/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+.playwright/
+
+# Locally installed agent skills (npx skills); .claude/launch.json stays tracked
+.agents/
+.claude/skills/
+.claude/worktrees/
+skills-lock.json
