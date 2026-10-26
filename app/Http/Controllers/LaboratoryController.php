@@ -6,6 +6,7 @@ use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
+use App\Models\StudentCompetency;
 use App\Notifications\ClassActivityNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -270,7 +271,9 @@ class LaboratoryController extends Controller
         }
 
         $laboratory->update($updateData);
-        $laboratory->competencies()->sync($validated['competencies'] ?? []);
+        $synced = $laboratory->competencies()->sync($validated['competencies'] ?? []);
+        // Students who already finished the lab gain or lose credit for the changed competencies
+        StudentCompetency::refreshForLabCompetencies($laboratory, array_merge($synced['attached'], $synced['detached']));
 
         return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.');
     }

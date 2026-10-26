@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * However a session ends up completed, reopened or regraded, the student's competency
- * scores follow it, and the backfill command repairs scores missed in the past.
+ * However a session ends up completed, reopened or regraded, or its lab's competencies
+ * change, the student's competency scores follow it, and the backfill command repairs
+ * scores missed in the past.
  */
 class CompetencyCreditTest extends TestCase
 {
@@ -183,6 +184,41 @@ class CompetencyCreditTest extends TestCase
 
         $this->assertNull($this->score());
         $this->assertEquals(75.0, StudentCompetency::where('user_id', $other->id)->value('score_achieved'));
+    }
+
+    private function retagLab(Laboratory $lab, array $competencyIds): void
+    {
+        $this->actingAs($this->instructor)->put("/laboratories/{$lab->id}", [
+            'title' => $lab->title, 'description' => $lab->description, 'time_limit' => 30, 'module_id' => $lab->module_id,
+            'competencies' => $competencyIds,
+        ])->assertRedirect();
+    }
+
+    public function test_ticking_a_competency_on_a_finished_lab_credits_existing_work()
+    {
+        $session = $this->inProgress($this->labA, 80);
+        $session->update(['status' => 'completed']);
+        $newCompetency = Competency::create(['code' => 'SEARCH-01', 'name' => 'Searching']);
+
+        $this->retagLab($this->labA, [$this->competency->id, $newCompetency->id]);
+
+        $this->assertEquals(80.0, StudentCompetency::where('user_id', $this->student->id)->where('competency_id', $newCompetency->id)->value('score_achieved'));
+        $this->assertSame(80.0, $this->score());
+    }
+
+    public function test_unticking_a_competency_stops_counting_that_labs_grade()
+    {
+        $a = $this->inProgress($this->labA, 60);
+        $b = $this->inProgress($this->labB, 100);
+        $a->update(['status' => 'completed']);
+        $b->update(['status' => 'completed']);
+        $this->assertSame(80.0, $this->score());
+
+        $this->retagLab($this->labB, []);
+        $this->assertSame(60.0, $this->score());
+
+        $this->retagLab($this->labA, []);
+        $this->assertNull($this->score(), 'no tagged work left, so the score goes');
     }
 
     public function test_backfill_removes_scores_left_stale_by_reopened_work()

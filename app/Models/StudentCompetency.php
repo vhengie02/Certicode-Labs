@@ -62,6 +62,33 @@ class StudentCompetency extends Model
     }
 
     /**
+     * Recalculate the given competencies for every student with completed work on the lab.
+     * Called after a lab's competencies are re-synced, with the attached and detached ids:
+     * a newly ticked competency starts counting work already done on the lab, and an
+     * unticked one stops counting it (losing the score if that was the only work left).
+     *
+     * @param  array<int|string>  $competencyIds
+     */
+    public static function refreshForLabCompetencies(Laboratory $lab, array $competencyIds): void
+    {
+        if (empty($competencyIds)) {
+            return;
+        }
+
+        $userIds = LabSession::where('lab_id', $lab->id)
+            ->where('status', 'completed')
+            ->whereNotNull('user_id')
+            ->distinct()
+            ->pluck('user_id');
+
+        foreach ($userIds as $userId) {
+            foreach ($competencyIds as $competencyId) {
+                static::refreshCompetency((int) $userId, (int) $competencyId);
+            }
+        }
+    }
+
+    /**
      * Recalculate one student's score for one competency and say what happened:
      * 'created', 'changed', 'removed' or 'unchanged'. The student's row in `users` is locked
      * for the duration, so two sessions completing at once can't both insert a score row.
