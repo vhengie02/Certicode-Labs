@@ -18,6 +18,20 @@ class TelemetryLog extends Model
      */
     public const SHORT_LIVED_EVENTS = ['vscode_ping', 'wpm_update'];
 
+    /**
+     * Records only the server writes: grading, regrades, code runs and the camera check. The
+     * telemetry endpoint refuses them, so a client can't forge one (the student's results page
+     * shows the regrade history from these rows).
+     */
+    public const SERVER_EVENTS = [
+        'instructor_grade_override',
+        'session_completed',
+        'check_progress',
+        'code_execution',
+        'github_sync',
+        'webcam_prelab_verification',
+    ];
+
     protected $fillable = [
         'lab_session_id',
         'event_type',

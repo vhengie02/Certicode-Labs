@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class LabSessionController extends Controller
 {
@@ -90,7 +91,7 @@ class LabSessionController extends Controller
         $session = LabSession::findOrFail($sessionId);
 
         $request->validate([
-            'event_type' => 'required|string',
+            'event_type' => ['required', 'string', Rule::notIn(TelemetryLog::SERVER_EVENTS)],
             'payload' => 'nullable|array',
         ]);
 
@@ -813,7 +814,7 @@ class LabSessionController extends Controller
             'ended_at' => now(),
             'completed_tasks' => $completedTasks,
             'performance_score' => $finalScore,
-            'ai_grade_summary' => $evaluation['ai_grade_summary'] ?? null,
+            'ai_grade_summary' => $this->withStudentFeedback($evaluation, $session, $completedTasks),
             'submitted_code' => $code,
             'submitted_files' => $request->input('files'),
         ]);
@@ -896,13 +897,12 @@ class LabSessionController extends Controller
     }
 
     /**
-     * Grade while holding the session's grading lock, so a check-progress and a submit (or
-     * two of either) never grade one attempt at once. The lock is in the database cache
-     * store, shared by every serverless instance, and expires on its own if a request dies.
+     * Grade while holding the session's grading lock (LabSession::gradingLock), so a
+     * check-progress and a submit (or two of either) never grade one attempt at once.
      */
     private function whileGrading(LabSession $session, \Closure $grade)
     {
-        $lock = Cache::store('database')->lock("lab_session_{$session->id}_grading", 90);
+        $lock = $session->gradingLock();
 
         if (! $lock->get()) {
             return response()->json([
@@ -942,6 +942,54 @@ class LabSessionController extends Controller
     }
 
     /**
+     * The grade record to store, with the feedback the student is shown added under
+     * 'student_feedback', so their results page can show it again later. The rest of the
+     * record stays the instructor's (see LabSession::studentFeedback).
+     */
+    private function withStudentFeedback(array $evaluation, LabSession $session, array $completedTasks): ?array
+    {
+        $gradeSummary = $evaluation['ai_grade_summary'] ?? null;
+        if (! is_array($gradeSummary)) {
+            return null;
+        }
+
+        $taskFeedback = [];
+        foreach (is_array($evaluation['tasks'] ?? null) ? $evaluation['tasks'] : [] as $task) {
+            if (isset($task['id']) && is_string($task['feedback'] ?? null)) {
+                $taskFeedback[(int) $task['id']] = $task['feedback'];
+            }
+        }
+
+        // The checklist as it was graded, task text included: editing the lab later renumbers
+        // its tasks, and the results page must still match each result to the right task
+        $checklist = [];
+        foreach ($session->laboratory?->studentTasks() ?? [] as $task) {
+            $id = (int) $task['id'];
+            $checklist[] = [
+                'id' => $id,
+                'task' => (string) $task['task'],
+                'done' => in_array($id, $completedTasks, true),
+                'feedback' => $taskFeedback[$id] ?? '',
+            ];
+        }
+
+        // A provisional grade's feedback opens with a note saying so (markProvisional). The
+        // results page shows that from needs_review instead, so it goes once the instructor regrades.
+        $overall = (string) ($evaluation['overall_feedback'] ?? '');
+        if (! empty($evaluation['provisional'])) {
+            $overall = (string) preg_replace('/^Provisional grade[^.]*\.\s*/', '', $overall);
+        }
+
+        $gradeSummary['student_feedback'] = [
+            'overall' => $overall,
+            'code_quality' => (string) ($evaluation['code_quality_feedback'] ?? ''),
+            'tasks' => $checklist,
+        ];
+
+        return $gradeSummary;
+    }
+
+    /**
      * What the student sees once a lab is submitted: time spent, score, tasks, typing
      * speed, and, in a live lab, their place on the leaderboard.
      */
@@ -949,15 +997,7 @@ class LabSessionController extends Controller
     {
         $lab = $session->laboratory;
         $isLive = $lab && $lab->isLiveLab();
-
-        // Time is capped at the limit, the same way the leaderboard counts it
-        $timeLimitSeconds = $lab ? ($isLive ? $lab->getLiveTotalDurationSeconds() : ($lab->time_limit ?? 0) * 60) : 0;
-        $elapsed = $session->started_at
-            ? (int) $session->started_at->diffInSeconds($session->ended_at ?: now(), true)
-            : 0;
-        if ($timeLimitSeconds > 0 && $elapsed > $timeLimitSeconds) {
-            $elapsed = $timeLimitSeconds;
-        }
+        $elapsed = $session->timeSpentSeconds();
 
         $place = null;
         $participants = null;

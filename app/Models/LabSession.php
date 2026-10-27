@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Events\AnomalyDetected;
 use App\Notifications\ClassActivityNotification;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -101,7 +102,8 @@ class LabSession extends Model
 
     /**
      * Whether a user may act on this session: its owner, a teammate in the same group,
-     * an admin, or the instructor who owns the class the lab belongs to.
+     * an admin, or the instructor who owns the class the lab belongs to. A teammate is a
+     * member of the group, or anyone with their own session in it.
      */
     public function isAccessibleBy(?User $user): bool
     {
@@ -119,8 +121,10 @@ class LabSession extends Model
             return $user->canManageClass($classId);
         }
 
-        return $this->group_id
-            && static::where('group_id', $this->group_id)->where('user_id', $user->id)->exists();
+        return $this->group_id && (
+            static::where('group_id', $this->group_id)->where('user_id', $user->id)->exists()
+            || Group::whereKey($this->group_id)->whereHas('members', fn ($q) => $q->where('users.id', $user->id))->exists()
+        );
     }
 
     /**
@@ -224,9 +228,10 @@ class LabSession extends Model
 
     /**
      * Send a lab notification to whoever owns this attempt: the student, plus every
-     * member of the team on a group lab. A failed send never breaks the caller.
+     * member of the team on a group lab. It opens the attempt's results page unless
+     * another link is given. A failed send never breaks the caller.
      */
-    public function notifyStudents(string $title, string $message): void
+    public function notifyStudents(string $title, string $message, ?string $url = null): void
     {
         $recipients = collect([$this->user])
             ->merge($this->group_id ? ($this->group?->members ?? collect()) : collect())
@@ -238,7 +243,7 @@ class LabSession extends Model
                 $student->notify(new ClassActivityNotification(
                     $title,
                     $message,
-                    route('laboratories.show', $this->lab_id),
+                    $url ?? route('sessions.show', $this->id),
                     'lab'
                 ));
             } catch (\Throwable $e) {
@@ -297,6 +302,91 @@ class LabSession extends Model
         return $this->instructor_grade_override !== null
             ? (float) $this->instructor_grade_override
             : (float) ($this->performance_score ?? 0.0);
+    }
+
+    /**
+     * The lock held while this attempt is graded (check-progress or submit), so two gradings
+     * never run at once. It is in the database cache store, shared by every serverless
+     * instance, and expires on its own if a request dies.
+     */
+    public function gradingLock(): Lock
+    {
+        return Cache::store('database')->lock("lab_session_{$this->id}_grading", 90);
+    }
+
+    /**
+     * Whether a submit is still being graded. A submit sent just before the attempt ended (time
+     * ran out, the live lab closed) is still graded and saved, so until then the attempt's
+     * result isn't final. Only for an attempt that has ended: no new grading can start on it,
+     * so briefly taking the lock to check can't hold one up.
+     */
+    public function isBeingGraded(): bool
+    {
+        $lock = $this->gradingLock();
+        if (! $lock->get()) {
+            return true;
+        }
+        $lock->release();
+
+        return false;
+    }
+
+    /**
+     * Whether the grade is still the provisional one from automatic checks, waiting for the
+     * instructor. An instructor's grade replaces it.
+     */
+    public function needsGradeReview(): bool
+    {
+        return ! $this->isGradeOverridden() && ! empty($this->ai_grade_summary['needs_review']);
+    }
+
+    /**
+     * The grader's feedback as the student saw it when they submitted: overall, code quality,
+     * and the task checklist as it was graded (text, done, note). It is kept in
+     * ai_grade_summary under 'student_feedback' and is the only part of that field students
+     * may see; the rest is the instructor's. 'tasks' is empty for an attempt never submitted.
+     *
+     * @return array{overall: string, code_quality: string, tasks: list<array{id: int, task: string, done: bool, feedback: string}>}
+     */
+    public function studentFeedback(): array
+    {
+        $feedback = $this->ai_grade_summary['student_feedback'] ?? null;
+        $feedback = is_array($feedback) ? $feedback : [];
+
+        $tasks = [];
+        foreach (is_array($feedback['tasks'] ?? null) ? $feedback['tasks'] : [] as $task) {
+            if (is_array($task) && is_string($task['task'] ?? null)) {
+                $tasks[] = [
+                    'id' => (int) ($task['id'] ?? 0),
+                    'task' => $task['task'],
+                    'done' => (bool) ($task['done'] ?? false),
+                    'feedback' => is_string($task['feedback'] ?? null) ? $task['feedback'] : '',
+                ];
+            }
+        }
+
+        return [
+            'overall' => is_string($feedback['overall'] ?? null) ? $feedback['overall'] : '',
+            'code_quality' => is_string($feedback['code_quality'] ?? null) ? $feedback['code_quality'] : '',
+            'tasks' => $tasks,
+        ];
+    }
+
+    /**
+     * Seconds spent on the attempt, from start to finish (or now, while it is open), capped at
+     * the time limit or a live lab's countdown, the same way the leaderboard counts it.
+     */
+    public function timeSpentSeconds(): int
+    {
+        $lab = $this->laboratory;
+        $isLive = $lab && $lab->isLiveLab();
+        $timeLimitSeconds = $lab ? ($isLive ? $lab->getLiveTotalDurationSeconds() : ($lab->time_limit ?? 0) * 60) : 0;
+
+        $elapsed = $this->started_at
+            ? (int) $this->started_at->diffInSeconds($this->ended_at ?: now(), true)
+            : 0;
+
+        return $timeLimitSeconds > 0 ? min($elapsed, $timeLimitSeconds) : $elapsed;
     }
 
     /**

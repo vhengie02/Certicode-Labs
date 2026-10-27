@@ -648,6 +648,49 @@
                     @endif
                 </section>
 
+                {{-- Finished attempts, each opening its results page --}}
+                @if ($results->isNotEmpty())
+                    @php
+                        $fmtGrade = fn ($n) => rtrim(rtrim(number_format((float) $n, 1), '0'), '.');
+                        // The grade that counts: the best of the student's own completed attempts
+                        $best = $results->where('status', 'completed')->filter(fn ($r) => isset($attemptNumbers[$r->id]))
+                            ->sortByDesc(fn ($r) => $r->effective_score)->first();
+                    @endphp
+                    <section class="ui-card" aria-labelledby="results-heading">
+                        <div class="px-6 pt-5 pb-3 flex items-baseline justify-between gap-3">
+                            <h2 id="results-heading" class="ui-card-title">Your results</h2>
+                            @if ($best)
+                                <span class="text-sm text-[#888888]">Best <span class="font-semibold tabular-nums text-[#3ecf8e]">{{ $fmtGrade($best->effective_score) }}%</span></span>
+                            @endif
+                        </div>
+                        <ol class="divide-y divide-[#232323] border-t border-[#232323]" role="list">
+                            @foreach ($results as $result)
+                                @php $resultDate = $result->ended_at ?? $result->started_at; @endphp
+                                <li>
+                                    <a href="{{ route('sessions.show', $result->id) }}" class="flex items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-[#1c1c1c]">
+                                        <span class="min-w-0">
+                                            <span class="block text-sm font-medium text-[#ededed]">{{ isset($attemptNumbers[$result->id]) ? 'Attempt '.$attemptNumbers[$result->id] : 'Team attempt' }}</span>
+                                            @if ($resultDate)
+                                                <span class="block text-xs text-[#888888]"><x-local-time :at="$resultDate" date /></span>
+                                            @endif
+                                        </span>
+                                        <span class="shrink-0 text-right">
+                                            @if ($result->status === 'abandoned' && $result->instructor_grade_override === null)
+                                                <span class="text-sm text-[#888888]">Timed out</span>
+                                            @else
+                                                <span class="block text-sm font-semibold tabular-nums {{ $best && $result->id === $best->id ? 'text-[#3ecf8e]' : 'text-[#ededed]' }}">{{ $fmtGrade($result->effective_score) }}%</span>
+                                                @if ($result->instructor_grade_override !== null)
+                                                    <span class="block text-[10px] text-[#888888]">regraded</span>
+                                                @endif
+                                            @endif
+                                        </span>
+                                    </a>
+                                </li>
+                            @endforeach
+                        </ol>
+                    </section>
+                @endif
+
                 {{-- VS Code setup --}}
                 <details class="ui-card group" {{ $activeSession ? '' : 'open' }}>
                     <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4">
@@ -1273,7 +1316,20 @@ function preLabCameraGate(labId, initialSessionId) {
             this.stopProctoring();
             this.proctorStatus = 'disconnected';
             this.proctorStatusText = 'VS Code closed';
-            window.location.reload();
+            // A finished attempt opens its results; one left open comes back to this page
+            if (reason === 'session_ended') {
+                this.showResults();
+            } else {
+                window.location.reload();
+            }
+        },
+
+        showResults() {
+            if (this.activeSessionId) {
+                window.location.href = `/sessions/${this.activeSessionId}`;
+            } else {
+                window.location.reload();
+            }
         },
 
         startContinuousProctoring() {
@@ -1609,6 +1665,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         this.stopProctoring();
                         this.proctorStatus = 'disconnected';
                         this.proctorStatusText = 'Session Concluded';
+                        this.showResults();
                     }
                 }
             } catch (err) {

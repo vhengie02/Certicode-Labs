@@ -405,7 +405,7 @@ When creating a lab exercise, the instructor selects one of two availability mod
     "summary": "Full plain-language explanation..."
   }
   ```
-- **Visibility**: Instructor-only. Students never see the AI summary — it's a grading and review aid for the instructor, not student-facing feedback. Stripped from all student-facing endpoints.
+- **Visibility**: Instructor-only. Students never see the AI summary — it's a grading and review aid for the instructor, not student-facing feedback. Stripped from all student-facing endpoints. The one exception is `ai_grade_summary.student_feedback`: the feedback the student was already shown at submit time, kept for their results page.
 - **Team Labs**: Evaluates and explains the team's combined final submission as a single unit without breaking down individual teammate contributions (diff tracking and grading are separate concerns).
 - **Grade Override Audit Trail**: Instructors can review the submission and override the grade with an optional reason note. Preserves both records side-by-side:
   1. Original AI score (`performance_score`) + `ai_grade_summary` (untouched).
@@ -440,6 +440,12 @@ When creating a lab exercise, the instructor selects one of two availability mod
   - The code is saved first, the grade gets one 40 s attempt, and the code run gets what's left of a 50 s budget.
 - [x] **Syntax gate no longer fails valid code**:
   - Comments and strings are stripped per language before the check, and the repeated-character rule is gone.
+- [x] **Student results page ([`summary.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/sessions/summary.blade.php))**:
+  - `GET /sessions/{id}` (`LabAttemptController::showWorkspace`) shows a finished attempt's grade, the instructor's regrade (old and new grade, who, when, full reason, earlier regrades from the `instructor_grade_override` telemetry), the task checklist with per-task feedback, and the session stats. An attempt still in progress opens its lab page; one whose submit is still grading shows a "Grading" page that reloads until the grade is in.
+  - Open to the student, their team (group members), and class staff (`LabSession::isAccessibleBy`). A teammate sees only the team's attempts and not the owner's typing or focus figures. Reads only `needs_review` and `student_feedback` from `ai_grade_summary`.
+  - Submit stores the student-facing feedback under `ai_grade_summary.student_feedback`, with the checklist as graded (task text included, so later lab edits don't relabel it). Lab notifications (submit and regrade) link to the page, the lab page opens it when the attempt ends, and lists past attempts.
+  - The telemetry endpoint refuses server-only event types (`TelemetryLog::SERVER_EVENTS`), so a client can't forge a regrade record.
+  - Tests: [`LabResultsPageTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/LabResultsPageTest.php).
 
 ---
 

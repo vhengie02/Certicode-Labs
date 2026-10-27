@@ -165,7 +165,23 @@ class LaboratoryController extends Controller
             ? ['limit' => $laboratory->attemptLimit(), 'used' => $laboratory->attemptsUsedBy($user), 'canStart' => $laboratory->canStartNewAttempt($user)]
             : null;
 
-        return view('laboratories.show', compact('laboratory', 'activeSession', 'attempts'));
+        // The student's finished attempts (their own and their team's), newest first, each
+        // linking to its results page
+        $results = collect();
+        $attemptNumbers = collect();
+        if ($user->role === 'student') {
+            $results = $laboratory->labSessions()
+                ->where(fn ($q) => $q->where('user_id', $user->id)
+                    ->orWhereIn('group_id', $user->groups()->select('groups.id')))
+                ->where('status', '!=', 'in_progress')
+                ->orderByDesc('id')
+                ->get(['id', 'lab_id', 'user_id', 'group_id', 'status', 'performance_score', 'instructor_grade_override', 'started_at', 'ended_at']);
+            // Attempt N counts every attempt the student started, as the attempt limit does
+            $attemptNumbers = $laboratory->labSessions()->where('user_id', $user->id)
+                ->orderBy('id')->pluck('id')->flip()->map(fn ($index) => $index + 1);
+        }
+
+        return view('laboratories.show', compact('laboratory', 'activeSession', 'attempts', 'results', 'attemptNumbers'));
     }
 
     /**

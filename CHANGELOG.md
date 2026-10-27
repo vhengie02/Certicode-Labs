@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-27
+
+- Students now get a results page when a lab attempt ends. It shows their grade, the lab grade that counts (their best attempt), which tasks they finished with the grader's feedback on each, and their stats: time spent, typing speed, lines changed, focus lost and flagged pastes. The lab page opens it as soon as the attempt is submitted, and lists every past attempt with its grade.
+- When an instructor regrades a lab, the notification now opens that results page. It shows the old and new grade, who changed it and when, and the full reason. Earlier regrades of the same attempt are listed too. Saving the same grade (to confirm a provisional one) now says so instead of "changed from 70% to 70%".
+
 ## 2026-10-19
 
 - Module files up to 20 MB now upload and download reliably on the live site. They are kept in cloud storage instead of disappearing.
