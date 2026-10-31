@@ -308,13 +308,17 @@ This document outlines the final feature specifications, implementation tasks, a
   - `public/models` and `public/fonts` are routed as static files; before, they 404ed and in-lab detection silently fell back to the brightness check.
 - [x] **No tab-switch flags for normal work**:
   - The lab page going out of view behind VS Code is logged as `lab_page_hidden` and not counted; real switching raises one flag per 2-minute window.
+- [x] **Instructor hears about camera flags with monitoring closed**:
+  - The first camera flag (`no_face`, `multiple_faces`) in a lab after 15 quiet minutes sends the class instructor an in-app notification (`CameraFlagNotification`, no email) linking to the lab's monitoring. Later flags in the same spell show on the monitoring page only.
+- [x] **A VS Code reload no longer exits the lab**:
+  - VS Code shuts the extension down the same way for a reload and a close. The server now counts VS Code as closed only 30 s after a clean shutdown with no new ping (`vscode_reconnecting` until then), and extension 1.8.0 resumes the session if it starts again within 25 s. The token is kept in VS Code's SecretStorage. Older builds still exit the lab, 30 s later than before.
+- [x] **Outdated extensions on the monitoring page**:
+  - The lab roster shows an "Old ext" badge next to in-progress students whose last extension ping came from a build below `min_version`.
 - [ ] **Follow-ups**:
-  - Notify the instructor (email or in-app) about camera flags when the monitoring page is closed.
   - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
   - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
-  - Reloading the VS Code window also fires `deactivate()` and exits the lab; tell a reload apart from a close.
-  - Show instructors on the monitoring page which students run an outdated extension.
+  - Release extension 1.8.0 (rebuild the `.vsix`) so the reload fix reaches students.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
   - Automated tests for permission denial, absence anomaly recording, multi-face detection, pre-lab 3-attempt failure reporting, and camera verification status persistence.
 

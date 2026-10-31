@@ -114,9 +114,15 @@ class VSCodeExtensionApiTest extends TestCase
             'lab_session_id' => $session->id,
             'event_type' => 'vscode_disconnected',
         ]);
+        // A reload shuts the extension down the same way, so the page waits before leaving
         $this->getJson("/v1/sessions/{$session->id}")
             ->assertOk()
-            ->assertJson(['vscode_connected' => false, 'vscode_closed' => true]);
+            ->assertJson(['vscode_connected' => false, 'vscode_closed' => false, 'vscode_reconnecting' => true]);
+
+        $this->travel(31)->seconds();
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => false, 'vscode_closed' => true, 'vscode_reconnecting' => false]);
 
         $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
             ->assertOk();
@@ -124,6 +130,29 @@ class VSCodeExtensionApiTest extends TestCase
         $this->getJson("/v1/sessions/{$session->id}")
             ->assertOk()
             ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
+    }
+
+    public function test_a_window_reload_that_resumes_in_time_never_counts_as_closed(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->postJson("/api/v1/sessions/{$session->id}/vscode-disconnect", ['source' => 'vscode'])->assertOk();
+        $this->travel(5)->seconds();
+        // The reloaded window resumes the session and pings again
+        $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])->assertOk();
+        $this->travel(60)->seconds();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_closed' => false, 'vscode_reconnecting' => false]);
     }
 
     /**

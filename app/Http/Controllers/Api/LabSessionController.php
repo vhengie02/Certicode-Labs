@@ -14,6 +14,7 @@ use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
+use App\Notifications\CameraFlagNotification;
 use App\Services\CodeSimilarityService;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
@@ -299,10 +300,51 @@ class LabSessionController extends Controller
             $attributes['image_path'] = null;
         }
 
-        return $this->recordAndBroadcastAnomaly($session, $attributes);
+        $anomaly = $this->recordAndBroadcastAnomaly($session, $attributes);
+        $this->notifyInstructorOfCameraFlag($session, $anomaly);
+
+        return $anomaly;
     }
 
     private const SNAPSHOT_INTERVAL_SECONDS = 120;
+
+    /** Camera flags in a lab within this many minutes of the last one don't notify again. */
+    private const CAMERA_NOTIFY_QUIET_MINUTES = 15;
+
+    /**
+     * Send the class instructor an in-app notification for the first camera flag in a lab
+     * after a quiet spell, so a closed monitoring page doesn't hide them. Later flags in the
+     * same spell show up on the monitoring page only.
+     */
+    private function notifyInstructorOfCameraFlag(LabSession $session, Anomaly $anomaly): void
+    {
+        try {
+            $hadRecentFlag = Anomaly::whereIn('type', ['no_face', 'multiple_faces'])
+                ->whereKeyNot($anomaly->id)
+                ->where('created_at', '>=', now()->subMinutes(self::CAMERA_NOTIFY_QUIET_MINUTES))
+                ->whereHas('labSession', fn ($q) => $q->where('lab_id', $session->lab_id))
+                ->exists();
+            if ($hadRecentFlag) {
+                return;
+            }
+
+            $lab = $session->laboratory()->with('module.schoolClass.instructor')->first();
+            $instructor = $lab?->module?->schoolClass?->instructor;
+            if (! $instructor) {
+                return;
+            }
+
+            $studentName = $session->user->name ?? 'A student';
+            $what = $anomaly->type === 'multiple_faces' ? 'more than one face' : 'no face';
+            $instructor->notify(new CameraFlagNotification(
+                "Camera flag: {$lab->title}",
+                "The camera saw {$what} for {$studentName} in '{$lab->title}'. Open monitoring to review it and any flags that follow.",
+                route('classes.telemetry', ['class_id' => $lab->module->class_id, 'lab' => $lab->id])
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Camera flag notification failed: '.$e->getMessage());
+        }
+    }
 
     /** Largest client telemetry payload or flag metadata kept as sent (webcam snapshot not counted). */
     private const MAX_PAYLOAD_BYTES = 8192;
@@ -601,7 +643,9 @@ class LabSessionController extends Controller
             'camera_verified' => $isCameraVerified,
             'last_ping_at' => $session->last_ping_at ? $session->last_ping_at->toIso8601String() : null,
             'vscode_connected' => $isVscodeConnected,
-            'vscode_closed' => $vscodeDisconnected,
+            // Closed only once a reload would have reconnected; until then the page waits
+            'vscode_closed' => $vscodeDisconnected && ! $vscode['reconnecting'],
+            'vscode_reconnecting' => $vscode['reconnecting'],
             // Server-side age so the browser needn't trust its own clock. The extension pings every 15s.
             'vscode_ping_age_seconds' => $vscodePing ? (int) $vscodePing->diffInSeconds(now(), true) : null,
             ...$this->extensionVersionStatus($vscode['extension_version']),
@@ -1524,7 +1568,7 @@ class LabSessionController extends Controller
      * (the cache is per request on Vercel): its last ping time, the build that sent it, and
      * whether a clean shutdown came after it.
      *
-     * @return array{last_ping: ?Carbon, extension_version: ?string, disconnected: bool}
+     * @return array{last_ping: ?Carbon, extension_version: ?string, disconnected: bool, reconnecting: bool}
      */
     private function vscodeConnection(int $sessionId): array
     {
@@ -1532,11 +1576,15 @@ class LabSessionController extends Controller
             ->where('event_type', 'vscode_ping')
             ->latest('id')
             ->first();
-        $lastDisconnectId = TelemetryLog::where('lab_session_id', $sessionId)
+        $lastDisconnect = TelemetryLog::where('lab_session_id', $sessionId)
             ->where('event_type', 'vscode_disconnected')
-            ->max('id');
+            ->latest('id')
+            ->first(['id', 'created_at']);
 
-        $disconnected = $lastDisconnectId !== null && (! $lastPing || $lastDisconnectId > $lastPing->id);
+        $disconnected = $lastDisconnect !== null && (! $lastPing || $lastDisconnect->id > $lastPing->id);
+        // A window reload shuts the extension down too, and it resumes within seconds
+        $reconnecting = $disconnected
+            && Carbon::parse($lastDisconnect->created_at)->diffInSeconds(now(), true) < self::VSCODE_RELOAD_GRACE_SECONDS;
 
         return [
             // created_at is filled in by the database, so the model holds it as a string
@@ -1546,8 +1594,12 @@ class LabSessionController extends Controller
                 ? (string) $lastPing->payload['extension_version']
                 : null,
             'disconnected' => $disconnected,
+            'reconnecting' => $reconnecting,
         ];
     }
+
+    /** How long after a clean shutdown the extension may resume before VS Code counts as closed. */
+    private const VSCODE_RELOAD_GRACE_SECONDS = 30;
 
     /**
      * Whether the extension connected to this session is older than the minimum supported build.

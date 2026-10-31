@@ -73,6 +73,12 @@ class VSCodeStateAcrossInstancesTest extends TestCase
 
         $this->newInstance();
         $this->getJson("/v1/sessions/{$this->session->id}")
+            ->assertJson(['vscode_connected' => false, 'vscode_closed' => false, 'vscode_reconnecting' => true]);
+
+        // Not a reload: nothing resumed within the grace period
+        $this->travel(31)->seconds();
+        $this->newInstance();
+        $this->getJson("/v1/sessions/{$this->session->id}")
             ->assertJson(['vscode_connected' => false, 'vscode_closed' => true]);
 
         // VS Code reopened

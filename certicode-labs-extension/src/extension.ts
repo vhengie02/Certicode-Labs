@@ -6,9 +6,10 @@ import { URLSearchParams } from 'url';
 let activeSidebarProvider: SidebarProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-    const sidebarProvider = new SidebarProvider(context.extensionUri, context.globalState);
+    const sidebarProvider = new SidebarProvider(context.extensionUri, context.globalState, context.secrets);
     activeSidebarProvider = sidebarProvider;
     context.subscriptions.push(sidebarProvider);
+    sidebarProvider.resumeAfterReload().catch(() => { /* the student reconnects from the lab page */ });
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(

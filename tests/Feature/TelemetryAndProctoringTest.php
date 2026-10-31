@@ -13,9 +13,11 @@ use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
 use App\Models\User;
+use App\Notifications\CameraFlagNotification;
 use App\Support\WebcamSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class TelemetryAndProctoringTest extends TestCase
@@ -417,6 +419,34 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertSame($before, $this->publicSnapshotFiles());
         $log = TelemetryLog::where('lab_session_id', $this->session1->id)->where('event_type', 'camera_absence')->first();
         $this->assertArrayNotHasKey('image_base64', $log->payload);
+    }
+
+    public function test_first_camera_flag_in_a_quiet_spell_notifies_the_instructor_once()
+    {
+        Notification::fake();
+        $flag = fn (LabSession $session) => $this->asExtension($session)->postJson("/api/v1/sessions/{$session->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'timestamp' => now()->toISOString()],
+        ])->assertOk();
+
+        $flag($this->session1);
+        // Another student's flag a few minutes later is part of the same spell
+        $this->travel(5)->minutes();
+        $flag($this->session2);
+
+        Notification::assertSentToTimes($this->instructor, CameraFlagNotification::class, 1);
+        Notification::assertSentTo($this->instructor, CameraFlagNotification::class, function ($notification) {
+            $data = $notification->toArray($this->instructor);
+
+            return str_contains($data['message'], 'Alice Walker')
+                && str_contains($data['url'], "lab={$this->laboratory->id}");
+        });
+        Notification::assertNotSentTo([$this->student1, $this->student2], CameraFlagNotification::class);
+
+        // After 15 quiet minutes a new flag notifies again
+        $this->travel(16)->minutes();
+        $flag($this->session1);
+        Notification::assertSentToTimes($this->instructor, CameraFlagNotification::class, 2);
     }
 
     public function test_camera_absence_in_low_light_mode_is_medium_severity_and_labelled()

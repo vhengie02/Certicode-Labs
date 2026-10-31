@@ -370,6 +370,10 @@
                             <div class="flex items-center justify-end lg:justify-start gap-2 text-sm {{ $stateStyles['text'] }}" title="{{ ['active' => 'Heartbeat in the last 75 seconds', 'idle' => 'No heartbeat for over a minute', 'offline' => 'No heartbeat for over 5 minutes', 'completed' => 'Finished and graded', 'abandoned' => 'Ran out of time without submitting'][$state] ?? '' }}">
                                 <span class="w-2 h-2 rounded-full shrink-0 {{ $stateStyles['dot'] }} {{ $state === 'active' ? 'animate-pulse motion-reduce:animate-none' : '' }}" aria-hidden="true"></span>
                                 {{ $stateLabels[$state] ?? ucfirst($state) }}
+                                @if(isset($outdatedExtensions[$session->id]))
+                                    <span class="inline-flex items-center h-5 px-1.5 rounded-md text-[11px] font-medium bg-amber-400/10 text-amber-200 border border-amber-400/30"
+                                          title="VS Code extension {{ $outdatedExtensions[$session->id] !== '' ? 'v'.$outdatedExtensions[$session->id] : '(version not reported)' }} is older than the minimum, v{{ $extensionMinVersion }}">Old ext</span>
+                                @endif
                             </div>
 
                             {{-- Tasks --}}
@@ -1158,7 +1162,9 @@ function instructorMonitor() {
             // Fallback when live updates (Pusher) are not configured
             const newestAnomaly = (data) => (data.sessions || []).flatMap(s => (s.anomalies || []).map(a => ({ ...a, student_name: s.user_name })))
                 .reduce((latest, a) => (!latest || a.id > latest.id ? a : latest), null);
-            setInterval(() => {
+            const poll = () => {
+                // A background tab doesn't need the data; it catches up when shown again.
+                if (document.hidden) return;
                 fetch('{{ route("instructor.monitoring.data", $laboratory->id) }}', { headers: { 'Accept': 'application/json' } })
                     .then(res => res.json())
                     .then(data => {
@@ -1171,7 +1177,9 @@ function instructorMonitor() {
                         this.lastAnomalyId = newestId;
                     })
                     .catch(() => {});
-            }, 10000);
+            };
+            setInterval(poll, 10000);
+            document.addEventListener('visibilitychange', poll);
         },
 
         // Minimal Pusher Channels client: connect, sign the private channel via /broadcasting/auth, subscribe.
