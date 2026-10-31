@@ -4,6 +4,7 @@
 
 - Students now get a results page when a lab attempt ends. It shows their grade, the lab grade that counts (their best attempt), which tasks they finished with the grader's feedback on each, and their stats: time spent, typing speed, lines changed, focus lost and flagged pastes. The lab page opens it as soon as the attempt is submitted, and lists every past attempt with its grade.
 - When an instructor regrades a lab, the notification now opens that results page. It shows the old and new grade, who changed it and when, and the full reason. Earlier regrades of the same attempt are listed too. Saving the same grade (to confirm a provisional one) now says so instead of "changed from 70% to 70%".
+- Task checks are easier to set up: in the lab form, "Add an automatic check" lets you pick "contain this text" or "match this pattern" instead of typing a `regex:` prefix, and flags a pattern that isn't valid. Plain-text checks are now enforced by the grader too (ignoring case and spacing), not just patterns.
 
 ## 2026-10-19
 

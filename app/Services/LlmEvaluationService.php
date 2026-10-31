@@ -593,7 +593,7 @@ $code
 
 Grade the submission:
 1. Check that the code would compile. If it would not (unexpected tokens, unbalanced braces, trailing garbage such as ';aaaa', or the compiler diagnostics above), no task is completed and the score is 0-20.
-2. For each task in the checklist, decide whether it is correctly implemented and give short feedback. Use the task ids from the checklist.
+2. For each task in the checklist, decide whether it is correctly implemented and give short feedback. Use the task ids from the checklist. A task's non-empty "command" is the instructor's check: text that must appear in the code (ignoring case and spacing), or, after "regex:", a pattern the code must match. A task whose check fails is not completed, but a passing check alone does not complete it. Never quote a check in feedback.
 3. Give an overall correctness score from 0 to 100, based on the tasks, test cases and rubric.
 4. Judge each competency the lab exercises (for example oop_inheritance, exception_handling, algorithm_efficiency) as passed or not, with a concise reason.
 5. Estimate how many of the test cases would pass, out of the total.
@@ -641,8 +641,18 @@ TEXT;
                     $completed = false;
                     $feedback = "Requirement not met: expected pattern from '{$task['task']}' not found in code.";
                 }
+            } elseif (trim($command) !== '') {
+                // 2. Plain-text check: the text must appear in the code, ignoring case and whitespace
+                $squash = fn (string $s) => strtolower(preg_replace('/\s+/', '', $s));
+                if (str_contains($squash($commandCode), $squash($command))) {
+                    $completed = true;
+                    $feedback = 'Requirement verified in code.';
+                } else {
+                    $completed = false;
+                    $feedback = "Requirement not met: expected code from '{$task['task']}' not found.";
+                }
             } else {
-                // 2. Language & domain-specific heuristics
+                // 3. Language & domain-specific heuristics
                 if (str_contains($taskText, 'invalidageexception') || str_contains($taskText, 'custom exception')) {
                     if (preg_match('/class\s+InvalidAgeException\s+extends\s+(Exception|RuntimeException)/i', $code)) {
                         $completed = true;
