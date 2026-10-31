@@ -26,6 +26,8 @@ class LabAnswerKeyExposureTest extends TestCase
 
     private const CHECK = 'regex:SECRET_TASK_CHECK';
 
+    private User $instructor;
+
     private User $student;
 
     private Laboratory $lab;
@@ -34,7 +36,7 @@ class LabAnswerKeyExposureTest extends TestCase
     {
         parent::setUp();
 
-        $instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
+        $this->instructor = $instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
         $this->student = User::create(['name' => 'Ana', 'email' => 'ana@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
 
         $class = SchoolClass::create(['name' => 'CS 101', 'code' => 'CS101', 'instructor_id' => $instructor->id]);
@@ -81,6 +83,62 @@ class LabAnswerKeyExposureTest extends TestCase
             ->assertJsonPath('laboratory.tasks_definition', [['id' => 1, 'task' => 'Write the class']])
             ->assertJsonPath('laboratory.starter_files.0.name', 'TaskManager.java');
         $this->assertNoAnswerKey($response->getContent());
+    }
+
+    public function test_extension_token_session_payload_has_no_answer_key(): void
+    {
+        $session = $this->openSession();
+
+        $response = $this->withHeaders(['X-Session-Token' => $session->issueExtensionToken()])
+            ->getJson("/api/v1/sessions/{$session->id}");
+
+        $response->assertOk()->assertJsonPath('laboratory.title', 'Lab 1');
+        $this->assertNoAnswerKey($response->getContent());
+    }
+
+    public function test_check_progress_and_submit_have_no_answer_key(): void
+    {
+        $session = $this->openSession();
+        $payload = ['code' => 'public class Main {}', 'language' => 'java'];
+
+        $progress = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$session->id}/check-progress", $payload);
+        $progress->assertOk();
+        $this->assertNoAnswerKey($progress->getContent());
+
+        $submit = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$session->id}/submit", $payload);
+        $submit->assertOk();
+        $this->assertNoAnswerKey($submit->getContent());
+    }
+
+    public function test_leaderboard_ping_and_leave_have_no_answer_key(): void
+    {
+        $session = $this->openSession();
+
+        foreach ([
+            $this->actingAs($this->student)->getJson("/api/v1/sessions/{$session->id}/leaderboard"),
+            $this->actingAs($this->student)->postJson("/api/v1/sessions/{$session->id}/ping"),
+            $this->actingAs($this->student)->postJson("/api/v1/sessions/{$session->id}/end"),
+        ] as $response) {
+            $response->assertOk();
+            $this->assertNoAnswerKey($response->getContent());
+        }
+    }
+
+    public function test_lab_page_hides_task_checks_from_students_only(): void
+    {
+        $studentPage = $this->actingAs($this->student)->get("/laboratories/{$this->lab->id}");
+        $studentPage->assertOk()->assertSee('Write the class');
+        $this->assertNoAnswerKey($studentPage->getContent());
+
+        // Instructors still see each task's check on the same page
+        $this->actingAs($this->instructor)->get("/laboratories/{$this->lab->id}")
+            ->assertOk()
+            ->assertSee(self::CHECK);
+    }
+
+    private function openSession(): LabSession
+    {
+        return LabSession::create(['lab_id' => $this->lab->id, 'user_id' => $this->student->id, 'status' => 'in_progress', 'started_at' => now()]);
     }
 
     public function test_starter_file_download_is_not_the_reference_solution(): void
