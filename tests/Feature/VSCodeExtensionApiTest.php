@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Competency;
+use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\User;
@@ -559,6 +560,7 @@ JAVA;
      */
     public function test_team_chat_send_and_retrieve(): void
     {
+        $this->laboratory->update(['is_group_lab' => true]);
         $session = LabSession::create([
             'lab_id' => $this->laboratory->id,
             'user_id' => $this->student->id,
@@ -584,5 +586,95 @@ JAVA;
         $getResponse->assertStatus(200);
         $this->assertCount(1, $getResponse->json('chats'));
         $this->assertEquals('Hey team, I implemented the exception class!', $getResponse->json('chats.0.message'));
+    }
+
+    /**
+     * Solo labs have no chat: the server refuses to read or post messages.
+     */
+    public function test_chat_is_refused_in_solo_labs(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/chat", ['message' => 'Anyone there?'])
+            ->assertStatus(403)
+            ->assertJson(['error' => 'chat_disabled']);
+
+        $this->withHeaders(['X-Session-Token' => $session->issueExtensionToken(), 'X-Extension-Version' => '1.7.1'])
+            ->getJson("/api/v1/sessions/{$session->id}/chat")
+            ->assertStatus(403)
+            ->assertJson(['error' => 'chat_disabled']);
+
+        $this->assertDatabaseCount('lab_session_chats', 0);
+    }
+
+    /**
+     * Teammates each have their own session, so chat must reach across them.
+     */
+    public function test_team_chat_reaches_teammates_in_their_own_sessions(): void
+    {
+        [$mySession, $teammate, $theirSession] = $this->teamOfTwo();
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$mySession->id}/chat", ['message' => 'Pushed the Student class'])
+            ->assertOk();
+
+        $this->actingAs($teammate)
+            ->getJson("/api/v1/sessions/{$theirSession->id}/chat")
+            ->assertOk()
+            ->assertJsonPath('chats.0.message', 'Pushed the Student class');
+    }
+
+    /**
+     * Contribution shares are of the whole team's lines, not of one session's.
+     */
+    public function test_contributions_are_shared_across_the_team(): void
+    {
+        [$mySession, $teammate, $theirSession] = $this->teamOfTwo();
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$mySession->id}/diff", ['lines_added' => 30, 'lines_deleted' => 0])
+            ->assertOk();
+        $response = $this->actingAs($teammate)
+            ->postJson("/api/v1/sessions/{$theirSession->id}/diff", ['lines_added' => 10, 'lines_deleted' => 0])
+            ->assertOk();
+
+        $shares = collect($response->json('code_contributions'))->pluck('contribution_percent', 'user_id');
+        $this->assertEquals(75.0, $shares[$this->student->id]);
+        $this->assertEquals(25.0, $shares[$teammate->id]);
+
+        $this->assertDatabaseHas('group_members', ['user_id' => $this->student->id, 'contribution_score' => 75.0]);
+        $this->assertDatabaseHas('group_members', ['user_id' => $teammate->id, 'contribution_score' => 25.0]);
+
+        $this->actingAs($this->student)
+            ->getJson("/api/v1/sessions/{$mySession->id}")
+            ->assertOk()
+            ->assertJsonCount(2, 'code_contributions');
+    }
+
+    /**
+     * @return array{0: LabSession, 1: User, 2: LabSession}
+     */
+    private function teamOfTwo(): array
+    {
+        $this->laboratory->update(['is_group_lab' => true]);
+        $teammate = User::create(['name' => 'Joe Teammate', 'email' => 'teammate@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
+        $group = Group::create(['lab_id' => $this->laboratory->id, 'name' => 'Team A']);
+        $group->members()->attach([$this->student->id, $teammate->id]);
+
+        $session = fn (User $user) => LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $user->id,
+            'group_id' => $group->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        return [$session($this->student), $teammate, $session($teammate)];
     }
 }

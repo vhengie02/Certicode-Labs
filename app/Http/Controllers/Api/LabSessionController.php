@@ -21,6 +21,7 @@ use App\Support\Realtime;
 use App\Support\WebcamSnapshot;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
@@ -544,9 +545,9 @@ class LabSessionController extends Controller
 
         $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $currentUser = $request->user() ?? $session->user;
-        $userId = $currentUser ? $currentUser->id : 1;
+        $userId = $currentUser?->id;
         $userName = $currentUser ? $currentUser->name : 'Student';
-        $userColor = $colors[$userId % count($colors)];
+        $userColor = $colors[($userId ?? 0) % count($colors)];
 
         $teammates = [];
         if ($session->group && $session->group->members) {
@@ -618,7 +619,7 @@ class LabSessionController extends Controller
             'performance_score' => $session->performance_score,
             'completed_tasks' => $session->completed_tasks ?? [],
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
-            'code_contributions' => $session->code_contributions ?? [],
+            'code_contributions' => $session->group_id ? $session->teamContributions() : ($session->code_contributions ?? []),
             'realtime' => Realtime::clientConfig(),
             'current_user' => [
                 'id' => $userId,
@@ -1036,8 +1037,11 @@ class LabSessionController extends Controller
         ]);
 
         $currentUser = $request->user() ?? $session->user;
-        $userId = $currentUser ? $currentUser->id : 1;
-        $userName = $currentUser ? $currentUser->name : 'Student';
+        if (! $currentUser) {
+            return response()->json(['error' => 'no_student', 'message' => 'This session has no student to credit.'], 403);
+        }
+        $userId = $currentUser->id;
+        $userName = $currentUser->name;
         $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $userColor = $colors[$userId % count($colors)];
 
@@ -1076,35 +1080,22 @@ class LabSessionController extends Controller
             $contributions[] = $userContrib;
         }
 
-        // Calculate total lines across all contributors for percentage
-        $totalLines = 0;
-        foreach ($contributions as $c) {
-            $totalLines += ($c['lines_added'] + $c['lines_modified']);
-        }
-
-        foreach ($contributions as &$c) {
-            $myLines = $c['lines_added'] + $c['lines_modified'];
-            $c['contribution_percent'] = $totalLines > 0 ? round(($myLines / $totalLines) * 100, 1) : 100.0;
-        }
-
         $session->update([
             'diff_stats' => $diffStats,
             'code_contributions' => $contributions,
         ]);
 
-        // If in a group, update pivot contribution_score
-        if ($session->group_id && $currentUser) {
-            $userPercent = 100.0;
+        // Percentages are shares of the whole team's lines, which span every teammate's session
+        $contributions = $session->teamContributions();
+        $session->update(['code_contributions' => $contributions]);
+
+        if ($session->group_id) {
             foreach ($contributions as $c) {
-                if ($c['user_id'] == $userId) {
-                    $userPercent = $c['contribution_percent'];
-                    break;
-                }
+                \DB::table('group_members')
+                    ->where('group_id', $session->group_id)
+                    ->where('user_id', $c['user_id'])
+                    ->update(['contribution_score' => $c['contribution_percent']]);
             }
-            \DB::table('group_members')
-                ->where('group_id', $session->group_id)
-                ->where('user_id', $userId)
-                ->update(['contribution_score' => $userPercent]);
         }
 
         // Broadcast real-time line diff update
@@ -1122,13 +1113,29 @@ class LabSessionController extends Controller
     }
 
     /**
+     * Chat is for teammates, so solo labs have none.
+     */
+    private function refuseChatForSoloLab(LabSession $session): ?JsonResponse
+    {
+        if ($session->laboratory?->is_group_lab) {
+            return null;
+        }
+
+        return response()->json(['error' => 'chat_disabled', 'message' => 'Chat is only available in group labs.'], 403);
+    }
+
+    /**
      * Get ephemeral team chats for active session.
      */
     public function getChats(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
+        if ($refusal = $this->refuseChatForSoloLab($session)) {
+            return $refusal;
+        }
 
-        $chats = LabSessionChat::where('lab_session_id', $session->id)
+        // Teammates each have their own session, so the team's chat spans all of them
+        $chats = LabSessionChat::whereIn('lab_session_id', $session->teamSessionIds())
             ->orderBy('id', 'asc')
             ->limit(100)
             ->get()
@@ -1161,6 +1168,9 @@ class LabSessionController extends Controller
     public function sendChat(Request $request, int $sessionId)
     {
         $session = LabSession::findOrFail($sessionId);
+        if ($refusal = $this->refuseChatForSoloLab($session)) {
+            return $refusal;
+        }
 
         $request->validate([
             'message' => 'required|string|max:2000',
@@ -1168,8 +1178,11 @@ class LabSessionController extends Controller
         ]);
 
         $currentUser = $request->user() ?? $session->user;
-        $userId = $currentUser ? $currentUser->id : 1;
-        $userName = $currentUser ? $currentUser->name : 'Student';
+        if (! $currentUser) {
+            return response()->json(['error' => 'no_student', 'message' => 'This session has no student to post as.'], 403);
+        }
+        $userId = $currentUser->id;
+        $userName = $currentUser->name;
         $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
         $userColor = $colors[$userId % count($colors)];
 
@@ -1197,9 +1210,11 @@ class LabSessionController extends Controller
             'created_at' => $chat->created_at,
         ];
 
-        // Broadcast real-time ephemeral chat to team channel
+        // Broadcast real-time ephemeral chat to every teammate's session channel
         try {
-            event(new ChatMessageSent($session->id, $chatPayload));
+            foreach ($session->teamSessionIds() as $teamSessionId) {
+                event(new ChatMessageSent($teamSessionId, $chatPayload));
+            }
         } catch (\Throwable $e) {
             Log::warning('Failed to broadcast ChatMessageSent: '.$e->getMessage());
         }
@@ -1280,7 +1295,8 @@ class LabSessionController extends Controller
                     'wpm' => $s->wpm ?? 0,
                     'focus_lost_count' => $s->focus_lost_count ?? 0,
                     'paste_anomaly_count' => $s->paste_anomaly_count ?? 0,
-                    'is_current' => (auth()->id() && auth()->id() === $s->user_id),
+                    // A team's row is shown by its best session, which may be a teammate's
+                    'is_current' => (bool) auth()->id() && $userSessions->contains('user_id', auth()->id()),
                 ];
             })
             ->sort(function ($a, $b) {

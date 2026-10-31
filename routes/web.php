@@ -17,6 +17,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InstructorMonitoringController;
 use App\Http\Controllers\LabAttemptController;
 use App\Http\Controllers\LaboratoryController;
+use App\Http\Controllers\LabTeamController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\StudentProfileController;
@@ -168,6 +169,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/laboratories/{id}/start', [LabAttemptController::class, 'startSession'])->name('laboratories.start');
     Route::get('/sessions/{id}', [LabAttemptController::class, 'showWorkspace'])->name('sessions.show');
     Route::post('/sessions/{id}/complete', [LabAttemptController::class, 'completeSession'])->name('sessions.complete');
+
+    // Group lab teams, assigned by the instructor
+    Route::get('/laboratories/{id}/teams', [LabTeamController::class, 'index'])->name('laboratories.teams.index');
+    Route::post('/laboratories/{id}/teams', [LabTeamController::class, 'store'])->name('laboratories.teams.store');
+    Route::put('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'update'])->name('laboratories.teams.update');
+    Route::delete('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'destroy'])->name('laboratories.teams.destroy');
 
     // Live Lab Lifecycle Controls (Feature 9)
     Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');

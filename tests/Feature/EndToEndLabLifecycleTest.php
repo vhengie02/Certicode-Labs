@@ -176,15 +176,13 @@ class EndToEndLabLifecycleTest extends TestCase
             return $event->sessionId === $sessionId && $event->diffStats['lines_added'] === 18;
         });
 
-        // Step 6: Team chat exchange (Feature 2) -> Dispatches ChatMessageSent
+        // Step 6: Team chat (Feature 2) is refused, since this is a solo lab
         $chatResponse = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$sessionId}/chat", [
             'message' => 'Exception hierarchy implemented successfully.',
             'code_snippet' => 'throw new InvalidAgeException();',
         ]);
-        $chatResponse->assertStatus(200);
-        Event::assertDispatched(ChatMessageSent::class, function ($event) use ($sessionId) {
-            return $event->sessionId === $sessionId && str_contains($event->chat['message'], 'hierarchy implemented');
-        });
+        $chatResponse->assertStatus(403)->assertJson(['error' => 'chat_disabled']);
+        Event::assertNotDispatched(ChatMessageSent::class);
 
         // Step 7: Progress evaluation and Leaderboard Update (Feature 5) -> Dispatches LeaderboardUpdated
         $validCode = "public class Solution { public static void main(String[] args) {} }\nclass InvalidAgeException extends Exception {}";

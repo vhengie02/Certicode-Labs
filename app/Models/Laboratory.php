@@ -411,6 +411,7 @@ class Laboratory extends Model
             return DB::transaction(fn () => LabSession::create([
                 'lab_id' => $this->id,
                 'user_id' => $user->id,
+                'group_id' => $this->teamOf($user)?->id,
                 'status' => 'in_progress',
                 'started_at' => now(),
                 'performance_score' => 0.0,
@@ -437,5 +438,18 @@ class Laboratory extends Model
     public function groups()
     {
         return $this->hasMany(Group::class, 'lab_id');
+    }
+
+    /**
+     * The team the instructor put this student in, on a group lab. Null on solo labs and for
+     * students who have no team yet: they work alone.
+     */
+    public function teamOf(User $user): ?Group
+    {
+        if (! $this->is_group_lab) {
+            return null;
+        }
+
+        return $this->groups()->whereHas('members', fn ($q) => $q->where('users.id', $user->id))->first();
     }
 }

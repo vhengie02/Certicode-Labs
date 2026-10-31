@@ -21,6 +21,9 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg>
                 Monitoring
             </a>
+            @if ($laboratory->is_group_lab)
+                <a href="{{ route('laboratories.teams.index', $laboratory->id) }}" class="ui-btn ui-btn-secondary">Teams</a>
+            @endif
             <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="ui-btn ui-btn-secondary">Edit lab</a>
         @endunless
     </x-page-header>
@@ -39,6 +42,12 @@
             <span class="ui-badge">Open lab &middot; self-paced</span>
         @endif
         <span class="ui-badge">{{ $laboratory->is_group_lab ? 'Group lab' : 'Individual' }}</span>
+        @if ($isStudent && $laboratory->is_group_lab)
+            @php $myTeam = $laboratory->teamOf($user)?->load('members:id,name'); @endphp
+            <span class="ui-badge" title="{{ $myTeam ? $myTeam->members->pluck('name')->join(', ') : 'Your instructor has not put you in a team yet, so you work alone.' }}">
+                {{ $myTeam ? $myTeam->name . ' · ' . $myTeam->members->count() . ' ' . \Illuminate\Support\Str::plural('member', $myTeam->members->count()) : 'No team yet' }}
+            </span>
+        @endif
         <span class="ui-badge">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
             {{ $minutes }} min {{ $isLive ? 'session' : 'time limit' }}
@@ -262,7 +271,7 @@
                              const res = await fetch(`/v1/sessions/${this.sessionId}`);
                              const data = await res.json();
                              if (data.code_contributions) this.contributions = data.code_contributions;
-                             if (data.diff_stats) this.diffStats = data.diffStats;
+                             if (data.diff_stats) this.diffStats = data.diff_stats;
                          } catch (e) {}
                      },
                      async sendMessage() {

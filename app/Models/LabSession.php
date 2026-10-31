@@ -128,6 +128,50 @@ class LabSession extends Model
     }
 
     /**
+     * Ids of the sessions that make up this attempt's team on the lab: every teammate starts
+     * their own session, so team chat and contributions span all of them. A solo attempt is
+     * just itself.
+     */
+    public function teamSessionIds(): array
+    {
+        if (! $this->group_id) {
+            return [$this->id];
+        }
+
+        return static::where('lab_id', $this->lab_id)
+            ->where('group_id', $this->group_id)
+            ->pluck('id')
+            ->push($this->id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Code contributions for the whole team, one entry per student with their share of the
+     * team's lines. Each session keeps the entries it has seen; the newest entry per student wins.
+     */
+    public function teamContributions(): array
+    {
+        $entries = static::whereIn('id', $this->teamSessionIds())
+            ->get(['id', 'code_contributions'])
+            ->flatMap(fn ($s) => $s->code_contributions ?? [])
+            ->filter(fn ($c) => isset($c['user_id']))
+            ->sortByDesc(fn ($c) => $c['last_active_at'] ?? '')
+            ->unique('user_id')
+            ->values()
+            ->all();
+
+        $totalLines = array_sum(array_map(fn ($c) => ($c['lines_added'] ?? 0) + ($c['lines_modified'] ?? 0), $entries));
+        foreach ($entries as &$c) {
+            $lines = ($c['lines_added'] ?? 0) + ($c['lines_modified'] ?? 0);
+            $c['contribution_percent'] = $totalLines > 0 ? round(($lines / $totalLines) * 100, 1) : round(100 / count($entries), 1);
+        }
+
+        return $entries;
+    }
+
+    /**
      * Keep figures derived from completed sessions in step with them, whichever path changed
      * the session (extension, website, instructor, live-lab close, override):
      * - cached progress is dropped whenever the completed state can have changed, since
