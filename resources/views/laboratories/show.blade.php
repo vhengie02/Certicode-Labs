@@ -21,6 +21,9 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg>
                 Monitoring
             </a>
+            @if ($laboratory->is_group_lab)
+                <a href="{{ route('laboratories.teams.index', $laboratory->id) }}" class="ui-btn ui-btn-secondary">Teams</a>
+            @endif
             <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="ui-btn ui-btn-secondary">Edit lab</a>
         @endunless
     </x-page-header>
@@ -39,6 +42,12 @@
             <span class="ui-badge">Open lab &middot; self-paced</span>
         @endif
         <span class="ui-badge">{{ $laboratory->is_group_lab ? 'Group lab' : 'Individual' }}</span>
+        @if ($isStudent && $laboratory->is_group_lab)
+            @php $myTeam = $laboratory->teamOf($user)?->load('members:id,name'); @endphp
+            <span class="ui-badge" title="{{ $myTeam ? $myTeam->members->pluck('name')->join(', ') : 'Your instructor has not put you in a team yet, so you work alone.' }}">
+                {{ $myTeam ? $myTeam->name . ' · ' . $myTeam->members->count() . ' ' . \Illuminate\Support\Str::plural('member', $myTeam->members->count()) : 'No team yet' }}
+            </span>
+        @endif
         <span class="ui-badge">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
             {{ $minutes }} min {{ $isLive ? 'session' : 'time limit' }}
@@ -262,7 +271,7 @@
                              const res = await fetch(`/v1/sessions/${this.sessionId}`);
                              const data = await res.json();
                              if (data.code_contributions) this.contributions = data.code_contributions;
-                             if (data.diff_stats) this.diffStats = data.diffStats;
+                             if (data.diff_stats) this.diffStats = data.diff_stats;
                          } catch (e) {}
                      },
                      async sendMessage() {
@@ -590,7 +599,7 @@
                             </div>
 
                             <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : (vscodeNotDetected ? 'Certicode extension not detected' : 'Starting Lab in VS Code...')"></h3>
-                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : (vscodeNotDetected ? 'VS Code has not answered yet. The Certicode extension is probably not installed. Follow these steps, then open the lab again.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...')"></p>
+                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : (vscodeNotDetected ? 'VS Code has not answered yet. The Certicode extension is probably not installed or out of date. Follow these steps, then open the lab again.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...')"></p>
 
                             <!-- Extension not detected: install instructions -->
                             <div x-show="vscodeNotDetected && !vscodeConnected" x-cloak class="mb-6 text-left bg-[#0d0d0d] p-4 rounded-xl border border-amber-500/30 space-y-3">
@@ -633,6 +642,10 @@
                                         <span x-show="vscodeConnected">Extension Ping Confirmed (Active)</span>
                                     </span>
                                 </div>
+                                <p x-show="vscodeSlowPing && !vscodeConnected" x-cloak class="pl-6 text-[11px] leading-relaxed text-amber-300/90">
+                                    Still waiting? VS Code may have opened with an outdated Certicode extension, which cannot connect.
+                                    <a href="{{ asset(config('services.vscode_extension.download_path')) }}" download class="text-[#3ecf8e] hover:underline">Download the latest version (.vsix)</a>, install it, then open the lab again.
+                                </p>
                             </div>
 
                             <div class="pt-2 border-t border-[#222] flex items-center justify-between">
@@ -647,6 +660,49 @@
                     </div>
                     @endif
                 </section>
+
+                {{-- Finished attempts, each opening its results page --}}
+                @if ($results->isNotEmpty())
+                    @php
+                        $fmtGrade = fn ($n) => rtrim(rtrim(number_format((float) $n, 1), '0'), '.');
+                        // The grade that counts: the best of the student's own completed attempts
+                        $best = $results->where('status', 'completed')->filter(fn ($r) => isset($attemptNumbers[$r->id]))
+                            ->sortByDesc(fn ($r) => $r->effective_score)->first();
+                    @endphp
+                    <section class="ui-card" aria-labelledby="results-heading">
+                        <div class="px-6 pt-5 pb-3 flex items-baseline justify-between gap-3">
+                            <h2 id="results-heading" class="ui-card-title">Your results</h2>
+                            @if ($best)
+                                <span class="text-sm text-[#888888]">Best <span class="font-semibold tabular-nums text-[#3ecf8e]">{{ $fmtGrade($best->effective_score) }}%</span></span>
+                            @endif
+                        </div>
+                        <ol class="divide-y divide-[#232323] border-t border-[#232323]" role="list">
+                            @foreach ($results as $result)
+                                @php $resultDate = $result->ended_at ?? $result->started_at; @endphp
+                                <li>
+                                    <a href="{{ route('sessions.show', $result->id) }}" class="flex items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-[#1c1c1c]">
+                                        <span class="min-w-0">
+                                            <span class="block text-sm font-medium text-[#ededed]">{{ isset($attemptNumbers[$result->id]) ? 'Attempt '.$attemptNumbers[$result->id] : 'Team attempt' }}</span>
+                                            @if ($resultDate)
+                                                <span class="block text-xs text-[#888888]"><x-local-time :at="$resultDate" date /></span>
+                                            @endif
+                                        </span>
+                                        <span class="shrink-0 text-right">
+                                            @if ($result->status === 'abandoned' && $result->instructor_grade_override === null)
+                                                <span class="text-sm text-[#888888]">Timed out</span>
+                                            @else
+                                                <span class="block text-sm font-semibold tabular-nums {{ $best && $result->id === $best->id ? 'text-[#3ecf8e]' : 'text-[#ededed]' }}">{{ $fmtGrade($result->effective_score) }}%</span>
+                                                @if ($result->instructor_grade_override !== null)
+                                                    <span class="block text-[10px] text-[#888888]">regraded</span>
+                                                @endif
+                                            @endif
+                                        </span>
+                                    </a>
+                                </li>
+                            @endforeach
+                        </ol>
+                    </section>
+                @endif
 
                 {{-- VS Code setup --}}
                 <details class="ui-card group" {{ $activeSession ? '' : 'open' }}>
@@ -760,6 +816,11 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodeNotDetected: false,
         vscodeDetectTimer: null,
         vscodeDetectTimeoutMs: 25000,
+        // Set when the extension has not pinged within vscodeSlowPingMs. An outdated build
+        // that the server refuses never pings, so the overlay hints at updating it.
+        vscodeSlowPing: false,
+        vscodeSlowTimer: null,
+        vscodeSlowPingMs: 15000,
         // After connecting, how often the page checks VS Code is still open.
         vscodeWatchInterval: null,
         vscodeWatchIntervalMs: 5000,
@@ -1177,6 +1238,11 @@ function preLabCameraGate(labId, initialSessionId) {
                     this.vscodeNotDetected = true;
                 }
             }, this.vscodeDetectTimeoutMs);
+            this.vscodeSlowPing = false;
+            clearTimeout(this.vscodeSlowTimer);
+            this.vscodeSlowTimer = setTimeout(() => {
+                this.vscodeSlowPing = !this.vscodeConnected;
+            }, this.vscodeSlowPingMs);
 
             const startedAt = Date.now();
             let delay = this.vscodePollFirstDelayMs;
@@ -1192,6 +1258,8 @@ function preLabCameraGate(labId, initialSessionId) {
                             this.vscodeConnected = true;
                             this.vscodeNotDetected = false;
                             clearTimeout(this.vscodeDetectTimer);
+                            this.vscodeSlowPing = false;
+                            clearTimeout(this.vscodeSlowTimer);
                             // Brief confirmation delay so student sees the green checkmark
                             setTimeout(() => {
                                 this.launchingVsCode = false;
@@ -1273,7 +1341,20 @@ function preLabCameraGate(labId, initialSessionId) {
             this.stopProctoring();
             this.proctorStatus = 'disconnected';
             this.proctorStatusText = 'VS Code closed';
-            window.location.reload();
+            // A finished attempt opens its results; one left open comes back to this page
+            if (reason === 'session_ended') {
+                this.showResults();
+            } else {
+                window.location.reload();
+            }
+        },
+
+        showResults() {
+            if (this.activeSessionId) {
+                window.location.href = `/sessions/${this.activeSessionId}`;
+            } else {
+                window.location.reload();
+            }
         },
 
         startContinuousProctoring() {
@@ -1609,6 +1690,7 @@ function preLabCameraGate(labId, initialSessionId) {
                         this.stopProctoring();
                         this.proctorStatus = 'disconnected';
                         this.proctorStatusText = 'Session Concluded';
+                        this.showResults();
                     }
                 }
             } catch (err) {
@@ -1649,9 +1731,11 @@ function preLabCameraGate(labId, initialSessionId) {
             clearTimeout(this.vscodePollInterval);
             this.vscodePollInterval = null;
             clearTimeout(this.vscodeDetectTimer);
+            clearTimeout(this.vscodeSlowTimer);
             clearInterval(this.vscodeWatchInterval);
             this.vscodeWatchInterval = null;
             this.vscodeNotDetected = false;
+            this.vscodeSlowPing = false;
             if (this.proctorInterval) {
                 clearInterval(this.proctorInterval);
                 this.proctorInterval = null;
@@ -1676,7 +1760,9 @@ function preLabCameraGate(labId, initialSessionId) {
             clearTimeout(this.vscodePollInterval);
             this.vscodePollInterval = null;
             clearTimeout(this.vscodeDetectTimer);
+            clearTimeout(this.vscodeSlowTimer);
             this.vscodeNotDetected = false;
+            this.vscodeSlowPing = false;
             this.showModal = false;
             this.launchingVsCode = false;
         }

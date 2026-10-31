@@ -25,7 +25,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
     });
 
-    Route::middleware('lab.session')->group(function () {
+    Route::middleware(['extension.supported', 'lab.session'])->group(function () {
         Route::get('/sessions/{sessionId}', [LabSessionController::class, 'getSession']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);

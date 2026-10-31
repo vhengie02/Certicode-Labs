@@ -214,6 +214,7 @@ class InstructorMonitoringController extends Controller
 
         $overrideScore = round((float) $request->input('override_score'), 2);
         $reason = $request->input('override_reason');
+        $previousScore = $session->effective_score;
 
         $session->update([
             'instructor_grade_override' => $overrideScore,
@@ -231,18 +232,25 @@ class InstructorMonitoringController extends Controller
                 'instructor_id' => Auth::id(),
                 'instructor_name' => Auth::user()->name ?? 'Instructor',
                 'original_score' => $session->performance_score,
+                // The grade the student had just before this change, for their results page
+                'previous_score' => $previousScore,
                 'override_score' => $overrideScore,
                 'reason' => $reason,
                 'timestamp' => now()->toIso8601String(),
             ],
         ]);
 
+        // Opens the attempt's results page, which shows the new grade and the full reason. Saving
+        // the same score confirms it (a provisional grade, say) rather than changing it.
         $labTitle = $session->laboratory->title ?? 'your lab';
         $instructorName = Auth::user()->name ?? 'Your instructor';
+        $outcome = round($previousScore, 2) === $overrideScore
+            ? "confirmed your score of {$overrideScore}%."
+            : 'changed your score from '.rtrim(rtrim(number_format($previousScore, 2), '0'), '.')."% to {$overrideScore}%.";
         $session->notifyStudents(
             "Lab reviewed: {$labTitle}",
-            "{$instructorName} reviewed your work on '{$labTitle}' and set your score to {$overrideScore}%."
-                .($reason ? " Note: {$reason}" : '')
+            "{$instructorName} reviewed your work on '{$labTitle}' and {$outcome}"
+                .($reason ? " Reason: {$reason}" : '')
         );
 
         if ($request->expectsJson() || $request->ajax()) {

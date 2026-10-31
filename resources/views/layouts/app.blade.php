@@ -632,7 +632,7 @@
             : 0;
         $primaryNav = array_filter([
             ['label' => 'Dashboard', 'url' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
-            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'modules.*', 'instructor.*', 'certificates.*')],
+            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'sessions.*', 'modules.*', 'instructor.*', 'certificates.*')],
             $isAdmin ? ['label' => 'Users', 'url' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*', 'admin.instructor-requests.*', 'students.*', 'profiles.*'), 'badge' => $pendingInstructorRequests] : null,
             $isAdmin ? ['label' => 'Competencies', 'url' => route('admin.competencies.index'), 'active' => request()->routeIs('admin.competencies.*')] : null,
             $isAdmin ? ['label' => 'Reports', 'url' => route('admin.reports.index'), 'active' => request()->routeIs('admin.reports.*')] : null,

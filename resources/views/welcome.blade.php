@@ -187,8 +187,8 @@
                     </div>
                     <div class="hidden lg:block absolute -right-4 xl:-right-10 top-20 w-[300px] panel rounded-xl overflow-hidden p-1">
                         <img src="{{ asset('images/landing/extension-tasks.jpg') }}"
-                             width="760" height="920" decoding="async"
-                             alt="The Certicode sidebar in VS Code: connected, a shared 18:55 countdown, and the lab's four tasks, three completed and one pending."
+                             width="760" height="1016" decoding="async"
+                             alt="The Certicode sidebar in VS Code: connected, a shared 18:51 clock, and the lab's four tasks, three done and one to do."
                              class="block w-full h-auto rounded-lg">
                     </div>
                     <figcaption class="sr-only">The instructor's monitor and a student's VS Code sidebar during the same live lab</figcaption>
@@ -234,37 +234,37 @@
                 <div class="reveal max-w-[720px]">
                     <h2 class="font-display text-4xl sm:text-5xl font-bold leading-[1.05] balance">The whole lab lives inside VS Code.</h2>
                     <p class="mt-5 text-[var(--text-dim)] text-lg leading-relaxed max-w-[56ch] pretty">
-                        The extension adds one sidebar with the tasks, the shared timer, a live leaderboard, their own changes and team chat.
+                        The extension adds one sidebar with the tasks, the shared timer, live standings, their own changes and team chat.
                     </p>
                     <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="mt-7 inline-flex text-sm font-medium text-[#3ecf8e] link-underline">Download the extension (.vsix)</a>
                 </div>
 
                 <div class="mt-14 -mx-6 px-6 flex gap-5 overflow-x-auto snap-x snap-mandatory pb-4 md:mx-0 md:px-0 md:grid md:grid-cols-4 md:gap-6 md:overflow-visible md:pb-0 items-start">
                     <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:0ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-tasks.jpg') }}" width="760" height="920" loading="lazy" decoding="async" alt="The Tasks tab: four lab tasks, three marked completed and one pending." class="block w-full h-auto rounded-lg"></div>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-tasks.jpg') }}" width="760" height="1016" loading="lazy" decoding="async" alt="The Tasks tab: a progress bar at 75% and four lab tasks, three done and one to do." class="block w-full h-auto rounded-lg"></div>
                         <figcaption class="mt-4">
                             <span class="block font-semibold">Tasks</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Marked off each time the grader checks their code.</span>
                         </figcaption>
                     </figure>
                     <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:90ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-leaderboard.jpg') }}" width="760" height="1400" loading="lazy" decoding="async" alt="The Leaderboard tab during a live lab: seven students ranked by tasks completed, with the shared clock." class="block w-full h-auto rounded-lg"></div>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-leaderboard.jpg') }}" width="760" height="1406" loading="lazy" decoding="async" alt="The Standings tab during a live lab: seven students ranked by tasks done, with the shared clock." class="block w-full h-auto rounded-lg"></div>
                         <figcaption class="mt-4">
-                            <span class="block font-semibold">Leaderboard</span>
+                            <span class="block font-semibold">Standings</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Ranked by tasks done, then by time taken.</span>
                         </figcaption>
                     </figure>
                     <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:180ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-diff.jpg') }}" width="760" height="940" loading="lazy" decoding="async" alt="The Diff View tab: 24 lines added, 5 deleted and 7 modified, broken down across three Java files." class="block w-full h-auto rounded-lg"></div>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-diff.jpg') }}" width="760" height="1130" loading="lazy" decoding="async" alt="The Changes tab: 24 lines added, 5 deleted and 7 modified, broken down across three Java files, with each teammate's share of the work." class="block w-full h-auto rounded-lg"></div>
                         <figcaption class="mt-4">
-                            <span class="block font-semibold">Diff View</span>
+                            <span class="block font-semibold">Changes</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Every line added and removed, file by file.</span>
                         </figcaption>
                     </figure>
                     <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:270ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1090" loading="lazy" decoding="async" alt="The Team Chat tab in a pair lab: two students agree who writes checkout(), one sharing a Java snippet." class="block w-full h-auto rounded-lg"></div>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1096" loading="lazy" decoding="async" alt="The Chat tab in a pair lab: two students split the work, one sharing the Java age check as a snippet." class="block w-full h-auto rounded-lg"></div>
                         <figcaption class="mt-4">
-                            <span class="block font-semibold">Team Chat</span>
+                            <span class="block font-semibold">Chat</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">For pair labs, with code snippets inline.</span>
                         </figcaption>
                     </figure>

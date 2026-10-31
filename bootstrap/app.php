@@ -3,6 +3,7 @@
 use App\Http\Middleware\AuthorizeLabSession;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\PreventAuthenticatedCaching;
+use App\Http\Middleware\RequireSupportedExtension;
 use App\Http\Middleware\ServerTiming;
 use App\Http\Middleware\SkipSessionForExtensionToken;
 use Illuminate\Foundation\Application;
@@ -26,6 +27,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToGroup('web', SkipSessionForExtensionToken::class);
         $middleware->alias([
             'lab.session' => AuthorizeLabSession::class,
+            'extension.supported' => RequireSupportedExtension::class,
             'admin' => EnsureAdmin::class,
         ]);
     })

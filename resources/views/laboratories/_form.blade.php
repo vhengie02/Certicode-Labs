@@ -245,29 +245,50 @@
             <ol class="space-y-3" role="list">
                 <template x-for="(task, index) in tasks" :key="index">
                     <li class="flex gap-3 rounded-xl border border-[#2e2e2e] bg-[#141414] p-3.5">
-                        <span class="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#232323] font-mono text-xs text-[#a3a3a3]" x-text="index + 1" aria-hidden="true"></span>
-                        <div class="grid min-w-0 flex-1 grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                                <label class="ui-label !text-xs !text-[#a3a3a3]" :for="`task-${index}`">Task</label>
-                                <input type="text" :id="`task-${index}`" :name="`tasks[${index}][task]`" x-model="task.task" required maxlength="255"
-                                       placeholder="e.g. Print the numbers 1 to 10 with a for loop" class="ui-input !bg-[#171717]">
-                            </div>
-                            <div>
-                                <label class="ui-label !text-xs !text-[#a3a3a3]" :for="`check-${index}`">Check <span class="ui-optional">(optional)</span></label>
-                                <input type="text" :id="`check-${index}`" :name="`tasks[${index}][command]`" x-model="task.command" maxlength="255"
-                                       placeholder="e.g. for (int i" class="ui-input ui-input-mono !bg-[#171717]">
+                        <span class="mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#232323] font-mono text-xs text-[#a3a3a3]" x-text="index + 1" aria-hidden="true"></span>
+                        <div class="min-w-0 flex-1 space-y-2.5">
+                            <label class="sr-only" :for="`task-${index}`">Task</label>
+                            <input type="text" :id="`task-${index}`" :name="`tasks[${index}][task]`" x-model="task.task" required maxlength="255"
+                                   placeholder="e.g. Print the numbers 1 to 10 with a for loop" class="ui-input !bg-[#171717]">
+
+                            {{-- The saved check is one string: plain text, or a pattern prefixed with "regex:" --}}
+                            <input type="hidden" :name="`tasks[${index}][command]`" :value="commandFor(task)">
+
+                            <button type="button" x-show="!task.checkOpen" @click="openCheck(index)"
+                                    class="inline-flex items-center gap-1.5 text-[13px] text-[#888888] hover:text-[#3ecf8e] transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg>
+                                Add an automatic check
+                            </button>
+
+                            <div x-show="task.checkOpen" x-cloak class="rounded-lg border border-[#232323] bg-[#101010] p-3">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <label class="text-[13px] text-[#a3a3a3]" :for="`check-type-${index}`">Student's code must</label>
+                                    <select :id="`check-type-${index}`" x-model="task.checkType" class="ui-input !min-h-0 !h-8 !w-auto !py-0 !bg-[#171717] text-[13px]">
+                                        <option value="text">contain this text</option>
+                                        <option value="regex">match this pattern</option>
+                                    </select>
+                                    <button type="button" @click="removeCheck(index)" class="ml-auto text-[13px] text-[#888888] hover:text-red-400 transition-colors">Remove check</button>
+                                </div>
+                                <label class="sr-only" :for="`check-${index}`" x-text="task.checkType === 'regex' ? 'Pattern' : 'Text'"></label>
+                                <input type="text" :id="`check-${index}`" x-model="task.checkValue" maxlength="249" spellcheck="false"
+                                       :placeholder="task.checkType === 'regex' ? 'e.g. for\\s*\\(\\s*int' : 'e.g. for (int i = 1'"
+                                       class="ui-input ui-input-mono !bg-[#171717] mt-2" :aria-invalid="!patternValid(task)">
+                                <p class="ui-error" x-show="!patternValid(task)">This isn't a valid pattern.</p>
+                                <p class="ui-hint" x-show="patternValid(task)"
+                                   x-text="task.checkType === 'regex'
+                                       ? 'A regular expression, matched without regard to case.'
+                                       : 'Case and spacing don\'t matter, so for(int i=1 also passes.'"></p>
                             </div>
                         </div>
                         <button type="button" @click="removeTask(index)" :disabled="tasks.length <= 1"
-                                class="ui-btn ui-btn-ghost ui-btn-sm !px-2 mt-6 hover:!text-red-400" :aria-label="`Remove task ${index + 1}`" title="Remove task">
+                                class="ui-btn ui-btn-ghost ui-btn-sm !px-2 mt-0.5 hover:!text-red-400" :aria-label="`Remove task ${index + 1}`" title="Remove task">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V4h6v3m-7 0l1 13h6l1-13"/></svg>
                         </button>
                     </li>
                 </template>
             </ol>
             <p class="ui-hint mt-3">
-                A check is text that must appear in the student's code (case and spacing don't matter). Start it with
-                <code class="font-mono text-[#a3a3a3]">regex:</code> to match a pattern instead. Leave it empty to let the grader judge the task from its description.
+                Checks are optional. A task without one is judged by the grader from its description.
             </p>
             @error('tasks.*.task') <p class="ui-error">Every task needs a description.</p> @enderror
         </div>

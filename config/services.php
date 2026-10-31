@@ -75,7 +75,10 @@ return [
     // no version) are flagged as outdated to the student. Bump it with every release that
     // the web app depends on.
     'vscode_extension' => [
+        // Older builds get a warning to update
         'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.6.0'),
+        // Older builds are refused with 426 (RequireSupportedExtension); keep at or below min_version
+        'required_version' => env('VSCODE_EXTENSION_REQUIRED_VERSION', '1.5.0'),
         'download_path' => 'downloads/certicode-labs.vsix',
     ],
 

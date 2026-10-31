@@ -17,6 +17,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InstructorMonitoringController;
 use App\Http\Controllers\LabAttemptController;
 use App\Http\Controllers\LaboratoryController;
+use App\Http\Controllers\LabTeamController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\StudentProfileController;
@@ -169,6 +170,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/sessions/{id}', [LabAttemptController::class, 'showWorkspace'])->name('sessions.show');
     Route::post('/sessions/{id}/complete', [LabAttemptController::class, 'completeSession'])->name('sessions.complete');
 
+    // Group lab teams, assigned by the instructor
+    Route::get('/laboratories/{id}/teams', [LabTeamController::class, 'index'])->name('laboratories.teams.index');
+    Route::post('/laboratories/{id}/teams', [LabTeamController::class, 'store'])->name('laboratories.teams.store');
+    Route::put('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'update'])->name('laboratories.teams.update');
+    Route::delete('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'destroy'])->name('laboratories.teams.destroy');
+
     // Live Lab Lifecycle Controls (Feature 9)
     Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');
     Route::post('/laboratories/{id}/end-live', [LaboratoryController::class, 'endLive'])->name('laboratories.end-live');
@@ -296,7 +303,7 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
     });
 
-    Route::middleware('lab.session')->group(function () {
+    Route::middleware(['extension.supported', 'lab.session'])->group(function () {
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);

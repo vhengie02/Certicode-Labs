@@ -82,6 +82,8 @@ class BroadcastingTest extends TestCase
     public function test_send_chat_dispatches_chat_message_sent_event(): void
     {
         Event::fake([ChatMessageSent::class]);
+        // Chat is only open in group labs
+        $this->lab->update(['is_group_lab' => true]);
 
         $response = $this->actingAs($this->student)->postJson("/api/v1/sessions/{$this->session->id}/chat", [
             'message' => 'Hey team, check line 45 for the null pointer fix!',
