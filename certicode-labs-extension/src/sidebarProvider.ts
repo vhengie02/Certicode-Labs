@@ -84,6 +84,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     // Workspace-wide listeners, registered once and disposed with the provider.
     private _workspaceDisposables: vscode.Disposable[] = [];
     private _outdatedWarnedSessionId: number | undefined;
+    // Set when the server refuses this build (426 extension_outdated); syncing stops until the next connect.
+    private _extensionRejected?: { minVersion: string; downloadUrl: string };
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -215,7 +217,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case 'webviewReady': {
-                    if (this._sessionId) {
+                    if (this._extensionRejected) {
+                        this.postExtensionOutdated();
+                    } else if (this._sessionId) {
                         if (this._lastSessionData) {
                             this._view?.webview.postMessage({
                                 type: 'update',
@@ -241,7 +245,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     break;
                 }
                 case 'sendChat': {
-                    this.handleSendChat(data.message, data.codeSnippet);
+                    if (this.isGroupLab()) {
+                        this.handleSendChat(data.message, data.codeSnippet);
+                    }
+                    break;
+                }
+                case 'openUpdateDownload': {
+                    if (this._extensionRejected?.downloadUrl) {
+                        vscode.env.openExternal(vscode.Uri.parse(this._extensionRejected.downloadUrl));
+                    }
                     break;
                 }
                 case 'setChatTabActive': {
@@ -327,6 +339,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         this._backendUrl = origin;
         this._sessionId = sessionId;
         this._apiToken = apiToken;
+        this._extensionRejected = undefined;
 
         // If view already exists, re-render its HTML immediately so the webview launches into session mode
         if (this._view) {
@@ -638,6 +651,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         });
     }
 
+    /**
+     * The server refused this build (426 extension_outdated). Retrying cannot help, so stop
+     * every timer and tell the student to install the latest build.
+     */
+    private handleExtensionRejected(body: string) {
+        if (this._extensionRejected) {
+            return;
+        }
+        let data: any = {};
+        try {
+            data = JSON.parse(body);
+        } catch {}
+        this._extensionRejected = {
+            minVersion: typeof data.min_version === 'string' ? data.min_version : '',
+            downloadUrl: typeof data.download_url === 'string' ? data.download_url : `${this._backendUrl}/downloads/certicode-labs.vsix`,
+        };
+        this._isReconnecting = false;
+        this.stopSessionTimers();
+        this.postExtensionOutdated();
+
+        const required = this._extensionRejected.minVersion ? ` ${this._extensionRejected.minVersion} or newer` : '';
+        vscode.window.showErrorMessage(
+            `CertiCode: this extension (v${EXTENSION_VERSION}) is no longer supported. Install version${required} to continue your lab.`,
+            'Download update'
+        ).then(choice => {
+            if (choice === 'Download update' && this._extensionRejected?.downloadUrl) {
+                vscode.env.openExternal(vscode.Uri.parse(this._extensionRejected.downloadUrl));
+            }
+        });
+    }
+
+    private postExtensionOutdated() {
+        this._view?.webview.postMessage({
+            type: 'extensionOutdated',
+            minVersion: this._extensionRejected?.minVersion || ''
+        });
+    }
+
     private async syncSessionState() {
         if (!this._sessionId) {
             return;
@@ -695,6 +746,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     message: 'This lab needs to be opened from the website. Open it on Certicode and click "Continue in VS Code".'
                 });
                 vscode.window.showErrorMessage('CertiCode: Not authorized for this lab session. Open the lab on the Certicode website and click "Continue in VS Code".');
+            } else if (result.status === 426) {
+                // makeRequest already stopped syncing and told the student to update
+                return;
             } else if (result.status === 403) {
                 this._isReconnecting = false;
                 try {
@@ -1389,7 +1443,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
      * Feature 3: Fetch ephemeral chat messages
      */
     private async fetchChatMessages() {
-        if (!this._sessionId) { return; }
+        if (!this._sessionId || !this.isGroupLab()) { return; }
         try {
             const prefix = API_PREFIX;
             const res = await this.makeRequest('GET', `${prefix}/sessions/${this._sessionId}/chat`);
@@ -1813,6 +1867,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                         responseData += chunk;
                     });
                     res.on('end', () => {
+                        if (res.statusCode === 426 && responseData.includes('extension_outdated')) {
+                            this.handleExtensionRejected(responseData);
+                        }
                         resolve({
                             status: res.statusCode || 0,
                             body: responseData
@@ -2227,6 +2284,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     </style>
 </head>
 <body>
+    <div class="notices" id="update-notices" hidden>
+        <div class="notice" data-tone="danger" role="alert">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17v.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+            <div class="notice-body">
+                <strong>Update the Certicode extension to continue</strong>
+                <div id="extension-outdated-text">This version is no longer supported, so your lab cannot sync.</div>
+                <button type="button" id="extension-update-link" class="link-btn">Download the latest version</button>
+            </div>
+        </div>
+    </div>
+
     <main id="connection-screen" class="screen" style="${connScreenStyle}">
         <div class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 256 256"><path d="M156 39.84A96 96 0 1 0 156 216.16L156 163.50A52 52 0 1 1 156 92.50Z"/><rect x="170" y="198" width="66" height="26"/></svg>
@@ -2301,7 +2369,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-tasks">Tasks <span class="tab-badge" id="tasks-count-badge" hidden></span></button>
             <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-leaderboard" id="tab-leaderboard-btn">Standings</button>
             <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-diff">Changes</button>
-            <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-chat" id="tab-chat-btn">Chat <span class="tab-badge" id="chat-badge" hidden>0</span></button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-tab="tab-chat" id="tab-chat-btn" hidden>Chat <span class="tab-badge" id="chat-badge" hidden>0</span></button>
         </nav>
 
         <!-- Overview: brief and starter files -->
@@ -2545,6 +2613,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         // Set from the 'status' message until the grade (or an error) comes back, so the
         // periodic session refresh doesn't turn the buttons back on mid-grade
         let gradingInFlight = false;
+        // Set once the server refuses this build; actions stay locked until the next connect
+        let extensionOutdated = false;
 
         function setActionsLocked(locked) {
             checkProgressBtn.disabled = locked;
@@ -2586,15 +2656,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 vscode.postMessage({ type: 'getLeaderboard' });
             }
         }
-        tabButtons.forEach((btn, i) => {
+        tabButtons.forEach((btn) => {
             btn.addEventListener('click', () => activateTab(btn));
             btn.addEventListener('keydown', (e) => {
                 if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
                 e.preventDefault();
-                const next = tabButtons[(i + (e.key === 'ArrowRight' ? 1 : tabButtons.length - 1)) % tabButtons.length];
+                // Hidden tabs (Chat in solo labs) are skipped
+                const visibleTabs = Array.from(tabButtons).filter(b => !b.hidden);
+                const i = visibleTabs.indexOf(btn);
+                const next = visibleTabs[(i + (e.key === 'ArrowRight' ? 1 : visibleTabs.length - 1)) % visibleTabs.length];
                 next.focus();
                 activateTab(next);
             });
+        });
+
+        $('extension-update-link').addEventListener('click', () => {
+            vscode.postMessage({ type: 'openUpdateDownload' });
         });
 
         $('leaderboard-refresh-btn').addEventListener('click', () => {
@@ -2859,6 +2936,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     setStatus('reconnecting', 'Reconnecting…');
                     break;
 
+                case 'extensionOutdated':
+                    extensionOutdated = true;
+                    $('extension-outdated-text').textContent = message.minVersion
+                        ? 'This version is no longer supported, so your lab cannot sync. Install version ' + message.minVersion + ' or newer, then open the lab again from the website.'
+                        : 'This version is no longer supported, so your lab cannot sync. Install the latest version, then open the lab again from the website.';
+                    show($('update-notices'));
+                    setStatus('reconnecting', 'Update required');
+                    setActionsLocked(true);
+                    break;
+
                 case 'disconnected':
                     if (timerInterval) clearInterval(timerInterval);
                     timerInterval = null;
@@ -2968,7 +3055,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }
             show(connectError, false);
             const attemptClosed = session.status !== 'in_progress';
-            setActionsLocked(gradingInFlight || attemptClosed);
+            setActionsLocked(gradingInFlight || attemptClosed || extensionOutdated);
+
+            // Chat is for teammates, so solo labs have none
+            const chatTabBtn = $('tab-chat-btn');
+            show(chatTabBtn, session.is_group_lab === true);
+            if (chatTabBtn.hidden && chatTabBtn.classList.contains('active')) {
+                activateTab(tabButtons[0]);
+            }
 
             connectionScreen.style.display = 'none';
             sessionScreen.style.display = 'flex';
@@ -3062,7 +3156,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 setActionsLocked(true);
             } else {
                 setLiveAlert(null);
-                setActionsLocked(gradingInFlight || attemptClosed);
+                setActionsLocked(gradingInFlight || attemptClosed || extensionOutdated);
             }
 
             // Timer

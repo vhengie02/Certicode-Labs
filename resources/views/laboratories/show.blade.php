@@ -599,7 +599,7 @@
                             </div>
 
                             <h3 class="text-base font-bold text-[#ededed] mb-1.5" x-text="vscodeConnected ? 'VS Code Connected!' : (vscodeNotDetected ? 'Certicode extension not detected' : 'Starting Lab in VS Code...')"></h3>
-                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : (vscodeNotDetected ? 'VS Code has not answered yet. The Certicode extension is probably not installed. Follow these steps, then open the lab again.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...')"></p>
+                            <p class="text-xs text-[#888888] leading-relaxed mb-5" x-text="vscodeConnected ? 'Activity loaded and ready. You may now start coding.' : (vscodeNotDetected ? 'VS Code has not answered yet. The Certicode extension is probably not installed or out of date. Follow these steps, then open the lab again.' : 'Launching VS Code workspace. Waiting for extension heartbeat ping before continuing...')"></p>
 
                             <!-- Extension not detected: install instructions -->
                             <div x-show="vscodeNotDetected && !vscodeConnected" x-cloak class="mb-6 text-left bg-[#0d0d0d] p-4 rounded-xl border border-amber-500/30 space-y-3">
@@ -642,6 +642,10 @@
                                         <span x-show="vscodeConnected">Extension Ping Confirmed (Active)</span>
                                     </span>
                                 </div>
+                                <p x-show="vscodeSlowPing && !vscodeConnected" x-cloak class="pl-6 text-[11px] leading-relaxed text-amber-300/90">
+                                    Still waiting? VS Code may have opened with an outdated Certicode extension, which cannot connect.
+                                    <a href="{{ asset(config('services.vscode_extension.download_path')) }}" download class="text-[#3ecf8e] hover:underline">Download the latest version (.vsix)</a>, install it, then open the lab again.
+                                </p>
                             </div>
 
                             <div class="pt-2 border-t border-[#222] flex items-center justify-between">
@@ -812,6 +816,11 @@ function preLabCameraGate(labId, initialSessionId) {
         vscodeNotDetected: false,
         vscodeDetectTimer: null,
         vscodeDetectTimeoutMs: 25000,
+        // Set when the extension has not pinged within vscodeSlowPingMs. An outdated build
+        // that the server refuses never pings, so the overlay hints at updating it.
+        vscodeSlowPing: false,
+        vscodeSlowTimer: null,
+        vscodeSlowPingMs: 15000,
         // After connecting, how often the page checks VS Code is still open.
         vscodeWatchInterval: null,
         vscodeWatchIntervalMs: 5000,
@@ -1229,6 +1238,11 @@ function preLabCameraGate(labId, initialSessionId) {
                     this.vscodeNotDetected = true;
                 }
             }, this.vscodeDetectTimeoutMs);
+            this.vscodeSlowPing = false;
+            clearTimeout(this.vscodeSlowTimer);
+            this.vscodeSlowTimer = setTimeout(() => {
+                this.vscodeSlowPing = !this.vscodeConnected;
+            }, this.vscodeSlowPingMs);
 
             const startedAt = Date.now();
             let delay = this.vscodePollFirstDelayMs;
@@ -1244,6 +1258,8 @@ function preLabCameraGate(labId, initialSessionId) {
                             this.vscodeConnected = true;
                             this.vscodeNotDetected = false;
                             clearTimeout(this.vscodeDetectTimer);
+                            this.vscodeSlowPing = false;
+                            clearTimeout(this.vscodeSlowTimer);
                             // Brief confirmation delay so student sees the green checkmark
                             setTimeout(() => {
                                 this.launchingVsCode = false;
@@ -1715,9 +1731,11 @@ function preLabCameraGate(labId, initialSessionId) {
             clearTimeout(this.vscodePollInterval);
             this.vscodePollInterval = null;
             clearTimeout(this.vscodeDetectTimer);
+            clearTimeout(this.vscodeSlowTimer);
             clearInterval(this.vscodeWatchInterval);
             this.vscodeWatchInterval = null;
             this.vscodeNotDetected = false;
+            this.vscodeSlowPing = false;
             if (this.proctorInterval) {
                 clearInterval(this.proctorInterval);
                 this.proctorInterval = null;
@@ -1742,7 +1760,9 @@ function preLabCameraGate(labId, initialSessionId) {
             clearTimeout(this.vscodePollInterval);
             this.vscodePollInterval = null;
             clearTimeout(this.vscodeDetectTimer);
+            clearTimeout(this.vscodeSlowTimer);
             this.vscodeNotDetected = false;
+            this.vscodeSlowPing = false;
             this.showModal = false;
             this.launchingVsCode = false;
         }

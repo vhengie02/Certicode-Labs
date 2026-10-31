@@ -8,6 +8,7 @@
 - Group labs: team chat now reaches every teammate, and each student's contribution share is counted against the whole team's lines instead of always showing 100%. The lab page's added/removed line counts no longer stay at 0, and the leaderboard highlights your team's row even when a teammate's attempt is the one shown.
 - Solo labs no longer show a Chat tab in VS Code, and the server refuses chat for them.
 - Task checks are easier to set up: in the lab form, "Add an automatic check" lets you pick "contain this text" or "match this pattern" instead of typing a `regex:` prefix, and flags a pattern that isn't valid. Plain-text checks are now enforced by the grader too (ignoring case and spacing), not just patterns.
+- Extension builds the server no longer supports are refused with a clear "update the Certicode extension" message in VS Code, with a download button, instead of failing to sync. The lab page also suggests updating when VS Code opens but never connects.
 
 ## 2026-10-19
 

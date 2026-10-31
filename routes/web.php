@@ -303,7 +303,7 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/labs/{labId}/reopen-live', [LabSessionController::class, 'reopenLive']);
     });
 
-    Route::middleware('lab.session')->group(function () {
+    Route::middleware(['extension.supported', 'lab.session'])->group(function () {
         Route::post('/sessions/{sessionId}/verify-camera', [LabSessionController::class, 'verifyCamera']);
         Route::post('/sessions/{sessionId}/telemetry', [LabSessionController::class, 'submitTelemetry']);
         Route::post('/sessions/{sessionId}/ping', [LabSessionController::class, 'pingSession']);
