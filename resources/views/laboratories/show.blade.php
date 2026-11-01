@@ -1309,6 +1309,11 @@ function preLabCameraGate(labId, initialSessionId) {
                         this.leaveLabAfterVsCodeClosed('vscode_closed');
                         return;
                     }
+                    // VS Code shut down a moment ago, maybe for a window reload: wait for it to resume
+                    if (data.vscode_reconnecting === true) {
+                        missedChecks = 0;
+                        return;
+                    }
                     // No clean shutdown report (old extension, crash, killed process): the extension
                     // pings every 15s, so two missed pings means VS Code is gone.
                     const pingAge = data.vscode_ping_age_seconds;

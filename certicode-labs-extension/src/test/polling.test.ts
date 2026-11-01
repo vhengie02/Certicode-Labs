@@ -1,4 +1,4 @@
-import './vscodeStub';
+import { fakeSecrets } from './vscodeStub';
 import { SidebarProvider } from '../sidebarProvider';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { test, mock, afterEach } = require('node:test');
@@ -14,7 +14,7 @@ afterEach(() => mock.timers.reset());
 function monitoredProvider(session: object, sessionStatus = 200) {
     mock.timers.enable({ apis: ['setInterval'] });
 
-    const provider: any = new SidebarProvider({ fsPath: '/ext' } as any, { get: (_k: string, d: any) => d, update: async () => undefined } as any);
+    const provider: any = new SidebarProvider({ fsPath: '/ext' } as any, { get: (_k: string, d: any) => d, update: async () => undefined } as any, fakeSecrets());
     const requests: string[] = [];
 
     provider._sessionId = 7;

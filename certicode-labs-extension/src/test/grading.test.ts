@@ -1,4 +1,4 @@
-import { shown } from './vscodeStub';
+import { fakeSecrets, shown } from './vscodeStub';
 import { SidebarProvider } from '../sidebarProvider';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { test } = require('node:test');
@@ -10,7 +10,7 @@ const assert = require('node:assert');
  * Each grading request stays open until the test answers it.
  */
 function connectedProvider() {
-    const provider: any = new SidebarProvider({ fsPath: '/ext' } as any, { get: (_k: string, d: any) => d, update: async () => undefined } as any);
+    const provider: any = new SidebarProvider({ fsPath: '/ext' } as any, { get: (_k: string, d: any) => d, update: async () => undefined } as any, fakeSecrets());
     const requests: { path: string; answer: (status: number, body: object) => void }[] = [];
 
     provider._sessionId = 7;
