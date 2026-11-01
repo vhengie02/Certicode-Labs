@@ -311,14 +311,13 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Instructor hears about camera flags with monitoring closed**:
   - The first camera flag (`no_face`, `multiple_faces`) in a lab after 15 quiet minutes sends the class instructor an in-app notification (`CameraFlagNotification`, no email) linking to the lab's monitoring. Later flags in the same spell show on the monitoring page only.
 - [x] **A VS Code reload no longer exits the lab**:
-  - VS Code shuts the extension down the same way for a reload and a close. The server now counts VS Code as closed only 30 s after a clean shutdown with no new ping (`vscode_reconnecting` until then), and extension 1.8.0 resumes the session if it starts again within 25 s. The token is kept in VS Code's SecretStorage. Older builds still exit the lab, 30 s later than before.
+  - VS Code shuts the extension down the same way for a reload and a close. The server now counts VS Code as closed only 30 s after a clean shutdown with no new ping (`vscode_reconnecting` until then), and extension 1.8.0 (in `public/downloads/certicode-labs.vsix`) resumes the session if it starts again within 25 s. The token is kept in VS Code's SecretStorage. Older builds still exit the lab, 30 s later than before.
 - [x] **Outdated extensions on the monitoring page**:
   - The lab roster shows an "Old ext" badge next to in-progress students whose last extension ping came from a build below `min_version`.
 - [ ] **Follow-ups**:
   - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
   - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
-  - Release extension 1.8.0 (rebuild the `.vsix`) so the reload fix reaches students.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
   - Automated tests for permission denial, absence anomaly recording, multi-face detection, pre-lab 3-attempt failure reporting, and camera verification status persistence.
 
@@ -464,10 +463,16 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
   - Finish the post-audit production checklist (credentials, Supabase Auth settings, demo accounts). The details are kept outside this public repo.
   - Run the `2026_10_18_000000_stop_taking_role_from_supabase_signup_metadata` migration on Supabase.
   - Set the Vercel env vars: `DB_URL` (or `DB_*`), `JUDGE0_URL`, `ATTACHMENTS_DISK=supabase` and `SUPABASE_STORAGE_*`; set the bucket file-size limit to at least 20 MB.
-  - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.7.1 if every student should update.
+  - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.8.0 if every student should update (1.8.0 survives window reloads).
 - [ ] **Follow-ups (code)**:
   - Try a real upload to the Supabase bucket after deploying.
-  - Work through the audit's remaining 41 medium and 30 low findings (polling load, unbounded telemetry and snapshot growth, O(n²) plagiarism on every page load, no CI, Postgres-only paths untested on SQLite).
+  - Work through the audit's other medium and low findings. The full list is kept outside this public repo.
+- [x] **Audit follow-ups already fixed**:
+  - Plagiarism results are stored per lab and refreshed at each submit (`LabSimilarityReport`), so loading monitoring no longer compares every pair.
+  - Heartbeats and typing-speed samples (`TELEMETRY_RETENTION_DAYS`, default 7), resolved flags (`ANOMALY_RETENTION_DAYS`, 90) and camera snapshots on flags (`SNAPSHOT_RETENTION_DAYS`, 30) are pruned daily.
+  - CI (`.github/workflows/ci.yml`) runs the suite on SQLite and on Postgres.
+  - Monitoring's fallback polling pauses in a background tab.
+  - Students never receive the reference solution or task checks (`LabAnswerKeyExposureTest`).
 
 ---
 
