@@ -463,7 +463,7 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
   - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.7.1 if every student should update.
 - [ ] **Follow-ups (code)**:
   - Try a real upload to the Supabase bucket after deploying.
-  - Work through the audit's remaining 41 medium and 30 low findings (polling load, unbounded telemetry and snapshot growth, O(n²) plagiarism on every page load, reference solution sent to students, no CI, Postgres-only paths untested on SQLite).
+  - Work through the audit's remaining 41 medium and 30 low findings (polling load, unbounded telemetry and snapshot growth, O(n²) plagiarism on every page load, no CI, Postgres-only paths untested on SQLite).
 
 ---
 
