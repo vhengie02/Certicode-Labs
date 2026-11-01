@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-01
+
+- Reloading the VS Code window no longer kicks a student out of their lab. Extension 1.8.0 reconnects to the same attempt by itself, and the lab page waits a few seconds instead of leaving. Students on older builds still leave the lab when VS Code closes, about 30 seconds later than before.
+- Instructors now get an in-app notification when the camera flags a student, even with the monitoring page closed. Only the first camera flag in a lab after 15 quiet minutes notifies, so a noisy camera doesn't flood the bell.
+- The lab monitoring list marks students running an extension older than the minimum version with an "Old ext" badge.
+- The monitoring page stops asking the server for updates while it's in a background tab and catches up when you come back to it.
+- Extension 1.8.0 ships with this release. It also includes the "update the Certicode extension" message for builds the server no longer accepts.
+
 ## 2026-10-27
 
 - Students now get a results page when a lab attempt ends. It shows their grade, the lab grade that counts (their best attempt), which tasks they finished with the grader's feedback on each, and their stats: time spent, typing speed, lines changed, focus lost and flagged pastes. The lab page opens it as soon as the attempt is submitted, and lists every past attempt with its grade.

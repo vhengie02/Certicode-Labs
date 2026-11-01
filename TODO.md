@@ -466,6 +466,7 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
   - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.8.0 if every student should update (1.8.0 survives window reloads).
 - [ ] **Follow-ups (code)**:
   - Try a real upload to the Supabase bucket after deploying.
+  - `ModuleAttachmentS3Test::test_download_is_a_five_minute_presigned_url_for_one_object` failed once on timing in a full `php artisan test` run (5.7 s, the suite's first test) and passes alone. Make it independent of the clock.
   - Work through the audit's other medium and low findings. The full list is kept outside this public repo.
 - [x] **Audit follow-ups already fixed**:
   - Plagiarism results are stored per lab and refreshed at each submit (`LabSimilarityReport`), so loading monitoring no longer compares every pair.
