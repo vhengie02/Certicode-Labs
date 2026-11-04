@@ -12,6 +12,11 @@ const EXTENSION_VERSION: string = vscode.extensions.getExtension('certicode.cert
 const GRADING_TIMEOUT_MS = 90000;
 const TRUSTED_BACKENDS_KEY = 'certicode.trustedBackends';
 const STARTER_OWNERS_KEY = 'certicode.starterFileOwners';
+// The connected session, so a window reload can pick it up again. The token lives in SecretStorage.
+const RESUME_SESSION_KEY = 'certicode.resumeSession';
+const RESUME_TOKEN_SECRET = 'certicode.resumeSessionToken';
+// A reload restarts the extension within seconds; the server waits 30 s before treating VS Code as closed.
+const RESUME_WINDOW_MS = 25000;
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
 
@@ -89,8 +94,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
-        private readonly _globalState: vscode.Memento
+        private readonly _globalState: vscode.Memento,
+        private readonly _secrets: vscode.SecretStorage
     ) {}
+
+    /**
+     * Reconnect to the session this window had before a reload. VS Code shuts the extension down
+     * the same way for a reload and a close, so a shutdown only counts as a reload if the
+     * extension starts again within RESUME_WINDOW_MS; after that the student starts again from
+     * the lab page.
+     */
+    public async resumeAfterReload(): Promise<void> {
+        const saved = this._globalState.get<{ backendUrl: string; sessionId: number; closedAt?: number }>(RESUME_SESSION_KEY);
+        if (!saved?.closedAt || Date.now() - saved.closedAt > RESUME_WINDOW_MS) {
+            await this.forgetSession();
+            return;
+        }
+        // Only a server the student already approved; a resume never asks
+        if (!this._globalState.get<string[]>(TRUSTED_BACKENDS_KEY, []).includes(saved.backendUrl)) {
+            await this.forgetSession();
+            return;
+        }
+        const token = await this._secrets.get(RESUME_TOKEN_SECRET);
+        await this.connectToSession(saved.backendUrl, saved.sessionId, token || undefined);
+    }
+
+    private async rememberSession(): Promise<void> {
+        if (!this._backendUrl || !this._sessionId) {
+            return;
+        }
+        await this._globalState.update(RESUME_SESSION_KEY, { backendUrl: this._backendUrl, sessionId: this._sessionId });
+        if (this._apiToken) {
+            await this._secrets.store(RESUME_TOKEN_SECRET, this._apiToken);
+        } else {
+            await this._secrets.delete(RESUME_TOKEN_SECRET);
+        }
+    }
+
+    private async forgetSession(): Promise<void> {
+        await this._globalState.update(RESUME_SESSION_KEY, undefined);
+        await this._secrets.delete(RESUME_TOKEN_SECRET);
+    }
 
     public dispose() {
         this.stopSessionTimers();
@@ -347,6 +391,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         }
 
         this.startMonitoring();
+        this.rememberSession().catch(() => { /* a reload then needs the lab page again */ });
 
         // Send immediate ping to notify backend that VS Code extension is active
         this.sendVsCodePing();
@@ -380,6 +425,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     public async notifyVsCodeClosed() {
         if (!this._sessionId) {
             return;
+        }
+        // If this is a reload, the next activation resumes the session (resumeAfterReload)
+        const saved = this._globalState.get<{ backendUrl: string; sessionId: number }>(RESUME_SESSION_KEY);
+        if (saved?.sessionId === this._sessionId) {
+            await this._globalState.update(RESUME_SESSION_KEY, { ...saved, closedAt: Date.now() });
         }
         try {
             await this.makeRequest('POST', `${API_PREFIX}/sessions/${this._sessionId}/vscode-disconnect`, {
@@ -1810,6 +1860,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         this.stopSessionTimers();
         if (this._windowStateListener) { this._windowStateListener.dispose(); this._windowStateListener = undefined; }
+        await this.forgetSession();
 
         this._sessionId = undefined;
         this._lastSessionData = null;

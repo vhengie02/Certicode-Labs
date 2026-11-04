@@ -1,4 +1,4 @@
-import { files, memento, shown, stubState } from './vscodeStub';
+import { fakeSecrets, files, memento, shown, stubState } from './vscodeStub';
 import { SidebarProvider } from '../sidebarProvider';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { test, beforeEach } = require('node:test');
@@ -9,7 +9,7 @@ const LAB1 = [{ name: 'Main.java', content: 'class Main { /* lab 1 */ }', is_pri
 const LAB2 = [{ name: 'Main.java', content: 'class Main { /* lab 2 */ }', is_primary: true }];
 
 function provider(state = memento()) {
-    const p: any = new SidebarProvider({ fsPath: '/ext' } as any, state as any);
+    const p: any = new SidebarProvider({ fsPath: '/ext' } as any, state as any, fakeSecrets());
     p.verifyWorkspaceFileIntegrity = async () => undefined;
     p.computeAndSyncDiffs = async () => undefined;
     p.ensureTrustedBackend = async () => 'https://labs.example';

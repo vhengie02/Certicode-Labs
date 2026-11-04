@@ -77,6 +77,16 @@ export function memento() {
     };
 }
 
+/** An in-memory stand-in for vscode.SecretStorage. */
+export function fakeSecrets() {
+    const values = new Map<string, string>();
+    return {
+        get: async (key: string) => values.get(key),
+        store: async (key: string, value: string) => { values.set(key, value); },
+        delete: async (key: string) => { values.delete(key); },
+    } as any;
+}
+
 const originalLoad = Module._load;
 Module._load = function (request: string, ...rest: any[]) {
     if (request === 'vscode') {

@@ -74,6 +74,9 @@ class InstructorMonitoringController extends Controller
         $similarityService = app(CodeSimilarityService::class);
         $plagiarismAnalysis = $similarityService->labReport($laboratory->id);
 
+        $outdatedExtensions = $this->outdatedExtensions($sessions);
+        $extensionMinVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
+
         return compact(
             'laboratory',
             'schoolClass',
@@ -84,8 +87,40 @@ class InstructorMonitoringController extends Controller
             'completedSessions',
             'totalAnomalies',
             'avgWpm',
-            'plagiarismAnalysis'
+            'plagiarismAnalysis',
+            'outdatedExtensions',
+            'extensionMinVersion'
         );
+    }
+
+    /**
+     * In-progress sessions whose VS Code extension last pinged from a build below the minimum
+     * version, keyed by session ID. The value is that build, or '' for builds too old to
+     * report one. Sessions with no versioned ping yet aren't listed.
+     *
+     * @return array<int, string>
+     */
+    protected function outdatedExtensions($sessions): array
+    {
+        $sessionIds = $sessions->where('status', 'in_progress')->pluck('id');
+        if ($sessionIds->isEmpty()) {
+            return [];
+        }
+
+        $minVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
+        $latestPingIds = TelemetryLog::whereIn('lab_session_id', $sessionIds)
+            ->where('event_type', 'vscode_ping')
+            ->groupBy('lab_session_id')
+            ->selectRaw('MAX(id) as id')
+            ->pluck('id');
+
+        return TelemetryLog::whereIn('id', $latestPingIds)
+            ->get(['id', 'lab_session_id', 'payload'])
+            // Pings logged before versions were recorded say nothing about the build
+            ->filter(fn ($ping) => is_array($ping->payload) && array_key_exists('extension_version', $ping->payload))
+            ->mapWithKeys(fn ($ping) => [$ping->lab_session_id => (string) $ping->payload['extension_version']])
+            ->filter(fn ($version) => $version === '' || version_compare($version, $minVersion, '<'))
+            ->all();
     }
 
     /**

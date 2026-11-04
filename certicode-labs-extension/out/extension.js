@@ -29,9 +29,10 @@ const sidebarProvider_1 = require("./sidebarProvider");
 const url_1 = require("url");
 let activeSidebarProvider;
 function activate(context) {
-    const sidebarProvider = new sidebarProvider_1.SidebarProvider(context.extensionUri, context.globalState);
+    const sidebarProvider = new sidebarProvider_1.SidebarProvider(context.extensionUri, context.globalState, context.secrets);
     activeSidebarProvider = sidebarProvider;
     context.subscriptions.push(sidebarProvider);
+    sidebarProvider.resumeAfterReload().catch(() => { });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider("certicode-labs.sidebar", sidebarProvider, {
         webviewOptions: {
             retainContextWhenHidden: true,
