@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\LabAttemptController;
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
 use App\Models\User;
+use App\Notifications\CameraFlagNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 /**
@@ -18,6 +22,8 @@ use Tests\TestCase;
 class CameraGateTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const SNAPSHOT = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
     private User $student;
 
@@ -97,5 +103,109 @@ class CameraGateTest extends TestCase
         $this->travel(11)->minutes();
 
         $this->start()->assertStatus(403);
+    }
+
+    private function check(int $faceCount, array $extra = [])
+    {
+        return $this->actingAs($this->student)
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => $faceCount] + $extra);
+    }
+
+    private function failThreeTimes(array $lastCheck = []): void
+    {
+        $this->check(0)->assertStatus(422)->assertJson(['attempts_used' => 1]);
+        $this->check(2)->assertStatus(422)->assertJson(['attempts_used' => 2]);
+        $this->check(0, $lastCheck)->assertStatus(423)->assertJson(['error' => 'camera_check_blocked']);
+    }
+
+    public function test_three_failed_checks_lock_the_student_out_even_if_a_later_check_passes(): void
+    {
+        $this->failThreeTimes();
+
+        $this->check(1)->assertStatus(423);
+        $this->start()->assertStatus(403);
+        $this->assertSame(0, LabSession::count());
+    }
+
+    public function test_the_lockout_also_covers_the_check_for_an_attempt_already_open(): void
+    {
+        $session = LabSession::create(['user_id' => $this->student->id, 'lab_id' => $this->laboratory->id, 'status' => 'in_progress']);
+        $this->failThreeTimes();
+
+        $this->actingAs($this->student)
+            ->postJson("/v1/sessions/{$session->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->assertStatus(423);
+    }
+
+    public function test_a_lockout_also_cancels_an_earlier_pass(): void
+    {
+        $this->check(1)->assertOk();
+        $this->failThreeTimes();
+
+        $this->start()->assertStatus(403);
+    }
+
+    public function test_the_lockout_ends_after_fifteen_minutes(): void
+    {
+        $this->failThreeTimes();
+
+        $this->travel(14)->minutes();
+        $this->check(1)->assertStatus(423)->assertJsonFragment(['message' => 'Too many failed camera checks. Contact your instructor. You can try again in 1 minute.']);
+
+        $this->travel(2)->minutes();
+        $this->check(1)->assertOk();
+        $this->start()->assertOk();
+    }
+
+    public function test_a_passed_check_clears_the_failed_attempts(): void
+    {
+        $this->check(0)->assertStatus(422);
+        $this->check(0)->assertStatus(422);
+        $this->check(1)->assertOk();
+
+        $this->check(0)->assertStatus(422)->assertJson(['attempts_used' => 1]);
+    }
+
+    public function test_attempts_are_counted_per_lab(): void
+    {
+        $this->failThreeTimes();
+
+        $otherLab = Laboratory::create(['module_id' => $this->laboratory->module_id, 'title' => 'Arrays', 'description' => 'Sort.', 'time_limit' => 45, 'is_group_lab' => false, 'tasks_definition' => []]);
+
+        $this->actingAs($this->student)
+            ->postJson("/v1/labs/{$otherLab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->assertOk();
+    }
+
+    public function test_a_lockout_with_an_open_attempt_flags_it_with_the_picture(): void
+    {
+        $session = LabSession::create(['user_id' => $this->student->id, 'lab_id' => $this->laboratory->id, 'status' => 'in_progress']);
+
+        $this->failThreeTimes(['image_base64' => self::SNAPSHOT]);
+
+        $flag = Anomaly::where('lab_session_id', $session->id)->sole();
+        $this->assertSame('no_face', $flag->type);
+        $this->assertSame('high', $flag->severity);
+        $this->assertStringContainsString('after 3 attempts', $flag->description);
+        $this->assertSame(Anomaly::DB_SNAPSHOT, $flag->image_path);
+        $this->assertTrue($flag->metadata['pre_lab']);
+    }
+
+    public function test_a_lockout_with_no_attempt_notifies_the_instructor(): void
+    {
+        Notification::fake();
+
+        $this->failThreeTimes();
+
+        $this->assertSame(0, Anomaly::count());
+        Notification::assertSentTo($this->laboratory->module->schoolClass->instructor, CameraFlagNotification::class);
+    }
+
+    public function test_the_lab_page_uses_the_server_attempt_limit(): void
+    {
+        $this->actingAs($this->student)
+            ->get(route('laboratories.show', $this->laboratory->id))
+            ->assertOk()
+            ->assertSee('maxAttempts: '.LabAttemptController::CAMERA_MAX_ATTEMPTS, false);
     }
 }

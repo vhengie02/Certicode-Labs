@@ -69,8 +69,8 @@ class LabAttemptController extends Controller
             return back()->with('error', $message);
         }
 
-        // Attach prelab verification telemetry if verified. A low-light pass skipped face
-        // detection, so it is recorded as such for the instructor rather than as one face.
+        // Attach prelab verification telemetry if verified. A low-light pass found its face on a
+        // brightened frame, so it is recorded as such for the instructor rather than as one face.
         if ($isCameraVerified && $session) {
             $lowLight = (bool) ($cameraCheck['low_light'] ?? false);
             TelemetryLog::firstOrCreate([
@@ -106,6 +106,12 @@ class LabAttemptController extends Controller
     /** How long a passed camera check lets the student start the lab. */
     public const CAMERA_CHECK_TTL_MINUTES = 10;
 
+    /** Failed camera checks in a row before the student is locked out of the lab. */
+    public const CAMERA_MAX_ATTEMPTS = 3;
+
+    /** How long that lockout lasts. */
+    public const CAMERA_BLOCK_MINUTES = 15;
+
     /**
      * Record a passed camera check in the student's session; the lab start reads it back.
      */
@@ -116,7 +122,59 @@ class LabAttemptController extends Controller
                 'verified_at' => now()->toIso8601String(),
                 'low_light' => $lowLight,
             ]);
+            $request->session()->forget("camera_failures_lab_{$labId}");
         }
+    }
+
+    /**
+     * Count a failed camera check. Kept on the server so reloading the page doesn't reset it;
+     * in the session because the cache doesn't survive between requests on Vercel.
+     *
+     * @return array{attempts_used: int, blocked: bool}
+     */
+    public static function recordFailedCameraCheck(Request $request, int $labId): array
+    {
+        if (! $request->hasSession()) {
+            return ['attempts_used' => 0, 'blocked' => false];
+        }
+
+        $key = "camera_failures_lab_{$labId}";
+        $attempts = (int) ($request->session()->get($key)['attempts'] ?? 0) + 1;
+        $blocked = $attempts >= self::CAMERA_MAX_ATTEMPTS;
+
+        $request->session()->put($key, [
+            'attempts' => $attempts,
+            'blocked_until' => $blocked ? now()->addMinutes(self::CAMERA_BLOCK_MINUTES)->toIso8601String() : null,
+        ]);
+
+        if ($blocked) {
+            $request->session()->forget("camera_verified_lab_{$labId}");
+        }
+
+        return ['attempts_used' => $attempts, 'blocked' => $blocked];
+    }
+
+    /** Minutes left on the student's camera lockout for this lab; 0 when they aren't locked out. */
+    public static function cameraBlockMinutesLeft(Request $request, int $labId): int
+    {
+        if (! $request->hasSession()) {
+            return 0;
+        }
+
+        $key = "camera_failures_lab_{$labId}";
+        $blockedUntil = $request->session()->get($key)['blocked_until'] ?? null;
+        if (! $blockedUntil) {
+            return 0;
+        }
+
+        $secondsLeft = now()->diffInSeconds(Carbon::parse($blockedUntil), false);
+        if ($secondsLeft <= 0) {
+            $request->session()->forget($key);
+
+            return 0;
+        }
+
+        return (int) ceil($secondsLeft / 60);
     }
 
     /**
