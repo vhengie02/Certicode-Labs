@@ -183,7 +183,7 @@
                                     Pasted <span class="font-bold text-white">{{ $log->payload['pasted_length'] ?? 0 }} chars</span> of external code.
                                 </p>
                                 @if(!empty($log->payload['snippet']))
-                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-x-auto mt-1 font-mono leading-normal max-h-40">{{ \Illuminate\Support\Str::limit($log->payload['snippet'], 400) }}</pre>
+                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['snippet'] }}</pre>
                                 @endif
                             @elseif($log->event_type === 'focus_lost')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">

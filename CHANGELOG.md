@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-04
+
+- Opening a lab's starter files no longer raises a false paste flag, on any extension version. The check missed starter code on Windows because of its line endings, and when VS Code had no folder open.
+- Instructors can read the whole pasted text on a paste flag, up to 10,000 characters, with "See all" on longer pastes. If only part was saved, the flag says how much. Older extension builds save only the first 100 characters.
+
 ## 2026-11-01
 
 - Reloading the VS Code window no longer kicks a student out of their lab. Extension 1.8.0 reconnects to the same attempt by itself, and the lab page waits a few seconds instead of leaving. Students on older builds still leave the lab when VS Code closes, about 30 seconds later than before.

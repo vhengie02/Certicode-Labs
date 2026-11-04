@@ -74,11 +74,11 @@ test('switching sessions forgets the previous lab\'s starter baseline', async ()
 /**
  * Feed the provider one big insertion, as VS Code reports it, and return the telemetry sent.
  */
-async function insert(text: string, { dirty = true } = {}) {
+async function insert(text: string, { dirty = true, starterFiles = LAB1 } = {}) {
     const p = provider();
     const sent: any[] = [];
     p._sessionId = 1;
-    p._lastSessionData = { laboratory: { starter_files: LAB1 } };
+    p._lastSessionData = { laboratory: { starter_files: starterFiles } };
     p.recordActivity = () => undefined;
     p.sendTelemetry = async (type: string, payload: any) => { sent.push({ type, payload }); };
     p.handleDocumentChange({
@@ -105,4 +105,29 @@ test('a reload from disk is not flagged as a paste', async () => {
 test('text that came from the clipboard is still flagged', async () => {
     stubState.clipboard = '  public static void main(String[] args) {\n\n  }';
     assert.strictEqual((await insert(SNIPPET)).length, 1);
+});
+
+const MULTILINE_STARTER = [{
+    name: 'Strings.java',
+    content: 'public class Strings {\n    public static String reverse(String s) {\n        return s;\n    }\n}\n',
+    is_primary: true,
+}];
+
+test('starter code with Windows line endings is not flagged, with no snapshot taken', async () => {
+    const crlf = MULTILINE_STARTER[0].content.replace(/\n/g, '\r\n');
+    stubState.clipboard = crlf;
+    assert.strictEqual((await insert(crlf, { starterFiles: MULTILINE_STARTER })).length, 0);
+});
+
+test('a paste that only starts like the starter code is still flagged', async () => {
+    const solution = MULTILINE_STARTER[0].content.replace('return s;', 'return new StringBuilder(s).reverse().toString();');
+    stubState.clipboard = solution;
+    assert.strictEqual((await insert(solution, { starterFiles: MULTILINE_STARTER })).length, 1);
+});
+
+test('a long paste reaches the instructor whole', async () => {
+    const longPaste = 'int value = 1;\n'.repeat(400);
+    stubState.clipboard = longPaste;
+    const [flag] = await insert(longPaste);
+    assert.strictEqual(flag.payload.snippet, longPaste);
 });

@@ -182,6 +182,58 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
     }
 
+    /**
+     * What extension 1.6.0 reported when it opened a starter file on Windows: the first
+     * 100 characters of the CRLF text, and the CRLF length.
+     */
+    private function postStarterPaste(string $starter, ?int $pastedLength = null): void
+    {
+        $this->laboratory->update(['starter_files' => [['name' => 'Strings.java', 'content' => $starter, 'is_primary' => true]]]);
+        $crlf = str_replace("\n", "\r\n", $starter);
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'paste_anomaly',
+            'payload' => [
+                'pasted_length' => $pastedLength ?? strlen($crlf),
+                'snippet' => substr($crlf, 0, 100),
+                'file' => 'Untitled-1',
+                'wpm' => 0,
+            ],
+        ])->assertStatus(200);
+    }
+
+    private const STRINGS_STARTER = "public class Strings {\n    public static String reverse(String s) {\n        // TODO\n        return s;\n    }\n\n    public static boolean isPalindrome(String s) {\n        // TODO\n        return false;\n    }\n}\n";
+
+    public function test_starter_code_reported_as_a_paste_raises_no_flag()
+    {
+        $this->postStarterPaste(self::STRINGS_STARTER);
+
+        $this->assertEquals(0, $this->session1->refresh()->paste_anomaly_count);
+        $this->assertDatabaseMissing('anomalies', ['lab_session_id' => $this->session1->id, 'type' => 'paste_anomaly']);
+    }
+
+    public function test_a_longer_paste_that_starts_like_the_starter_is_still_flagged()
+    {
+        $this->postStarterPaste(self::STRINGS_STARTER, 900);
+
+        $this->assertEquals(1, $this->session1->refresh()->paste_anomaly_count);
+    }
+
+    public function test_a_long_paste_is_kept_whole_for_the_instructor()
+    {
+        $snippet = str_repeat("int value = 1;\n", 400);
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'paste_anomaly',
+            'payload' => ['pasted_length' => strlen($snippet), 'snippet' => $snippet, 'file' => 'Tree.java', 'wpm' => 0],
+        ])->assertStatus(200);
+
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'paste_anomaly')->firstOrFail();
+        $this->assertSame($snippet, $anomaly->metadata['snippet']);
+        $log = TelemetryLog::where('lab_session_id', $this->session1->id)->where('event_type', 'paste_anomaly')->firstOrFail();
+        $this->assertSame($snippet, $log->payload['snippet']);
+    }
+
     public function test_live_leaderboard_ranks_by_tasks_descending()
     {
         $response = $this->asExtension($this->session1)->getJson("/api/v1/sessions/{$this->session1->id}/leaderboard");

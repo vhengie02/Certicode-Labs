@@ -114,7 +114,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $this->boundedPayload($logPayload),
+            'payload' => $this->boundedPayload($logPayload, $eventType === 'paste_anomaly' ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
         ]);
 
         // Smart anomaly checks
@@ -156,13 +156,13 @@ class LabSessionController extends Controller
             $session->recordIdleAnomaly($idleMinutes, $request->payload);
         }
 
-        if ($request->event_type === 'paste_anomaly') {
+        if ($request->event_type === 'paste_anomaly' && ! $this->isStarterPaste($session, $request->payload ?? [])) {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
-            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
+            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
             $metadata = $request->payload;
             $metadata['snippet'] = $snippet;
-            $metadata = $this->boundedPayload($metadata);
+            $metadata = $this->boundedPayload($metadata, self::MAX_PASTE_PAYLOAD_BYTES);
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
@@ -350,12 +350,20 @@ class LabSessionController extends Controller
     private const MAX_PAYLOAD_BYTES = 8192;
 
     /**
+     * Pasted text kept for the instructor, and room for it in a payload: JSON can spend up to
+     * six bytes on a character. Going over the byte limit would cut the text to 500 characters.
+     */
+    private const MAX_PASTE_SNIPPET_CHARS = 10000;
+
+    private const MAX_PASTE_PAYLOAD_BYTES = 65536;
+
+    /**
      * A client-sent payload, cut down if it is too large to store. Small scalar fields are
      * kept so the event still says what happened.
      */
-    private function boundedPayload(?array $payload): ?array
+    private function boundedPayload(?array $payload, int $maxBytes = self::MAX_PAYLOAD_BYTES): ?array
     {
-        if ($payload === null || strlen((string) json_encode($payload)) <= self::MAX_PAYLOAD_BYTES) {
+        if ($payload === null || strlen((string) json_encode($payload)) <= $maxBytes) {
             return $payload;
         }
 
@@ -365,9 +373,43 @@ class LabSessionController extends Controller
             ->take(20)
             ->all();
 
-        return strlen((string) json_encode($kept)) <= self::MAX_PAYLOAD_BYTES
+        return strlen((string) json_encode($kept)) <= $maxBytes
             ? $kept + ['truncated' => true]
             : ['truncated' => true];
+    }
+
+    /**
+     * Whether a reported paste is only the lab's own starter code, which older extension builds
+     * report when they open a starter file. Line endings are ignored: starter files use LF, but
+     * Windows editors report CRLF. Those builds send just the first 100 characters, so a cut-off
+     * snippet also has to match the starter file's full length.
+     */
+    private function isStarterPaste(LabSession $session, array $payload): bool
+    {
+        $unifyEol = fn (string $text): string => str_replace(["\r\n", "\r"], "\n", $text);
+        $rawSnippet = (string) ($payload['snippet'] ?? '');
+        $snippet = trim($unifyEol($rawSnippet));
+        if ($snippet === '') {
+            return false;
+        }
+
+        $pastedLength = (int) ($payload['pasted_length'] ?? 0);
+        $isWholePaste = $pastedLength <= mb_strlen($rawSnippet);
+
+        foreach ($session->laboratory?->getStarterFilesList() ?? [] as $file) {
+            $content = $unifyEol((string) ($file['content'] ?? ''));
+            if (! str_contains($content, $snippet)) {
+                continue;
+            }
+
+            $lfLength = mb_strlen($content);
+            $crlfLength = $lfLength + substr_count($content, "\n");
+            if ($isWholePaste || $pastedLength === $lfLength || $pastedLength === $crlfLength) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

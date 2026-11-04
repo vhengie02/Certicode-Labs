@@ -44,6 +44,8 @@ const RESUME_TOKEN_SECRET = 'certicode.resumeSessionToken';
 const RESUME_WINDOW_MS = 25000;
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
+// Pasted text kept for the instructor. The server keeps the same amount.
+const MAX_PASTE_SNIPPET_LENGTH = 10000;
 class SidebarProvider {
     constructor(_extensionUri, _globalState, _secrets) {
         this._extensionUri = _extensionUri;
@@ -1085,13 +1087,7 @@ class SidebarProvider {
                 // Bulk code insertion detected!
                 const trimmedPaste = change.text.trim();
                 // Suppression Rule A: Internal Move/Restructure check
-                let isSuppressedA = false;
-                for (const [, snapshotContent] of this._starterFileSnapshots.entries()) {
-                    if (snapshotContent.includes(trimmedPaste)) {
-                        isSuppressedA = true;
-                        break;
-                    }
-                }
+                const isSuppressedA = this.isStarterText(trimmedPaste);
                 // Suppression Rule B: Permitted Collaboration / Team Chat match.
                 // Short chat text is ignored so a one-word message cannot excuse arbitrary pastes.
                 let isSuppressedB = false;
@@ -1109,7 +1105,7 @@ class SidebarProvider {
                         if (fromClipboard) {
                             this.sendTelemetry('paste_anomaly', {
                                 pasted_length: change.text.length,
-                                snippet: change.text.slice(0, 2000),
+                                snippet: change.text.slice(0, MAX_PASTE_SNIPPET_LENGTH),
                                 file,
                                 wpm
                             });
@@ -1126,6 +1122,21 @@ class SidebarProvider {
                 this.computeAndSyncDiffs();
             }, 2000);
         }
+    }
+    /**
+     * Whether text comes from this lab's starter files. Line endings are ignored: the server
+     * sends LF, but a Windows editor reports the same text with CRLF. The session's own file
+     * list is checked too, because no snapshot exists when there is no workspace folder.
+     */
+    isStarterText(text) {
+        const unifyEol = (value) => value.replace(/\r\n?/g, '\n');
+        const needle = unifyEol(text);
+        const sessionFiles = this._lastSessionData?.laboratory?.starter_files || [];
+        const starters = [
+            ...this._starterFileSnapshots.values(),
+            ...sessionFiles.map(file => (typeof file.content === 'string' ? file.content : '')),
+        ];
+        return starters.some(content => unifyEol(content).includes(needle));
     }
     /**
      * Whether inserted text is what is on the clipboard, ignoring whitespace (pasting re-indents).
