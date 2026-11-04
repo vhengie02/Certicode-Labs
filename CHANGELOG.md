@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-04
+
+- Settings has new sections. Date and time sets a time zone and date format for lab times and class end dates. Active sessions lists signed-in browsers and can sign out the others. Your data explains what Certicode records and downloads it as a JSON file. Delete account erases an account, and students with certificates or group labs keep their name and grades so those records still work.
+- Email notifications add an "All alert emails" switch, a Grades toggle for students, and opt-in camera flag emails for instructors.
+
 ## 2026-11-01
 
 - Reloading the VS Code window no longer kicks a student out of their lab. Extension 1.8.0 reconnects to the same attempt by itself, and the lab page waits a few seconds instead of leaving. Students on older builds still leave the lab when VS Code closes, about 30 seconds later than before.

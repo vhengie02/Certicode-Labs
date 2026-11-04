@@ -54,11 +54,11 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-slate-800/60 font-mono text-xs">
             <div>
                 <span class="text-slate-500 block mb-1 uppercase tracking-wider text-[10px]">Started At</span>
-                <span class="text-slate-350">{{ $session->started_at ? \Carbon\Carbon::parse($session->started_at)->format('Y-m-d H:i:s') : '-' }}</span>
+                <span class="text-slate-350">{{ $session->started_at ? \App\Support\DisplayTime::in($session->started_at)->format('Y-m-d H:i:s') : '-' }}</span>
             </div>
             <div>
                 <span class="text-slate-500 block mb-1 uppercase tracking-wider text-[10px]">Ended At</span>
-                <span class="text-slate-350">{{ $session->ended_at ? \Carbon\Carbon::parse($session->ended_at)->format('Y-m-d H:i:s') : '-' }}</span>
+                <span class="text-slate-350">{{ $session->ended_at ? \App\Support\DisplayTime::in($session->ended_at)->format('Y-m-d H:i:s') : '-' }}</span>
             </div>
         </div>
     </div>
@@ -81,7 +81,7 @@
                             <p class="text-[11px] text-slate-450 leading-relaxed font-sans">{{ $anomaly->description }}</p>
                             
                             <div class="flex items-center justify-between pt-1 border-t border-slate-800/40 text-[9px] text-slate-500 font-mono">
-                                <span>{{ \Carbon\Carbon::parse($anomaly->created_at)->format('H:i:s') }}</span>
+                                <span>{{ \App\Support\DisplayTime::in($anomaly->created_at)->format('H:i:s') }}</span>
                                 @if(!$anomaly->resolved)
                                     <form action="{{ route('anomalies.resolve', $anomaly->id) }}" method="POST" class="m-0">
                                         @csrf
@@ -147,7 +147,7 @@
                                 <span class="px-2 py-0.5 border text-[10px] font-bold font-mono rounded-lg uppercase {{ $badgeColor }}">
                                     {{ str_replace('_', ' ', $log->event_type) }}
                                 </span>
-                                <span class="text-[10px] text-slate-500 font-mono">{{ \Carbon\Carbon::parse($log->created_at)->format('H:i:s') }}</span>
+                                <span class="text-[10px] text-slate-500 font-mono">{{ \App\Support\DisplayTime::in($log->created_at)->format('H:i:s') }}</span>
                             </div>
 
                             @if($log->event_type === 'tab_switch')
@@ -183,7 +183,7 @@
                                     Pasted <span class="font-bold text-white">{{ $log->payload['pasted_length'] ?? 0 }} chars</span> of external code.
                                 </p>
                                 @if(!empty($log->payload['snippet']))
-                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-x-auto mt-1 font-mono leading-normal max-h-40">{{ \Illuminate\Support\Str::limit($log->payload['snippet'], 400) }}</pre>
+                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['snippet'] }}</pre>
                                 @endif
                             @elseif($log->event_type === 'focus_lost')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">

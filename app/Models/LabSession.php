@@ -275,7 +275,7 @@ class LabSession extends Model
      * member of the team on a group lab. It opens the attempt's results page unless
      * another link is given. A failed send never breaks the caller.
      */
-    public function notifyStudents(string $title, string $message, ?string $url = null): void
+    public function notifyStudents(string $title, string $message, ?string $url = null, string $type = 'lab'): void
     {
         $recipients = collect([$this->user])
             ->merge($this->group_id ? ($this->group?->members ?? collect()) : collect())
@@ -288,7 +288,7 @@ class LabSession extends Model
                     $title,
                     $message,
                     $url ?? route('sessions.show', $this->id),
-                    'lab'
+                    $type
                 ));
             } catch (\Throwable $e) {
                 Log::warning('Lab notification failed: '.$e->getMessage());

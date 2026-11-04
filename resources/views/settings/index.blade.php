@@ -8,13 +8,11 @@
         'password' => 'Password',
         'appearance' => 'Appearance',
         'accounts' => 'Connected accounts',
+        ...($activeSessions === null ? [] : ['sessions' => 'Active sessions']),
+        'datetime' => 'Date and time',
         'notifications' => 'Email notifications',
-    ];
-    $toggles = [
-        'notify_class' => ['Class invitations', 'When an instructor invites you to a class, or a student joins yours.'],
-        'notify_module' => ['New lessons', 'When a module is added to one of your classes.'],
-        'notify_lab' => ['New labs', 'When a lab is added to one of your classes.'],
-        'notify_certificate' => ['Certificates', 'When you reach a class’s pass mark and your certificate is issued.'],
+        'privacy' => 'Your data',
+        'delete-account' => 'Delete account',
     ];
     $themes = [
         'system' => ['System', 'Follows your device setting.'],
@@ -251,6 +249,70 @@
                 </div>
             </section>
 
+            {{-- Active sessions --}}
+            @if ($activeSessions !== null)
+                <section id="sessions" class="ui-card scroll-mt-4" aria-labelledby="sessions-heading">
+                    <div class="ui-card-header">
+                        <h2 id="sessions-heading" class="ui-card-title">Active sessions</h2>
+                        <p class="ui-card-subtitle">Browsers signed in to your account. Sign out of any you don't recognize, then change your password.</p>
+                    </div>
+                    <ul class="ui-card-body divide-y divide-[#232323]">
+                        @foreach ($activeSessions as $session)
+                            <li class="flex flex-wrap items-center justify-between gap-3 py-3.5 first:pt-0 last:pb-0">
+                                <span class="min-w-0">
+                                    <span class="block text-sm font-medium text-[#ededed]">{{ $session['device'] }}</span>
+                                    <span class="block mt-0.5 text-[13px] text-[#888888]">{{ $session['ip_address'] ?? 'Unknown address' }} &middot; Last active <x-local-time :at="$session['last_active']" /></span>
+                                </span>
+                                @if ($session['is_current'])
+                                    <span class="ui-badge ui-badge-brand text-[11px]">This device</span>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                    @if ($activeSessions->count() > 1)
+                        <form action="{{ route('settings.sessions.signout') }}" method="POST" class="flex justify-end border-t border-[#232323] px-6 py-4">
+                            @csrf
+                            <button type="submit" class="ui-btn ui-btn-secondary">Sign out everywhere else</button>
+                        </form>
+                    @endif
+                </section>
+            @endif
+
+            {{-- Date and time --}}
+            <form id="datetime" action="{{ route('settings.datetime.update') }}" method="POST" class="ui-card scroll-mt-4">
+                @csrf
+                @method('PUT')
+                <div class="ui-card-header">
+                    <h2 class="ui-card-title">Date and time</h2>
+                    <p class="ui-card-subtitle">How dates and lab times appear for you. Certificates always show the same date for everyone.</p>
+                </div>
+                <div class="ui-card-body grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                        <label for="timezone" class="ui-label">Time zone</label>
+                        <select name="timezone" id="timezone" class="ui-input" @error('timezone') aria-invalid="true" @enderror>
+                            <option value="">Use my device's time zone</option>
+                            @foreach (timezone_identifiers_list() as $zone)
+                                <option value="{{ $zone }}" @selected(old('timezone', $user->timezone) === $zone)>{{ str_replace('_', ' ', $zone) }}</option>
+                            @endforeach
+                        </select>
+                        @error('timezone') <p class="ui-error">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="date_style" class="ui-label">Date format</label>
+                        <select name="date_style" id="date_style" class="ui-input" @error('date_style') aria-invalid="true" @enderror>
+                            <option value="">Automatic</option>
+                            @foreach (\App\Support\DisplayTime::DATE_STYLES as $style => $formats)
+                                <option value="{{ $style }}" @selected(old('date_style', $user->date_style) === $style)>{{ \App\Support\DisplayTime::in(now())->format($formats['datetime']) }}</option>
+                            @endforeach
+                        </select>
+                        @error('date_style') <p class="ui-error">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+                <div class="flex justify-end border-t border-[#232323] px-6 py-4">
+                    <button type="submit" class="ui-btn ui-btn-primary">Save date and time</button>
+                </div>
+            </form>
+
             {{-- Email notifications --}}
             <form id="notifications" action="{{ route('settings.notifications.update') }}" method="POST" class="ui-card scroll-mt-4">
                 @csrf
@@ -262,7 +324,7 @@
                     </p>
                 </div>
                 <div class="ui-card-body divide-y divide-[#232323]">
-                    @foreach ($toggles as $field => [$label, $hint])
+                    @foreach (['notify_email_channel' => ['All alert emails', 'Turn this off to stop every email below, and account updates from admins. Sign-in and password emails still arrive.']] + $toggles as $field => [$label, $hint])
                         <label class="flex cursor-pointer items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
                             <span>
                                 <span class="block text-sm font-medium text-[#ededed]">{{ $label }}</span>
@@ -280,6 +342,65 @@
                     <button type="submit" class="ui-btn ui-btn-primary">Save notification settings</button>
                 </div>
             </form>
+
+            {{-- Your data --}}
+            <section id="privacy" class="ui-card scroll-mt-4" aria-labelledby="privacy-heading">
+                <div class="ui-card-header">
+                    <h2 id="privacy-heading" class="ui-card-title">Your data</h2>
+                    <p class="ui-card-subtitle">What Certicode records about you. Your class's instructor and Certicode admins can see it.</p>
+                </div>
+                <dl class="ui-card-body divide-y divide-[#232323]">
+                    <div class="py-3.5 first:pt-0">
+                        <dt class="text-sm font-medium text-[#ededed]">During a lab</dt>
+                        <dd class="mt-0.5 text-[13px] text-[#888888]">Typing pace, focus changes, idle time and pasted text.</dd>
+                    </div>
+                    <div class="py-3.5">
+                        <dt class="text-sm font-medium text-[#ededed]">Camera</dt>
+                        <dd class="mt-0.5 text-[13px] text-[#888888]">Checks that you're present while a lab runs. A snapshot is kept only when the camera raises a flag.</dd>
+                    </div>
+                    <div class="py-3.5 last:pb-0">
+                        <dt class="text-sm font-medium text-[#ededed]">Your work</dt>
+                        <dd class="mt-0.5 text-[13px] text-[#888888]">The code you submit, your grades, and your messages in lab chat.</dd>
+                    </div>
+                </dl>
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[#232323] px-6 py-4">
+                    <p class="text-[13px] text-[#888888]">A JSON file of your data. Camera snapshots are listed but not included.</p>
+                    <a href="{{ route('settings.export') }}" class="ui-btn ui-btn-secondary">Download my data</a>
+                </div>
+            </section>
+
+            {{-- Delete account --}}
+            <section id="delete-account" class="ui-card scroll-mt-4" aria-labelledby="delete-heading">
+                <div class="ui-card-header">
+                    <h2 id="delete-heading" class="ui-card-title">Delete account</h2>
+                    <p class="ui-card-subtitle">This can't be undone.</p>
+                </div>
+                @if ($deletionBlocker)
+                    <div class="ui-card-body text-sm text-[#a3a3a3]">{{ $deletionBlocker }}</div>
+                @else
+                    <form action="{{ route('settings.account.destroy') }}" method="POST">
+                        @csrf
+                        @method('DELETE')
+                        <div class="ui-card-body space-y-4">
+                            <p class="text-sm text-[#a3a3a3]">
+                                @if ($deletionKeepsRecord)
+                                    Your sign-in, email, Gmail, GitHub link and monitoring data are erased. Your name and grades stay, so your certificates keep verifying and teammates keep their group labs. Shared group lab records stay too, minus your camera snapshots.
+                                @else
+                                    Your account, lab work and monitoring data are erased.
+                                @endif
+                            </p>
+                            <div class="sm:max-w-sm">
+                                <label for="confirm_email" class="ui-label">Type {{ $user->email }} to confirm</label>
+                                <input type="email" name="confirm_email" id="confirm_email" required autocomplete="off" class="ui-input" @error('confirm_email') aria-invalid="true" @enderror>
+                                @error('confirm_email') <p class="ui-error">{{ $message }}</p> @enderror
+                            </div>
+                        </div>
+                        <div class="flex justify-end border-t border-[#232323] px-6 py-4">
+                            <button type="submit" class="ui-btn ui-btn-danger">Delete my account</button>
+                        </div>
+                    </form>
+                @endif
+            </section>
         </div>
     </div>
 </div>

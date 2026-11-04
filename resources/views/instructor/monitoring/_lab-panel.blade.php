@@ -231,7 +231,7 @@
                 'state_label' => $stateLabels[$state] ?? ucfirst($state),
                 'status' => $s->status,
                 'last_seen' => $s->last_ping_at?->diffForHumans() ?? $s->started_at?->diffForHumans(),
-                'started_at' => $s->started_at?->format('M j, H:i'),
+                'started_at' => \App\Support\DisplayTime::in($s->started_at)?->format('M j, H:i'),
                 'tasks_done' => is_array($s->completed_tasks) ? count($s->completed_tasks) : 0,
                 'task_total' => $taskTotal,
                 'wpm' => (int) ($s->wpm ?? 0),

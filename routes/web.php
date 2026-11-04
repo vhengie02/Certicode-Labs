@@ -132,6 +132,10 @@ Route::middleware('auth')->group(function () {
     Route::put('/settings/profile', [SettingsController::class, 'updateProfile'])->name('settings.profile.update');
     Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password.update');
     Route::post('/settings/notifications', [SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
+    Route::put('/settings/date-time', [SettingsController::class, 'updateDateTime'])->name('settings.datetime.update');
+    Route::post('/settings/sessions/sign-out-others', [SettingsController::class, 'signOutOtherSessions'])->name('settings.sessions.signout')->middleware('throttle:10,1');
+    Route::get('/settings/export', [SettingsController::class, 'exportData'])->name('settings.export')->middleware('throttle:3,10');
+    Route::delete('/settings/account', [SettingsController::class, 'destroyAccount'])->name('settings.account.destroy')->middleware('throttle:5,1');
     Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect')->middleware('throttle:auth-mail');
     Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify')->middleware('throttle:code-verify');
     Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');

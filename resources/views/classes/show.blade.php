@@ -40,7 +40,7 @@
         <div><span class="text-[#888888]">Instructor</span> <span class="text-[#ededed]">{{ $class->instructor->name ?? 'Unassigned' }}</span></div>
         <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}%</span></div>
         @if ($class->scheduled_end_date)
-            <div><span class="text-[#888888]">{{ $isEnded ? 'Ended' : 'Ends' }}</span> <span class="text-[#ededed]">{{ $class->scheduled_end_date->format('M j, Y') }}</span></div>
+            <div><span class="text-[#888888]">{{ $isEnded ? 'Ended' : 'Ends' }}</span> <span class="text-[#ededed]">{{ \App\Support\DisplayTime::format($class->scheduled_end_date, true) }}</span></div>
         @endif
         @if ($isStaff)
             <div><span class="text-[#888888]">Students</span> <span class="text-[#ededed]">{{ $enrolled->count() }}</span></div>

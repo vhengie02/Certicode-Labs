@@ -2,18 +2,20 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\ChecksEmailDelivery;
 use App\Support\InternalUrl;
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
  * Tells a lab's instructor that camera flags started coming in, so they hear about them even
- * with the monitoring page closed. In-app only: a lab can raise many camera flags, and the
- * sender already sends at most one per quiet spell.
+ * with the monitoring page closed. Email is opt-in (notify_integrity): a lab can raise many camera
+ * flags, though the sender already sends at most one per quiet spell.
  */
 class CameraFlagNotification extends Notification
 {
-    use Queueable;
+    use ChecksEmailDelivery, Queueable;
 
     public function __construct(
         protected string $title,
@@ -26,7 +28,19 @@ class CameraFlagNotification extends Notification
 
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return $this->canEmail($notifiable) && ($notifiable->notify_integrity ?? false)
+            ? ['database', 'mail']
+            : ['database'];
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('Certicode Alert: '.$this->title)
+            ->greeting('Hello '.$notifiable->name.',')
+            ->line($this->message)
+            ->action('Open monitoring', url($this->url))
+            ->salutation('Best regards, Certicode Labs Team');
     }
 
     public function toArray(object $notifiable): array
