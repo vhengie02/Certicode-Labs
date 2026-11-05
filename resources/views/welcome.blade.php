@@ -219,7 +219,7 @@
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:0ms">
                         <span class="font-code text-sm text-[#3ecf8e]">01</span>
                         <h3 class="mt-6 text-xl font-semibold">Start with a camera check</h3>
-                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">A camera check looks for the student&rsquo;s face, and a low-light pass is noted for you. Then the lab opens straight into VS Code with the starter files in place.</p>
+                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">A camera check looks for the student&rsquo;s face, and a pass in a dim room is noted for you. Then the lab opens straight into VS Code with the starter files in place.</p>
                     </li>
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:120ms">
                         <span class="font-code text-sm text-[#3ecf8e]">02</span>
