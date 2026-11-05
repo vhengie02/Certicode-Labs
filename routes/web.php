@@ -148,6 +148,7 @@ Route::middleware('auth')->group(function () {
 
     // Classes & Module management (NetAcad inspired)
     Route::resource('classes', ClassController::class);
+    Route::get('/classes/{class_id}/card-image', [ClassController::class, 'cardImage'])->name('classes.card-image');
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
     Route::get('/integrity-flags', [ClassController::class, 'integrityFlags'])->name('anomalies.index');

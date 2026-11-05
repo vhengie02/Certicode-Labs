@@ -59,11 +59,16 @@
     <!-- Classes Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         @forelse($classes as $class)
-            <div class="rounded-xl p-6 flex flex-col justify-between bg-[#171717] border border-[#2e2e2e] hover:border-[#3ecf8e]/35 transition-colors">
+            <div class="relative overflow-hidden rounded-xl p-6 flex flex-col justify-between bg-[#171717] border border-[#2e2e2e] hover:border-[#3ecf8e]/35 transition-colors">
+                @if ($class->card_image_path)
+                    <img src="{{ $class->cardImageUrl() }}" alt="" class="class-card-photo">
+                @else
+                    <x-class-pattern :pattern="$class->cardPattern()" :id="'class-pattern-'.$class->id" />
+                @endif
 
-                <div>
-                    <div class="flex items-center justify-end mb-4">
-                        <div class="flex items-center text-[#888888] text-xs font-mono">
+                <div class="relative">
+                    <div class="flex items-center justify-end mb-16">
+                        <div class="flex items-center px-2 py-1 rounded-full bg-[#141414] border border-[#2e2e2e] text-[#888888] text-xs font-mono">
                             <svg class="w-3.5 h-3.5 mr-1 text-[#3ecf8e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
                             {{ $class->modules_count ?? $class->modules()->count() }} Modules
                         </div>
@@ -83,7 +88,7 @@
                     </div>
                 </div>
 
-                <div class="mt-6 pt-4 border-t border-[#232323] flex items-center justify-between">
+                <div class="relative mt-6 pt-4 border-t border-[#232323] flex items-center justify-between">
                     <a href="{{ route('classes.show', $class->id) }}" class="inline-flex items-center text-xs font-semibold text-[#3ecf8e] hover:text-[#00c573] transition-colors">
                         Enter Classroom &rarr;
                     </a>

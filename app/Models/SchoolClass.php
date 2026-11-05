@@ -15,6 +15,23 @@ class SchoolClass extends Model
 
     public const DEFAULT_LAB_PASS_SCORE = 75;
 
+    /** Patterns a class card can use, each with its name in the class form */
+    public const CARD_PATTERNS = [
+        'contour' => 'Contour',
+        'dots' => 'Dots',
+        'chevrons' => 'Chevrons',
+        'moons' => 'Moons',
+        'triangles' => 'Triangles',
+        'glyphs' => 'Glyphs',
+        'scallops' => 'Waves',
+        'harlequin' => 'Diamonds',
+    ];
+
+    public const CARD_IMAGE_DIRECTORY = 'class_backgrounds';
+
+    /** Largest picture, in kilobytes. The form shrinks pictures first, so this only stops an unshrunk one. */
+    public const CARD_IMAGE_MAX_KB = 2048;
+
     protected $fillable = [
         'name',
         'code',
@@ -24,6 +41,8 @@ class SchoolClass extends Model
         'lab_pass_score',
         'scheduled_end_date',
         'status',
+        'card_pattern',
+        'card_image_path',
     ];
 
     protected $casts = [
@@ -31,6 +50,34 @@ class SchoolClass extends Model
         'lab_pass_score' => 'integer',
         'scheduled_end_date' => 'datetime',
     ];
+
+    /**
+     * The pattern on this class's card: the instructor's choice, or one picked from the class
+     * id, so a class keeps its pattern and neighbouring cards differ.
+     */
+    public function cardPattern(): string
+    {
+        if (isset(self::CARD_PATTERNS[$this->card_pattern])) {
+            return $this->card_pattern;
+        }
+
+        $patterns = array_keys(self::CARD_PATTERNS);
+
+        return $patterns[$this->id % count($patterns)];
+    }
+
+    /**
+     * Where the card's picture loads from, or null without one. The URL changes with the
+     * picture, so a browser never shows a cached old one.
+     */
+    public function cardImageUrl(): ?string
+    {
+        if (! $this->card_image_path) {
+            return null;
+        }
+
+        return route('classes.card-image', ['class_id' => $this->id, 'v' => substr(md5($this->card_image_path), 0, 8)]);
+    }
 
     /**
      * Check if the class is concluded/ended.

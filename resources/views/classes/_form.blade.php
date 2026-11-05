@@ -45,6 +45,8 @@
     </div>
 </div>
 
+@include('classes._background-picker')
+
 <div class="ui-card">
     <div class="ui-card-header">
         <h2 class="ui-card-title">Certificates and schedule</h2>
