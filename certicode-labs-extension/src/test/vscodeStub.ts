@@ -65,7 +65,9 @@ export const vscodeStub: any = {
     },
     workspace: {
         workspaceFolders: [{ uri: Uri.file('/workspace') }],
-        textDocuments: [],
+        textDocuments: [] as any[],
+        onDidOpenTextDocument: () => ({ dispose: () => undefined }),
+        onDidCloseTextDocument: () => ({ dispose: () => undefined }),
         getConfiguration: () => ({ get: () => undefined, update: async () => undefined }),
         getWorkspaceFolder: () => ({ uri: Uri.file('/workspace') }),
         asRelativePath: (uri: Uri) => uri.fsPath.replace(/^\/workspace\//, ''),

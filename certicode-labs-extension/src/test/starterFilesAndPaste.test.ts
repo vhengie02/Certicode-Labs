@@ -82,7 +82,7 @@ async function insert(text: string, { dirty = true, starterFiles = LAB1 } = {}) 
     p.recordActivity = () => undefined;
     p.sendTelemetry = async (type: string, payload: any) => { sent.push({ type, payload }); };
     p.handleDocumentChange({
-        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: dirty },
+        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: dirty, getText: () => '' },
         contentChanges: [{ text }],
         reason: undefined,
     });
@@ -152,13 +152,125 @@ async function pasteWithChat(paste: string, chat: string) {
     p._recentChatSnippets = [chat];
     stubState.clipboard = paste;
     p.handleDocumentChange({
-        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: true },
+        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: true, getText: () => '' },
         contentChanges: [{ text: paste }],
         reason: undefined,
     });
     await new Promise(r => setTimeout(r, 10));
     return sent.filter(s => s.type === 'paste_anomaly');
 }
+
+/** An open document that the tests edit the way VS Code does. */
+function openDocument(path: string, text: string) {
+    const doc: any = {
+        uri: { scheme: 'file', fsPath: path, toString: () => `file://${path}` },
+        fileName: path,
+        isDirty: true,
+        text,
+        getText: () => doc.text,
+    };
+    return doc;
+}
+
+/** Replace part of a document, firing the change event a paste or a cut fires. */
+function edit(p: any, doc: any, rangeOffset: number, rangeLength: number, text: string) {
+    doc.text = doc.text.slice(0, rangeOffset) + text + doc.text.slice(rangeOffset + rangeLength);
+    p.handleDocumentChange({ document: doc, contentChanges: [{ text, rangeOffset, rangeLength }], reason: undefined });
+}
+
+function pasteRecorder(labFiles: string[] = ['Main.java', 'Helper.java']) {
+    const { p, sent } = recording();
+    p.recordActivity = () => undefined;
+    p._lastSessionData = { laboratory: { starter_files: labFiles.map(name => ({ name, content: '' })) } };
+    p._starterFileSnapshots = new Map(labFiles.map(name => [name, '']));
+    const flagged = async () => {
+        await new Promise(r => setTimeout(r, 10));
+        return sent.filter(s => s.type === 'paste_anomaly');
+    };
+    return { p, flagged };
+}
+
+const OWN_METHOD = 'int total(int a, int b) {\n    return a + b;\n}\n';
+
+test('cutting a method and pasting it lower in the same file is not flagged', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}int other;\n}\n`);
+    p.rememberDocumentText(doc);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, doc, 'class Main {\n'.length, OWN_METHOD.length, '');
+    edit(p, doc, doc.text.indexOf('}'), 0, OWN_METHOD);
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('copying a method within a file is not flagged, even re-indented', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}}\n`);
+    p.rememberDocumentText(doc);
+    const indented = OWN_METHOD.replace(/^/gm, '        ');
+    stubState.clipboard = indented;
+
+    edit(p, doc, doc.text.lastIndexOf('}'), 0, indented);
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('moving a method from one lab file to another is not flagged', async () => {
+    const { p, flagged } = pasteRecorder();
+    const main = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}}\n`);
+    const helper = openDocument('/workspace/Helper.java', 'class Helper {\n}\n');
+    p.rememberDocumentText(main);
+    p.rememberDocumentText(helper);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, main, 'class Main {\n'.length, OWN_METHOD.length, '');
+    edit(p, helper, 'class Helper {\n'.length, 0, OWN_METHOD);
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('code from a file dropped into the folder is still flagged', async () => {
+    const { p, flagged } = pasteRecorder(['Main.java']);
+    const main = openDocument('/workspace/Main.java', 'class Main {\n}\n');
+    const dropped = openDocument('/workspace/Solution.java', `class Solution {\n${OWN_METHOD}}\n`);
+    p.rememberDocumentText(main);
+    p.rememberDocumentText(dropped);
+    vscodeStub.workspace.textDocuments.push(main, dropped);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, dropped, 'class Solution {\n'.length, OWN_METHOD.length, '');
+    edit(p, main, 'class Main {\n'.length, 0, OWN_METHOD);
+    vscodeStub.workspace.textDocuments.length = 0;
+
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('code from outside is flagged the first time, and moving it afterwards is not', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', 'class Main {\n}\n');
+    p.rememberDocumentText(doc);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, doc, 'class Main {\n'.length, 0, OWN_METHOD);
+    assert.strictEqual((await flagged()).length, 1);
+
+    edit(p, doc, doc.text.lastIndexOf('}'), 0, OWN_METHOD);
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('a block cut in one attempt does not excuse a paste in the next', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}}\n`);
+    p.rememberDocumentText(doc);
+    stubState.clipboard = OWN_METHOD;
+    edit(p, doc, 'class Main {\n'.length, OWN_METHOD.length, '');
+
+    p._removedBlocks = [];
+    edit(p, doc, 'class Main {\n'.length, 0, OWN_METHOD);
+
+    assert.strictEqual((await flagged()).length, 1);
+});
 
 test('one chat line does not excuse a whole paste that contains it', async () => {
     assert.strictEqual((await pasteWithChat(SOLUTION, '    int value3 = compute(3);'.trim())).length, 1);

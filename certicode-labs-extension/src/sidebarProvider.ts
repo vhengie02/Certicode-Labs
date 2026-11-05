@@ -21,6 +21,10 @@ const RESUME_WINDOW_MS = 25000;
 const MIN_CHAT_SNIPPET_LENGTH = 20;
 // A chat message inside a paste excuses it only if the message is most of the pasted text.
 const MIN_CHAT_SHARE_OF_PASTE = 0.8;
+// An insertion this long, or a deletion this long, is treated as a block of code rather than typing.
+const MIN_BLOCK_LENGTH = 25;
+// Blocks kept so that pasting code the student cut earlier isn't flagged.
+const MAX_REMOVED_BLOCKS = 50;
 // Pasted text kept for the instructor. The server keeps the same amount.
 const MAX_PASTE_SNIPPET_LENGTH = 10000;
 // New or changed lines from which a lab file changed outside the editor is reported.
@@ -77,6 +81,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     private _unreadChatCount: number = 0;
     private _isChatTabActive: boolean = false;
     private _recentChatSnippets: string[] = [];
+
+    // Moving the student's own code isn't a paste from outside. The latest text of each open
+    // document gives what a change removed, and removed blocks stay in reach for the paste.
+    private _documentTexts: Map<string, string> = new Map();
+    private _removedBlocks: Array<{ document: string; text: string; fromLabFile: boolean }> = [];
 
     // Feature 4: WPM Baseline & Paste Anomaly Interceptor
     private _keystrokeTimestamps: number[] = [];
@@ -399,6 +408,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             this._starterFileSnapshots.clear();
             this._starterDiskTexts.clear();
             this._readonlyFiles.clear();
+            this._removedBlocks = [];
             this._lastSessionData = null;
             this._attemptStartLocalMs = 0;
             this._filesGenerated = false;
@@ -1238,6 +1248,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             return;
         }
 
+        vscode.workspace.textDocuments.forEach(doc => this.rememberDocumentText(doc));
+
         this._fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
         this._workspaceDisposables.push(
             this._fileWatcher,
@@ -1247,6 +1259,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }),
             this._fileWatcher.onDidChange(() => this.scheduleDiskCheck()),
             this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity()),
+            vscode.workspace.onDidOpenTextDocument(doc => this.rememberDocumentText(doc)),
+            vscode.workspace.onDidCloseTextDocument(doc => this._documentTexts.delete(doc.uri.toString())),
             // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
             vscode.workspace.onDidChangeTextDocument(event => this.handleDocumentChange(event)),
             vscode.workspace.onDidChangeTextDocument(event => { void this.guardReadonlyFile(event); }),
@@ -1285,7 +1299,60 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         }
     }
 
+    private rememberDocumentText(doc: vscode.TextDocument) {
+        if (this.isStudentDocument(doc)) {
+            this._documentTexts.set(doc.uri.toString(), doc.getText());
+        }
+    }
+
+    /**
+     * Update a document's remembered text and keep any block the change removed. Returns the
+     * text from before the change. Change offsets refer to that text, even for several cursors.
+     */
+    private trackDocumentText(event: vscode.TextDocumentChangeEvent): string | undefined {
+        const document = event.document.uri.toString();
+        const textBefore = this._documentTexts.get(document);
+        this.rememberDocumentText(event.document);
+
+        if (textBefore === undefined || !this._sessionId || !this.isStudentDocument(event.document)) {
+            return textBefore;
+        }
+
+        const fromLabFile = this.starterFileNameFor(event.document.fileName) !== undefined;
+        for (const change of event.contentChanges) {
+            if (change.rangeLength >= MIN_BLOCK_LENGTH) {
+                const text = textBefore.slice(change.rangeOffset, change.rangeOffset + change.rangeLength);
+                this._removedBlocks.push({ document, text, fromLabFile });
+            }
+        }
+        this._removedBlocks = this._removedBlocks.slice(-MAX_REMOVED_BLOCKS);
+
+        return textBefore;
+    }
+
+    /**
+     * Whether a paste is the student moving or repeating their own code: it was already in this
+     * document, in an open lab file, or in a block cut from either. Other files don't count, so
+     * a solution dropped into the folder can't be pasted from. Whitespace is ignored because
+     * pasting re-indents.
+     */
+    private isOwnCode(text: string, doc: vscode.TextDocument, textBefore: string | undefined): boolean {
+        const squash = (value: string) => value.replace(/\s+/g, '');
+        const needle = squash(text);
+        const document = doc.uri.toString();
+
+        const openLabFiles = vscode.workspace.textDocuments
+            .filter(other => other.uri.toString() !== document && this.starterFileNameFor(other.fileName) !== undefined)
+            .map(other => other.getText());
+        const removed = this._removedBlocks
+            .filter(block => block.document === document || block.fromLabFile)
+            .map(block => block.text);
+
+        return [textBefore ?? '', ...openLabFiles, ...removed].some(source => squash(source).includes(needle));
+    }
+
     private handleDocumentChange(event: vscode.TextDocumentChangeEvent) {
+        const textBefore = this.trackDocumentText(event);
         if (this._restoringReadonly) {
             return;
         }
@@ -1304,14 +1371,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         for (const change of isUndoRedo ? [] : event.contentChanges) {
             if (change.text.length === 1) {
                 this.recordKeystroke(1);
-            } else if (change.text.length > 1 && change.text.length < 25) {
+            } else if (change.text.length > 1 && change.text.length < MIN_BLOCK_LENGTH) {
                 this.recordKeystroke(change.text.length);
-            } else if (change.text.length >= 25 && (change.text.includes('\n') || change.text.split(/\s+/).length > 3)) {
+            } else if (change.text.length >= MIN_BLOCK_LENGTH && (change.text.includes('\n') || change.text.split(/\s+/).length > 3)) {
                 // Bulk code insertion detected!
                 const trimmedPaste = change.text.trim();
 
                 // Suppression Rule A: Internal Move/Restructure check
-                const isSuppressedA = this.isStarterText(trimmedPaste);
+                const isSuppressedA = this.isStarterText(trimmedPaste)
+                    || this.isOwnCode(trimmedPaste, event.document, textBefore);
 
                 // Suppression Rule B: Permitted Collaboration / Team Chat match.
                 // Short chat text is ignored so a one-word message cannot excuse arbitrary pastes,
@@ -2118,6 +2186,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         this._filesGenerated = false;
         this._starterFileSnapshots.clear();
         this._starterDiskTexts.clear();
+        this._removedBlocks = [];
         this._missingFiles = [];
         this._keystrokeTimestamps = [];
         this._totalKeystrokes = 0;
