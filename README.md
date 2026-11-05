@@ -74,7 +74,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches.
 
 ### 5. Camera Presence Gate & Continuous Verification
-* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A low-light pass skips face detection and is recorded for the instructor.
+* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor.
 * **Continuous Background Proctoring**: Performs non-interruptive periodic background presence checks. Mid-session face-loss alerts are quietly streamed to the instructor with snapshot attachments while the student continues working.
 
 ### 6. In-Lab VS Code Sidebar & Live Leaderboard

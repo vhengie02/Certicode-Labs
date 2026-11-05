@@ -450,7 +450,7 @@ class Laboratory extends Model
         }
     }
 
-    private function openAttemptOf(User $user): ?LabSession
+    public function openAttemptOf(User $user): ?LabSession
     {
         return $this->labSessions()
             ->where('user_id', $user->id)

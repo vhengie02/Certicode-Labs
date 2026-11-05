@@ -2,6 +2,8 @@
 
 ## 2026-11-05
 
+- The camera check now always needs a detected face. The "Continue in low-light mode" button is gone, because it let an empty dim room pass. A dim room gets a stronger check on a brightened picture, and if no face is found the student is asked to add light and retry. During a lab, a dim room no longer counts as present without a face, so students in very dark rooms may see more absence warnings. Faces too small to be someone at the screen no longer count.
+- Three failed camera checks in a row now lock that lab for 15 minutes. The retry count used to run past its limit, such as 4/3, and reloading the page reset it. The server now keeps the count. A lockout flags the student's open attempt with the last picture, or notifies the instructor if there is no attempt yet.
 - Class cards now have pattern backgrounds. Instructors choose one of eight patterns, such as contour lines, moons and stars, or waves, when creating or editing a class, or upload their own picture. Classes without a choice get a pattern automatically. Every pattern has its own colours for light and dark mode, and backgrounds fade out before the text starts. Large pictures are resized before they upload, which also removes their location data.
 - Pop-up notifications now wait for the page to finish loading, slide in from the right edge of the screen and slide back out after 3 seconds, or longer for a long message. Error pop-ups still stay until closed. With the "reduce motion" system setting they fade instead.
 - VS Code extension 1.8.5 no longer flags a student for moving their own code. Text copied or cut from the same file or another open lab file is not reported as a paste. Code from any other file still is.
