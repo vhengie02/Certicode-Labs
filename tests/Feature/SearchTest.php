@@ -120,7 +120,7 @@ class SearchTest extends TestCase
         $response1 = $this->actingAs($this->student)->get('/search?q=Laravel');
         $response1->assertStatus(200);
         $this->assertCount(1, $response1->json('classes'));
-        $this->assertEquals('Introduction to Laravel (CLASS-LARA1)', $response1->json('classes.0.label'));
+        $this->assertEquals('Introduction to Laravel', $response1->json('classes.0.label'));
 
         // Query "Python" which matches Class B (not enrolled)
         $response2 = $this->actingAs($this->student)->get('/search?q=Python');
@@ -152,7 +152,7 @@ class SearchTest extends TestCase
         $response = $this->actingAs($this->instructor)->get('/search?q=Python');
         $response->assertStatus(200);
         $this->assertCount(1, $response->json('classes'));
-        $this->assertEquals('Python Basics (CLASS-PY101)', $response->json('classes.0.label'));
+        $this->assertEquals('Python Basics', $response->json('classes.0.label'));
     }
 
     /**

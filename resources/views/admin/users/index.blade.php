@@ -89,7 +89,7 @@
                                     <a href="{{ route('profiles.edit', $u->id) }}" class="ui-btn ui-btn-ghost ui-btn-sm">Edit</a>
                                     @unless ($isSelf)
                                         <form method="POST" action="{{ route('admin.users.destroy', $u) }}"
-                                              onsubmit="return confirm('Delete {{ addslashes($u->name) }}\'s account? Their lab sessions, grades and certificates are deleted too. This can\'t be undone.');">
+                                              data-confirm-title="Delete {{ $u->name }}'s account?" data-confirm="Their lab sessions, grades and certificates are deleted too. This can't be undone." data-confirm-action="Delete account">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm hover:!text-red-400">Delete</button>

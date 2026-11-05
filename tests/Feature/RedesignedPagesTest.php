@@ -78,6 +78,62 @@ class RedesignedPagesTest extends TestCase
             ->assertDontSee('Invite a student');
     }
 
+    public function test_syllabus_shows_when_each_module_and_lab_was_created()
+    {
+        Module::whereKey($this->module->id)->update(['created_at' => '2026-03-02 12:00:00']);
+        Laboratory::whereKey($this->lab->id)->update(['created_at' => '2026-04-09 12:00:00']);
+
+        foreach ([$this->instructor, $this->student] as $viewer) {
+            $this->actingAs($viewer)->get("/classes/{$this->class->id}")
+                ->assertOk()
+                ->assertSee('Mar 2, 2026')
+                ->assertSee('Apr 9, 2026');
+        }
+    }
+
+    public function test_students_see_how_long_is_left_on_a_due_lab()
+    {
+        $this->lab->update(['due_at' => now()->addDays(3)->addHour()]);
+
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertSee('Due in 3 days');
+        $this->actingAs($this->instructor)->get("/classes/{$this->class->id}")->assertDontSee('Due in');
+    }
+
+    public function test_students_see_how_late_they_are_until_the_lab_is_done()
+    {
+        $this->lab->update(['due_at' => now()->subHours(5)->subMinute()]);
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertSee('Late by 5 hours');
+
+        LabSession::create(['lab_id' => $this->lab->id, 'user_id' => $this->student->id, 'status' => 'completed']);
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertDontSee('Late by');
+    }
+
+    public function test_students_see_the_live_lab_state()
+    {
+        $this->lab->update(['availability_mode' => 'live', 'live_status' => 'not_started', 'live_duration_minutes' => 30]);
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertSee('Locked');
+
+        $this->lab->openLive();
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertSee('Ongoing')->assertDontSee('Locked');
+
+        $this->lab->update(['live_status' => 'closed']);
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertSee('Live lab')->assertDontSee('Ongoing');
+    }
+
+    public function test_the_lab_form_saves_a_due_date_for_open_labs_only()
+    {
+        $fields = [
+            'title' => 'FizzBuzz', 'description' => 'Print FizzBuzz', 'time_limit' => 30,
+            'module_id' => $this->module->id, 'availability_mode' => 'open', 'due_at' => '2026-12-01T09:30',
+        ];
+
+        $this->actingAs($this->instructor)->put("/laboratories/{$this->lab->id}", $fields)->assertRedirect();
+        $this->assertSame('2026-12-01 09:30', $this->lab->fresh()->due_at->format('Y-m-d H:i'));
+
+        $this->actingAs($this->instructor)->put("/laboratories/{$this->lab->id}", ['availability_mode' => 'live'] + $fields)->assertRedirect();
+        $this->assertNull($this->lab->fresh()->due_at);
+    }
+
     public function test_student_lab_page_offers_start_and_hides_checks()
     {
         $this->actingAs($this->student)->get("/laboratories/{$this->lab->id}")

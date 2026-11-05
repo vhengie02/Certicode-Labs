@@ -64,7 +64,7 @@
                         <div class="flex items-center gap-2 shrink-0">
                             <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" @click="editing = !editing" x-text="editing ? 'Close' : 'Edit'">Edit</button>
                             <form action="{{ route('laboratories.teams.destroy', [$laboratory->id, $team->id]) }}" method="POST"
-                                  onsubmit="return confirm('Delete {{ addslashes($team->name) }}? Its students will work alone. Attempts already made keep their work.');">
+                                  data-confirm-title="Delete {{ $team->name }}?" data-confirm="Its students will work alone. Attempts already made keep their work." data-confirm-action="Delete team">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm text-red-400">Delete</button>

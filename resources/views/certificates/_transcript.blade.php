@@ -56,7 +56,7 @@
                                 </td>
                                 <td class="px-5 py-2.5 text-right tabular-nums whitespace-nowrap">
                                     @if ($r)
-                                        <span class="font-semibold {{ $r['grade'] >= $record['pass_mark'] ? 'text-[#3ecf8e]' : 'text-[#ededed]' }}">{{ $fmt($r['grade']) }}%</span>
+                                        <span class="font-semibold {{ $r['grade'] >= $record['lab_pass_score'] ? 'text-[#3ecf8e]' : 'text-[#ededed]' }}">{{ $fmt($r['grade']) }}%</span>
                                         @if ($r['overridden'])<span class="block text-[10px] text-[#888888]">set by instructor</span>@endif
                                     @else
                                         <span class="text-[#666666]">Not taken</span>

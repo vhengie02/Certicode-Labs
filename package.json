@@ -22,6 +22,7 @@
         "@alpinejs/collapse": "^3.17.4",
         "@vladmandic/face-api": "^1.7.15",
         "alpinejs": "^3.17.3",
-        "face-api.js": "^0.22.2"
+        "face-api.js": "^0.22.2",
+        "gsap": "^3.15.1"
     }
 }

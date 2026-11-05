@@ -50,11 +50,10 @@ class SearchController extends Controller
             }
             $classes = $classQuery->where(function ($query) use ($q, $likeOp) {
                 $query->where('name', $likeOp, "%{$q}%")
-                    ->orWhere('code', $likeOp, "%{$q}%")
                     ->orWhere('description', $likeOp, "%{$q}%");
             })
                 ->limit(5)
-                ->get(['school_classes.id', 'name', 'code']);
+                ->get(['school_classes.id', 'name']);
 
             // Get class IDs for scoped queries
             if ($user->role === 'student') {
@@ -94,7 +93,7 @@ class SearchController extends Controller
             return [
                 'classes' => $classes->map(function ($c) {
                     return [
-                        'label' => $c->name." ({$c->code})",
+                        'label' => $c->name,
                         'url' => route('classes.show', $c->id),
                         'type' => 'Class',
                     ];

@@ -76,7 +76,8 @@ class CodeSimilarityService
      * Analyze all student submissions in a laboratory session cohort. Each student counts once
      * (their latest submitted attempt, else their latest attempt with code), teammates in a
      * group lab are not compared with each other, and code that came from the lab's starter
-     * files doesn't count towards a match.
+     * files doesn't count towards a match. All of a student's code files count, not only the
+     * main one.
      *
      * @param  float  $highRiskThreshold  Percentage above which a pair is flagged as high risk (default: 75.0)
      * @param  float  $mediumRiskThreshold  Percentage above which a pair is flagged as medium risk (default: 50.0)
@@ -102,15 +103,15 @@ class CodeSimilarityService
 
         foreach ($sessions as $session) {
             $name = $session->user ? $session->user->name : 'Student #'.$session->id;
-            $code = $session->submitted_code;
+            $sources = $this->comparableSources($session);
 
-            $tokens = $this->tokenize($code);
+            [$tokens, $ngrams] = $this->tokensAndNgrams($sources);
             if (empty($tokens)) {
                 continue;
             }
 
             // Everyone was given the starter code, so sharing it is not a match
-            $ownNgrams = $this->withoutMultiset($this->generateNgrams($tokens, $this->ngramSize), $starter['ngrams']);
+            $ownNgrams = $this->withoutMultiset($ngrams, $starter['ngrams']);
             if (count($ownNgrams) < $this->minOwnNgrams) {
                 continue;
             }
@@ -121,9 +122,9 @@ class CodeSimilarityService
                 'group_id' => $session->group_id,
                 'name' => $name,
                 'group' => $session->group ? $session->group->name : null,
-                'code_length' => strlen($code),
+                'code_length' => array_sum(array_map('strlen', $sources)),
                 'token_count' => count($tokens),
-                'code_preview' => mb_substr($code, 0, 250),
+                'code_preview' => mb_substr((string) $session->submitted_code, 0, 250),
             ];
 
             $preprocessed[$session->id] = [
@@ -211,11 +212,47 @@ class CodeSimilarityService
      */
     protected function starterProfile(?Laboratory $lab): array
     {
+        $sources = collect($lab ? $lab->getStarterFilesList() : [])
+            ->filter(fn ($file) => LabSession::isCodeFile((string) ($file['name'] ?? '')))
+            ->map(fn ($file) => (string) ($file['content'] ?? ''))
+            ->all();
+
+        [$tokens, $ngrams] = $this->tokensAndNgrams($sources);
+
+        return ['tokens' => array_count_values($tokens), 'ngrams' => array_count_values($ngrams)];
+    }
+
+    /**
+     * The text of each file to compare for this attempt. A submission with no code files, or
+     * none listed, is compared on its submitted_code. Notes are left out because every word of
+     * prose tokenizes to the same identifier token, so any two students' notes would look copied.
+     *
+     * @return list<string>
+     */
+    protected function comparableSources(LabSession $session): array
+    {
+        $sources = collect($session->submittedFileList())
+            ->filter(fn ($file) => LabSession::isCodeFile($file['name']))
+            ->pluck('content')
+            ->all();
+
+        return $sources ?: [(string) $session->submitted_code];
+    }
+
+    /**
+     * Tokens and n-grams of several files. Each file is tokenized alone, so no n-gram spans two
+     * files and the order the files came in doesn't change the result.
+     *
+     * @param  iterable<string>  $sources
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    protected function tokensAndNgrams(iterable $sources): array
+    {
         $tokens = [];
         $ngrams = [];
 
-        foreach ($lab ? $lab->getStarterFilesList() : [] as $file) {
-            $fileTokens = $this->tokenize((string) ($file['content'] ?? ''));
+        foreach ($sources as $source) {
+            $fileTokens = $this->tokenize($source);
             if (empty($fileTokens)) {
                 continue;
             }
@@ -223,7 +260,7 @@ class CodeSimilarityService
             array_push($ngrams, ...$this->generateNgrams($fileTokens, $this->ngramSize));
         }
 
-        return ['tokens' => array_count_values($tokens), 'ngrams' => array_count_values($ngrams)];
+        return [$tokens, $ngrams];
     }
 
     /**

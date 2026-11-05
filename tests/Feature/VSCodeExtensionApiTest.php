@@ -119,7 +119,7 @@ class VSCodeExtensionApiTest extends TestCase
             ->assertOk()
             ->assertJson(['vscode_connected' => false, 'vscode_closed' => false, 'vscode_reconnecting' => true]);
 
-        $this->travel(31)->seconds();
+        $this->travel(13)->seconds();
         $this->getJson("/v1/sessions/{$session->id}")
             ->assertOk()
             ->assertJson(['vscode_connected' => false, 'vscode_closed' => true, 'vscode_reconnecting' => false]);

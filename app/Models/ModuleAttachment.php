@@ -242,7 +242,7 @@ class ModuleAttachment extends Model
      * A file that fails to delete only leaves an orphan in storage, so report it and carry on
      * rather than failing a request whose database changes are already done.
      */
-    private static function deletePath(string $path): void
+    public static function deletePath(string $path): void
     {
         try {
             static::disk()->delete($path);

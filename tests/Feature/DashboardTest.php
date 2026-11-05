@@ -92,7 +92,10 @@ class DashboardTest extends TestCase
         $class->students()->attach($student->id, ['status' => 'enrolled']);
         Cache::store('file')->flush();
 
-        $this->sections($student)->assertSee('1 of 3 done')->assertSee('Download the extension');
+        $this->sections($student)
+            ->assertSee('1 of 3 done')
+            ->assertSee('Download the extension')
+            ->assertSee('stepper({ initial: 2, total: 3 })', false); // opens on the first step not done
         $this->sections($instructor)
             ->assertSee('Set up your first class')
             ->assertSee('2 of 5 done') // class created, student enrolled
@@ -135,6 +138,82 @@ class DashboardTest extends TestCase
             ->assertDontSee('other class flag')
             ->assertSee('Class CLASS-MINE')
             ->assertDontSee('Class CLASS-OTHER');
+    }
+
+    public function test_instructor_counts_sit_on_the_panels_they_describe()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
+
+        $this->sections($instructor)
+            ->assertOk()
+            ->assertSee('1 open')
+            ->assertSee('1 active')
+            ->assertSee('href="'.route('anomalies.index').'"', false)
+            ->assertDontSee('Active classes')
+            ->assertDontSee('Open flags')
+            ->assertDontSee('Live now')
+            ->assertDontSee('across your classes');
+    }
+
+    public function test_student_counts_sit_on_the_panels_they_describe()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $student = $this->user('kid@example.com', 'student');
+        foreach (['JAVA-1', 'JAVA-2'] as $code) {
+            SchoolClass::create(['name' => "Class {$code}", 'code' => $code, 'instructor_id' => $instructor->id])
+                ->students()->attach($student->id, ['status' => 'enrolled']);
+        }
+
+        $this->sections($student)
+            ->assertOk()
+            ->assertSee('2 classes')
+            ->assertSee('0 earned')
+            ->assertSee('href="'.route('classes.index').'"', false)
+            ->assertDontSee('Labs completed')
+            ->assertDontSee('open sessions');
+    }
+
+    public function test_only_admins_keep_the_stat_cards()
+    {
+        $this->sections($this->user('admin@example.com', 'admin'))->assertSee('Lab sessions');
+    }
+
+    public function test_flags_page_lists_only_the_instructors_own_classes()
+    {
+        $mine = $this->user('mine@example.com', 'instructor');
+        $other = $this->user('other@example.com', 'instructor');
+        $this->flaggedSessionIn($mine, 'CLASS-MINE', 'own_class_flag');
+        $this->flaggedSessionIn($mine, 'CLASS-MINE-2', 'second_class_flag');
+        $this->flaggedSessionIn($other, 'CLASS-OTHER', 'other_class_flag');
+
+        $this->actingAs($mine)->get(route('anomalies.index'))
+            ->assertOk()
+            ->assertSee('Own class flag')
+            ->assertSee('Second class flag')
+            ->assertSee('Class CLASS-MINE-2')
+            ->assertDontSee('Other class flag');
+    }
+
+    public function test_flags_page_filters_by_status()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'still_open_flag');
+        $this->flaggedSessionIn($instructor, 'CLASS-B', 'reviewed_flag');
+        Anomaly::where('type', 'reviewed_flag')->first()->update(['resolved' => true]);
+
+        $this->actingAs($instructor)->get(route('anomalies.index'))
+            ->assertSee('All 2')->assertSee('Open 1')->assertSee('Resolved 1')
+            ->assertSee('Still open flag')->assertSee('Reviewed flag');
+        $this->get(route('anomalies.index', ['status' => 'open']))
+            ->assertSee('Still open flag')->assertDontSee('Reviewed flag');
+        $this->get(route('anomalies.index', ['status' => 'resolved']))
+            ->assertSee('Reviewed flag')->assertDontSee('Still open flag');
+    }
+
+    public function test_students_cannot_open_the_flags_page()
+    {
+        $this->actingAs($this->user('kid@example.com', 'student'))->get(route('anomalies.index'))->assertForbidden();
     }
 
     public function test_admin_sees_requests_instead_of_flags()

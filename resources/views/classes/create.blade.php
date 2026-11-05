@@ -7,7 +7,7 @@
     <x-page-header :back="route('classes.index')" back-label="Classes" title="New class"
                    subtitle="You'll get a join code to share with students as soon as it's created." />
 
-    <form action="{{ route('classes.store') }}" method="POST" class="space-y-5">
+    <form action="{{ route('classes.store') }}" method="POST" enctype="multipart/form-data" class="space-y-5">
         @csrf
         @include('classes._form')
 

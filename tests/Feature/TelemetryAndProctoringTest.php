@@ -295,8 +295,8 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_conclude_class_awards_certificate_to_qualifying_students()
     {
-        // Set student2 as completed lab 1 (so 100% progress >= 75% threshold)
-        $this->session2->update(['status' => 'completed']);
+        // Student2 passed lab 1, so 100% of labs passed >= 75% threshold
+        $this->session2->update(['status' => 'completed', 'performance_score' => 90]);
 
         $this->actingAs($this->instructor);
         $response = $this->post("/classes/{$this->class->id}/end");
@@ -521,6 +521,7 @@ class TelemetryAndProctoringTest extends TestCase
             'status' => 'granted',
             'face_count' => 1,
             'low_light' => true,
+            'image_base64' => $this->snapshotDataUri(),
         ])->assertStatus(200);
 
         $log = TelemetryLog::where('lab_session_id', $this->session1->id)
@@ -745,7 +746,7 @@ class TelemetryAndProctoringTest extends TestCase
         $resV1 = $this->actingAs($this->student1)->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => 'data:image/jpeg;base64,ZmFrZWltYWdl',
+            'image_base64' => $this->snapshotDataUri(),
         ]);
         $resV1->assertStatus(200);
         $resV1->assertJsonPath('verified', true);
@@ -753,7 +754,7 @@ class TelemetryAndProctoringTest extends TestCase
         $resApiV1 = $this->actingAs($this->student1)->postJson("/api/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => 'data:image/jpeg;base64,ZmFrZWltYWdl',
+            'image_base64' => $this->snapshotDataUri(),
         ]);
         $resApiV1->assertStatus(200);
         $resApiV1->assertJsonPath('verified', true);

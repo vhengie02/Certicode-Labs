@@ -19,6 +19,8 @@ class CameraGateTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const CAMERA_FRAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     private User $student;
 
     private Laboratory $laboratory;
@@ -55,7 +57,7 @@ class CameraGateTest extends TestCase
     public function test_a_camera_check_recorded_by_the_server_opens_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
 
         $this->start()->assertOk()->assertJsonStructure(['session_id', 'vscode_url']);
@@ -68,7 +70,7 @@ class CameraGateTest extends TestCase
     public function test_a_low_light_pass_is_recorded_as_low_light_not_as_one_face(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'low_light' => true])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'low_light' => true, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
 
         $this->start()->assertOk();
@@ -91,7 +93,7 @@ class CameraGateTest extends TestCase
     public function test_an_old_camera_check_does_not_open_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
 
         $this->travel(11)->minutes();

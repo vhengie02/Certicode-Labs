@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\ChecksEmailDelivery;
 use App\Support\InternalUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -9,7 +10,7 @@ use Illuminate\Notifications\Notification;
 
 class ClassActivityNotification extends Notification
 {
-    use Queueable;
+    use ChecksEmailDelivery, Queueable;
 
     protected string $title;
 
@@ -28,7 +29,7 @@ class ClassActivityNotification extends Notification
         $this->message = $message;
         // Stored as a path so it works on any host the app runs on (see InternalUrl)
         $this->url = InternalUrl::path($url);
-        $this->type = $type; // class, module, lab
+        $this->type = $type; // class, module, lab, grade, certificate, info
     }
 
     /**
@@ -38,45 +39,24 @@ class ClassActivityNotification extends Notification
     {
         $channels = ['database'];
 
-        // Send via email if email notifications are enabled, and the user has either a verified Gmail or a primary email address
-        $wantsEmail = $notifiable->notify_email_channel ?? true;
-        $hasEmail = ! empty($notifiable->gmail) ? ! empty($notifiable->gmail_verified_at) : ! empty($notifiable->email);
-
-        if ($wantsEmail && $hasEmail) {
-            $type = $this->type ?? 'info';
-            $shouldSend = false;
-
-            if ($type === 'class' && ($notifiable->notify_class ?? true)) {
-                $shouldSend = true;
-            } elseif ($type === 'module' && ($notifiable->notify_module ?? true)) {
-                $shouldSend = true;
-            } elseif (($type === 'lab' || $type === 'laboratory') && ($notifiable->notify_lab ?? true)) {
-                $shouldSend = true;
-            } elseif ($type === 'certificate' && ($notifiable->notify_certificate ?? true)) {
-                $shouldSend = true;
-            } elseif ($type === 'info' || $type === 'info') {
-                $shouldSend = true;
-            }
-
-            if ($shouldSend) {
-                if (app()->environment('testing')) {
-                    $channels[] = 'mail';
-                } else {
-                    $defaultMailer = config('mail.default');
-                    if ($defaultMailer === 'smtp') {
-                        $host = config('mail.mailers.smtp.host');
-                        $user = config('mail.mailers.smtp.username');
-                        if (! empty($host) && ! in_array($host, ['127.0.0.1', 'localhost']) && ! empty($user)) {
-                            $channels[] = 'mail';
-                        }
-                    } elseif (! empty($defaultMailer) && $defaultMailer !== 'array') {
-                        $channels[] = 'mail';
-                    }
-                }
-            }
+        if ($this->canEmail($notifiable) && $this->wantedByEmail($notifiable)) {
+            $channels[] = 'mail';
         }
 
         return $channels;
+    }
+
+    private function wantedByEmail(object $notifiable): bool
+    {
+        return match ($this->type) {
+            'class' => $notifiable->notify_class ?? true,
+            'module' => $notifiable->notify_module ?? true,
+            'lab', 'laboratory' => $notifiable->notify_lab ?? true,
+            'grade' => $notifiable->notify_grade ?? true,
+            'certificate' => $notifiable->notify_certificate ?? true,
+            'info' => true,
+            default => false,
+        };
     }
 
     /**

@@ -17,29 +17,10 @@
     <form class="mt-8 space-y-5 cc-rise" style="--d:1" method="POST" action="{{ route('login.store') }}">
         @csrf
 
-        @if (session('status'))
-            <div class="cc-notice cc-notice-success" role="status">
-                <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                <p>{{ session('status') }}</p>
-            </div>
-        @endif
-
-        @if ($errors->any())
-            <div class="cc-notice cc-notice-error" role="alert">
-                <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                <div>
-                    <p class="font-medium">We couldn't sign you in.</p>
-                    <ul class="mt-1 space-y-0.5 text-[#fca5a5]">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                    @if ($errors->has('email'))
-                        <p class="mt-2 text-[var(--cc-text-dim)]">Enrolled in a course? Use your school email, or ask your instructor to check the class roster.</p>
-                    @endif
-                </div>
-            </div>
-        @endif
+        @include('auth.partials.notices', [
+            'errorTitle' => "We couldn't sign you in.",
+            'errorHint' => $errors->has('email') ? 'Enrolled in a course? Use your school email, or ask your instructor to check the class roster.' : null,
+        ])
 
         <div>
             <label for="email" class="cc-label">Email</label>

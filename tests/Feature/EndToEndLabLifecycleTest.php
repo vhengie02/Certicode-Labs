@@ -149,7 +149,7 @@ class EndToEndLabLifecycleTest extends TestCase
         $prelabPass = $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => 'data:image/jpeg;base64,dmFsaWRmYWNlaW1hZ2U=',
+            'image_base64' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         ]);
         $prelabPass->assertStatus(200)
             ->assertJsonPath('status', 'success')

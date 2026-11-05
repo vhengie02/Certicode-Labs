@@ -6,7 +6,7 @@ This extension integrates the **CertiCode Labs** certification-based Java learni
 
 -   **Session Timer**: Automatically displays elapsed time or time remaining for the active lab session (synced with the backend database).
 -   **Core UI / Sidebar**: Rich sidebar panel that contains the lab title, description, tasks checklist, execution console, and feedback fields.
--   **AI Check Progress**: Sends the current code to the backend for an AI-based check against the exercise's reference solution, rubric, and test cases using OpenAI GPT. Task completion statuses (Done/Pending) and specific task comments are updated instantly in the panel.
+-   **AI Check Progress**: Sends the current code to the backend for an AI-based check against the exercise's tasks and rubric using Claude. Task completion statuses (Done/Pending) and specific task comments are updated instantly in the panel.
 -   **One-Click Submit**: Compiles and executes code, performs a final AI evaluation, logs completion telemetry, maps competencies for student certification, and ends the session.
 -   **Connection Resilience**: Monitors connectivity and gracefully handles network disconnects by showing a prominent "Reconnecting..." state, protecting students from inactivity logs on the server side.
 
@@ -21,10 +21,12 @@ Ensure the CertiCode Labs Laravel backend is running.
 php artisan serve
 ```
 
-Ensure you have seeded the database to create the default student and Java exercise:
+Seed a local database to create the default student and Java exercise.
+
+**Warning:** First confirm that `DB_URL` is empty and `DB_CONNECTION` points at a local database. `DB_URL` overrides `DB_CONNECTION`, so a production `DB_URL` in `.env` sends this to production. Seeding creates accounts with a known password.
 
 ```bash
-php artisan migrate:fresh --seed
+php artisan migrate --seed
 ```
 
 This creates a default student:
@@ -57,7 +59,7 @@ See [TODO.md](../TODO.md) in the project root for full architectural details and
 1. **Diff Tracking**: Live line-level diff engine with team blame attribution, streaming via WebSocket.
 2. **Team Chat**: Private, ephemeral peer-to-peer team chat with syntax-highlighted code snippets.
 3. **Auto-Generated Starter Files**: Multi-file workspace provisioning with continuous `FileSystemWatcher` integrity validation.
-4. **Paste Anomaly Detection**: Keystroke/WPM baseline with internal-file and team-chat suppression rules and AI false-positive check.
+4. **Paste Anomaly Detection**: Keystroke/WPM baseline with starter-file, own-code and team-chat suppression rules and a clipboard check.
 5. **In-Lab Sidebar**: All live UI (Live Leaderboard, Task Checklist, Timer, and OS-level window focus tracking) centralized in the VS Code sidebar.
 6. **Instructor Live Monitoring Panel**: Real-time web dashboard displaying live WPM, task counters, anomaly image timeline, and team contribution drill-downs.
 7. **Session Closure vs. Course Completion & Certification**: Per-lab session auto-submissions and cleanup vs. course-wide competency accumulation with configurable passing thresholds and automated e-diploma issuance.

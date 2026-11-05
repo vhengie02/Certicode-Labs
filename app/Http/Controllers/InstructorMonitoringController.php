@@ -147,6 +147,20 @@ class InstructorMonitoringController extends Controller
     }
 
     /**
+     * One attempt's full code, for the compare view. It is fetched on demand because the stored
+     * similarity report keeps only a short preview of each student's code.
+     */
+    public function sessionFiles(int $id)
+    {
+        $this->authorizeInstructor();
+
+        $session = LabSession::findOrFail($id);
+        $this->authorizeSessionManager($session);
+
+        return response()->json(['files' => $session->submittedFileList()]);
+    }
+
+    /**
      * Stream live telemetry JSON data for AJAX polling or dashboard update.
      */
     public function streamData(int $labId)
@@ -285,7 +299,8 @@ class InstructorMonitoringController extends Controller
         $session->notifyStudents(
             "Lab reviewed: {$labTitle}",
             "{$instructorName} reviewed your work on '{$labTitle}' and {$outcome}"
-                .($reason ? " Reason: {$reason}" : '')
+                .($reason ? " Reason: {$reason}" : ''),
+            type: 'grade',
         );
 
         if ($request->expectsJson() || $request->ajax()) {

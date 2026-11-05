@@ -1,6 +1,7 @@
 {{-- Lab fields, shared by laboratories/create and laboratories/edit. $laboratory is null when creating. --}}
 @php
     $laboratory = $laboratory ?? null;
+    $dueDate = old('due_at', \App\Support\DisplayTime::in($laboratory?->due_at)?->format('Y-m-d\TH:i'));
 
     // Restore what was typed after a validation error, otherwise the saved lab, otherwise defaults
     $tasks = old('tasks') ?? (!empty($laboratory?->tasks_definition) ? $laboratory->tasks_definition : [['task' => '', 'command' => '']]);
@@ -121,6 +122,13 @@
                     </div>
                     <p class="ui-hint">The shared countdown. You can change it when you start the lab.</p>
                     @error('live_duration_minutes') <p class="ui-error">{{ $message }}</p> @enderror
+                </div>
+                <div x-show="availabilityMode === 'open'" x-cloak>
+                    <label for="due_at" class="ui-label">Due date <span class="ui-optional">(optional)</span></label>
+                    <input type="datetime-local" name="due_at" id="due_at" value="{{ $dueDate }}"
+                           class="ui-input" @error('due_at') aria-invalid="true" @enderror>
+                    <p class="ui-hint">Students see how long is left, then how late they are. Late work is still accepted.</p>
+                    @error('due_at') <p class="ui-error">{{ $message }}</p> @enderror
                 </div>
                 <div>
                     <label for="time_limit" class="ui-label">Time per student</label>
@@ -291,6 +299,22 @@
                 Checks are optional. A task without one is judged by the grader from its description.
             </p>
             @error('tasks.*.task') <p class="ui-error">Every task needs a description.</p> @enderror
+        </div>
+    </div>
+
+    {{-- Rubric --}}
+    <div class="ui-card">
+        <div class="ui-card-header">
+            <h2 class="ui-card-title">Rubric <span class="ui-optional">(optional)</span></h2>
+            <p class="ui-card-subtitle">How the AI grader should judge the work. Students never see this.</p>
+        </div>
+        <div class="ui-card-body">
+            <label for="rubric" class="sr-only">Rubric</label>
+            <textarea name="rubric" id="rubric" rows="5" maxlength="10000"
+                      placeholder="e.g. Correct exception handling counts for half the grade. Take marks off for unclear variable names."
+                      class="ui-input" @error('rubric') aria-invalid="true" @enderror>{{ old('rubric', $laboratory?->rubric) }}</textarea>
+            <p class="ui-hint">Leave this empty and the grader uses the instructions and tasks alone.</p>
+            @error('rubric') <p class="ui-error">{{ $message }}</p> @enderror
         </div>
     </div>
 
