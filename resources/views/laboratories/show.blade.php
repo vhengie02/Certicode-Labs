@@ -516,13 +516,8 @@
 
                                 <div x-show="status === 'hard_blocked'" class="absolute inset-0 bg-[#171717]/95 border border-amber-500/80 flex flex-col items-center justify-center p-4 text-center">
                                     <svg class="w-10 h-10 text-amber-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                    <span class="text-xs font-bold text-amber-200 uppercase tracking-wide">Dim Camera Lighting Detected</span>
-                                    <span class="text-[11px] text-[#a3a3a3] mt-1.5 max-w-sm leading-relaxed">
-                                        Camera lighting is low or backlit. You can proceed with low-light verified mode:
-                                    </span>
-                                    <button type="button" @click="acceptLowLightPresence()" class="mt-3 px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
-                                        Continue in low-light mode &rarr;
-                                    </button>
+                                    <span class="text-xs font-bold text-amber-200 uppercase tracking-wide">Camera Check Locked</span>
+                                    <span class="text-[11px] text-[#a3a3a3] mt-1.5 max-w-sm leading-relaxed" x-text="errorMessage"></span>
                                 </div>
 
                                 <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/90 border border-emerald-500/60 flex flex-col items-center justify-center p-4 text-center">
@@ -553,7 +548,7 @@
                                         <span x-text="`Retry (${attempts + 1}/${maxAttempts})`"></span>
                                     </button>
 
-                                    <button x-show="(status === 'failed' || attempts > 0) && lowLightAllowed"
+                                    <button x-show="status === 'failed' && lowLightAllowed"
                                             type="button" 
                                             @click="acceptLowLightPresence()" 
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition flex items-center gap-1.5 shadow-sm">
@@ -799,7 +794,7 @@ function preLabCameraGate(labId, initialSessionId) {
         faceCount: 0,
         cameraVerified: false,
         attempts: 0,
-        maxAttempts: 3,
+        maxAttempts: {{ \App\Http\Controllers\LabAttemptController::CAMERA_MAX_ATTEMPTS }},
         modelLoaded: false,
         modelLoading: false,
         launchingVsCode: false,
@@ -1085,23 +1080,23 @@ function preLabCameraGate(labId, initialSessionId) {
             if (detectedFaces === 1) {
                 await this.completeVerification(imageBase64, 1, false);
             } else if (detectedFaces > 1) {
-                // Low-light mode skips face detection, so it is no way around this failure
-                this.attempts++;
-                this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`;
-                this.status = 'failed';
+                // Low-light mode is for a dark room, so it is no way around this failure
+                await this.failCheck(`Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`, detectedFaces, imageBase64);
             } else {
-                this.attempts++;
                 const blocked = this.isFrameBlocked(this.luminanceGrid(video));
                 // Without the face models nobody can pass normally, so low-light stays open then
                 this.lowLightAllowed = !blocked && (this.lowLightingDetected || !this.modelLoaded);
-                if (blocked) {
-                    this.errorMessage = this.blockedCameraMessage();
+                if (!blocked && !this.modelLoaded) {
+                    // Our failure, not the student's, so it doesn't use up an attempt
+                    this.errorMessage = 'Face detection could not load. Refresh the page, or click "Continue in low-light mode".';
+                    this.status = 'failed';
+                } else if (blocked) {
+                    await this.failCheck(this.blockedCameraMessage(), 0, imageBase64);
                 } else if (this.lowLightingDetected) {
-                    this.errorMessage = 'Low light or backlit camera detected. Position yourself in front of the screen, or click "Continue in low-light mode".';
+                    await this.failCheck('Low light or backlit camera detected. Position yourself in front of the screen, or click "Continue in low-light mode".', 0, imageBase64);
                 } else {
-                    this.errorMessage = 'No face detected. Please face the webcam directly with your face visible.';
+                    await this.failCheck('No face detected. Please face the webcam directly with your face visible.', 0, imageBase64);
                 }
-                this.status = 'failed';
             }
         },
 
@@ -1109,6 +1104,50 @@ function preLabCameraGate(labId, initialSessionId) {
             return 'Your camera shows a black or blank picture. Uncover it or turn on a light, then retry.';
         },
 
+        // The server keeps the attempt count, so reloading the page doesn't reset it. Only the
+        // last attempt sends its picture: that's the one the instructor gets to see.
+        async failCheck(message, faceCount, imageBase64) {
+            this.errorMessage = message;
+            this.status = 'failed';
+            const lastAttempt = this.attempts + 1 >= this.maxAttempts;
+            try {
+                const res = await fetch(`/v1/labs/${labId}/verify-camera`, {
+                    method: 'POST',
+                    headers: this.cameraCheckHeaders(),
+                    body: JSON.stringify({
+                        status: 'granted',
+                        face_count: faceCount,
+                        ...(lastAttempt ? { image_base64: imageBase64 } : {}),
+                    }),
+                });
+                this.applyCheckResponse(await res.json());
+            } catch (e) {
+                this.attempts++;
+                console.warn('Camera check failure could not be reported:', e);
+            }
+        },
+
+        applyCheckResponse(data) {
+            if (typeof data.attempts_used === 'number') {
+                this.attempts = data.attempts_used;
+            }
+            if (data.error === 'camera_check_blocked') {
+                this.errorMessage = data.message;
+                this.status = 'hard_blocked';
+            }
+        },
+
+        cameraCheckHeaders() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            return {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+            };
+        },
+
+        // Looks harder for the student in a dim frame, and still needs to find exactly one face.
+        // Only with no face models is there nothing to look with, so the picture has to do.
         async acceptLowLightPresence() {
             if (!this.$refs.videoEl || !this.lowLightAllowed) return;
             const video = this.$refs.videoEl;
@@ -1129,16 +1168,28 @@ function preLabCameraGate(labId, initialSessionId) {
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
             this.status = 'analyzing';
-            await this.completeVerification(imageBase64, 1, true);
+            if (!this.modelLoaded) {
+                await this.completeVerification(imageBase64, 1, true);
+                return;
+            }
+
+            const detectedFaces = await this.detectFacesBoosted(video);
+            this.faceCount = detectedFaces;
+
+            if (detectedFaces === 1) {
+                await this.completeVerification(imageBase64, 1, true);
+                return;
+            }
+
+            this.lowLightAllowed = detectedFaces === 0;
+
+            await this.failCheck(detectedFaces > 1
+                ? `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`
+                : 'Still no face found. Add some light and face the webcam directly, then try again.', detectedFaces, imageBase64);
         },
 
         async completeVerification(imageBase64, faceCount = 1, isLowLight = false) {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-            const headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
-            };
+            const headers = this.cameraCheckHeaders();
             const verifyPayload = JSON.stringify({
                 status: 'granted',
                 face_count: faceCount,
@@ -1162,6 +1213,10 @@ function preLabCameraGate(labId, initialSessionId) {
                         recorded = true;
                         break;
                     }
+                    if (res.status === 423) {
+                        this.applyCheckResponse(await res.json());
+                        return;
+                    }
                 } catch (e) {
                     console.warn(`Verify endpoint ${url} network warning:`, e);
                 }
@@ -1169,7 +1224,6 @@ function preLabCameraGate(labId, initialSessionId) {
 
             // The lab only starts once the server has recorded the check
             if (!recorded) {
-                this.attempts++;
                 this.errorMessage = 'Your camera check could not be saved. Check your connection and try again.';
                 this.status = 'failed';
                 return;
@@ -1503,6 +1557,13 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         async detectFacesLowLight(video, grid) {
+            const detectedFaces = await this.detectFacesBoosted(video);
+            if (detectedFaces > 0) return detectedFaces;
+
+            return this.checkLowLightPresence(grid) ? 1 : 0;
+        },
+
+        async detectFacesBoosted(video) {
             // Boost the frame first: raw detection mostly misses faces in the dark
             if (window.faceapi && this.modelLoaded) {
                 try {
@@ -1538,7 +1599,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 } catch (e) {}
             }
 
-            return this.checkLowLightPresence(grid) ? 1 : 0;
+            return 0;
         },
 
         // How many people a set of detections represents. The thresholds above are low so a
