@@ -1,4 +1,8 @@
 @import 'tailwindcss';
+@import './branched-menu.css';
+@import './line-sidebar.css';
+@import './staggered-menu.css';
+@import './toast.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -266,3 +270,7 @@ body {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
+
+/* ASCII light behind a whole page: page content stacks above it with z-index, and 100lvh stops it
+   resizing as mobile browser bars show and hide */
+.ascii-bg { position: fixed; inset: 0 0 auto; z-index: 0; height: 100vh; height: 100lvh; overflow: hidden; pointer-events: none; }
