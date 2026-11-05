@@ -3,9 +3,9 @@
 namespace App\Support;
 
 use App\Models\Anomaly;
+use App\Models\LaboratoryView;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
-use App\Models\LaboratoryView;
 use App\Models\ModuleView;
 use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
