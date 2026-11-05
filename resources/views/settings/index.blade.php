@@ -374,7 +374,7 @@
                     </div>
                     <div class="py-3.5 last:pb-0">
                         <dt class="text-sm font-medium text-[#ededed]">Your work</dt>
-                        <dd class="mt-0.5 text-[13px] text-[#888888]">The code you submit, your grades, and your messages in lab chat.</dd>
+                        <dd class="mt-0.5 text-[13px] text-[#888888]">The code you submit, including code files you add or change in your lab folder during a lab, your grades, and your messages in lab chat.</dd>
                     </div>
                 </dl>
                 <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[#232323] px-6 py-4">

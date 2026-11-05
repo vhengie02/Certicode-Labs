@@ -1,4 +1,4 @@
-import { fakeSecrets, files, memento, shown, stubState } from './vscodeStub';
+import { fakeSecrets, files, memento, shown, stubState, vscodeStub } from './vscodeStub';
 import { SidebarProvider } from '../sidebarProvider';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { test, beforeEach } = require('node:test');
@@ -285,4 +285,90 @@ test('a reload carries on from the server\'s keystroke count', async () => {
     p._totalKeystrokes = 900;
     await p.syncSessionState();
     assert.strictEqual(p._totalKeystrokes, 900);
+});
+
+/** A window with no folder open, where opened documents live in `docs` by URI. */
+function withNoFolder() {
+    const docs = new Map<string, { uri: any; text: string; getText(): string }>();
+    const opened: any[] = [];
+    const { workspace, window } = vscodeStub;
+    const saved = {
+        workspaceFolders: workspace.workspaceFolders,
+        openTextDocument: workspace.openTextDocument,
+        applyEdit: workspace.applyEdit,
+        showTextDocument: window.showTextDocument,
+    };
+    workspace.workspaceFolders = undefined;
+    workspace.openTextDocument = async (uri: any) => {
+        const key = uri.toString();
+        if (!docs.has(key)) {
+            docs.set(key, { uri, text: '', getText() { return this.text; } });
+        }
+        return docs.get(key);
+    };
+    workspace.applyEdit = async (edit: any) => {
+        for (const { uri, text } of edit.inserts) {
+            docs.get(uri.toString())!.text += text;
+        }
+        return true;
+    };
+    window.showTextDocument = async (doc: any) => { opened.push(doc); };
+    return {
+        docs,
+        opened,
+        restore() {
+            workspace.workspaceFolders = saved.workspaceFolders;
+            workspace.openTextDocument = saved.openTextDocument;
+            workspace.applyEdit = saved.applyEdit;
+            window.showTextDocument = saved.showTextDocument;
+        },
+    };
+}
+
+const STRINGS = [{ name: 'src/Strings.java', content: 'public class Strings {}\n', is_primary: true }];
+
+test('with no folder open the starter file opens under its own name, not as Untitled-1', async () => {
+    const editor = withNoFolder();
+    try {
+        const p = provider();
+        p._sessionId = 1;
+        await p.provisionStarterFiles(STRINGS);
+
+        const [doc] = editor.opened;
+        assert.strictEqual(doc.uri.scheme, 'untitled');
+        assert.strictEqual(doc.uri.fsPath, 'Strings.java');
+        assert.strictEqual(doc.getText(), STRINGS[0].content);
+    } finally {
+        editor.restore();
+    }
+});
+
+test('with no folder open the session sync does not reopen the starter file', async () => {
+    const editor = withNoFolder();
+    try {
+        const p = provider();
+        p._sessionId = 1;
+        await p.provisionStarterFiles(STRINGS);
+
+        assert.strictEqual(p._filesGenerated, true);
+    } finally {
+        editor.restore();
+    }
+});
+
+test('opening the starter file again keeps what the student wrote', async () => {
+    const editor = withNoFolder();
+    try {
+        const p = provider();
+        p._sessionId = 1;
+        await p.provisionStarterFiles(STRINGS);
+        editor.opened[0].text = 'public class Strings { int myWork; }';
+
+        await p.openUnsavedStarterFile(STRINGS[0]);
+
+        assert.strictEqual(editor.docs.size, 1);
+        assert.strictEqual(editor.opened[1].getText(), 'public class Strings { int myWork; }');
+    } finally {
+        editor.restore();
+    }
 });

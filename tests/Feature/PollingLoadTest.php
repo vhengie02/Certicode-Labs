@@ -91,7 +91,7 @@ class PollingLoadTest extends TestCase
         $this->assertStringContainsString('this.vscodePollInterval = setTimeout(checkPing, delay)', $html);
         $this->assertStringContainsString('@click="pollForVsCodePing()"', $html);
         $this->assertStringContainsString("if (document.hidden) return;\n                             this.fetchChats();", $html);
-        $this->assertStringContainsString('if (document.hidden && tick % 3 !== 0) return;', $html);
+        $this->assertStringContainsString('if (document.hidden && tick % 3 !== 0 && !waitingForResume && missedChecks === 0) return;', $html);
     }
 
     public function test_extension_reading_the_session_is_a_heartbeat(): void

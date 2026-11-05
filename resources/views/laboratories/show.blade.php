@@ -507,7 +507,7 @@
                                         <span x-text="errorMessage" class="leading-tight"></span>
                                         <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white ml-2 flex-shrink-0">Retry</button>
                                     </div>
-                                    <div class="flex justify-end" x-show="!multipleFacesDetected">
+                                    <div class="flex justify-end" x-show="lowLightAllowed">
                                         <button type="button" @click="acceptLowLightPresence()" class="px-2.5 py-1 rounded bg-[#3ecf8e] text-[#0f0f0f] font-bold text-[11px] hover:bg-[#00c573] transition">
                                             Continue in low-light mode &rarr;
                                         </button>
@@ -553,7 +553,7 @@
                                         <span x-text="`Retry (${attempts + 1}/${maxAttempts})`"></span>
                                     </button>
 
-                                    <button x-show="(status === 'failed' || attempts > 0) && !multipleFacesDetected" 
+                                    <button x-show="(status === 'failed' || attempts > 0) && lowLightAllowed"
                                             type="button" 
                                             @click="acceptLowLightPresence()" 
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition flex items-center gap-1.5 shadow-sm">
@@ -832,7 +832,11 @@ function preLabCameraGate(labId, initialSessionId) {
         extensionDownloadUrl: @js(asset(config('services.vscode_extension.download_path'))),
         leavingAfterVsCodeClosed: false,
         lowLightingDetected: false,
-        multipleFacesDetected: false,
+        // Set by the last failed check: low-light mode is for a dark room, nothing else
+        lowLightAllowed: false,
+        // A covered camera gives a black or flat picture; a dark room still has some contrast
+        blockedMaxLuminance: 6,
+        blockedMinContrast: 3,
         isLowLightMode: false,
         // Small luminance grid of the frame the student verified with in low-light mode.
         // In-lab checks compare against it, since face detection is unreliable in the dark.
@@ -990,6 +994,7 @@ function preLabCameraGate(labId, initialSessionId) {
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
             this.status = 'analyzing';
+            this.lowLightAllowed = false;
 
             // Measure frame luminance to detect low light / dark rooms
             let avgLuminance = 100;
@@ -1077,27 +1082,45 @@ function preLabCameraGate(labId, initialSessionId) {
 
             this.faceCount = detectedFaces;
 
-            // Low-light mode skips face detection, so it is no way around a multiple-faces failure
-            this.multipleFacesDetected = detectedFaces > 1;
-
             if (detectedFaces === 1) {
                 await this.completeVerification(imageBase64, 1, false);
             } else if (detectedFaces > 1) {
+                // Low-light mode skips face detection, so it is no way around this failure
                 this.attempts++;
                 this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`;
                 this.status = 'failed';
             } else {
                 this.attempts++;
-                this.errorMessage = this.lowLightingDetected
-                    ? 'Low light or backlit camera detected. Position yourself in front of the screen, or click "Proceed (Low Light Mode)".'
-                    : 'No face detected. Please face the webcam directly with your face visible.';
+                const blocked = this.isFrameBlocked(this.luminanceGrid(video));
+                // Without the face models nobody can pass normally, so low-light stays open then
+                this.lowLightAllowed = !blocked && (this.lowLightingDetected || !this.modelLoaded);
+                if (blocked) {
+                    this.errorMessage = this.blockedCameraMessage();
+                } else if (this.lowLightingDetected) {
+                    this.errorMessage = 'Low light or backlit camera detected. Position yourself in front of the screen, or click "Continue in low-light mode".';
+                } else {
+                    this.errorMessage = 'No face detected. Please face the webcam directly with your face visible.';
+                }
                 this.status = 'failed';
             }
         },
 
+        blockedCameraMessage() {
+            return 'Your camera shows a black or blank picture. Uncover it or turn on a light, then retry.';
+        },
+
         async acceptLowLightPresence() {
-            if (!this.$refs.videoEl || this.multipleFacesDetected) return;
+            if (!this.$refs.videoEl || !this.lowLightAllowed) return;
             const video = this.$refs.videoEl;
+
+            // The camera may have been covered since the failed check
+            if (this.isFrameBlocked(this.luminanceGrid(video))) {
+                this.lowLightAllowed = false;
+                this.errorMessage = this.blockedCameraMessage();
+                this.status = 'failed';
+                return;
+            }
+
             const canvas = this.$refs.canvasEl || document.createElement('canvas');
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 480;
@@ -1154,6 +1177,7 @@ function preLabCameraGate(labId, initialSessionId) {
 
             this.status = 'verified';
             this.cameraVerified = true;
+            this.lowLightAllowed = false;
             this.isLowLightMode = isLowLight;
             if (isLowLight && this.$refs.videoEl) {
                 this.lowLightReference = this.luminanceGrid(this.$refs.videoEl);
@@ -1289,13 +1313,15 @@ function preLabCameraGate(labId, initialSessionId) {
         watchVsCodeConnection() {
             clearInterval(this.vscodeWatchInterval);
             let missedChecks = 0;
+            let waitingForResume = false;
             let tick = 0;
 
             const check = async () => {
                 if (!this.browserProctorActive || !this.activeSessionId) return;
-                // While the student is in VS Code this page is hidden: check every third tick
+                // While the student is in VS Code this page is hidden: check every third tick,
+                // unless VS Code already looks gone and the page has to leave soon
                 tick++;
-                if (document.hidden && tick % 3 !== 0) return;
+                if (document.hidden && tick % 3 !== 0 && !waitingForResume && missedChecks === 0) return;
                 try {
                     const res = await fetch(`/v1/sessions/${this.activeSessionId}`, { headers: { 'Accept': 'application/json' } });
                     if (!res.ok) return;
@@ -1310,7 +1336,8 @@ function preLabCameraGate(labId, initialSessionId) {
                         return;
                     }
                     // VS Code shut down a moment ago, maybe for a window reload: wait for it to resume
-                    if (data.vscode_reconnecting === true) {
+                    waitingForResume = data.vscode_reconnecting === true;
+                    if (waitingForResume) {
                         missedChecks = 0;
                         return;
                     }
@@ -1407,7 +1434,7 @@ function preLabCameraGate(labId, initialSessionId) {
                 ? await this.detectFacesLowLight(video, grid)
                 : await this.detectFacesNormal(video);
 
-            await this.applyProctorResult(video, detectedFaces, lowLight);
+            await this.applyProctorResult(video, detectedFaces, lowLight, this.isFrameBlocked(grid));
         },
 
         async detectFacesNormal(video) {
@@ -1547,7 +1574,7 @@ function preLabCameraGate(labId, initialSessionId) {
             return 1 + others.length;
         },
 
-        async applyProctorResult(video, detectedFaces, lowLight) {
+        async applyProctorResult(video, detectedFaces, lowLight, blocked = false) {
             this.faceCount = detectedFaces;
             const nowTime = Date.now();
 
@@ -1560,7 +1587,10 @@ function preLabCameraGate(labId, initialSessionId) {
             } else if (detectedFaces === 0) {
                 this.absenceCount++;
                 this.proctorStatus = 'absence';
-                this.proctorStatusText = `Face Searching (${this.absenceCount}/4 warning)`;
+                const warning = Math.min(this.absenceCount, 4);
+                this.proctorStatusText = blocked
+                    ? `Camera Blocked (${warning}/4 warning)`
+                    : `Face Searching (${warning}/4 warning)`;
 
                 if (this.absenceCount >= 4 && (nowTime - this.lastAbsenceAlertAt > 35000)) {
                     this.lastAbsenceAlertAt = nowTime;
@@ -1613,8 +1643,17 @@ function preLabCameraGate(labId, initialSessionId) {
             }
         },
 
+        // Whether a luminance grid shows no real picture: a covered lens, a closed shutter or a
+        // switched-off camera. A frame that can't be read proves nothing, so it counts as blocked.
+        isFrameBlocked(grid) {
+            if (!grid) return true;
+            const mean = grid.reduce((sum, lum) => sum + lum, 0) / grid.length;
+            const variance = grid.reduce((sum, lum) => sum + (lum - mean) ** 2, 0) / grid.length;
+            return mean <= this.blockedMaxLuminance || Math.sqrt(variance) < this.blockedMinContrast;
+        },
+
         checkLowLightPresence(grid) {
-            if (!grid) return false;
+            if (!grid || this.isFrameBlocked(grid)) return false;
 
             let centerLum = 0, centerCount = 0;
             let borderLum = 0, borderCount = 0;

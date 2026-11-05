@@ -97,12 +97,9 @@
                 <section class="ui-card ui-card-body" aria-labelledby="progress-heading">
                     <div class="flex items-baseline justify-between">
                         <h2 id="progress-heading" class="ui-card-title">Your progress</h2>
-                        <span class="cc-display text-2xl font-bold tabular-nums text-[#ededed]">{{ $progress['percent'] }}%</span>
+                        <span data-count-up class="cc-display text-2xl font-bold tabular-nums text-[#ededed]">{{ $progress['percent'] }}%</span>
                     </div>
-                    <div class="relative mt-4 h-2 rounded-full bg-[#232323]" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $progress['percent'] }}" aria-label="Labs passed">
-                        <div class="h-2 rounded-full bg-[#3ecf8e] transition-all duration-500" style="width: {{ $progress['percent'] }}%"></div>
-                        <span class="absolute -top-1 h-4 w-0.5 rounded bg-[#ededed]/60" style="left: {{ $threshold }}%" title="Pass mark: {{ $threshold }}%" aria-hidden="true"></span>
-                    </div>
+                    <x-wake-bar class="mt-4" :value="$progress['percent']" label="Labs passed" :marker="$threshold" marker-title="Pass mark: {{ $threshold }}%" />
                     <p class="mt-3 text-sm text-[#a3a3a3]">{{ $progress['passed'] }} of {{ $progress['total'] }} labs passed at {{ $labPassScore }}% or more. You need {{ $threshold }}% of labs for a certificate.</p>
                     @if ($progress['under_review'] > 0)
                         <p class="mt-1 text-sm text-[#a3a3a3]">{{ $progress['under_review'] }} {{ \Illuminate\Support\Str::plural('grade', $progress['under_review']) }} waiting for your instructor's review.</p>

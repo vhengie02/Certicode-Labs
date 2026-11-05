@@ -1,6 +1,7 @@
 {{-- Lab fields, shared by laboratories/create and laboratories/edit. $laboratory is null when creating. --}}
 @php
     $laboratory = $laboratory ?? null;
+    $dueDate = old('due_at', \App\Support\DisplayTime::in($laboratory?->due_at)?->format('Y-m-d\TH:i'));
 
     // Restore what was typed after a validation error, otherwise the saved lab, otherwise defaults
     $tasks = old('tasks') ?? (!empty($laboratory?->tasks_definition) ? $laboratory->tasks_definition : [['task' => '', 'command' => '']]);
@@ -121,6 +122,13 @@
                     </div>
                     <p class="ui-hint">The shared countdown. You can change it when you start the lab.</p>
                     @error('live_duration_minutes') <p class="ui-error">{{ $message }}</p> @enderror
+                </div>
+                <div x-show="availabilityMode === 'open'" x-cloak>
+                    <label for="due_at" class="ui-label">Due date <span class="ui-optional">(optional)</span></label>
+                    <input type="datetime-local" name="due_at" id="due_at" value="{{ $dueDate }}"
+                           class="ui-input" @error('due_at') aria-invalid="true" @enderror>
+                    <p class="ui-hint">Students see how long is left, then how late they are. Late work is still accepted.</p>
+                    @error('due_at') <p class="ui-error">{{ $message }}</p> @enderror
                 </div>
                 <div>
                     <label for="time_limit" class="ui-label">Time per student</label>

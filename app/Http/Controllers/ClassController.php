@@ -863,6 +863,46 @@ class ClassController extends Controller
     }
 
     /**
+     * Every integrity flag across the classes this user manages, newest first.
+     * Admins manage all classes, so they see every flag.
+     */
+    public function integrityFlags(Request $request)
+    {
+        $this->authorizeInstructor();
+
+        /** @var User $user */
+        $user = $request->user();
+        $classIds = $user->role === 'admin' ? null : $user->instructedClasses()->pluck('id');
+        $managed = fn () => Anomaly::query()->when(
+            $classIds !== null,
+            fn ($q) => $q->whereHas('labSession.laboratory.module', fn ($m) => $m->whereIn('class_id', $classIds))
+        );
+
+        $status = in_array($request->query('status'), ['open', 'resolved'], true) ? $request->query('status') : null;
+
+        $flags = $managed()
+            ->withoutSnapshotData()
+            ->when($status, fn ($q) => $q->where('resolved', $status === 'resolved'))
+            ->with(
+                'labSession:id,lab_id,user_id',
+                'labSession.user:id,name',
+                'labSession.laboratory:id,title,module_id',
+                'labSession.laboratory.module:id,class_id',
+                'labSession.laboratory.module.schoolClass:id,name',
+            )
+            ->latest()
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString();
+
+        $total = $managed()->count();
+        $open = $managed()->where('resolved', false)->count();
+        $counts = ['all' => $total, 'open' => $open, 'resolved' => $total - $open];
+
+        return view('classes.integrity-flags', compact('flags', 'status', 'counts'));
+    }
+
+    /**
      * Mark an anomaly as resolved.
      */
     public function resolveAnomaly(int $id)

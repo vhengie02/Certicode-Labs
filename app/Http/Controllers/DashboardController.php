@@ -46,7 +46,7 @@ class DashboardController extends Controller
         /** @var User $user */
         $user = $request->user();
         $data = Cache::store('file')->remember(
-            "user_dashboard_sections_{$user->id}_{$user->role}",
+            "user_dashboard_sections_v3_{$user->id}_{$user->role}",
             30,
             fn () => match ($user->role) {
                 'admin' => $this->adminData(),
@@ -65,27 +65,17 @@ class DashboardController extends Controller
         // Close timed-out or silent sessions first, so "Continue" never offers a lab that can't resume
         LabSession::autoExpireStaleSessions(userId: $user->id);
 
-        $sessionCounts = $user->labSessions()
-            ->selectRaw("count(distinct case when status = 'completed' then lab_id end) as completed")
-            ->selectRaw("count(case when status = 'in_progress' then 1 end) as in_progress")
-            ->first();
-
         $classCount = $user->classes()->count();
-        $certificateCount = $user->certificates()->count();
-        $completed = (int) $sessionCounts->completed;
+        $hasCompletedLab = $user->labSessions()->where('status', 'completed')->exists();
 
         return [
-            'stats' => [
-                ['label' => 'Classes', 'value' => $classCount, 'hint' => 'enrolled'],
-                ['label' => 'Labs completed', 'value' => $completed, 'hint' => 'all time'],
-                ['label' => 'In progress', 'value' => (int) $sessionCounts->in_progress, 'hint' => 'open sessions'],
-                ['label' => 'Certificates', 'value' => $certificateCount, 'hint' => 'earned'],
-            ],
+            // Shown in the panel header, next to the labs they lead to
+            'classCount' => $classCount,
             // Getting-started steps tick themselves off from real activity
             'setup' => [
                 ['title' => 'Join a class', 'body' => 'Ask your instructor for the class code and enter it on the Classes page, or accept an invitation.', 'done' => $classCount > 0, 'action' => 'Enter a class code', 'href' => route('classes.index').'#join_class_code'],
                 ['title' => 'Install the VS Code extension', 'body' => 'Labs run inside VS Code. Install the Certicode extension and sign in with this account.', 'done' => $user->labSessions()->exists(), 'action' => 'Download the extension', 'href' => asset('downloads/certicode-labs.vsix'), 'download' => true],
-                ['title' => 'Take your first lab', 'body' => 'Start a lab from your class. Your camera is checked while you work, and your code is graded when you submit.', 'done' => $completed > 0, 'action' => 'Open my classes', 'href' => route('classes.index')],
+                ['title' => 'Take your first lab', 'body' => 'Start a lab from your class. Your camera is checked while you work, and your code is graded when you submit.', 'done' => $hasCompletedLab, 'action' => 'Open my classes', 'href' => route('classes.index')],
             ],
             'invitations' => $user->invitedClasses()->count(),
             'inProgress' => $user->labSessions()
@@ -116,12 +106,9 @@ class DashboardController extends Controller
                 ['title' => 'Bring in your students', 'body' => 'Share the class code, or invite students by email from the class page.', 'done' => DB::table('class_student')->whereIn('class_id', $classIds)->where('status', 'enrolled')->exists(), 'action' => 'Open your class', 'href' => $classHref],
                 ['title' => 'Run a lab and review it', 'body' => 'Watch sessions on the monitoring page, check integrity flags and adjust grades where needed.', 'done' => LabSession::whereIn('lab_id', (clone $ownLabs)->select('id'))->exists(), 'action' => 'All classes', 'href' => route('classes.index')],
             ],
-            'stats' => [
-                ['label' => 'Active classes', 'value' => SchoolClass::whereIn('id', $classIds)->whereNotIn('status', ['completed', 'closed'])->count(), 'hint' => 'not yet ended'],
-                ['label' => 'Students', 'value' => DB::table('class_student')->whereIn('class_id', $classIds)->where('status', 'enrolled')->distinct()->count('student_id'), 'hint' => 'across your classes'],
-                ['label' => 'Live now', 'value' => Laboratory::whereHas('module', fn ($m) => $m->whereIn('class_id', $classIds))->where('availability_mode', 'live')->where('live_status', 'active')->count(), 'hint' => 'labs running'],
-                ['label' => 'Open flags', 'value' => Anomaly::whereRaw('resolved = false')->whereHas('labSession', $ownSessions)->count(), 'hint' => 'need review'],
-            ],
+            // Shown in the panel headers, next to the lists they count
+            'activeClassCount' => SchoolClass::whereIn('id', $classIds)->whereNotIn('status', ['completed', 'closed'])->count(),
+            'openFlagCount' => Anomaly::whereRaw('resolved = false')->whereHas('labSession', $ownSessions)->count(),
             'recentAnomalies' => Anomaly::withoutSnapshotData()
                 ->whereHas('labSession', $ownSessions)
                 ->with('labSession:id,lab_id,user_id', 'labSession.user:id,name', 'labSession.laboratory:id,title')

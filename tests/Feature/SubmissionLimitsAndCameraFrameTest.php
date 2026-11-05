@@ -58,7 +58,7 @@ class SubmissionLimitsAndCameraFrameTest extends TestCase
         {
             public function __construct(private \ArrayObject $seen) {}
 
-            public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
+            public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = [], array $otherFiles = []): array
             {
                 $this->seen['diagnostics'] = $diagnostics;
 

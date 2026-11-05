@@ -1,6 +1,13 @@
 /* <x-branched-menu>: a port of React Bits' BranchedMenu styles. Rows and indent match the
  * SVG geometry in resources/views/components/branched-menu.blade.php. */
 @layer components {
+    /* The page scrolls inside <main>, so that box animates the jump to a picked section. */
+    @media (prefers-reduced-motion: no-preference) {
+        main:has(.branched-menu) {
+            scroll-behavior: smooth;
+        }
+    }
+
     .branched-menu {
         --bm-ink: #ededed;
         --bm-muted: #888888;

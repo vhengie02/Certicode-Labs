@@ -52,6 +52,18 @@ const MAX_PASTE_SNIPPET_LENGTH = 10000;
 const EXTERNAL_CHANGE_MIN_LINES = 5;
 // Long enough for the editor's own save event to arrive before the file on disk is compared.
 const DISK_CHECK_DELAY_MS = 1000;
+// Code files sent besides the lab's starter files. Only source types: notes, data and config can hold secrets.
+const STUDENT_FILE_GLOB = '**/*.{c,cc,cpp,cxx,h,hpp,java,kt,py,js,jsx,ts,tsx,go,rs,cs,php,rb,swift,sh,html,css,sql}';
+const STUDENT_FILE_EXCLUDE = '**/{node_modules,vendor,.git,build,out,dist,target,bin,obj,__pycache__,venv,.venv,.certicode,.vscode,.idea}/**';
+// Files looked at in the lab folder, so a very large folder can't slow down a submit.
+const MAX_STUDENT_FILES_SCANNED = 500;
+// The server refuses a whole submission over these (MAX_SUBMISSION_FILES and MAX_SUBMISSION_CHARS).
+const MAX_SUBMISSION_FILES = 50;
+const MAX_SUBMISSION_FILE_CHARS = 100000;
+// All the extra files together, to keep the request well under the host's body size limit.
+const MAX_STUDENT_FILES_CHARS = 300000;
+// Covers the time between the attempt starting on the server and this editor hearing about it.
+const ATTEMPT_START_SLACK_MS = 60000;
 class SidebarProvider {
     constructor(_extensionUri, _globalState, _secrets) {
         this._extensionUri = _extensionUri;
@@ -89,6 +101,8 @@ class SidebarProvider {
         this._lastActivityTime = Date.now();
         this._lastIdleAlertMinutes = 0;
         this._sessionStartTime = Date.now();
+        // When the attempt started by this computer's clock, to compare with file times on its disk
+        this._attemptStartLocalMs = 0;
         this._wsConnected = false;
         // Polling is only paused once the server confirms a channel subscription.
         this._wsSubscribed = false;
@@ -337,11 +351,7 @@ class SidebarProvider {
                     }
                     const sfile = (this._lastSessionData?.laboratory?.starter_files || []).find((f) => f.name === data.name);
                     if (sfile) {
-                        const doc = await vscode.workspace.openTextDocument({
-                            content: sfile.content || '',
-                            language: this.detectLanguage(sfile.name)
-                        });
-                        await vscode.window.showTextDocument(doc, { preview: false });
+                        await this.openUnsavedStarterFile(sfile);
                     }
                     break;
                 }
@@ -382,6 +392,7 @@ class SidebarProvider {
             this._starterDiskTexts.clear();
             this._readonlyFiles.clear();
             this._lastSessionData = null;
+            this._attemptStartLocalMs = 0;
             this._filesGenerated = false;
         }
         this._backendUrl = origin;
@@ -741,6 +752,10 @@ class SidebarProvider {
                     if (!isNaN(startedMs) && startedMs > 0) {
                         this._sessionStartTime = startedMs;
                     }
+                    // From the server's elapsed time, so a wrong clock here doesn't matter
+                    if (typeof data.elapsed_seconds === 'number') {
+                        this._attemptStartLocalMs = Date.now() - data.elapsed_seconds * 1000;
+                    }
                 }
                 // Feature 1: Provision starter files on first connect
                 if (!this._filesGenerated && data.laboratory?.starter_files && Array.isArray(data.laboratory.starter_files)) {
@@ -909,6 +924,21 @@ class SidebarProvider {
         await this._globalState.update(`${STARTER_OWNERS_KEY}:${rootUri.toString()}`, owners);
     }
     /**
+     * Open a starter file when no folder is open, so nothing can be written to disk. It is
+     * unsaved but carries the lab's file name, not "Untitled-1": the tab, the save dialog and
+     * the submission all need that name. An open copy keeps the student's text.
+     */
+    async openUnsavedStarterFile(file) {
+        const fileName = file.name.split(/[\\/]/).pop() || file.name;
+        const doc = await vscode.workspace.openTextDocument(vscode.Uri.from({ scheme: 'untitled', path: fileName }));
+        if (doc.getText() === '' && file.content) {
+            const edit = new vscode.WorkspaceEdit();
+            edit.insert(doc.uri, new vscode.Position(0, 0), file.content);
+            await vscode.workspace.applyEdit(edit);
+        }
+        await vscode.window.showTextDocument(doc, { preview: false });
+    }
+    /**
      * Feature 1: Generate starter files in active workspace and open primary file.
      */
     async provisionStarterFiles(starterFiles) {
@@ -920,19 +950,16 @@ class SidebarProvider {
             // Fallback: Open files directly as active editor documents in VS Code!
             for (const file of starterFiles) {
                 if (file.is_primary || starterFiles.length === 1) {
-                    const lang = this.detectLanguage(file.name);
                     try {
-                        const doc = await vscode.workspace.openTextDocument({
-                            content: file.content || '',
-                            language: lang
-                        });
-                        await vscode.window.showTextDocument(doc, { preview: false });
+                        await this.openUnsavedStarterFile(file);
                     }
                     catch (e) {
                         console.error('Failed to open untitled document', e);
                     }
                 }
             }
+            // The session sync provisions until this is set, and would keep reopening the file
+            this._filesGenerated = true;
             vscode.window.showInformationMessage('CertiCode Labs: Starter code opened in editor! Open a workspace folder (File > Open Folder) to save files directly to disk.', 'Open Folder').then(selection => {
                 if (selection === 'Open Folder') {
                     vscode.commands.executeCommand('vscode.openFolder');
@@ -1641,7 +1668,9 @@ class SidebarProvider {
     }
     /**
      * Gather the files to evaluate for Check Progress and Submit. Lab starter files are read
-     * from their open editors when open, so unsaved edits are what gets graded.
+     * from their open editors when open, so unsaved edits are what gets graded. Code files the
+     * student added during the attempt go along too. They stay out of fileUris, so a compiler
+     * error in an unused scratch file can't fail the automatic syntax check.
      */
     async collectSubmissionFiles() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -1677,6 +1706,7 @@ class SidebarProvider {
             if (activeEditor && this.isStudentDocument(activeEditor.document) && !isNonCodeDoc(activeEditor.document.fileName)) {
                 primaryCode = activeEditor.document.getText();
                 primaryFileName = vscode.workspace.asRelativePath(activeEditor.document.uri);
+                filesPayload.push({ name: primaryFileName, content: primaryCode, is_primary: true });
                 fileUris.push(activeEditor.document.uri);
             }
         }
@@ -1697,7 +1727,55 @@ class SidebarProvider {
             }
             catch { }
         }
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            await this.addStudentFiles(workspaceFolders[0], filesPayload);
+        }
         return { primaryCode, primaryFileName, filesPayload, fileUris };
+    }
+    /**
+     * Add code files created or changed since the attempt started, newest first. Older files are
+     * left out: the folder can hold another lab's work or the student's own projects. Creation
+     * time counts too, because a file copied in keeps its old modified time. Files that would
+     * take the submission past the server's limits are skipped, so they can't block a submit.
+     */
+    async addStudentFiles(folder, filesPayload) {
+        const since = (this._attemptStartLocalMs || this._sessionStartTime) - ATTEMPT_START_SLACK_MS;
+        const alreadySent = new Set(filesPayload.map(f => f.name.replace(/\\/g, '/').replace(/^\.\//, '')));
+        try {
+            const found = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, STUDENT_FILE_GLOB), STUDENT_FILE_EXCLUDE, MAX_STUDENT_FILES_SCANNED);
+            const changed = [];
+            for (const uri of found) {
+                const name = vscode.workspace.asRelativePath(uri, false);
+                if (alreadySent.has(name)) {
+                    continue;
+                }
+                try {
+                    const stat = await vscode.workspace.fs.stat(uri);
+                    const time = Math.max(stat.ctime, stat.mtime);
+                    if (time >= since) {
+                        changed.push({ uri, name, time });
+                    }
+                }
+                catch { }
+            }
+            changed.sort((a, b) => b.time - a.time);
+            let totalChars = 0;
+            for (const file of changed) {
+                if (filesPayload.length >= MAX_SUBMISSION_FILES) {
+                    break;
+                }
+                try {
+                    const content = await this.readWorkspaceText(file.uri);
+                    if (content.length > MAX_SUBMISSION_FILE_CHARS || totalChars + content.length > MAX_STUDENT_FILES_CHARS) {
+                        continue;
+                    }
+                    filesPayload.push({ name: file.name, content, is_primary: false });
+                    totalChars += content.length;
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
     detectSubmissionLanguage(primaryFileName) {
         if (primaryFileName) {

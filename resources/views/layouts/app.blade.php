@@ -524,6 +524,29 @@
             .notif-item, .notif-actions, .notif-check { transition: none; }
         }
         #search-modal a.is-active { background-color: #1c1c1c; color: #ededed; }
+
+        /* Search: press feedback on the bar, and an entrance when the palette is opened by click.
+           Ctrl+K skips .is-animated on purpose: a keyboard shortcut should open instantly. */
+        header .app-search-trigger {
+            transition: color 150ms ease, border-color 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+        }
+        header .app-search-trigger:active { transform: scale(0.98); }
+        #search-modal.is-animated > div:first-child { animation: search-backdrop-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+        #search-modal.is-animated > div:last-child { animation: search-panel-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+        @keyframes search-backdrop-in {
+            from { opacity: 0; }
+        }
+        @keyframes search-panel-in {
+            from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+        }
+        @keyframes search-panel-fade-in {
+            from { opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            header .app-search-trigger:active { transform: none; }
+            #search-modal.is-animated > div:last-child { animation-name: search-panel-fade-in; }
+        }
+
         :focus-visible { outline: 2px solid #3ecf8e; outline-offset: 2px; }
 
         /* App UI kit: shared form and card styles for redesigned pages */
@@ -662,7 +685,7 @@
             : 0;
         $primaryNav = array_filter([
             ['label' => 'Dashboard', 'url' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
-            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'sessions.*', 'modules.*', 'instructor.*', 'certificates.*')],
+            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'sessions.*', 'modules.*', 'instructor.*', 'certificates.*', 'anomalies.*')],
             $isAdmin ? ['label' => 'Users', 'url' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*', 'admin.instructor-requests.*', 'students.*', 'profiles.*'), 'badge' => $pendingInstructorRequests] : null,
             $isAdmin ? ['label' => 'Competencies', 'url' => route('admin.competencies.index'), 'active' => request()->routeIs('admin.competencies.*')] : null,
             $isAdmin ? ['label' => 'Reports', 'url' => route('admin.reports.index'), 'active' => request()->routeIs('admin.reports.*')] : null,
@@ -686,7 +709,7 @@
                 <div class="flex-1"></div>
 
                 <!-- Search trigger -->
-                <button type="button" id="global-search-bar-input" onclick="openSearchModal()" aria-label="Search (Ctrl+K)"
+                <button type="button" id="global-search-bar-input" onclick="openSearchModal(true)" aria-label="Search (Ctrl+K)"
                         class="app-search-trigger hidden lg:flex items-center gap-2.5 w-64 h-9 pl-3 pr-2 rounded-lg bg-[#171717] border border-[#2e2e2e] text-sm text-[#888888] hover:border-[#383838] hover:text-[#a3a3a3] transition-colors">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                     <span class="flex-1 text-left">Search…</span>
@@ -696,7 +719,7 @@
                 <!-- Right actions -->
                 <div class="flex items-center gap-1">
                     <div class="lg:hidden">
-                        <button type="button" onclick="openSearchModal()" aria-label="Search" class="app-icon-btn">
+                        <button type="button" onclick="openSearchModal(true)" aria-label="Search" class="app-icon-btn">
                             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                         </button>
                     </div>
@@ -1143,11 +1166,56 @@
         // --- Global Search Command Palette Logic ---
         let searchTimeout = null;
         let searchAbortController = null;
+        let searchRun = 0;
+        let searchAnimationStops = [];
 
-        function openSearchModal() {
+        // The scramble plays for at least this long after the last keystroke, even on a fast response
+        const SEARCH_MIN_LOADING_MS = 700;
+
+        function stopSearchAnimations() {
+            searchAnimationStops.splice(0).forEach(stop => stop());
+            document.getElementById('search-loading').classList.add('hidden');
+            document.getElementById('search-results').removeAttribute('aria-busy');
+        }
+
+        function cancelSearch() {
+            clearTimeout(searchTimeout);
+            if (searchAbortController) {
+                searchAbortController.abort();
+            }
+            searchRun++;
+            stopSearchAnimations();
+        }
+
+        function showSearchLoading(query) {
+            const results = document.getElementById('search-results');
+            const loadingText = document.getElementById('search-loading-text');
+            const label = `Searching “${query}”`;
+
+            document.getElementById('search-quick-links').classList.add('hidden');
+            results.classList.remove('hidden');
+            results.setAttribute('aria-busy', 'true');
+
+            // Old links go too, so the arrow keys cannot land on rows that are no longer shown
+            results.querySelectorAll('.search-items-container').forEach(container => {
+                container.innerHTML = '';
+                container.parentElement.classList.add('hidden');
+            });
+            document.getElementById('search-no-results').classList.add('hidden');
+            document.getElementById('search-error').classList.add('hidden');
+
+            document.getElementById('search-loading').classList.remove('hidden');
+            loadingText.textContent = label;
+            if (window.scrambleText) {
+                searchAnimationStops.push(window.scrambleText.loop(loadingText, label));
+            }
+        }
+
+        function openSearchModal(animate = false) {
             const modal = document.getElementById('search-modal');
             const input = document.getElementById('search-modal-input');
             if (modal && input) {
+                modal.classList.toggle('is-animated', animate);
                 modal.classList.remove('hidden');
                 input.value = '';
                 document.getElementById('search-quick-links').classList.remove('hidden');
@@ -1165,15 +1233,14 @@
             const modal = document.getElementById('search-modal');
             if (modal) {
                 modal.classList.add('hidden');
+                cancelSearch();
             }
         }
 
         function performSearch(query) {
-            clearTimeout(searchTimeout);
-            if (searchAbortController) {
-                searchAbortController.abort();
-            }
-            
+            cancelSearch();
+            const run = searchRun;
+
             const quickLinks = document.getElementById('search-quick-links');
             const results = document.getElementById('search-results');
             
@@ -1208,13 +1275,24 @@
                        link.keywords.some(kw => kw.includes(queryLower));
             });
 
+            showSearchLoading(query.trim());
+
+            const minLoading = new Promise(resolve => {
+                setTimeout(resolve, window.scrambleText?.enabled() ? SEARCH_MIN_LOADING_MS : 0);
+            });
+
             searchTimeout = setTimeout(() => {
                 searchAbortController = new AbortController();
                 fetch(`/search?q=${encodeURIComponent(query)}`, { signal: searchAbortController.signal })
-                    .then(res => res.json())
+                    .then(res => {
+                        if (!res.ok) throw new Error(`Search returned ${res.status}`);
+                        return res.json();
+                    })
+                    .then(data => minLoading.then(() => data))
                     .then(data => {
-                        quickLinks.classList.add('hidden');
-                        results.classList.remove('hidden');
+                        // A newer search, or closing the palette, replaced this one during the wait
+                        if (run !== searchRun) return;
+                        stopSearchAnimations();
 
                         data.navigation = matchingNavs;
 
@@ -1226,6 +1304,7 @@
                         };
 
                         let hasAnyResults = false;
+                        let row = 0;
 
                         for (const [key, section] of Object.entries(sections)) {
                             if (!section) continue;
@@ -1246,7 +1325,12 @@
                                         </svg>
                                         <span class="truncate">${escapeHtml(item.label)}</span>
                                     `;
+                                    a.setAttribute('aria-label', item.label);
                                     container.appendChild(a);
+                                    if (window.scrambleText) {
+                                        searchAnimationStops.push(window.scrambleText.decode(a.querySelector('span'), String(item.label ?? ''), row * 0.05));
+                                    }
+                                    row++;
                                 });
                             } else {
                                 section.classList.add('hidden');
@@ -1261,9 +1345,11 @@
                         }
                     })
                     .catch(err => {
-                        if (err.name !== 'AbortError') {
-                            console.error('Search failed:', err);
-                        }
+                        if (err.name === 'AbortError') return;
+                        console.error('Search failed:', err);
+                        if (run !== searchRun) return;
+                        stopSearchAnimations();
+                        document.getElementById('search-error').classList.remove('hidden');
                     });
             }, 250);
         }
@@ -1509,6 +1595,10 @@
 
             <!-- Search Results -->
             <div id="search-results" class="hidden max-h-96 overflow-y-auto p-2 space-y-3">
+                <div id="search-loading" class="hidden px-3 py-8 text-center" role="status">
+                    <span class="sr-only">Searching…</span>
+                    <span id="search-loading-text" class="block truncate font-mono text-sm text-[#888888]" aria-hidden="true"></span>
+                </div>
                 @foreach (['navigation' => 'Pages', 'classes' => 'Classes', 'modules' => 'Modules', 'laboratories' => 'Labs'] as $section => $heading)
                     <div id="search-section-{{ $section }}" class="hidden">
                         <span class="block px-3 pt-2 pb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#888888]">{{ $heading }}</span>
@@ -1517,6 +1607,9 @@
                 @endforeach
                 <div id="search-no-results" class="hidden text-center py-8 text-sm text-[#888888]">
                     Nothing matches that. Try another word.
+                </div>
+                <div id="search-error" class="hidden text-center py-8 text-sm text-[#888888]">
+                    Search didn't load. Try again.
                 </div>
             </div>
         </div>

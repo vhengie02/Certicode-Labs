@@ -2,14 +2,27 @@
 
 ## 2026-11-05
 
+- Low-light mode no longer passes a blocked camera. A black or blank picture now fails the pre-lab camera check with a message to uncover the camera or turn on a light, and the low-light option only appears in a dim room. During a lab, the status shows "Camera Blocked", and the warning count stops at 4/4.
+- The lab page now leaves camera mode about 12 to 17 seconds after VS Code closes, down from about 40. A window reload that takes longer than 12 seconds now counts as closed: the attempt stays open, and the student starts again from the lab page.
+- VS Code extension 1.8.3 opens the starter file under its real name, such as `Strings.java`, when no folder is open. It used to open as "Untitled-1", and a new copy opened on every session sync. The minimum extension version is now 1.8.3, so students on older builds see the update message and instructors see the "Old ext" badge. Those builds still connect.
+- Instructors can now read a student's submitted files. A Submitted files section on the attempt's results page lists every file, and the monitoring page links to it from each student. Code that was saved but never submitted is marked as possibly not final. The similarity Compare view now shows each student's full code instead of the first 250 characters.
+- The similarity check now compares all of a student's submitted code files, not only the main one, so a copied helper file is caught. Notes and data files like .md, .txt and .json don't count. Existing results update on the next submit or when you click Compare again.
+- VS Code extension 1.8.4 also sends code files a student adds or changes in the lab folder during an attempt, so instructors can read them and the similarity check compares them. Older files in the folder, and notes, data and config files, stay on the student's computer. The Your data section in Settings now mentions them.
+- The grader now reads all of a submission's code files, not only the main one, so work done in a helper file counts. A file the rest of the code doesn't use doesn't count against the student. If a submission is over 100,000 characters, the files that don't fit are left out and named in the feedback. Existing grades don't change.
+- The dashboard's Get started card is now a step-by-step guide. It opens on the first step you haven't done, you can move through the steps with Back and Continue or by clicking a step, and each step is still ticked off by what you actually do. This respects the "reduce motion" system setting.
+- The grade on a lab's results page and the "Your progress" percentage on a class page now count up from 0 when the page opens, and their bars, now drawn as a row of small bars, fill up alongside. This respects the "reduce motion" system setting.
 - VS Code extension 1.8.1 is out. It stops the false paste flag when a lab's starter files open, and sends up to 10,000 characters of pasted text so instructors can read the whole paste.
 - The landing and sign-in pages have a new animated ASCII background, and the extension screenshots on the landing page are up to date.
+- The class syllabus shows the date each module and lab was created, in the date format and time zone set in Settings.
+- Open labs can have an optional due date. On the syllabus, students see "Due in" before it and "Late by" after it until the lab is done. Late work is still accepted. Live labs show "Locked" until the instructor starts them and "Ongoing" while they run.
+- Clicking a section in the Settings menu now scrolls smoothly to it instead of jumping. This respects the "reduce motion" system setting.
 - Instructors get three new integrity flags. "Low typing effort" appears when a submission is much larger than what was typed or flagged as pasted. "External file change" appears when a lab file changes outside the editor. "Starter files kept" appears when a lab starts from existing files instead of the starter code. These are prompts to look closer: none of them changes a grade, and group labs skip the typing check.
 - VS Code extension 1.8.2 sends these signals, tightens how team chat excuses a paste, and sends the latest typing and diff figures just before a submit.
 - Keystroke counts no longer drop back to zero when a student reloads VS Code during a lab.
 - Submissions over 100,000 characters or 50 files are now refused with a clear message, and the attempt stays open. A long list of editor errors is shortened for the grader instead of failing the submission.
 - The pre-lab camera check now needs a real camera image. A check that sends no image or no face count no longer passes.
 - Certificates now depend on grades. A lab counts only when a student reaches the class's new Lab pass score, 75% by default and set in the class settings, and the passing threshold is now the share of labs a student must pass. Grades waiting for an instructor's review don't count until the instructor confirms them. The class page shows labs passed instead of labs done. Certificates already issued stay valid.
+- Global search now plays a scramble animation while it loads, then decodes each result into place. It shows a message if the search fails, and respects the "reduce motion" system setting.
 
 ## 2026-11-04
 

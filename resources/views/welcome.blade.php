@@ -331,7 +331,7 @@
                     <h2 class="font-display text-4xl sm:text-5xl font-bold leading-[1.05] balance">A certificate anyone can <span class="font-serif-accent font-normal text-[#3ecf8e]">check.</span></h2>
                     <p class="mt-5 text-[var(--text-dim)] text-lg leading-relaxed pretty">Students who pass get a certificate with their lab record. Scanning its QR code opens a public page that confirms it&rsquo;s genuine.</p>
                 </div>
-                <div class="reveal panel rounded-2xl overflow-hidden p-1.5" style="transition-delay:120ms"><img src="{{ asset('images/landing/certificate-verified.jpg') }}" width="1300" height="835" loading="lazy" decoding="async" alt="The public verification page: a confirmation that the certificate is genuine, above the certificate itself with the student's name, course, average grade of 90.3% and 3 of 3 labs completed." class="block w-full h-auto rounded-xl"></div>
+                <div class="reveal panel rounded-2xl overflow-hidden p-1.5" style="transition-delay:120ms"><img src="{{ asset('images/landing/certificate-verified.jpg') }}" width="1300" height="1130" loading="lazy" decoding="async" alt="The public verification page: a confirmation that the certificate is genuine, above the full certificate with the student's name, course, average grade of 90.3%, 3 of 3 labs completed, signature line and QR code." class="block w-full h-auto rounded-xl"></div>
             </div>
         </section>
 

@@ -11,9 +11,19 @@ use Psr\Http\Client\ClientInterface;
 class LlmEvaluationService
 {
     /**
-     * Evaluate the student's code against the reference solution, rubric, and tasks.
+     * Most code the grader reads, across all files. Far above any lab's code, and small enough
+     * that it isn't pushed into a timeout, which would fall back to the weaker pattern checks.
      */
-    public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
+    private const MAX_GRADED_CHARS = 100000;
+
+    /**
+     * Evaluate the student's code against the reference solution, rubric, and tasks. $code is the
+     * main file. The automatic syntax check looks only at it: another file may be an unused
+     * scratch file, so whether that one matters is left to the grader.
+     *
+     * @param  list<array{name: string, content: string}>  $otherFiles  The submission's other code files
+     */
+    public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = [], array $otherFiles = []): array
     {
         $lab = $session->laboratory;
         $tasks = $lab->tasks_definition ?? [];
@@ -22,6 +32,11 @@ class LlmEvaluationService
         $testCases = $lab->test_cases ?? [];
         // The client sends the language, and it goes into the grading prompt
         $language = $this->normalizeLanguage($language);
+
+        // A blank main file must not hide the code a student wrote in another one
+        if (trim($code) === '' && $otherFiles !== []) {
+            $code = array_shift($otherFiles)['content'];
+        }
 
         // 1. If code is empty or whitespace only, immediately return 0% evaluation
         if (empty(trim($code))) {
@@ -39,11 +54,16 @@ class LlmEvaluationService
             return $this->evaluateSyntaxErrorSubmission($tasks, $syntaxErrors, $language);
         }
 
+        [$otherFiles, $leftOut] = $this->fitGradingBudget($code, $otherFiles);
+
         $apiKey = (string) config('services.anthropic.key');
         $note = 'AI grading is not set up, so this grade comes from automatic pattern checks only.';
         if ($apiKey !== '' && $apiKey !== 'mock') {
             try {
-                return $this->evaluateWithClaude($lab->title, $lab->description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language, $diagnostics);
+                return $this->withLeftOutNote(
+                    $this->evaluateWithClaude($lab->title, $lab->description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language, $diagnostics, $otherFiles, $leftOut),
+                    $leftOut
+                );
             } catch (\Throwable $e) {
                 Log::error('Claude evaluation failed, saving a provisional rule-based grade for review: '.$e->getMessage(), [
                     'lab_session_id' => $session->id,
@@ -52,7 +72,53 @@ class LlmEvaluationService
             }
         }
 
-        return $this->markProvisional($this->evaluateMock($tasks, $code, $language), $note);
+        $allCode = implode("\n\n", [$code, ...array_column($otherFiles, 'content')]);
+
+        return $this->withLeftOutNote($this->markProvisional($this->evaluateMock($tasks, $allCode, $language), $note), $leftOut);
+    }
+
+    /**
+     * The other files that fit in what the grader reads, in the order sent, and the names of the
+     * ones that don't.
+     *
+     * @return array{0: list<array{name: string, content: string}>, 1: list<string>}
+     */
+    protected function fitGradingBudget(string $code, array $otherFiles): array
+    {
+        $room = self::MAX_GRADED_CHARS - mb_strlen($code);
+        $kept = [];
+        $leftOut = [];
+
+        foreach ($otherFiles as $file) {
+            $length = mb_strlen($file['content']);
+            if ($length > $room) {
+                $leftOut[] = $file['name'];
+
+                continue;
+            }
+            $room -= $length;
+            $kept[] = $file;
+        }
+
+        return [$kept, $leftOut];
+    }
+
+    /**
+     * Say which files went ungraded, so nobody reads the grade as covering them.
+     */
+    protected function withLeftOutNote(array $evaluation, array $leftOut): array
+    {
+        if ($leftOut === []) {
+            return $evaluation;
+        }
+
+        $note = 'Not graded because the submission is too large: '.implode(', ', $leftOut).'.';
+        foreach (['summary', 'overall_feedback'] as $field) {
+            $evaluation[$field] = trim(($evaluation[$field] ?? '').' '.$note);
+        }
+        $evaluation['ai_grade_summary']['summary'] = trim(($evaluation['ai_grade_summary']['summary'] ?? '').' '.$note);
+
+        return $evaluation;
     }
 
     /**
@@ -394,9 +460,9 @@ class LlmEvaluationService
      * Grade with Claude. The response is constrained to GRADE_SCHEMA, then mapped to the evaluation
      * shape the rest of the app expects.
      */
-    protected function evaluateWithClaude(string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language, array $diagnostics = []): array
+    protected function evaluateWithClaude(string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language, array $diagnostics = [], array $otherFiles = [], array $leftOut = []): array
     {
-        $prompt = $this->buildPrompt($title, $description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language, $diagnostics);
+        $prompt = $this->buildPrompt($title, $description, $tasks, $referenceSolution, $rubric, $testCases, $code, $language, $diagnostics, $otherFiles, $leftOut);
         $grade = $this->requestClaudeGrade($prompt);
 
         return $this->mapClaudeGrade($grade, $tasks, $referenceSolution);
@@ -547,8 +613,9 @@ class LlmEvaluationService
     /**
      * Build the evaluation prompt. The student's code and their editor's diagnostics go in one
      * delimited block that the system prompt marks as untrusted, and nothing in them can close it.
+     * File names are the student's too, so they are reduced to plain path characters.
      */
-    protected function buildPrompt(string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language, array $diagnostics = []): string
+    protected function buildPrompt(string $title, string $description, array $tasks, string $referenceSolution, string $rubric, array $testCases, string $code, string $language, array $diagnostics = [], array $otherFiles = [], array $leftOut = []): string
     {
         $tasksJson = json_encode($tasks, JSON_PRETTY_PRINT);
         $testCasesJson = json_encode($testCases, JSON_PRETTY_PRINT);
@@ -556,6 +623,24 @@ class LlmEvaluationService
         $untrusted = fn (string $s) => preg_replace('#<\s*/\s*student_submission#i', '<\\/student_submission', $s);
         $code = $untrusted($code);
         $diagnosticsJson = $untrusted($diagnosticsJson);
+
+        $safeName = fn (string $name) => mb_substr(preg_replace('#[^\w./\\\\ +-]#u', '_', $name) ?? 'file', 0, 200);
+        $otherFilesBlock = '';
+        if ($otherFiles !== []) {
+            $blocks = array_map(
+                fn (array $file) => '<file name="'.$safeName($file['name']).'">'."\n".$untrusted($file['content'])."\n</file>",
+                $otherFiles
+            );
+            $otherFilesBlock = "\n<other_files>\n".implode("\n", $blocks)."\n</other_files>";
+        }
+        if ($leftOut !== []) {
+            $otherFilesBlock .= "\n<files_left_out>\n".implode("\n", array_map($safeName, $leftOut))."\n</files_left_out>";
+        }
+        $filesNote = $otherFilesBlock === '' ? '' : "\n\n"
+            .'<code> holds the main file and <other_files> the student\'s other code files; together they are the submission. '
+            ."A task can be met in any of them, and a task's check looks at all of them. "
+            .'A file the rest of the code does not use does not count against the student, even if it would not compile. '
+            .'Files named in <files_left_out> were too large to include: assume nothing about them, and do not fail a task only because its code may be there.';
 
         return <<<TEXT
 Evaluate the student submission for the lab exercise: "$title".
@@ -588,8 +673,8 @@ $diagnosticsJson
 </ide_diagnostics>
 <code>
 $code
-</code>
-</student_submission>
+</code>$otherFilesBlock
+</student_submission>$filesNote
 
 Grade the submission:
 1. Check that the code would compile. If it would not (unexpected tokens, unbalanced braces, trailing garbage such as ';aaaa', or the compiler diagnostics above), no task is completed and the score is 0-20.

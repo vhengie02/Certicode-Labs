@@ -2,7 +2,9 @@
 @import './branched-menu.css';
 @import './line-sidebar.css';
 @import './staggered-menu.css';
+@import './stepper.css';
 @import './toast.css';
+@import './wake-bar.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -274,3 +276,12 @@ body {
 /* ASCII light behind a whole page: page content stacks above it with z-index, and 100lvh stops it
    resizing as mobile browser bars show and hide */
 .ascii-bg { position: fixed; inset: 0 0 auto; z-index: 0; height: 100vh; height: 100lvh; overflow: hidden; pointer-events: none; }
+
+/* Hides a count-up number until count-up.js takes over, so the final value doesn't flash before
+   the count starts. The hold ends by itself, so the number still shows if the script fails. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+    [data-count-up=""] { animation: count-up-hold 1.5s; }
+}
+@keyframes count-up-hold {
+    from, to { visibility: hidden; }
+}

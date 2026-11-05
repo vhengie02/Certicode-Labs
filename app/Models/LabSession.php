@@ -103,6 +103,52 @@ class LabSession extends Model
     }
 
     /**
+     * The code saved for this attempt, one entry per file, main file first. The extension's
+     * files aren't validated one by one, so entries without text are skipped. A submission
+     * taken from the open editor has no files at all, only submitted_code.
+     *
+     * @return list<array{name: string, content: string, is_primary: bool}>
+     */
+    public function submittedFileList(): array
+    {
+        $files = self::normalizeSubmittedFiles($this->submitted_files);
+
+        if ($files === [] && filled($this->submitted_code)) {
+            return [['name' => 'Submitted code', 'content' => (string) $this->submitted_code, 'is_primary' => true]];
+        }
+
+        return $files;
+    }
+
+    /**
+     * A submission's files as the extension sent them, in a reliable shape, main file first.
+     *
+     * @return list<array{name: string, content: string, is_primary: bool}>
+     */
+    public static function normalizeSubmittedFiles(mixed $files): array
+    {
+        return collect(is_array($files) ? $files : [])
+            ->filter(fn ($file) => is_array($file) && is_string($file['content'] ?? null))
+            ->map(fn ($file) => [
+                'name' => is_string($file['name'] ?? null) && $file['name'] !== '' ? $file['name'] : 'Untitled file',
+                'content' => $file['content'],
+                'is_primary' => ! empty($file['is_primary']),
+            ])
+            ->sortByDesc('is_primary')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Whether a file is code, as opposed to notes and data. Same list as isNonCodeDoc in the
+     * extension.
+     */
+    public static function isCodeFile(string $name): bool
+    {
+        return preg_match('/\.(md|txt|json|env|log|lock|ya?ml)$/i', $name) !== 1;
+    }
+
+    /**
      * Whether a user may act on this session: its owner, a teammate in the same group,
      * an admin, or the instructor who owns the class the lab belongs to. A teammate is a
      * member of the group, or anyone with their own session in it.

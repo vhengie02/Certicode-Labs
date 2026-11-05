@@ -150,6 +150,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('classes', ClassController::class);
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
+    Route::get('/integrity-flags', [ClassController::class, 'integrityFlags'])->name('anomalies.index');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
@@ -194,6 +195,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/monitoring/data', [InstructorMonitoringController::class, 'streamData'])->name('instructor.monitoring.data');
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
+    Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
 
     // Student Profiles & Directory CRUD
     // The student directory became Admin > Users; keep the old address working

@@ -64,7 +64,7 @@ class SubmitTimeBudgetTest extends TestCase
         {
             public function __construct(private $duringGrading, private $test) {}
 
-            public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
+            public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = [], array $otherFiles = []): array
             {
                 ($this->duringGrading)($session);
 

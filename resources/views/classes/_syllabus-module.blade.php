@@ -19,13 +19,18 @@
             </span>
         </a>
         <span class="line-sidebar__meta">
-            {{ $labs->count() }} {{ \Illuminate\Support\Str::plural('lab', $labs->count()) }}
-            @if ($children->isNotEmpty())
-                &middot; {{ $children->count() }} {{ \Illuminate\Support\Str::plural('section', $children->count()) }}
-            @endif
-            @if ($isStaff)
-                &middot; {{ number_format($module->views_count) }} views
-            @endif
+            <span>
+                {{ $labs->count() }} {{ \Illuminate\Support\Str::plural('lab', $labs->count()) }}
+                @if ($children->isNotEmpty())
+                    &middot; {{ $children->count() }} {{ \Illuminate\Support\Str::plural('section', $children->count()) }}
+                @endif
+                @if ($isStaff)
+                    &middot; {{ number_format($module->views_count) }} views
+                @endif
+                @if ($module->created_at)
+                    &middot; <span class="sr-only">Created </span>{{ \App\Support\DisplayTime::format($module->created_at, true) }}
+                @endif
+            </span>
         </span>
 
         @if ($studentProgress && $studentProgress['total'] > 0)
@@ -61,6 +66,7 @@
                 @php
                     $isDone = !$isStaff && isset($completedLabIds[$lab->id]);
                     $isLiveNow = $lab->isLiveLab() && $lab->isLiveActive();
+                    $studentStatus = !$isStaff ? $lab->studentStatus($isDone) : null;
                 @endphp
                 <li class="line-sidebar__item">
                     <div class="line-sidebar__row group/lab">
@@ -82,17 +88,28 @@
                                 <span class="line-sidebar__text">{{ $lab->title }}</span>
                             </span>
                         </a>
-                        @if ($lab->isLiveLab() || $isStaff)
+                        @if ($studentStatus || $isStaff || $lab->created_at)
                             <span class="line-sidebar__meta">
-                                @if ($lab->isLiveLab())
+                                @if ($studentStatus)
+                                    <span class="ui-badge {{ $studentStatus['class'] }} shrink-0 text-[11px]">
+                                        @if ($isLiveNow)<span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e] animate-pulse" aria-hidden="true"></span>@endif
+                                        {{ $studentStatus['label'] }}
+                                    </span>
+                                @elseif ($isStaff && $lab->isLiveLab())
                                     <span class="ui-badge {{ $isLiveNow ? 'ui-badge-brand' : '' }} shrink-0 text-[11px]">
                                         @if ($isLiveNow)<span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e] animate-pulse" aria-hidden="true"></span>@endif
                                         {{ $isLiveNow ? 'Live now' : 'Live lab' }}
                                     </span>
                                 @endif
-                                @if ($isStaff)
-                                    <span>{{ number_format($lab->views_count) }} views &middot; {{ $lab->completed_count ?? 0 }} completed</span>
-                                @endif
+                                <span>
+                                    @if ($isStaff)
+                                        {{ number_format($lab->views_count) }} views &middot; {{ $lab->completed_count ?? 0 }} completed
+                                    @endif
+                                    @if ($lab->created_at)
+                                        @if ($isStaff) &middot; @endif
+                                        <span class="sr-only">Created </span>{{ \App\Support\DisplayTime::format($lab->created_at, true) }}
+                                    @endif
+                                </span>
                             </span>
                         @endif
                         @if ($isStaff)

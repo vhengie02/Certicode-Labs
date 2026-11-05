@@ -36,6 +36,12 @@ export default function branchedMenu({ active, open }) {
             // A fold changes the menu's height, so the marker follows it without gliding.
             new ResizeObserver(() => place(false)).observe(this.$root);
 
+            // scrollend does not bubble, so only a capturing listener hears it from <main>. The spy
+            // reports after scrollend, so the pause outlasts it briefly.
+            document.addEventListener('scrollend', () => {
+                this.spyPausedUntil = Math.min(this.spyPausedUntil, Date.now() + 300);
+            }, true);
+
             if (!('IntersectionObserver' in window)) return;
             const spy = new IntersectionObserver((entries) => {
                 if (Date.now() < this.spyPausedUntil) return;
@@ -59,10 +65,11 @@ export default function branchedMenu({ active, open }) {
                 : [...this.open, section];
         },
 
-        // The jump to a picked section can leave a neighbour in the spy's band, so the pick wins briefly.
+        // The scroll to a picked section passes its neighbours through the spy's band, so the pick
+        // wins until scrollend. The timeout covers a pick that scrolls nothing, which fires no scrollend.
         pick(value) {
             this.active = value;
-            this.spyPausedUntil = Date.now() + 300;
+            this.spyPausedUntil = Date.now() + 1000;
         },
     };
 }

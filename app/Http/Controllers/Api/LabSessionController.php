@@ -780,6 +780,18 @@ class LabSessionController extends Controller
     }
 
     /**
+     * The submission's other code files, for the grader: everything sent except the main file
+     * ($code), blank files, and notes and data.
+     */
+    private function otherCodeFiles(Request $request, string $code): array
+    {
+        return collect(LabSession::normalizeSubmittedFiles($request->input('files')))
+            ->filter(fn ($file) => LabSession::isCodeFile($file['name']) && trim($file['content']) !== '' && $file['content'] !== $code)
+            ->values()
+            ->all();
+    }
+
+    /**
      * Run an AI-based check progress check-in-progress assessment.
      */
     /**
@@ -845,7 +857,7 @@ class LabSessionController extends Controller
 
         $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics, $this->otherCodeFiles($request, $code));
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -942,7 +954,7 @@ class LabSessionController extends Controller
         // AI task-completion evaluation
         $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics, $this->otherCodeFiles($request, $code));
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -1700,7 +1712,7 @@ class LabSessionController extends Controller
     }
 
     /** How long after a clean shutdown the extension may resume before VS Code counts as closed. */
-    private const VSCODE_RELOAD_GRACE_SECONDS = 30;
+    private const VSCODE_RELOAD_GRACE_SECONDS = 12;
 
     /**
      * Whether the extension connected to this session is older than the minimum supported build.
