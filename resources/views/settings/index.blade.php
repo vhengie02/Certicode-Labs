@@ -4,20 +4,46 @@
 
 @php
     $sections = [
-        'profile' => 'Profile',
-        'password' => 'Password',
-        'appearance' => 'Appearance',
-        'accounts' => 'Connected accounts',
-        ...($activeSessions === null ? [] : ['sessions' => 'Active sessions']),
-        'datetime' => 'Date and time',
-        'notifications' => 'Email notifications',
-        'privacy' => 'Your data',
-        'delete-account' => 'Delete account',
+        [
+            'label' => 'Account',
+            'children' => [
+                ['value' => 'profile', 'label' => 'Profile', 'icon' => 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 14a7 7 0 0 0-7 7h14a7 7 0 0 0-7-7z'],
+                ['value' => 'password', 'label' => 'Password', 'icon' => 'M12 15v2m-6 4h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2zm10-10V7a4 4 0 0 0-8 0v4h8z'],
+                ['value' => 'accounts', 'label' => 'Connected accounts', 'icon' => 'M13.828 10.172a4 4 0 0 0-5.656 0l-4 4a4 4 0 1 0 5.656 5.656l1.102-1.101m-.758-4.899a4 4 0 0 0 5.656 0l4-4a4 4 0 0 0-5.656-5.656l-1.1 1.1'],
+                ...($activeSessions === null ? [] : [
+                    ['value' => 'sessions', 'label' => 'Active sessions', 'icon' => 'M9.75 17 9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z'],
+                ]),
+            ],
+        ],
+        [
+            'label' => 'Preferences',
+            'children' => [
+                ['value' => 'appearance', 'label' => 'Appearance', 'icon' => 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364-.707-.707M6.343 6.343l-.707-.707m12.728 0-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z'],
+                ['value' => 'datetime', 'label' => 'Date and time', 'icon' => 'M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z'],
+                ['value' => 'notifications', 'label' => 'Email notifications', 'icon' => 'M3 8l7.89 5.26a2 2 0 0 0 2.22 0L21 8M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z'],
+            ],
+        ],
+        [
+            'label' => 'Privacy',
+            'children' => [
+                ['value' => 'privacy', 'label' => 'Your data', 'icon' => 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z'],
+                ['value' => 'delete-account', 'label' => 'Delete account', 'icon' => 'M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16'],
+            ],
+        ],
     ];
     $themes = [
         'system' => ['System', 'Follows your device setting.'],
         'dark' => ['Dark Mode', 'Easy on the eyes at night.'],
         'light' => ['Light Mode', 'Best in bright rooms.'],
+    ];
+    // Inline colors, not Tailwind classes: the light theme in layouts/app.blade.php
+    // remaps the dark hex classes with !important, which would turn these previews light.
+    $darkPreview = ['canvas' => '#0f0f0f', 'line' => '#2e2e2e', 'field' => '#171717', 'accent' => '#3ecf8e'];
+    $lightPreview = ['canvas' => '#f8f9fa', 'line' => '#e5e7eb', 'field' => '#ffffff', 'accent' => '#059669'];
+    $themePreviews = [
+        'system' => [$darkPreview, $lightPreview],
+        'dark' => [$darkPreview],
+        'light' => [$lightPreview],
     ];
 @endphp
 
@@ -26,25 +52,22 @@
     <x-page-header title="Settings" subtitle="Your profile, sign-in options and what we email you." />
 
     @if ($errors->any())
-        <div class="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.06] px-4 py-3 text-sm text-red-300" role="alert">
-            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-            <ul class="space-y-0.5">
-                @foreach ($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
-            </ul>
-        </div>
+        @push('toasts')
+            <x-toast tone="error">
+                <ul>
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </x-toast>
+        @endpush
     @endif
 
-    <div class="grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)] gap-8 items-start">
+    <div class="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-8 items-start">
         {{-- Section menu --}}
-        <nav class="hidden lg:block sticky top-2" aria-label="Settings sections">
-            <ul class="space-y-0.5" role="list">
-                @foreach ($sections as $id => $label)
-                    <li><a href="#{{ $id }}" class="settings-nav-link block rounded-lg px-3 py-2 text-sm text-[#888888] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">{{ $label }}</a></li>
-                @endforeach
-            </ul>
-        </nav>
+        <div class="hidden lg:block sticky top-2">
+            <x-branched-menu :items="$sections" label="Settings sections" />
+        </div>
 
         <div class="space-y-6 min-w-0">
             {{-- Profile --}}
@@ -116,50 +139,6 @@
                     <button type="submit" class="ui-btn ui-btn-primary">Update password</button>
                 </div>
             </form>
-
-            {{-- Appearance --}}
-            <section id="appearance" class="ui-card scroll-mt-4" aria-labelledby="appearance-heading">
-                <div class="ui-card-header flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h2 id="appearance-heading" class="ui-card-title">Appearance</h2>
-                        <p class="ui-card-subtitle">Applies instantly and is remembered on this device.</p>
-                    </div>
-                    <span id="theme-status-indicator" class="ui-badge ui-badge-brand">
-                        <span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e]" aria-hidden="true"></span>
-                        <span id="theme-status-text">Active: System</span>
-                    </span>
-                </div>
-                <div class="ui-card-body grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="Theme">
-                    @foreach ($themes as $key => [$label, $hint])
-                        <button type="button" onclick="selectTheme('{{ $key }}')" id="theme-card-{{ $key }}" role="radio" aria-checked="false"
-                                class="theme-card group rounded-xl border-2 border-[#2e2e2e] bg-[#141414] p-3 text-left transition-colors hover:border-[#3ecf8e]/50">
-                            <span class="flex h-20 w-full overflow-hidden rounded-lg border border-[#2e2e2e]" aria-hidden="true">
-                                @if ($key !== 'dark')
-                                    <span class="flex flex-col justify-between bg-[#f8f9fa] p-2 {{ $key === 'system' ? 'w-1/2 border-r border-[#e5e7eb]' : 'w-full' }}">
-                                        <span class="h-1.5 w-2/3 rounded bg-[#e5e7eb]"></span>
-                                        <span class="h-1.5 w-full rounded border border-[#e5e7eb] bg-white"></span>
-                                        <span class="h-1.5 w-1/2 rounded-full bg-[#059669]"></span>
-                                    </span>
-                                @endif
-                                @if ($key !== 'light')
-                                    <span class="flex flex-col justify-between bg-[#0f0f0f] p-2 {{ $key === 'system' ? 'w-1/2' : 'w-full' }}">
-                                        <span class="h-1.5 w-2/3 rounded bg-[#2e2e2e]"></span>
-                                        <span class="h-1.5 w-full rounded border border-[#2e2e2e] bg-[#171717]"></span>
-                                        <span class="h-1.5 w-1/2 rounded-full bg-[#3ecf8e]"></span>
-                                    </span>
-                                @endif
-                            </span>
-                            <span class="mt-3 flex items-center justify-between">
-                                <span class="text-sm font-medium text-[#ededed]">{{ $label }}</span>
-                                <span class="theme-check-badge hidden h-4 w-4 items-center justify-center rounded-full bg-[#3ecf8e] text-[#0f0f0f]" aria-hidden="true">
-                                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                </span>
-                            </span>
-                            <span class="mt-0.5 block text-xs text-[#888888]">{{ $hint }}</span>
-                        </button>
-                    @endforeach
-                </div>
-            </section>
 
             {{-- Connected accounts --}}
             <section id="accounts" class="ui-card scroll-mt-4" aria-labelledby="accounts-heading">
@@ -278,6 +257,43 @@
                 </section>
             @endif
 
+            {{-- Appearance --}}
+            <section id="appearance" class="ui-card scroll-mt-4" aria-labelledby="appearance-heading">
+                <div class="ui-card-header flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 id="appearance-heading" class="ui-card-title">Appearance</h2>
+                        <p class="ui-card-subtitle">Applies instantly and is remembered on this device.</p>
+                    </div>
+                    <span id="theme-status-indicator" class="ui-badge ui-badge-brand">
+                        <span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e]" aria-hidden="true"></span>
+                        <span id="theme-status-text">Active: System</span>
+                    </span>
+                </div>
+                <div class="ui-card-body grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="Theme">
+                    @foreach ($themes as $key => [$label, $hint])
+                        <button type="button" onclick="selectTheme('{{ $key }}')" id="theme-card-{{ $key }}" role="radio" aria-checked="false"
+                                class="theme-card group rounded-xl border-2 border-[#2e2e2e] bg-[#141414] p-3 text-left transition-colors hover:border-[#3ecf8e]/50">
+                            <span class="flex h-20 w-full overflow-hidden rounded-lg border border-[#2e2e2e]" aria-hidden="true">
+                                @foreach ($themePreviews[$key] as $palette)
+                                    <span class="flex flex-1 flex-col justify-between p-2" style="background-color: {{ $palette['canvas'] }}">
+                                        <span class="h-1.5 w-2/3 rounded" style="background-color: {{ $palette['line'] }}"></span>
+                                        <span class="h-1.5 w-full rounded border" style="background-color: {{ $palette['field'] }}; border-color: {{ $palette['line'] }}"></span>
+                                        <span class="h-1.5 w-1/2 rounded-full" style="background-color: {{ $palette['accent'] }}"></span>
+                                    </span>
+                                @endforeach
+                            </span>
+                            <span class="mt-3 flex items-center justify-between">
+                                <span class="text-sm font-medium text-[#ededed]">{{ $label }}</span>
+                                <span class="theme-check-badge hidden h-4 w-4 items-center justify-center rounded-full bg-[#3ecf8e] text-[#0f0f0f]" aria-hidden="true">
+                                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                </span>
+                            </span>
+                            <span class="mt-0.5 block text-xs text-[#888888]">{{ $hint }}</span>
+                        </button>
+                    @endforeach
+                </div>
+            </section>
+
             {{-- Date and time --}}
             <form id="datetime" action="{{ route('settings.datetime.update') }}" method="POST" class="ui-card scroll-mt-4">
                 @csrf
@@ -360,7 +376,7 @@
                     </div>
                     <div class="py-3.5 last:pb-0">
                         <dt class="text-sm font-medium text-[#ededed]">Your work</dt>
-                        <dd class="mt-0.5 text-[13px] text-[#888888]">The code you submit, your grades, and your messages in lab chat.</dd>
+                        <dd class="mt-0.5 text-[13px] text-[#888888]">The code you submit, including code files you add or change in your lab folder during a lab, your grades, and your messages in lab chat.</dd>
                     </div>
                 </dl>
                 <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[#232323] px-6 py-4">
@@ -473,21 +489,5 @@
     window.addEventListener('certicode:themechange', (e) => {
         if (e.detail && e.detail.theme) updateSettingsThemeCards(e.detail.theme);
     });
-
-    // Highlight the section in view in the side menu
-    (() => {
-        const links = document.querySelectorAll('.settings-nav-link');
-        if (!links.length || !('IntersectionObserver' in window)) return;
-        const byId = {};
-        links.forEach((a) => { byId[a.getAttribute('href').slice(1)] = a; });
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry) => {
-                if (!entry.isIntersecting) return;
-                links.forEach((a) => a.classList.remove('text-[#ededed]', 'bg-[#1c1c1c]'));
-                byId[entry.target.id]?.classList.add('text-[#ededed]', 'bg-[#1c1c1c]');
-            });
-        }, { rootMargin: '-30% 0px -60% 0px' });
-        Object.keys(byId).forEach((id) => { const el = document.getElementById(id); if (el) observer.observe(el); });
-    })();
 </script>
 @endsection

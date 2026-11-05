@@ -55,15 +55,17 @@
     <div data-lazy-src="{{ route('dashboard.sections') }}" aria-busy="true" aria-live="polite">
         <span class="sr-only">Loading your dashboard…</span>
         <div class="space-y-8" aria-hidden="true">
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                @for ($i = 0; $i < 4; $i++)
-                    <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-                        <div class="skeleton-pulse h-3 w-20"></div>
-                        <div class="skeleton-pulse h-8 w-14 mt-4"></div>
-                        <div class="skeleton-pulse h-3 w-24 mt-3"></div>
-                    </div>
-                @endfor
-            </div>
+            @if ($role === 'admin')
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    @for ($i = 0; $i < 4; $i++)
+                        <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+                            <div class="skeleton-pulse h-3 w-20"></div>
+                            <div class="skeleton-pulse h-8 w-14 mt-4"></div>
+                            <div class="skeleton-pulse h-3 w-24 mt-3"></div>
+                        </div>
+                    @endfor
+                </div>
+            @endif
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div class="lg:col-span-2 rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
                     <div class="skeleton-pulse h-4 w-40"></div>

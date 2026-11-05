@@ -235,6 +235,8 @@ class LabAttemptController extends Controller
             'isOwner' => $isOwner,
             // Typing and focus figures are the owner's own; only they and staff see them
             'showPersonalStats' => $isOwner || $isStaff,
+            // Only staff read the code here; showWorkspace has already checked this one manages the class
+            'submittedFiles' => $isStaff ? $session->submittedFileList() : [],
             'attemptNumber' => $attemptNumber === false ? null : $attemptNumber + 1,
             'attempts' => $attempts,
             'counting' => $counting,

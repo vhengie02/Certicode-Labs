@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Certificate;
 use App\Models\SchoolClass;
+use Illuminate\Support\Str;
 
 class CertificateController extends Controller
 {
@@ -24,7 +25,14 @@ class CertificateController extends Controller
         $result = Certificate::issueFor($class, $user);
         $certificate = $result['certificate'];
         if (! $certificate) {
-            return redirect()->back()->with('error', "You must meet the course passing threshold ({$result['threshold']}%) to claim a certificate. Current: {$result['progress']['percent']}%.");
+            $progress = $result['progress'];
+            $passScore = $class->lab_pass_score ?? SchoolClass::DEFAULT_LAB_PASS_SCORE;
+            $message = "You need {$passScore}% or more on {$result['threshold']}% of this class's labs to claim a certificate. You've passed {$progress['passed']} of {$progress['total']}.";
+            if ($progress['under_review'] > 0) {
+                $message .= " Your instructor still has to review {$progress['under_review']} ".Str::plural('grade', $progress['under_review']).'.';
+            }
+
+            return redirect()->back()->with('error', $message);
         }
 
         if ($result['created']) {

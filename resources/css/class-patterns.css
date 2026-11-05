@@ -1,0 +1,80 @@
+/* Pattern behind a class card. Each pattern draws from three colours, and each has a light and a
+   dark set. The fade keeps the full pattern above the title, so text never sits on it. */
+.class-pattern {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    mask-image: linear-gradient(to bottom, #000 52px, rgb(0 0 0 / 0.06) 108px, rgb(0 0 0 / 0.025));
+}
+
+.class-pattern .cp-paper { fill: var(--cp-paper); }
+.class-pattern .cp-ink { fill: var(--cp-ink); }
+.class-pattern .cp-accent { fill: var(--cp-accent); }
+.class-pattern .cp-line { fill: none; stroke: var(--cp-ink); }
+.class-pattern .cp-thread { fill: none; stroke: var(--cp-accent); }
+.class-pattern .cp-ring-ink { fill: none; stroke: var(--cp-ink); }
+.class-pattern .cp-ring-paper { fill: none; stroke: var(--cp-paper); }
+.class-pattern .cp-rim { fill: none; stroke: var(--cp-paper); stroke-width: 2.5; }
+
+.class-pattern--contour { --cp-paper: #e6f7ef; --cp-ink: #059669; --cp-accent: #059669; }
+.class-pattern--dots { --cp-paper: #eef1f5; --cp-ink: #1f2937; --cp-accent: #1f2937; }
+.class-pattern--chevrons { --cp-paper: #f5f5f4; --cp-ink: #d3d1cd; --cp-accent: #d3d1cd; }
+.class-pattern--moons { --cp-paper: #f5ecdc; --cp-ink: #1d2340; --cp-accent: #c08a3e; }
+.class-pattern--triangles { --cp-paper: #ffffff; --cp-ink: #171717; --cp-accent: #171717; }
+.class-pattern--glyphs { --cp-paper: #efe8de; --cp-ink: #ffffff; --cp-accent: #ffffff; }
+.class-pattern--scallops { --cp-paper: #f6f0e4; --cp-ink: #14264f; --cp-accent: #8fb0d6; }
+.class-pattern--harlequin { --cp-paper: #f8efe0; --cp-ink: #5c1119; --cp-accent: #f8efe0; }
+
+.dark .class-pattern--contour { --cp-paper: #0e1f18; --cp-ink: #3ecf8e; --cp-accent: #3ecf8e; }
+.dark .class-pattern--dots { --cp-paper: #12161c; --cp-ink: #9aa7b8; --cp-accent: #9aa7b8; }
+.dark .class-pattern--chevrons { --cp-paper: #1e1e1d; --cp-ink: #3b3a37; --cp-accent: #3b3a37; }
+.dark .class-pattern--moons { --cp-paper: #232a4a; --cp-ink: #10142a; --cp-accent: #d9a55a; }
+.dark .class-pattern--triangles { --cp-paper: #101010; --cp-ink: #8c8c8c; --cp-accent: #8c8c8c; }
+.dark .class-pattern--glyphs { --cp-paper: #211c16; --cp-ink: #6f604e; --cp-accent: #6f604e; }
+.dark .class-pattern--scallops { --cp-paper: #0c1730; --cp-ink: #2b4a80; --cp-accent: #8fb0d6; }
+.dark .class-pattern--harlequin { --cp-paper: #1f0a0e; --cp-ink: #5c1620; --cp-accent: #8a3a44; }
+
+/* High contrast mode flattens the colours, so the pattern would only get in the way */
+@media (forced-colors: active) {
+    .class-pattern { display: none; }
+}
+
+/* A picture chosen by the instructor. It sits above the title and fades out into the card, so it
+   works on either theme. */
+.class-card-photo {
+    position: absolute;
+    inset: 0 0 auto;
+    width: 100%;
+    height: 116px;
+    object-fit: cover;
+    pointer-events: none;
+    mask-image: linear-gradient(to bottom, #000 52px, transparent);
+}
+.dark .class-card-photo { filter: brightness(0.85); }
+
+/* Background choices in the class form */
+.class-background-option { position: relative; display: block; cursor: pointer; }
+.class-background-swatch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 4rem;
+    overflow: hidden;
+    border: 1px solid var(--color-border-hairline);
+    border-radius: 0.5rem;
+    background-color: var(--color-surface-elevated);
+    color: var(--color-text-muted);
+}
+.class-background-swatch .class-pattern { mask-image: none; }
+.class-background-swatch img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.class-background-swatch img[hidden] { display: none; }
+.class-background-name { display: block; margin-top: 0.375rem; font-size: 0.75rem; color: var(--color-text-muted); }
+.class-background-option:has(:checked) .class-background-swatch,
+.class-background-option:has(:focus-visible) .class-background-swatch {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+}
+.class-background-option:has(:checked) .class-background-name { color: var(--color-text); font-weight: 600; }

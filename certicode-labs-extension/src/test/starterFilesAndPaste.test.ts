@@ -1,4 +1,4 @@
-import { fakeSecrets, files, memento, shown, stubState } from './vscodeStub';
+import { fakeSecrets, files, memento, shown, stubState, vscodeStub } from './vscodeStub';
 import { SidebarProvider } from '../sidebarProvider';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { test, beforeEach } = require('node:test');
@@ -74,15 +74,15 @@ test('switching sessions forgets the previous lab\'s starter baseline', async ()
 /**
  * Feed the provider one big insertion, as VS Code reports it, and return the telemetry sent.
  */
-async function insert(text: string, { dirty = true } = {}) {
+async function insert(text: string, { dirty = true, starterFiles = LAB1 } = {}) {
     const p = provider();
     const sent: any[] = [];
     p._sessionId = 1;
-    p._lastSessionData = { laboratory: { starter_files: LAB1 } };
+    p._lastSessionData = { laboratory: { starter_files: starterFiles } };
     p.recordActivity = () => undefined;
     p.sendTelemetry = async (type: string, payload: any) => { sent.push({ type, payload }); };
     p.handleDocumentChange({
-        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: dirty },
+        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: dirty, getText: () => '' },
         contentChanges: [{ text }],
         reason: undefined,
     });
@@ -105,4 +105,382 @@ test('a reload from disk is not flagged as a paste', async () => {
 test('text that came from the clipboard is still flagged', async () => {
     stubState.clipboard = '  public static void main(String[] args) {\n\n  }';
     assert.strictEqual((await insert(SNIPPET)).length, 1);
+});
+
+const MULTILINE_STARTER = [{
+    name: 'Strings.java',
+    content: 'public class Strings {\n    public static String reverse(String s) {\n        return s;\n    }\n}\n',
+    is_primary: true,
+}];
+
+test('starter code with Windows line endings is not flagged, with no snapshot taken', async () => {
+    const crlf = MULTILINE_STARTER[0].content.replace(/\n/g, '\r\n');
+    stubState.clipboard = crlf;
+    assert.strictEqual((await insert(crlf, { starterFiles: MULTILINE_STARTER })).length, 0);
+});
+
+test('a paste that only starts like the starter code is still flagged', async () => {
+    const solution = MULTILINE_STARTER[0].content.replace('return s;', 'return new StringBuilder(s).reverse().toString();');
+    stubState.clipboard = solution;
+    assert.strictEqual((await insert(solution, { starterFiles: MULTILINE_STARTER })).length, 1);
+});
+
+test('a long paste reaches the instructor whole', async () => {
+    const longPaste = 'int value = 1;\n'.repeat(400);
+    stubState.clipboard = longPaste;
+    const [flag] = await insert(longPaste);
+    assert.strictEqual(flag.payload.snippet, longPaste);
+});
+
+const SOLUTION = 'class Main {\n'
+    + Array.from({ length: 12 }, (_, i) => `    int value${i} = compute(${i});`).join('\n')
+    + '\n}\n';
+
+/** A provider whose telemetry is captured instead of sent. */
+function recording(state = memento()) {
+    const p = provider(state);
+    const sent: any[] = [];
+    p._sessionId = 1;
+    p._lastSessionData = { laboratory: { starter_files: LAB1 } };
+    p.sendTelemetry = async (type: string, payload: any) => { sent.push({ type, payload }); };
+    return { p, sent };
+}
+
+async function pasteWithChat(paste: string, chat: string) {
+    const { p, sent } = recording();
+    p.recordActivity = () => undefined;
+    p._recentChatSnippets = [chat];
+    stubState.clipboard = paste;
+    p.handleDocumentChange({
+        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: true, getText: () => '' },
+        contentChanges: [{ text: paste }],
+        reason: undefined,
+    });
+    await new Promise(r => setTimeout(r, 10));
+    return sent.filter(s => s.type === 'paste_anomaly');
+}
+
+/** An open document that the tests edit the way VS Code does. */
+function openDocument(path: string, text: string) {
+    const doc: any = {
+        uri: { scheme: 'file', fsPath: path, toString: () => `file://${path}` },
+        fileName: path,
+        isDirty: true,
+        text,
+        getText: () => doc.text,
+    };
+    return doc;
+}
+
+/** Replace part of a document, firing the change event a paste or a cut fires. */
+function edit(p: any, doc: any, rangeOffset: number, rangeLength: number, text: string) {
+    doc.text = doc.text.slice(0, rangeOffset) + text + doc.text.slice(rangeOffset + rangeLength);
+    p.handleDocumentChange({ document: doc, contentChanges: [{ text, rangeOffset, rangeLength }], reason: undefined });
+}
+
+function pasteRecorder(labFiles: string[] = ['Main.java', 'Helper.java']) {
+    const { p, sent } = recording();
+    p.recordActivity = () => undefined;
+    p._lastSessionData = { laboratory: { starter_files: labFiles.map(name => ({ name, content: '' })) } };
+    p._starterFileSnapshots = new Map(labFiles.map(name => [name, '']));
+    const flagged = async () => {
+        await new Promise(r => setTimeout(r, 10));
+        return sent.filter(s => s.type === 'paste_anomaly');
+    };
+    return { p, flagged };
+}
+
+const OWN_METHOD = 'int total(int a, int b) {\n    return a + b;\n}\n';
+
+test('cutting a method and pasting it lower in the same file is not flagged', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}int other;\n}\n`);
+    p.rememberDocumentText(doc);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, doc, 'class Main {\n'.length, OWN_METHOD.length, '');
+    edit(p, doc, doc.text.indexOf('}'), 0, OWN_METHOD);
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('copying a method within a file is not flagged, even re-indented', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}}\n`);
+    p.rememberDocumentText(doc);
+    const indented = OWN_METHOD.replace(/^/gm, '        ');
+    stubState.clipboard = indented;
+
+    edit(p, doc, doc.text.lastIndexOf('}'), 0, indented);
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('moving a method from one lab file to another is not flagged', async () => {
+    const { p, flagged } = pasteRecorder();
+    const main = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}}\n`);
+    const helper = openDocument('/workspace/Helper.java', 'class Helper {\n}\n');
+    p.rememberDocumentText(main);
+    p.rememberDocumentText(helper);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, main, 'class Main {\n'.length, OWN_METHOD.length, '');
+    edit(p, helper, 'class Helper {\n'.length, 0, OWN_METHOD);
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('code from a file dropped into the folder is still flagged', async () => {
+    const { p, flagged } = pasteRecorder(['Main.java']);
+    const main = openDocument('/workspace/Main.java', 'class Main {\n}\n');
+    const dropped = openDocument('/workspace/Solution.java', `class Solution {\n${OWN_METHOD}}\n`);
+    p.rememberDocumentText(main);
+    p.rememberDocumentText(dropped);
+    vscodeStub.workspace.textDocuments.push(main, dropped);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, dropped, 'class Solution {\n'.length, OWN_METHOD.length, '');
+    edit(p, main, 'class Main {\n'.length, 0, OWN_METHOD);
+    vscodeStub.workspace.textDocuments.length = 0;
+
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('code from outside is flagged the first time, and moving it afterwards is not', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', 'class Main {\n}\n');
+    p.rememberDocumentText(doc);
+    stubState.clipboard = OWN_METHOD;
+
+    edit(p, doc, 'class Main {\n'.length, 0, OWN_METHOD);
+    assert.strictEqual((await flagged()).length, 1);
+
+    edit(p, doc, doc.text.lastIndexOf('}'), 0, OWN_METHOD);
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('a block cut in one attempt does not excuse a paste in the next', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', `class Main {\n${OWN_METHOD}}\n`);
+    p.rememberDocumentText(doc);
+    stubState.clipboard = OWN_METHOD;
+    edit(p, doc, 'class Main {\n'.length, OWN_METHOD.length, '');
+
+    p._removedBlocks = [];
+    edit(p, doc, 'class Main {\n'.length, 0, OWN_METHOD);
+
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('one chat line does not excuse a whole paste that contains it', async () => {
+    assert.strictEqual((await pasteWithChat(SOLUTION, '    int value3 = compute(3);'.trim())).length, 1);
+});
+
+test('pasting a teammate\'s snippet from chat is not flagged', async () => {
+    assert.strictEqual((await pasteWithChat(SOLUTION, SOLUTION.trim())).length, 0);
+});
+
+test('keeping files that differ from the starter code tells the instructor', async () => {
+    const { p, sent } = recording();
+    files.set('/workspace/Main.java', SOLUTION);
+    stubState.warningAnswer = 'Keep my files';
+
+    await p.provisionStarterFiles(LAB1);
+
+    assert.strictEqual(files.get('/workspace/Main.java'), SOLUTION);
+    const [kept] = sent.filter(s => s.type === 'starter_files_kept');
+    assert.deepStrictEqual(kept.payload.files, ['Main.java']);
+    assert.ok(kept.payload.changed_lines >= 12);
+});
+
+test('closing the dialog keeps the files too, so it also tells the instructor', async () => {
+    const { p, sent } = recording();
+    files.set('/workspace/Main.java', SOLUTION);
+    stubState.warningAnswer = undefined;
+
+    await p.provisionStarterFiles(LAB1);
+
+    assert.strictEqual(sent.filter(s => s.type === 'starter_files_kept').length, 1);
+});
+
+test('keeping a file with only a small difference is not reported', async () => {
+    const { p, sent } = recording();
+    files.set('/workspace/Main.java', 'class Main { /* lab 1, edited */ }');
+    stubState.warningAnswer = 'Keep my files';
+
+    await p.provisionStarterFiles(LAB1);
+
+    assert.strictEqual(sent.filter(s => s.type === 'starter_files_kept').length, 0);
+});
+
+/** A provider that has provisioned the lab, so it knows what is on disk. */
+async function provisioned() {
+    const recorded = recording();
+    await recorded.p.provisionStarterFiles(LAB1);
+    return recorded;
+}
+
+test('a lab file replaced on disk is reported', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', SOLUTION);
+    await p.reportExternalFileChanges();
+
+    const [change] = sent.filter(s => s.type === 'external_file_change');
+    assert.strictEqual(change.payload.file, 'Main.java');
+    assert.ok(change.payload.changed_lines >= 12);
+});
+
+test('the same outside change is reported once', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', SOLUTION);
+    await p.reportExternalFileChanges();
+    await p.reportExternalFileChanges();
+
+    assert.strictEqual(sent.filter(s => s.type === 'external_file_change').length, 1);
+});
+
+test('saving from the editor is not an outside change', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', SOLUTION);
+    p.rememberSavedFile({ fileName: '/workspace/Main.java', getText: () => SOLUTION });
+    await p.reportExternalFileChanges();
+
+    assert.strictEqual(sent.filter(s => s.type === 'external_file_change').length, 0);
+});
+
+test('saving a different file with a similar name leaves the lab file alone', async () => {
+    const { p } = await provisioned();
+
+    p.rememberSavedFile({ fileName: '/workspace/NotMain.java', getText: () => SOLUTION });
+
+    assert.strictEqual(p._starterDiskTexts.get('Main.java'), LAB1[0].content);
+});
+
+test('a small outside change is not reported', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', 'class Main { /* lab 1, edited */ }');
+    await p.reportExternalFileChanges();
+
+    assert.strictEqual(sent.filter(s => s.type === 'external_file_change').length, 0);
+});
+
+test('submitting sends pending typing figures and the latest diff first', async () => {
+    const { p, sent } = await provisioned();
+    const order: string[] = [];
+    p.computeAndSyncDiffs = async () => { order.push('diff'); };
+    p._totalKeystrokes = 250;
+    p._currentWpm = 30;
+    p._wpmSyncTimer = setTimeout(() => assert.fail('the pending sync should have been cancelled'), 5);
+
+    await p.syncActivityBeforeSubmit();
+    await new Promise(r => setTimeout(r, 10));
+
+    assert.deepStrictEqual(order, ['diff']);
+    const [typing] = sent.filter(s => s.type === 'wpm_update');
+    assert.strictEqual(typing.payload.keystroke_count, 250);
+});
+
+test('a reload carries on from the server\'s keystroke count', async () => {
+    const p = provider();
+    p._sessionId = 1;
+    p._filesGenerated = true;
+    p.warnIfOutdated = () => undefined;
+    p.makeRequest = async () => ({ status: 200, body: JSON.stringify({ keystroke_count: 800 }) });
+
+    await p.syncSessionState();
+    assert.strictEqual(p._totalKeystrokes, 800);
+
+    p._totalKeystrokes = 900;
+    await p.syncSessionState();
+    assert.strictEqual(p._totalKeystrokes, 900);
+});
+
+/** A window with no folder open, where opened documents live in `docs` by URI. */
+function withNoFolder() {
+    const docs = new Map<string, { uri: any; text: string; getText(): string }>();
+    const opened: any[] = [];
+    const { workspace, window } = vscodeStub;
+    const saved = {
+        workspaceFolders: workspace.workspaceFolders,
+        openTextDocument: workspace.openTextDocument,
+        applyEdit: workspace.applyEdit,
+        showTextDocument: window.showTextDocument,
+    };
+    workspace.workspaceFolders = undefined;
+    workspace.openTextDocument = async (uri: any) => {
+        const key = uri.toString();
+        if (!docs.has(key)) {
+            docs.set(key, { uri, text: '', getText() { return this.text; } });
+        }
+        return docs.get(key);
+    };
+    workspace.applyEdit = async (edit: any) => {
+        for (const { uri, text } of edit.inserts) {
+            docs.get(uri.toString())!.text += text;
+        }
+        return true;
+    };
+    window.showTextDocument = async (doc: any) => { opened.push(doc); };
+    return {
+        docs,
+        opened,
+        restore() {
+            workspace.workspaceFolders = saved.workspaceFolders;
+            workspace.openTextDocument = saved.openTextDocument;
+            workspace.applyEdit = saved.applyEdit;
+            window.showTextDocument = saved.showTextDocument;
+        },
+    };
+}
+
+const STRINGS = [{ name: 'src/Strings.java', content: 'public class Strings {}\n', is_primary: true }];
+
+test('with no folder open the starter file opens under its own name, not as Untitled-1', async () => {
+    const editor = withNoFolder();
+    try {
+        const p = provider();
+        p._sessionId = 1;
+        await p.provisionStarterFiles(STRINGS);
+
+        const [doc] = editor.opened;
+        assert.strictEqual(doc.uri.scheme, 'untitled');
+        assert.strictEqual(doc.uri.fsPath, 'Strings.java');
+        assert.strictEqual(doc.getText(), STRINGS[0].content);
+    } finally {
+        editor.restore();
+    }
+});
+
+test('with no folder open the session sync does not reopen the starter file', async () => {
+    const editor = withNoFolder();
+    try {
+        const p = provider();
+        p._sessionId = 1;
+        await p.provisionStarterFiles(STRINGS);
+
+        assert.strictEqual(p._filesGenerated, true);
+    } finally {
+        editor.restore();
+    }
+});
+
+test('opening the starter file again keeps what the student wrote', async () => {
+    const editor = withNoFolder();
+    try {
+        const p = provider();
+        p._sessionId = 1;
+        await p.provisionStarterFiles(STRINGS);
+        editor.opened[0].text = 'public class Strings { int myWork; }';
+
+        await p.openUnsavedStarterFile(STRINGS[0]);
+
+        assert.strictEqual(editor.docs.size, 1);
+        assert.strictEqual(editor.opened[1].getText(), 'public class Strings { int myWork; }');
+    } finally {
+        editor.restore();
+    }
 });

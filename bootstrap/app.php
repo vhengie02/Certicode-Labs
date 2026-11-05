@@ -20,6 +20,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        // Pasted code is evidence for the instructor: keep its indentation and exact length
+        $middleware->trimStrings(except: ['payload.snippet']);
         // First, so its numbers include session start and auth lookups
         $middleware->prepend(ServerTiming::class);
         $middleware->appendToGroup('web', PreventAuthenticatedCaching::class);

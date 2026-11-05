@@ -28,6 +28,13 @@ class ClassController extends Controller
 {
     use Concerns\AuthorizesClassAccess;
 
+    private const CARD_BACKGROUND_MESSAGES = [
+        'card_image.max' => 'That picture is over 2 MB. Please choose a smaller one.',
+        'card_image.uploaded' => 'That picture is over 2 MB. Please choose a smaller one.',
+        'card_image.image' => 'Use a JPG, PNG or WebP picture.',
+        'card_image.mimes' => 'Use a JPG, PNG or WebP picture.',
+    ];
+
     /**
      * Display a listing of classes.
      */
@@ -95,8 +102,12 @@ class ClassController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'passing_threshold' => 'nullable|integer|min:1|max:100',
+            'lab_pass_score' => 'nullable|integer|min:1|max:100',
             'scheduled_end_date' => 'nullable|date',
-        ]);
+            ...$this->cardBackgroundRules(),
+        ], self::CARD_BACKGROUND_MESSAGES);
+
+        $background = $this->cardBackgroundAttributes($request);
 
         // Generate unique 8-character code: CLASS-XXXX
         $code = 'CLASS-'.strtoupper(Str::random(6));
@@ -110,13 +121,102 @@ class ClassController extends Controller
             'code' => $code,
             'instructor_id' => (int) Auth::id(),
             'passing_threshold' => $validated['passing_threshold'] ?? 75,
+            'lab_pass_score' => $validated['lab_pass_score'] ?? SchoolClass::DEFAULT_LAB_PASS_SCORE,
             'scheduled_end_date' => DisplayTime::fromInput($validated['scheduled_end_date'] ?? null),
             'status' => 'active',
+            ...$background,
         ]);
 
         self::clearClassesCache((int) Auth::id());
 
-        return redirect()->route('classes.index')->with('success', 'Class created successfully with join code: '.$code);
+        return redirect()->route('classes.index')->with('success', 'Class created successfully.');
+    }
+
+    /**
+     * Validation for the background fields, shared by the create and edit forms.
+     */
+    private function cardBackgroundRules(): array
+    {
+        return [
+            'card_background' => ['nullable', Rule::in(['auto', 'picture', ...array_keys(SchoolClass::CARD_PATTERNS)])],
+            'card_image' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:'.SchoolClass::CARD_IMAGE_MAX_KB],
+        ];
+    }
+
+    /**
+     * What the background fields change on a class. A new picture wins over the radio buttons, so
+     * the form still works without JavaScript. Without the fields, nothing changes.
+     *
+     * @throws ValidationException
+     */
+    private function cardBackgroundAttributes(Request $request, ?SchoolClass $class = null): array
+    {
+        if ($request->hasFile('card_image')) {
+            if (! ModuleAttachment::storageIsDurable()) {
+                throw ValidationException::withMessages(['card_image' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
+            }
+
+            try {
+                $path = $request->file('card_image')->store(SchoolClass::CARD_IMAGE_DIRECTORY, ModuleAttachment::diskName());
+            } catch (\Throwable $e) {
+                report($e);
+                $path = false;
+            }
+
+            if ($path === false) {
+                throw ValidationException::withMessages(['card_image' => 'The picture could not be uploaded right now, so nothing was saved. Please try again.']);
+            }
+
+            return ['card_image_path' => $path, 'card_pattern' => null];
+        }
+
+        $choice = $request->input('card_background');
+        if ($choice === null) {
+            return [];
+        }
+
+        if ($choice === 'picture') {
+            if (! $class?->card_image_path) {
+                throw ValidationException::withMessages(['card_image' => 'Choose a picture to upload, or pick a pattern.']);
+            }
+
+            return [];
+        }
+
+        return ['card_image_path' => null, 'card_pattern' => $choice === 'auto' ? null : $choice];
+    }
+
+    /**
+     * A class card's picture, for anyone who can see the class. Cloud disks hand out a short-lived
+     * signed URL, since their bucket is private; local disks stream the file.
+     */
+    public function cardImage(int $class_id)
+    {
+        $class = SchoolClass::findOrFail($class_id);
+        $user = Auth::user();
+
+        if ($user->role === 'student') {
+            $canSee = $class->students()->where('users.id', $user->id)->whereIn('class_student.status', ['enrolled', 'invited'])->exists();
+            abort_unless($canSee, 403, 'You are not enrolled in this class.');
+        } else {
+            $this->authorizeClassManager($class);
+        }
+
+        $path = $class->card_image_path;
+        abort_unless($path, 404);
+
+        $disk = ModuleAttachment::disk();
+        $isLocal = config('filesystems.disks.'.ModuleAttachment::diskName().'.driver') === 'local';
+
+        if (! $isLocal && $disk->providesTemporaryUrls()) {
+            return redirect()->away($disk->temporaryUrl($path, now()->addMinutes(10)))
+                ->header('Cache-Control', 'private, max-age=300');
+        }
+
+        abort_unless($disk->exists($path), 404);
+
+        // The URL changes with the picture, so a day's caching can't show a stale one
+        return $disk->response($path, null, ['Cache-Control' => 'private, max-age=86400', 'X-Content-Type-Options' => 'nosniff']);
     }
 
     /**
@@ -186,10 +286,12 @@ class ClassController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'passing_threshold' => 'nullable|integer|min:1|max:100',
+            'lab_pass_score' => 'nullable|integer|min:1|max:100',
             'scheduled_end_date' => 'nullable|date',
             'status' => 'nullable|string|in:active,completed,closed',
             'instructor_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('role', 'instructor')],
-        ]);
+            ...$this->cardBackgroundRules(),
+        ], self::CARD_BACKGROUND_MESSAGES);
 
         $previousInstructorId = (int) $class->instructor_id;
         if (Auth::user()->role !== 'admin' || empty($validated['instructor_id'])) {
@@ -200,8 +302,16 @@ class ClassController extends Controller
             $validated['scheduled_end_date'] = DisplayTime::fromInput($validated['scheduled_end_date']);
         }
 
-        $class->update($validated);
+        $previousImage = $class->card_image_path;
+        $background = $this->cardBackgroundAttributes($request, $class);
+        unset($validated['card_background'], $validated['card_image']);
+
+        $class->update([...$validated, ...$background]);
         self::clearClassesCache((int) Auth::id());
+
+        if ($previousImage && $previousImage !== $class->card_image_path) {
+            ModuleAttachment::deletePath($previousImage);
+        }
 
         if (isset($validated['instructor_id']) && (int) $validated['instructor_id'] !== $previousInstructorId) {
             self::clearClassesCache($previousInstructorId);
@@ -247,6 +357,10 @@ class ClassController extends Controller
 
         $class->delete();
         self::clearClassesCache((int) Auth::id());
+
+        if ($class->card_image_path) {
+            ModuleAttachment::deletePath($class->card_image_path);
+        }
 
         return redirect()->route('classes.index')->with('success', 'Class deleted successfully.');
     }
@@ -857,6 +971,46 @@ class ClassController extends Controller
             ->get();
 
         return view('classes.telemetry-timeline', compact('session', 'logs', 'anomalies'));
+    }
+
+    /**
+     * Every integrity flag across the classes this user manages, newest first.
+     * Admins manage all classes, so they see every flag.
+     */
+    public function integrityFlags(Request $request)
+    {
+        $this->authorizeInstructor();
+
+        /** @var User $user */
+        $user = $request->user();
+        $classIds = $user->role === 'admin' ? null : $user->instructedClasses()->pluck('id');
+        $managed = fn () => Anomaly::query()->when(
+            $classIds !== null,
+            fn ($q) => $q->whereHas('labSession.laboratory.module', fn ($m) => $m->whereIn('class_id', $classIds))
+        );
+
+        $status = in_array($request->query('status'), ['open', 'resolved'], true) ? $request->query('status') : null;
+
+        $flags = $managed()
+            ->withoutSnapshotData()
+            ->when($status, fn ($q) => $q->where('resolved', $status === 'resolved'))
+            ->with(
+                'labSession:id,lab_id,user_id',
+                'labSession.user:id,name',
+                'labSession.laboratory:id,title,module_id',
+                'labSession.laboratory.module:id,class_id',
+                'labSession.laboratory.module.schoolClass:id,name',
+            )
+            ->latest()
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString();
+
+        $total = $managed()->count();
+        $open = $managed()->where('resolved', false)->count();
+        $counts = ['all' => $total, 'open' => $open, 'resolved' => $total - $open];
+
+        return view('classes.integrity-flags', compact('flags', 'status', 'counts'));
     }
 
     /**

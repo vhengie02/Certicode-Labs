@@ -6,7 +6,7 @@
 <div class="max-w-2xl mx-auto space-y-6">
     <x-page-header :back="route('classes.show', $class->id)" :back-label="$class->name" title="Class settings" />
 
-    <form action="{{ route('classes.update', $class->id) }}" method="POST" class="space-y-5">
+    <form action="{{ route('classes.update', $class->id) }}" method="POST" enctype="multipart/form-data" class="space-y-5">
         @csrf
         @method('PUT')
         @include('classes._form', ['class' => $class])

@@ -127,6 +127,77 @@ JAVA;
         $this->assertSame(0, $this->analysis()['flagged_pairs_count']);
     }
 
+    private function files(array $contents, string $main = 'TaskManager.java'): array
+    {
+        return ['submitted_files' => collect($contents)
+            ->map(fn ($content, $name) => ['name' => $name, 'content' => $content, 'is_primary' => $name === $main])
+            ->values()
+            ->all()];
+    }
+
+    public function test_a_copied_helper_file_is_flagged_when_the_main_files_are_untouched(): void
+    {
+        $this->submission($this->student('Ana'), self::STARTER, $this->files([
+            'TaskManager.java' => self::STARTER,
+            'Tasks.java' => self::SOLUTION,
+        ]));
+        $this->submission($this->student('Ben'), self::STARTER, $this->files([
+            'TaskManager.java' => self::STARTER,
+            'Tasks.java' => str_replace('tasks', 'items', self::SOLUTION),
+        ]));
+
+        $this->assertSame('high', $this->analysis()['flagged_pairs'][0]['risk'] ?? null);
+    }
+
+    public function test_the_order_files_came_in_does_not_change_the_score(): void
+    {
+        $other = 'class Other { int twice(int n) { int total = 0; while (n > 0) { total += 2; n--; } return total; } }';
+
+        $this->submission($this->student('Ana'), self::SOLUTION, $this->files(['TaskManager.java' => self::SOLUTION, 'Other.java' => $other]));
+        $this->submission($this->student('Ben'), self::SOLUTION, $this->files(['Other.java' => $other, 'TaskManager.java' => self::SOLUTION]));
+
+        $this->assertSame(100.0, (float) $this->analysis()['flagged_pairs'][0]['similarity']);
+    }
+
+    public function test_notes_are_not_compared_as_code(): void
+    {
+        $this->submission($this->student('Ana'), self::STARTER, $this->files([
+            'TaskManager.java' => self::STARTER,
+            'notes.txt' => 'First I read the lab and then I wrote down a plan for how the manager should work today',
+        ]));
+        $this->submission($this->student('Ben'), self::STARTER, $this->files([
+            'TaskManager.java' => self::STARTER,
+            'notes.txt' => 'My approach was simple because lists already keep their order so nothing else seemed needed here',
+        ]));
+
+        $analysis = $this->analysis();
+        $this->assertSame(0, $analysis['total_students_with_code']);
+        $this->assertSame(0, $analysis['flagged_pairs_count']);
+    }
+
+    public function test_every_starter_file_is_taken_out_of_the_match(): void
+    {
+        $helper = 'class Helper { static int clamp(int v, int low, int high) { if (v < low) { return low; } if (v > high) { return high; } return v; } }';
+        $this->lab->update(['starter_files' => [
+            ['name' => 'TaskManager.java', 'content' => self::STARTER, 'is_primary' => true, 'is_readonly' => false],
+            ['name' => 'Helper.java', 'content' => $helper, 'is_primary' => false, 'is_readonly' => false],
+        ]]);
+
+        $untouched = $this->files(['TaskManager.java' => self::STARTER, 'Helper.java' => $helper]);
+        $this->submission($this->student('Ana'), self::STARTER, $untouched);
+        $this->submission($this->student('Ben'), self::STARTER, $untouched);
+
+        $this->assertSame(0, $this->analysis()['flagged_pairs_count']);
+    }
+
+    public function test_a_submission_with_only_prose_files_is_compared_on_its_submitted_code(): void
+    {
+        $this->submission($this->student('Ana'), self::SOLUTION, $this->files(['solution.txt' => self::SOLUTION], 'solution.txt'));
+        $this->submission($this->student('Ben'), self::SOLUTION, $this->files(['solution.txt' => self::SOLUTION], 'solution.txt'));
+
+        $this->assertSame(1, $this->analysis()['flagged_pairs_count']);
+    }
+
     public function test_monitoring_page_reads_the_stored_report_instead_of_comparing_again(): void
     {
         $this->submission($this->student('Ana'), self::SOLUTION);

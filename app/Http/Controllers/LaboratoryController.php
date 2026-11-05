@@ -8,6 +8,7 @@ use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
 use App\Notifications\ClassActivityNotification;
+use App\Support\DisplayTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -55,11 +56,13 @@ class LaboratoryController extends Controller
             'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
             'availability_mode' => 'nullable|in:open,live',
+            'due_at' => 'nullable|date',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
             'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'rubric' => 'nullable|string|max:10000',
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
@@ -114,12 +117,15 @@ class LaboratoryController extends Controller
             'github_repo_template' => $validated['github_repo_template'] ?? null,
             'time_limit' => $validated['time_limit'],
             'max_attempts' => $validated['max_attempts'] ?? 1,
+            // Live labs run on a shared countdown, so only open labs have a due date
+            'due_at' => $availabilityMode === 'open' ? DisplayTime::fromInput($validated['due_at'] ?? null) : null,
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'live_status' => $availabilityMode === 'live' ? 'not_started' : 'active',
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            'rubric' => $validated['rubric'] ?? null,
             'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ]);
 
@@ -214,11 +220,13 @@ class LaboratoryController extends Controller
             'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
             'availability_mode' => 'nullable|in:open,live',
+            'due_at' => 'nullable|date',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
             'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'rubric' => 'nullable|string|max:10000',
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
@@ -266,6 +274,7 @@ class LaboratoryController extends Controller
 
         $availabilityMode = $validated['availability_mode'] ?? $laboratory->availability_mode ?? 'open';
         $liveDuration = $validated['live_duration_minutes'] ?? $laboratory->live_duration_minutes ?? $validated['time_limit'];
+        $dueAt = array_key_exists('due_at', $validated) ? DisplayTime::fromInput($validated['due_at']) : $laboratory->due_at;
 
         $updateData = [
             'title' => $validated['title'],
@@ -274,11 +283,14 @@ class LaboratoryController extends Controller
             'github_repo_template' => $validated['github_repo_template'] ?? $laboratory->github_repo_template,
             'time_limit' => $validated['time_limit'],
             'max_attempts' => $validated['max_attempts'] ?? $laboratory->max_attempts ?? 1,
+            'due_at' => $availabilityMode === 'open' ? $dueAt : null,
             'is_group_lab' => $request->has('is_group_lab'),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            // A request without the field keeps the saved rubric; the form sends it empty to clear it
+            'rubric' => array_key_exists('rubric', $validated) ? $validated['rubric'] : $laboratory->rubric,
             'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ];
 

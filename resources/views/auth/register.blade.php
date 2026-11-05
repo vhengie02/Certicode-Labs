@@ -33,24 +33,7 @@
     <form id="register-form" class="mt-8 space-y-5 cc-rise" style="--d:1" method="POST" action="{{ route('register.store') }}">
         @csrf
 
-        <div id="client-error" class="cc-notice cc-notice-error hidden" role="alert" tabindex="-1">
-            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-            <p id="client-error-message"></p>
-        </div>
-
-        @if ($errors->any())
-            <div class="cc-notice cc-notice-error" role="alert">
-                <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                <div>
-                    <p class="font-medium">Please fix the following:</p>
-                    <ul class="mt-1 space-y-0.5 text-[#fca5a5]">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            </div>
-        @endif
+        @include('auth.partials.notices', ['errorTitle' => 'Please fix the following:'])
 
         @include('auth.partials.role-cards')
 
@@ -160,8 +143,6 @@
         passwordInput.addEventListener('input', renderRules);
 
         document.getElementById('register-form').addEventListener('submit', (event) => {
-            const error = document.getElementById('client-error');
-            const message = document.getElementById('client-error-message');
             const confirmation = document.getElementById('password_confirmation').value;
 
             let problem = null;
@@ -173,9 +154,8 @@
 
             if (problem) {
                 event.preventDefault();
-                message.textContent = problem;
-                error.classList.remove('hidden');
-                error.focus();
+                window.showToast(problem, 'error');
+                passwordInput.focus();
             }
         });
     </script>

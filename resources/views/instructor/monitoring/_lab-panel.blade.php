@@ -38,7 +38,7 @@
                         <span class="text-xs text-[#888888]">left</span>
                         <x-info-tip align="right">Every student shares this one timer. Students who join late only get the time that's left, and every open workspace is submitted automatically when it reaches zero.</x-info-tip>
                     </div>
-                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? Every open student workspace will be submitted and graded.');">
+                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" data-confirm-title="End this live lab now?" data-confirm="Every open student workspace will be submitted and graded." data-confirm-action="End lab">
                         @csrf
                         <button type="submit" class="inline-flex items-center gap-2 h-10 px-3.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-300 hover:bg-red-500/20 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -176,7 +176,7 @@
         <div class="p-4 sm:p-5">
             <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                 Similar code
-                <x-info-tip>Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
+                <x-info-tip>Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Every submitted code file counts; notes and data files like .md, .txt and .json don't. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
             </dt>
             <dd class="mt-2 flex items-baseline gap-1.5">
                 <span class="cc-display text-3xl font-bold tabular-nums tracking-tight {{ $flaggedPairs > 0 ? 'text-red-400' : 'text-[#ededed]' }}" x-text="plagiarism.flagged_pairs_count ?? {{ (int) $flaggedPairs }}">{{ $flaggedPairs }}</span>
@@ -313,7 +313,7 @@
             </div>
         @else
             {{-- Column headings (desktop) --}}
-            <div class="hidden lg:grid lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_6rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
+            <div class="hidden lg:grid lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
                 <span>Student</span>
                 <span>Status</span>
                 <span>Tasks</span>
@@ -351,7 +351,7 @@
                     @endphp
                     <div class="roster-row group/row px-4 sm:px-5 py-3.5 transition-colors hover:bg-white/[0.02] {{ $openFlags > 0 ? 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.7)]' : '' }}"
                          x-show="showRow({{ $session->id }})" :style="{ order: rowOrder({{ $session->id }}) }">
-                        <div class="grid grid-cols-3 lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_6rem] items-center gap-x-4 gap-y-3">
+                        <div class="grid grid-cols-3 lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-x-4 gap-y-3">
                             {{-- Student --}}
                             <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 lg:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
                                 <span class="w-9 h-9 rounded-lg bg-[#232323] border border-[#2e2e2e] flex items-center justify-center text-xs font-semibold text-[#a3a3a3] shrink-0 transition-colors group-hover/row:border-[#3e3e3e]" aria-hidden="true">{{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}</span>
@@ -435,10 +435,14 @@
                                 </button>
                             </div>
 
-                            {{-- End / reopen --}}
-                            <div class="flex justify-end">
+                            {{-- Code / end / reopen --}}
+                            <div class="flex items-center justify-end gap-1">
+                                @if($session->status !== 'in_progress' && filled($session->submitted_code))
+                                    <a href="{{ route('sessions.show', $session->id) }}#submitted-files" title="Read the submitted files"
+                                       class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors active:scale-[0.98]">Code</a>
+                                @endif
                                 @if($session->status === 'in_progress')
-                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student\'s session? Their code is submitted and graded now.');">
+                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" data-confirm-title="End this student's session?" data-confirm="Their code is submitted and graded now." data-confirm-action="End session">
                                         @csrf
                                         <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-colors active:scale-[0.98]">End session</button>
                                     </form>
@@ -629,7 +633,23 @@
                                     <span class="font-medium text-[#ededed] truncate" x-text="side.name"></span>
                                     <span class="font-mono text-[#666666] shrink-0" x-text="(side.token_count || 0) + ' tokens · ' + (side.code_length || 0) + ' bytes'"></span>
                                 </div>
-                                <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-x-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="side.code_preview"></pre>
+                                <template x-if="compareFiles[side.session_id]">
+                                    <div class="divide-y divide-[#232323]">
+                                        <template x-for="(file, fileIdx) in compareFiles[side.session_id]" :key="fileIdx">
+                                            <div>
+                                                <p class="px-4 pt-3 font-mono text-xs text-[#888888] break-all" x-text="file.name"></p>
+                                                <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="file.content"></pre>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                                <template x-if="!compareFiles[side.session_id]">
+                                    <div>
+                                        <p class="px-4 pt-3 text-xs" :class="compareFiles[side.session_id] === false ? 'text-amber-300/90' : 'text-[#888888]'"
+                                           x-text="compareFiles[side.session_id] === false ? 'Full code unavailable. Showing the first 250 characters.' : 'Loading the full code…'"></p>
+                                        <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-x-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="side.code_preview"></pre>
+                                    </div>
+                                </template>
                             </div>
                         </template>
                     </div>
@@ -781,7 +801,7 @@
 
                                     <template x-if="item.metadata && item.metadata.snippet">
                                         <div class="rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]"
-                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5 }">
+                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5, cutOff: (item.metadata.pasted_length || 0) > item.metadata.snippet.length }">
                                             <span class="block px-3 pt-2 text-xs text-[#888888]">Pasted text</span>
                                             <pre class="px-3 pb-2.5 pt-1 text-xs font-mono text-amber-200/90 whitespace-pre-wrap break-words"
                                                  :class="long && !open ? 'max-h-24 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : 'max-h-96 overflow-y-auto'"
@@ -789,7 +809,11 @@
                                             <template x-if="long">
                                                 <button type="button" @click="open = !open"
                                                         class="block w-full px-3 py-1.5 border-t border-[#2e2e2e] text-left text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] transition-colors"
-                                                        x-text="open ? 'Show less' : 'Show more'"></button>
+                                                        x-text="open ? 'Show less' : 'See all'"></button>
+                                            </template>
+                                            <template x-if="cutOff">
+                                                <p class="px-3 py-1.5 border-t border-[#2e2e2e] text-xs text-amber-300/90"
+                                                   x-text="'Only the first ' + item.metadata.snippet.length + ' of ' + item.metadata.pasted_length + ' characters were saved.'"></p>
                                             </template>
                                         </div>
                                     </template>
@@ -820,6 +844,7 @@
 
                             <template x-if="student.status === 'completed'">
                                 <div class="space-y-5">
+                                    <a :href="`/sessions/${student.id}#submitted-files`" class="inline-flex text-sm font-medium text-[#3ecf8e] hover:underline underline-offset-2">Read the submitted files</a>
                                     <div class="grid grid-cols-3 gap-px rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#2e2e2e]">
                                         <div class="bg-[#0f0f0f] p-3.5">
                                             <p class="text-xs text-[#888888]">Final grade</p>
@@ -1112,6 +1137,7 @@ function instructorMonitor() {
         isScanningPlagiarism: false,
         isCompareModalOpen: false,
         selectedPair: null,
+        compareFiles: {}, // session id => its files, or false when they couldn't be loaded
         plagiarism: @json($plagiarismAnalysis),
 
         // null: a pair that isn't compared (teammates)
@@ -1132,6 +1158,19 @@ function instructorMonitor() {
         openCompareModal(pair) {
             this.selectedPair = pair;
             this.isCompareModalOpen = true;
+            this.loadCompareFiles(pair.student_a.session_id);
+            this.loadCompareFiles(pair.student_b.session_id);
+        },
+
+        // Fetched on every open: a reopened attempt can be submitted again
+        loadCompareFiles(sessionId) {
+            fetch(`/instructor/sessions/${sessionId}/files`, { headers: { Accept: 'application/json' } })
+                .then(res => {
+                    if (!res.ok) throw new Error('Could not load the files');
+                    return res.json();
+                })
+                .then(data => { this.compareFiles[sessionId] = data.files; })
+                .catch(() => { this.compareFiles[sessionId] = false; });
         },
 
         runPlagiarismScan() {
