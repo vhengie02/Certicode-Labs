@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-05
+
+- VS Code extension 1.8.1 is out. It stops the false paste flag when a lab's starter files open, and sends up to 10,000 characters of pasted text so instructors can read the whole paste.
+- The landing and sign-in pages have a new animated ASCII background, and the extension screenshots on the landing page are up to date.
+
+## 2026-11-04
+
+- The top navigation moved into a new animated Menu button at the top right. Dashboard, Classes, the admin pages, Settings and Sign out all live there now, and it shows who you are signed in as. It works the same on phones, closes with Esc or a click outside, and respects the "reduce motion" setting.
+- Settings has new sections. Date and time sets a time zone and date format for lab times and class end dates. Active sessions lists signed-in browsers and can sign out the others. Your data explains what Certicode records and downloads it as a JSON file. Delete account erases an account, and students with certificates or group labs keep their name and grades so those records still work.
+- Email notifications add an "All alert emails" switch, a Grades toggle for students, and opt-in camera flag emails for instructors.
+- Success, warning and error messages now pop up as notifications in the corner instead of banners across the top of the page. Errors stay until you close them; the rest fade on their own. The "waiting for instructor approval" reminder shows once per session instead of on every page.
+- Opening a lab's starter files no longer raises a false paste flag, on any extension version. The check missed starter code on Windows because of its line endings, and when VS Code had no folder open.
+- Instructors can read the whole pasted text on a paste flag, up to 10,000 characters, with "See all" on longer pastes. If only part was saved, the flag says how much. Older extension builds save only the first 100 characters.
+- Notifications show their full title and message instead of cutting them off.
+- Read notifications can now be deleted from the bell: tick the ones to remove, or "Select all read" to clear every read notification, including older ones the list doesn't show. Unread ones stay until they're read.
+- The notification panel now animates: it opens and closes smoothly, new notifications slide in, and deleted ones collapse away. This respects the "reduce motion" system setting.
+
 ## 2026-11-01
 
 - Reloading the VS Code window no longer kicks a student out of their lab. Extension 1.8.0 reconnects to the same attempt by itself, and the lab page waits a few seconds instead of leaving. Students on older builds still leave the lab when VS Code closes, about 30 seconds later than before.
