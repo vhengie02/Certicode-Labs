@@ -59,8 +59,20 @@
                        class="ui-input pr-9" aria-describedby="threshold-hint" @error('passing_threshold') aria-invalid="true" @enderror>
                 <span class="absolute inset-y-0 right-3 flex items-center text-sm text-[#888888] pointer-events-none" aria-hidden="true">%</span>
             </div>
-            <p id="threshold-hint" class="ui-hint">Share of the class's labs a student must complete to earn a certificate.</p>
+            <p id="threshold-hint" class="ui-hint">Share of the class's labs a student must pass to earn a certificate.</p>
             @error('passing_threshold') <p class="ui-error">{{ $message }}</p> @enderror
+        </div>
+
+        <div>
+            <label for="lab_pass_score" class="ui-label">Lab pass score</label>
+            <div class="relative">
+                <input type="number" name="lab_pass_score" id="lab_pass_score" min="1" max="100" inputmode="numeric"
+                       value="{{ old('lab_pass_score', $class?->lab_pass_score ?? \App\Models\SchoolClass::DEFAULT_LAB_PASS_SCORE) }}"
+                       class="ui-input pr-9" aria-describedby="lab-pass-score-hint" @error('lab_pass_score') aria-invalid="true" @enderror>
+                <span class="absolute inset-y-0 right-3 flex items-center text-sm text-[#888888] pointer-events-none" aria-hidden="true">%</span>
+            </div>
+            <p id="lab-pass-score-hint" class="ui-hint">Grade a student needs on a lab for it to count as passed.</p>
+            @error('lab_pass_score') <p class="ui-error">{{ $message }}</p> @enderror
         </div>
 
         <div>

@@ -7,6 +7,9 @@
 - Instructors get three new integrity flags. "Low typing effort" appears when a submission is much larger than what was typed or flagged as pasted. "External file change" appears when a lab file changes outside the editor. "Starter files kept" appears when a lab starts from existing files instead of the starter code. These are prompts to look closer: none of them changes a grade, and group labs skip the typing check.
 - VS Code extension 1.8.2 sends these signals, tightens how team chat excuses a paste, and sends the latest typing and diff figures just before a submit.
 - Keystroke counts no longer drop back to zero when a student reloads VS Code during a lab.
+- Submissions over 100,000 characters or 50 files are now refused with a clear message, and the attempt stays open. A long list of editor errors is shortened for the grader instead of failing the submission.
+- The pre-lab camera check now needs a real camera image. A check that sends no image or no face count no longer passes.
+- Certificates now depend on grades. A lab counts only when a student reaches the class's new Lab pass score, 75% by default and set in the class settings, and the passing threshold is now the share of labs a student must pass. Grades waiting for an instructor's review don't count until the instructor confirms them. The class page shows labs passed instead of labs done. Certificates already issued stay valid.
 
 ## 2026-11-04
 

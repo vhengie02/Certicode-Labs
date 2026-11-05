@@ -477,9 +477,9 @@ class LabSessionController extends Controller
         }
 
         $request->validate([
-            'code' => 'required|string',
+            'code' => 'required|string|max:'.self::MAX_SUBMISSION_CHARS,
             'language' => 'required|string',
-        ]);
+        ], ['code.max' => self::SUBMISSION_TOO_LONG]);
 
         $result = $this->sandboxService->execute($request->code, $request->language);
 
@@ -750,12 +750,44 @@ class LabSessionController extends Controller
     }
 
     /**
+     * Largest submission, in characters. Far above any lab's code, and small enough that the
+     * grader isn't pushed into a timeout, which would fall back to the weaker pattern checks.
+     */
+    private const MAX_SUBMISSION_CHARS = 100000;
+
+    private const MAX_SUBMISSION_FILES = 50;
+
+    private const SUBMISSION_TOO_LONG = 'This submission is too large to grade. Remove generated or unrelated code and try again.';
+
+    /** Diagnostics kept for the grading prompt, and how much of each field. */
+    private const MAX_DIAGNOSTICS = 50;
+
+    private const MAX_DIAGNOSTIC_FIELD_CHARS = 500;
+
+    private function validateSubmission(Request $request): void
+    {
+        $request->validate([
+            'code' => 'nullable|string|max:'.self::MAX_SUBMISSION_CHARS,
+            'files' => 'nullable|array|max:'.self::MAX_SUBMISSION_FILES,
+            'files.*.content' => 'nullable|string|max:'.self::MAX_SUBMISSION_CHARS,
+            'language' => 'required|string',
+            'diagnostics' => 'nullable|array',
+        ], [
+            'code.max' => self::SUBMISSION_TOO_LONG,
+            'files.max' => self::SUBMISSION_TOO_LONG,
+            'files.*.content.max' => self::SUBMISSION_TOO_LONG,
+        ]);
+    }
+
+    /**
      * Run an AI-based check progress check-in-progress assessment.
      */
     /**
      * Keep only IDE diagnostics that belong to the submitted files. The extension reports
      * diagnostics for every document VS Code knows about, and an error in an unrelated file
-     * (settings.json, another project) must not fail the submission's syntax gate.
+     * (settings.json, another project) must not fail the submission's syntax gate. They go into
+     * the grading prompt, so they are cut down here rather than refused: a badly broken file
+     * has many errors, and that must not stop the student submitting.
      */
     private function submittedFileDiagnostics(Request $request): array
     {
@@ -765,15 +797,21 @@ class LabSessionController extends Controller
             ->filter()
             ->map(fn ($name) => ltrim(str_replace('\\', '/', (string) $name), '/'));
 
-        if ($fileNames->isEmpty()) {
-            return array_values($diagnostics);
+        if ($fileNames->isNotEmpty()) {
+            $diagnostics = array_filter($diagnostics, function ($diag) use ($fileNames) {
+                $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
+
+                return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
+            });
         }
 
-        return array_values(array_filter($diagnostics, function ($diag) use ($fileNames) {
-            $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
-
-            return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
-        }));
+        return array_map(
+            fn (array $diag) => array_map(
+                fn ($value) => is_scalar($value) ? mb_substr((string) $value, 0, self::MAX_DIAGNOSTIC_FIELD_CHARS) : '',
+                Arr::only($diag, ['file', 'line', 'message', 'source'])
+            ),
+            array_slice(array_values($diagnostics), 0, self::MAX_DIAGNOSTICS)
+        );
     }
 
     public function checkProgress(Request $request, int $sessionId)
@@ -784,12 +822,7 @@ class LabSessionController extends Controller
             return $this->attemptClosedResponse($session);
         }
 
-        $request->validate([
-            'code' => 'nullable|string',
-            'files' => 'nullable|array',
-            'language' => 'required|string',
-            'diagnostics' => 'nullable|array',
-        ]);
+        $this->validateSubmission($request);
 
         return $this->whileGrading($session, fn () => $this->gradeProgress($request, $session));
     }
@@ -874,12 +907,7 @@ class LabSessionController extends Controller
             return $this->attemptClosedResponse($session);
         }
 
-        $request->validate([
-            'code' => 'nullable|string',
-            'files' => 'nullable|array',
-            'language' => 'required|string',
-            'diagnostics' => 'nullable|array',
-        ]);
+        $this->validateSubmission($request);
 
         return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
     }
@@ -1803,7 +1831,7 @@ class LabSessionController extends Controller
         $session = LabSession::findOrFail($sessionId);
 
         $status = $request->input('status', 'granted'); // granted, denied, blocked
-        $faceCount = (int) $request->input('face_count', 1);
+        $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
         $imageBase64 = $request->input('image_base64');
 
         if ($status === 'denied' || $status === 'blocked') {
@@ -1856,6 +1884,10 @@ class LabSessionController extends Controller
             ], 422);
         }
 
+        if (! WebcamSnapshot::decode($imageBase64)) {
+            return $this->unreadableCameraFrameResponse();
+        }
+
         // Successfully verified. The reference frame isn't kept: nothing reads it, and a
         // webcam picture of a student who passed has no place in storage.
         TelemetryLog::create([
@@ -1887,7 +1919,7 @@ class LabSessionController extends Controller
         $this->authorizeLabViewer($lab);
 
         $status = $request->input('status', 'granted'); // granted, denied, blocked
-        $faceCount = (int) $request->input('face_count', 1);
+        $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
 
         if ($status === 'denied' || $status === 'blocked') {
             return response()->json([
@@ -1916,6 +1948,10 @@ class LabSessionController extends Controller
             ], 422);
         }
 
+        if (! WebcamSnapshot::decode($request->input('image_base64'))) {
+            return $this->unreadableCameraFrameResponse();
+        }
+
         LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
 
         return response()->json([
@@ -1923,5 +1959,19 @@ class LabSessionController extends Controller
             'verified' => true,
             'message' => 'Camera permission and AI presence verified. Workspace unlocked.',
         ]);
+    }
+
+    /**
+     * Faces are counted in the browser, so the count is only a claim. A check must at least
+     * come with the real camera frame it was made on.
+     */
+    private function unreadableCameraFrameResponse(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'unreadable_camera_frame',
+            'message' => 'Your camera image could not be read. Please try again.',
+        ], 422);
     }
 }

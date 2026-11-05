@@ -13,18 +13,22 @@ class SchoolClass extends Model
 
     protected $table = 'school_classes';
 
+    public const DEFAULT_LAB_PASS_SCORE = 75;
+
     protected $fillable = [
         'name',
         'code',
         'instructor_id',
         'description',
         'passing_threshold',
+        'lab_pass_score',
         'scheduled_end_date',
         'status',
     ];
 
     protected $casts = [
         'passing_threshold' => 'integer',
+        'lab_pass_score' => 'integer',
         'scheduled_end_date' => 'datetime',
     ];
 
@@ -114,16 +118,61 @@ class SchoolClass extends Model
     }
 
     /**
+     * Every laboratory in the modules of this class.
+     */
+    private function allLaboratoryIds(): array
+    {
+        $labIds = [];
+        foreach ($this->modules as $module) {
+            $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
+        }
+
+        return array_unique($labIds);
+    }
+
+    /**
+     * Where a student stands for the certificate. A lab counts once an attempt reaches the
+     * class's lab pass score. A grade still waiting for the instructor doesn't count yet:
+     * it comes from pattern checks, which can't tell working code from code that only names
+     * the right things. Not cached, because a grade change must show at once.
+     *
+     * @return array{passed: int, total: int, percent: int|float, under_review: int}
+     */
+    public function certificateProgress(User $student): array
+    {
+        $labIds = $this->allLaboratoryIds();
+        $attempts = LabSession::where('user_id', $student->id)
+            ->where('status', 'completed')
+            ->whereIn('lab_id', $labIds)
+            ->get(['id', 'lab_id', 'performance_score', 'instructor_grade_override', 'ai_grade_summary']);
+
+        $passScore = $this->lab_pass_score ?? self::DEFAULT_LAB_PASS_SCORE;
+        $passed = $attempts
+            ->filter(fn (LabSession $attempt) => ! $attempt->needsGradeReview() && $attempt->effective_score >= $passScore)
+            ->pluck('lab_id')
+            ->unique();
+        $underReview = $attempts
+            ->filter(fn (LabSession $attempt) => $attempt->needsGradeReview())
+            ->pluck('lab_id')
+            ->unique()
+            ->diff($passed);
+
+        $progress = LabSession::progressOver($labIds, $passed->flip()->all());
+
+        return [
+            'passed' => $progress['completed'],
+            'total' => $progress['total'],
+            'percent' => $progress['percent'],
+            'under_review' => $underReview->count(),
+        ];
+    }
+
+    /**
      * Calculate aggregate student progress for the class.
      */
     public function getStudentProgress(User $student, ?array $completedLabIds = null)
     {
-        $labIds = [];
-        // Gather all laboratory IDs associated with the modules of this class
-        foreach ($this->modules as $module) {
-            $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
-        }
-        $labIds = array_unique($labIds);
+        $labIds = $this->allLaboratoryIds();
         $totalLabs = count($labIds);
 
         if ($totalLabs === 0) {

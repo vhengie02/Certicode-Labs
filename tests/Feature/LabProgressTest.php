@@ -96,8 +96,8 @@ class LabProgressTest extends TestCase
         $page = $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertOk();
         $gate = Certificate::issueFor($this->class->fresh(), $this->student)['progress'];
 
-        $this->assertSame(1, $gate['completed']);
-        $page->assertSee("{$gate['completed']} of {$gate['total']} labs done");
+        $this->assertSame(1, $gate['passed']);
+        $page->assertSee("{$gate['passed']} of {$gate['total']} labs passed");
     }
 
     public function test_reopening_a_completed_session_drops_the_cached_progress()

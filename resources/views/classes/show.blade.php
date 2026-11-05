@@ -9,6 +9,7 @@
     $enrolled = $class->students->filter(fn ($s) => $s->pivot->status === 'enrolled');
     $invited = $class->students->filter(fn ($s) => $s->pivot->status === 'invited');
     $threshold = $class->passing_threshold ?? 75;
+    $labPassScore = $class->lab_pass_score ?? \App\Models\SchoolClass::DEFAULT_LAB_PASS_SCORE;
     $isEnded = $class->isEnded();
 @endphp
 
@@ -38,7 +39,7 @@
             </div>
         @endif
         <div><span class="text-[#888888]">Instructor</span> <span class="text-[#ededed]">{{ $class->instructor->name ?? 'Unassigned' }}</span></div>
-        <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}%</span></div>
+        <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}% of labs at {{ $labPassScore }}% or more</span></div>
         @if ($class->scheduled_end_date)
             <div><span class="text-[#888888]">{{ $isEnded ? 'Ended' : 'Ends' }}</span> <span class="text-[#ededed]">{{ \App\Support\DisplayTime::format($class->scheduled_end_date, true) }}</span></div>
         @endif
@@ -89,7 +90,7 @@
         <aside class="space-y-6">
             @if (!$isStaff)
                 @php
-                    $progress = $class->getStudentProgress($user, $completedLabIds ?? null);
+                    $progress = $class->certificateProgress($user);
                     $certificate = $existingCertificate ?? null;
                     $canClaim = $progress['total'] > 0 && $progress['percent'] >= $threshold;
                 @endphp
@@ -98,11 +99,14 @@
                         <h2 id="progress-heading" class="ui-card-title">Your progress</h2>
                         <span class="cc-display text-2xl font-bold tabular-nums text-[#ededed]">{{ $progress['percent'] }}%</span>
                     </div>
-                    <div class="relative mt-4 h-2 rounded-full bg-[#232323]" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $progress['percent'] }}" aria-label="Labs done">
+                    <div class="relative mt-4 h-2 rounded-full bg-[#232323]" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $progress['percent'] }}" aria-label="Labs passed">
                         <div class="h-2 rounded-full bg-[#3ecf8e] transition-all duration-500" style="width: {{ $progress['percent'] }}%"></div>
                         <span class="absolute -top-1 h-4 w-0.5 rounded bg-[#ededed]/60" style="left: {{ $threshold }}%" title="Pass mark: {{ $threshold }}%" aria-hidden="true"></span>
                     </div>
-                    <p class="mt-3 text-sm text-[#a3a3a3]">{{ $progress['completed'] }} of {{ $progress['total'] }} labs done. You need {{ $threshold }}% for a certificate.</p>
+                    <p class="mt-3 text-sm text-[#a3a3a3]">{{ $progress['passed'] }} of {{ $progress['total'] }} labs passed at {{ $labPassScore }}% or more. You need {{ $threshold }}% of labs for a certificate.</p>
+                    @if ($progress['under_review'] > 0)
+                        <p class="mt-1 text-sm text-[#a3a3a3]">{{ $progress['under_review'] }} {{ \Illuminate\Support\Str::plural('grade', $progress['under_review']) }} waiting for your instructor's review.</p>
+                    @endif
 
                     <div class="mt-5">
                         @if ($certificate)
@@ -113,12 +117,12 @@
                                 <button type="submit" class="ui-btn ui-btn-primary w-full">Claim your certificate</button>
                             </form>
                         @else
-                            @php $labsNeeded = max(0, (int) ceil($progress['total'] * $threshold / 100) - $progress['completed']); @endphp
+                            @php $labsNeeded = max(0, (int) ceil($progress['total'] * $threshold / 100) - $progress['passed']); @endphp
                             <p class="rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 text-sm text-[#888888]">
                                 @if ($progress['total'] === 0)
                                     Certificates unlock once this class has labs.
                                 @else
-                                    {{ $labsNeeded }} more {{ \Illuminate\Support\Str::plural('lab', $labsNeeded) }} to unlock your certificate.
+                                    Pass {{ $labsNeeded }} more {{ \Illuminate\Support\Str::plural('lab', $labsNeeded) }} to unlock your certificate.
                                 @endif
                             </p>
                         @endif

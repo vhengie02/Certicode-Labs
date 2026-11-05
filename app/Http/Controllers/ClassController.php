@@ -95,6 +95,7 @@ class ClassController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'passing_threshold' => 'nullable|integer|min:1|max:100',
+            'lab_pass_score' => 'nullable|integer|min:1|max:100',
             'scheduled_end_date' => 'nullable|date',
         ]);
 
@@ -110,6 +111,7 @@ class ClassController extends Controller
             'code' => $code,
             'instructor_id' => (int) Auth::id(),
             'passing_threshold' => $validated['passing_threshold'] ?? 75,
+            'lab_pass_score' => $validated['lab_pass_score'] ?? SchoolClass::DEFAULT_LAB_PASS_SCORE,
             'scheduled_end_date' => DisplayTime::fromInput($validated['scheduled_end_date'] ?? null),
             'status' => 'active',
         ]);
@@ -186,6 +188,7 @@ class ClassController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'passing_threshold' => 'nullable|integer|min:1|max:100',
+            'lab_pass_score' => 'nullable|integer|min:1|max:100',
             'scheduled_end_date' => 'nullable|date',
             'status' => 'nullable|string|in:active,completed,closed',
             'instructor_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('role', 'instructor')],
