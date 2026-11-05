@@ -118,7 +118,7 @@
                             $badgeColor = 'bg-amber-500/10 border-amber-500/20 text-amber-400';
                             $titleColor = 'text-amber-400';
                             $dotColor = 'bg-amber-500';
-                        } elseif (in_array($log->event_type, ['paste_anomaly', 'external_file_change', 'starter_files_kept', 'camera_absence', 'prelab_verification_failed', 'webcam_permission_denied', 'webcam_check'])) {
+                        } elseif (in_array($log->event_type, ['paste_anomaly', 'large_insert', 'external_file_change', 'starter_files_kept', 'camera_absence', 'prelab_verification_failed', 'webcam_permission_denied', 'webcam_check'])) {
                             $badgeColor = 'bg-rose-500/10 border-rose-500/20 text-rose-400';
                             $titleColor = 'text-rose-400';
                             $dotColor = 'bg-rose-500';
@@ -181,6 +181,13 @@
                             @elseif($log->event_type === 'paste_anomaly')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Pasted <span class="font-bold text-white">{{ $log->payload['pasted_length'] ?? 0 }} chars</span> of external code.
+                                </p>
+                                @if(!empty($log->payload['snippet']))
+                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['snippet'] }}</pre>
+                                @endif
+                            @elseif($log->event_type === 'large_insert')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    <span class="font-bold text-white">{{ $log->payload['inserted_length'] ?? 0 }} chars</span> appeared in <span class="font-mono">{{ $log->payload['file'] ?? 'a lab file' }}</span> without being typed or pasted.
                                 </p>
                                 @if(!empty($log->payload['snippet']))
                                     <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['snippet'] }}</pre>

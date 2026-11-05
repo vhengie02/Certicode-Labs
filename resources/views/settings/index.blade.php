@@ -368,7 +368,7 @@
                 <dl class="ui-card-body divide-y divide-[#232323]">
                     <div class="py-3.5 first:pt-0">
                         <dt class="text-sm font-medium text-[#ededed]">During a lab</dt>
-                        <dd class="mt-0.5 text-[13px] text-[#888888]">Typing pace, focus changes, idle time and pasted text.</dd>
+                        <dd class="mt-0.5 text-[13px] text-[#888888]">Typing pace, focus changes, idle time, and pasted text or large blocks of code that weren't typed.</dd>
                     </div>
                     <div class="py-3.5">
                         <dt class="text-sm font-medium text-[#ededed]">Camera</dt>

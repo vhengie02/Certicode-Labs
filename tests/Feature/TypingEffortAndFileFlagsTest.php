@@ -121,6 +121,47 @@ class TypingEffortAndFileFlagsTest extends TestCase
         $this->assertCount(0, $this->flags('low_typing_effort'));
     }
 
+    /** A short lab's whole answer: about 200 characters of new code. */
+    private function shortSolution(): string
+    {
+        return <<<'JAVA'
+        public class Main {
+            public static void main(String[] args) {
+                IntStream.rangeClosed(1, 100)
+                        .mapToObj(number -> {
+                            if (number % 15 == 0) {
+                                return "FizzBuzz";
+                            }
+                            if (number % 3 == 0) {
+                                return "Fizz";
+                            }
+                            if (number % 5 == 0) {
+                                return "Buzz";
+                            }
+                            return Integer.toString(number);
+                        })
+                        .forEach(System.out::println);
+            }
+        }
+        JAVA;
+    }
+
+    public function test_short_solution_with_no_typing_behind_it_is_flagged(): void
+    {
+        $this->submit($this->shortSolution());
+
+        $this->assertSame('high', $this->flags('low_typing_effort')->sole()->severity);
+    }
+
+    public function test_short_solution_that_was_typed_raises_no_flag(): void
+    {
+        $this->session->update(['keystroke_count' => 250]);
+
+        $this->submit($this->shortSolution());
+
+        $this->assertCount(0, $this->flags('low_typing_effort'));
+    }
+
     public function test_group_labs_are_not_checked(): void
     {
         $group = Group::create(['name' => 'Team', 'lab_id' => $this->lab->id]);
@@ -206,6 +247,55 @@ class TypingEffortAndFileFlagsTest extends TestCase
             ->assertOk()
             ->assertSee('changed outside the editor')
             ->assertSee('instead of the starter code');
+    }
+
+    public function test_large_insert_is_flagged_medium_with_its_code(): void
+    {
+        $this->asExtension()->postJson("/api/v1/sessions/{$this->session->id}/telemetry", [
+            'event_type' => 'large_insert',
+            'payload' => ['file' => 'Main.java', 'inserted_length' => 620, 'snippet' => 'int answer = 42;'],
+        ])->assertOk();
+
+        $flag = $this->flags('large_insert')->sole();
+        $this->assertSame('medium', $flag->severity);
+        $this->assertStringContainsString('620 characters', $flag->description);
+        $this->assertSame('int answer = 42;', $flag->metadata['snippet']);
+    }
+
+    public function test_large_insert_keeps_a_long_snippet_whole(): void
+    {
+        $snippet = str_repeat('int value = 1;', 500);
+
+        $this->asExtension()->postJson("/api/v1/sessions/{$this->session->id}/telemetry", [
+            'event_type' => 'large_insert',
+            'payload' => ['file' => 'Main.java', 'inserted_length' => strlen($snippet), 'snippet' => $snippet],
+        ])->assertOk();
+
+        $this->assertSame($snippet, $this->flags('large_insert')->sole()->metadata['snippet']);
+        $this->assertSame($snippet, TelemetryLog::where('event_type', 'large_insert')->sole()->payload['snippet']);
+    }
+
+    public function test_large_insert_after_the_attempt_closed_raises_no_flag(): void
+    {
+        $this->session->update(['status' => 'completed', 'ended_at' => now()]);
+
+        $this->asExtension()->postJson("/api/v1/sessions/{$this->session->id}/telemetry", [
+            'event_type' => 'large_insert',
+            'payload' => ['file' => 'Main.java', 'inserted_length' => 620, 'snippet' => 'int answer = 42;'],
+        ])->assertOk();
+
+        $this->assertCount(0, $this->flags('large_insert'));
+    }
+
+    public function test_session_timeline_shows_a_large_insert_and_its_code(): void
+    {
+        TelemetryLog::create(['lab_session_id' => $this->session->id, 'event_type' => 'large_insert', 'payload' => ['file' => 'Main.java', 'inserted_length' => 620, 'snippet' => 'int answer = 42;']]);
+        $admin = User::create(['name' => 'Ada Admin', 'email' => 'ada@example.com', 'password' => bcrypt('password'), 'role' => 'admin']);
+
+        $this->actingAs($admin)->get("/sessions/{$this->session->id}/telemetry-timeline")
+            ->assertOk()
+            ->assertSee('without being typed or pasted')
+            ->assertSee('int answer = 42;');
     }
 
     public function test_file_changes_after_the_attempt_closed_raise_no_flag(): void

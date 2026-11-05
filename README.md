@@ -71,6 +71,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
   * **Suppression Rule A**: Ignores paste if content matches the lab's starter files, or is the student's own code: already in the same file, in an open lab file, or cut from one of them earlier in the attempt.
   * **Suppression Rule B**: Ignores paste if content matches recent snippets from the active team chat.
   * **Clipboard Check**: Flags a remaining paste to the instructor panel, without interrupting the student, only if the inserted text is on the clipboard. These rules are deterministic; no AI reviews a paste.
+  * **Large Insert Check**: Flags 100 or more characters of code that arrive without being typed or pasted, such as from an AI tool. Blocks that arrive within a few seconds count as one insert. Generated code and large snippets can also raise it, so the flag is medium severity.
 * **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches.
 
 ### 5. Camera Presence Gate & Continuous Verification
@@ -242,7 +243,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.8.5**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.8.6**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force

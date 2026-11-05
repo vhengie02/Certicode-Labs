@@ -114,7 +114,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $this->boundedPayload($logPayload, $eventType === 'paste_anomaly' ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
+            'payload' => $this->boundedPayload($logPayload, in_array($eventType, ['paste_anomaly', 'large_insert'], true) ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
         ]);
 
         // Smart anomaly checks
@@ -195,6 +195,21 @@ class LabSessionController extends Controller
                 'severity' => $lines >= self::LARGE_EXTERNAL_CHANGE_LINES ? 'high' : 'medium',
                 'description' => Str::limit("{$lines} lines of {$file} changed outside the editor", 250),
                 'metadata' => $this->boundedPayload($request->payload),
+            ]);
+        }
+
+        // Medium at most: a generated method or a large snippet looks the same as an AI tool's edit
+        if ($eventType === 'large_insert' && $session->status === 'in_progress') {
+            $length = (int) ($request->payload['inserted_length'] ?? 0);
+            $file = (string) ($request->payload['file'] ?? 'a lab file');
+            $metadata = $request->payload;
+            $metadata['snippet'] = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'large_insert',
+                'severity' => 'medium',
+                'description' => Str::limit("{$length} characters appeared in {$file} without being typed or pasted, such as from an AI tool or generated code", 250),
+                'metadata' => $this->boundedPayload($metadata, self::MAX_PASTE_PAYLOAD_BYTES),
             ]);
         }
 

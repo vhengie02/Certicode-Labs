@@ -190,6 +190,56 @@ function pasteRecorder(labFiles: string[] = ['Main.java', 'Helper.java']) {
     return { p, flagged };
 }
 
+/** Insert blocks into a lab file and return what was reported once the insert ended. */
+async function insertBlocks(blocks: string[], { clipboard = 'something else', dirty = true, before = '' } = {}) {
+    const { p, sent } = recording();
+    p.recordActivity = () => undefined;
+    stubState.clipboard = clipboard;
+    const doc = openDocument('/workspace/Main.java', before);
+    doc.isDirty = dirty;
+    p.rememberDocumentText(doc);
+
+    for (const block of blocks) {
+        edit(p, doc, doc.text.length, 0, block);
+    }
+    await new Promise(r => setTimeout(r, 10));
+    await p.syncActivityBeforeSubmit();
+
+    return sent.filter(s => s.type === 'large_insert');
+}
+
+test('a large insert that was neither typed nor pasted is reported with its text', async () => {
+    const [flag, ...others] = await insertBlocks([SOLUTION]);
+
+    assert.strictEqual(others.length, 0);
+    assert.strictEqual(flag.payload.snippet, SOLUTION);
+    assert.strictEqual(flag.payload.inserted_length, SOLUTION.length);
+});
+
+test('an answer written in parts is reported once, with all of its text', async () => {
+    const parts = SOLUTION.match(/[^\n]*\n/g) ?? [];
+    const flags = await insertBlocks(parts.filter(part => part.length >= 25));
+
+    assert.strictEqual(flags.length, 1);
+    assert.ok(flags[0].payload.snippet.includes('compute(11)'));
+});
+
+test('a snippet expansion is too small to report as a large insert', async () => {
+    assert.strictEqual((await insertBlocks([SNIPPET])).length, 0);
+});
+
+test('a paste is not reported as a large insert as well', async () => {
+    assert.strictEqual((await insertBlocks([SOLUTION], { clipboard: SOLUTION })).length, 0);
+});
+
+test('a reload from disk is not reported as a large insert', async () => {
+    assert.strictEqual((await insertBlocks([SOLUTION], { dirty: false })).length, 0);
+});
+
+test('moving the student\'s own code is not reported as a large insert', async () => {
+    assert.strictEqual((await insertBlocks([SOLUTION], { before: SOLUTION })).length, 0);
+});
+
 const OWN_METHOD = 'int total(int a, int b) {\n    return a + b;\n}\n';
 
 test('cutting a method and pasting it lower in the same file is not flagged', async () => {

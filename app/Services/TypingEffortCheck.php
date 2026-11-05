@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 class TypingEffortCheck
 {
     /** New code below this size is too small to judge. Whitespace doesn't count. */
-    private const MIN_NEW_CHARS = 300;
+    private const MIN_NEW_CHARS = 100;
 
     /**
      * Share of the new code that must be accounted for. It is low on purpose: completions over

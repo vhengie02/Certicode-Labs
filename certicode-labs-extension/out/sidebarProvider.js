@@ -52,6 +52,11 @@ const MIN_BLOCK_LENGTH = 25;
 const MAX_REMOVED_BLOCKS = 50;
 // Pasted text kept for the instructor. The server keeps the same amount.
 const MAX_PASTE_SNIPPET_LENGTH = 10000;
+// Code that arrives without being typed or pasted is reported from this size, not counting
+// whitespace. A snippet or quick fix stays below it. The server's typing check uses the same size.
+const LARGE_INSERT_MIN_CHARS = 100;
+// Blocks this close together are one insert, because an AI tool can write an answer in parts.
+const INSERT_RUN_GAP_MS = 3000;
 // New or changed lines from which a lab file changed outside the editor is reported.
 const EXTERNAL_CHANGE_MIN_LINES = 5;
 // Long enough for the editor's own save event to arrive before the file on disk is compared.
@@ -195,6 +200,11 @@ class SidebarProvider {
             clearTimeout(this._diskCheckTimer);
             this._diskCheckTimer = undefined;
         }
+        if (this._insertRunTimer) {
+            clearTimeout(this._insertRunTimer);
+            this._insertRunTimer = undefined;
+        }
+        this._insertRun = undefined;
         if (this._idleCheckInterval) {
             clearInterval(this._idleCheckInterval);
             this._idleCheckInterval = undefined;
@@ -1321,7 +1331,9 @@ class SidebarProvider {
                 // Flagging Rule: External paste without internal/chat justification. Snippets,
                 // quick fixes, completions and reloads from disk also insert big blocks, so only
                 // flag text that is really on the clipboard, in a document the student edited.
+                // Other blocks are only reported if they add up to a large insert.
                 if (!isSuppressedA && !isSuppressedB && event.document.isDirty) {
+                    const document = event.document.uri.toString();
                     const file = vscode.workspace.asRelativePath(event.document.uri);
                     const wpm = this._currentWpm;
                     void this.matchesClipboard(change.text).then(fromClipboard => {
@@ -1332,6 +1344,9 @@ class SidebarProvider {
                                 file,
                                 wpm
                             });
+                        }
+                        else {
+                            this.addToInsertRun(document, file, change.text, wpm);
                         }
                     });
                 }
@@ -1345,6 +1360,46 @@ class SidebarProvider {
                 this.computeAndSyncDiffs();
             }, 2000);
         }
+    }
+    /**
+     * Add a block that was neither typed nor pasted to the current insert. The insert ends after
+     * a short gap, so an answer written in parts is reported once, with all of its text.
+     */
+    addToInsertRun(document, file, text, wpm) {
+        if (this._insertRun && this._insertRun.document !== document) {
+            void this.reportInsertRun();
+        }
+        if (this._insertRun) {
+            this._insertRun.text += text;
+        }
+        else {
+            this._insertRun = { document, file, text, wpm };
+        }
+        if (this._insertRunTimer) {
+            clearTimeout(this._insertRunTimer);
+        }
+        this._insertRunTimer = setTimeout(() => { void this.reportInsertRun(); }, INSERT_RUN_GAP_MS);
+    }
+    /**
+     * End the current insert and report it if it is large. The editor doesn't say what made a
+     * change, so this reports the size and text and leaves the conclusion to the instructor.
+     */
+    async reportInsertRun() {
+        if (this._insertRunTimer) {
+            clearTimeout(this._insertRunTimer);
+            this._insertRunTimer = undefined;
+        }
+        const run = this._insertRun;
+        this._insertRun = undefined;
+        if (!run || !this._sessionId || run.text.replace(/\s+/g, '').length < LARGE_INSERT_MIN_CHARS) {
+            return;
+        }
+        await this.sendTelemetry('large_insert', {
+            inserted_length: run.text.length,
+            snippet: run.text.slice(0, MAX_PASTE_SNIPPET_LENGTH),
+            file: run.file,
+            wpm: run.wpm
+        });
     }
     /**
      * Whether text comes from this lab's starter files. Line endings are ignored: the server
@@ -1969,6 +2024,7 @@ class SidebarProvider {
             this._diskCheckTimer = undefined;
         }
         await this.reportExternalFileChanges();
+        await this.reportInsertRun();
         if (this._wpmSyncTimer) {
             clearTimeout(this._wpmSyncTimer);
             this._wpmSyncTimer = undefined;

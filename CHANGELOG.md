@@ -2,6 +2,8 @@
 
 ## 2026-11-05
 
+- VS Code extension 1.8.6 adds a "Large insert" flag. It appears when 100 or more characters of code reach a file without being typed or pasted, such as from an AI tool. An answer written in parts within a few seconds counts as one insert. Instructors can read the code in the session timeline. Generated code and large snippets can also raise it, so it is medium severity at most, and it doesn't change a grade. The Your data section in Settings now mentions it. Older extension builds don't send this flag.
+- The "Low typing effort" flag now covers short labs. It used to skip submissions with under 300 characters of new code, so a short answer written by an AI tool with no typing behind it raised no flag. The limit is now 100 characters. The flag still doesn't change a grade.
 - A class's page now shows its card background behind the title and key facts, with the same fade as the card.
 - Class cards now have pattern backgrounds. Instructors choose one of eight patterns, such as contour lines, moons and stars, or waves, when creating or editing a class, or upload their own picture. Classes without a choice get a pattern automatically. Every pattern has its own colours for light and dark mode, and backgrounds fade out before the text starts. Large pictures are resized before they upload, which also removes their location data.
 - Pop-up notifications now wait for the page to finish loading, slide in from the right edge of the screen and slide back out after 3 seconds, or longer for a long message. Error pop-ups still stay until closed. With the "reduce motion" system setting they fade instead.
