@@ -4,12 +4,14 @@ namespace App\Models;
 
 use App\Events\AnomalyDetected;
 use App\Notifications\ClassActivityNotification;
+use App\Services\TypingEffortCheck;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -189,6 +191,12 @@ class LabSession extends Model
         static::created(function (LabSession $session) {
             if ($session->status === 'completed') {
                 StudentCompetency::refreshFor($session->user, $session->laboratory);
+            }
+        });
+        static::updated(function (LabSession $session) {
+            // After the commit, so a problem here can't undo the grade that was just saved
+            if ($session->status === 'completed' && $session->wasChanged('status')) {
+                DB::afterCommit(fn () => app(TypingEffortCheck::class)->flagQuietly($session));
             }
         });
         static::updated(function (LabSession $session) {

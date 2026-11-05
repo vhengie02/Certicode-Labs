@@ -118,7 +118,7 @@
                             $badgeColor = 'bg-amber-500/10 border-amber-500/20 text-amber-400';
                             $titleColor = 'text-amber-400';
                             $dotColor = 'bg-amber-500';
-                        } elseif (in_array($log->event_type, ['paste_anomaly', 'camera_absence', 'prelab_verification_failed', 'webcam_permission_denied', 'webcam_check'])) {
+                        } elseif (in_array($log->event_type, ['paste_anomaly', 'external_file_change', 'starter_files_kept', 'camera_absence', 'prelab_verification_failed', 'webcam_permission_denied', 'webcam_check'])) {
                             $badgeColor = 'bg-rose-500/10 border-rose-500/20 text-rose-400';
                             $titleColor = 'text-rose-400';
                             $dotColor = 'bg-rose-500';
@@ -185,6 +185,14 @@
                                 @if(!empty($log->payload['snippet']))
                                     <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['snippet'] }}</pre>
                                 @endif
+                            @elseif($log->event_type === 'external_file_change')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    <span class="font-bold text-white">{{ $log->payload['changed_lines'] ?? 0 }} lines</span> of <span class="font-mono">{{ $log->payload['file'] ?? 'a lab file' }}</span> changed outside the editor.
+                                </p>
+                            @elseif($log->event_type === 'starter_files_kept')
+                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
+                                    Started from files already in the folder instead of the starter code (<span class="font-bold text-white">{{ $log->payload['changed_lines'] ?? 0 }} lines</span> differ).
+                                </p>
                             @elseif($log->event_type === 'focus_lost')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Student left the VS Code window.

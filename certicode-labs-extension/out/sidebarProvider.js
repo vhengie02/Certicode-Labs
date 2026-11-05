@@ -44,8 +44,14 @@ const RESUME_TOKEN_SECRET = 'certicode.resumeSessionToken';
 const RESUME_WINDOW_MS = 25000;
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
+// A chat message inside a paste excuses it only if the message is most of the pasted text.
+const MIN_CHAT_SHARE_OF_PASTE = 0.8;
 // Pasted text kept for the instructor. The server keeps the same amount.
 const MAX_PASTE_SNIPPET_LENGTH = 10000;
+// New or changed lines from which a lab file changed outside the editor is reported.
+const EXTERNAL_CHANGE_MIN_LINES = 5;
+// Long enough for the editor's own save event to arrive before the file on disk is compared.
+const DISK_CHECK_DELAY_MS = 1000;
 class SidebarProvider {
     constructor(_extensionUri, _globalState, _secrets) {
         this._extensionUri = _extensionUri;
@@ -58,6 +64,8 @@ class SidebarProvider {
         this._gradingInFlight = false;
         // Feature 1: Starter Files & Integrity
         this._starterFileSnapshots = new Map();
+        // Each lab file as this editor last left it on disk, to notice changes made elsewhere
+        this._starterDiskTexts = new Map();
         // Read-only starter files (document URI -> original content) and a re-entrancy flag for restoring them
         this._readonlyFiles = new Map();
         this._restoringReadonly = false;
@@ -160,6 +168,10 @@ class SidebarProvider {
         if (this._diffDebounceTimer) {
             clearTimeout(this._diffDebounceTimer);
             this._diffDebounceTimer = undefined;
+        }
+        if (this._diskCheckTimer) {
+            clearTimeout(this._diskCheckTimer);
+            this._diskCheckTimer = undefined;
         }
         if (this._idleCheckInterval) {
             clearInterval(this._idleCheckInterval);
@@ -367,6 +379,7 @@ class SidebarProvider {
         // and session data, so diffs and paste checks compare against this lab's files
         if (this._sessionId !== sessionId) {
             this._starterFileSnapshots.clear();
+            this._starterDiskTexts.clear();
             this._readonlyFiles.clear();
             this._lastSessionData = null;
             this._filesGenerated = false;
@@ -716,6 +729,10 @@ class SidebarProvider {
                 const data = JSON.parse(result.body);
                 this._lastSessionData = data;
                 this.warnIfOutdated(data);
+                // A window reload restarts the count at zero, so carry on from the server's
+                if (typeof data.keystroke_count === 'number') {
+                    this._totalKeystrokes = Math.max(this._totalKeystrokes, data.keystroke_count);
+                }
                 if (data.realtime && !this._ws && !this._wsReconnectTimer) {
                     this.connectWebSocket();
                 }
@@ -959,7 +976,7 @@ class SidebarProvider {
                     owners[file.name] = sessionId;
                 }
                 else {
-                    fromElsewhere.push({ name: file.name, uri: fileUri, content: file.content || '' });
+                    fromElsewhere.push({ name: file.name, uri: fileUri, content: file.content || '', current });
                 }
             }
             if (file.is_primary) {
@@ -982,12 +999,17 @@ class SidebarProvider {
                     owners[file.name] = sessionId;
                 }
             }
-            else if (choice === 'Keep my files') {
-                // The student chose to work on what is there; don't ask again for this session
-                fromElsewhere.forEach(f => { owners[f.name] = sessionId; });
+            else {
+                if (choice === 'Keep my files') {
+                    // The student chose to work on what is there; don't ask again for this session
+                    fromElsewhere.forEach(f => { owners[f.name] = sessionId; });
+                }
+                // Closing the dialog keeps the files too, so both tell the instructor
+                await this.reportKeptFiles(fromElsewhere);
             }
         }
         await this.saveStarterFileOwners(rootUri, owners);
+        await this.rememberStarterFilesOnDisk(rootUri, starterFiles);
         await this.applyReadonlyStarterFiles(rootUri, starterFiles);
         // Fallback to first file if none marked primary
         if (!primaryUri && starterFiles.length > 0) {
@@ -1006,6 +1028,93 @@ class SidebarProvider {
         this._filesGenerated = true;
         await this.verifyWorkspaceFileIntegrity();
         await this.computeAndSyncDiffs();
+    }
+    /**
+     * Tell the instructor the lab started from files already in the folder, not the starter
+     * code. They may be the student's earlier attempt, so a few changed lines are not reported.
+     */
+    async reportKeptFiles(kept) {
+        const changedLines = kept.reduce((total, file) => total + this.countChangedLines(file.content, file.current), 0);
+        if (changedLines >= EXTERNAL_CHANGE_MIN_LINES) {
+            await this.sendTelemetry('starter_files_kept', {
+                files: kept.map(file => file.name),
+                changed_lines: changedLines
+            });
+        }
+    }
+    /**
+     * Lines of current that are new or changed compared with original.
+     */
+    countChangedLines(original, current) {
+        const diff = this.calculateLineDiff(original, current);
+        return diff.added + diff.modified;
+    }
+    /**
+     * Note each lab file as it stands on disk now. Later changes the editor didn't make
+     * are measured from here.
+     */
+    async rememberStarterFilesOnDisk(rootUri, starterFiles) {
+        for (const file of starterFiles) {
+            const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
+            if (!fileUri) {
+                continue;
+            }
+            try {
+                this._starterDiskTexts.set(file.name, new TextDecoder().decode(await vscode.workspace.fs.readFile(fileUri)));
+            }
+            catch {
+                this._starterDiskTexts.delete(file.name);
+            }
+        }
+    }
+    scheduleDiskCheck() {
+        if (!this._sessionId || this._starterDiskTexts.size === 0) {
+            return;
+        }
+        if (this._diskCheckTimer) {
+            clearTimeout(this._diskCheckTimer);
+        }
+        this._diskCheckTimer = setTimeout(() => {
+            this._diskCheckTimer = undefined;
+            void this.reportExternalFileChanges();
+        }, DISK_CHECK_DELAY_MS);
+    }
+    /**
+     * Report lab files that changed on disk without the editor saving them: replaced in the
+     * file explorer, renamed over, or written by another program. No document event says so,
+     * because a reload from disk is not a paste and a closed file raises no event at all.
+     */
+    async reportExternalFileChanges() {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!this._sessionId || !workspaceFolders || workspaceFolders.length === 0) {
+            return;
+        }
+        let anyChanged = false;
+        for (const [name, known] of this._starterDiskTexts) {
+            const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, name);
+            if (!fileUri) {
+                continue;
+            }
+            let onDisk;
+            try {
+                onDisk = new TextDecoder().decode(await vscode.workspace.fs.readFile(fileUri));
+            }
+            catch {
+                continue; // Deleted: the integrity check reports that, and it counts once it is back
+            }
+            if (onDisk === known) {
+                continue;
+            }
+            this._starterDiskTexts.set(name, onDisk);
+            anyChanged = true;
+            const changedLines = this.countChangedLines(known, onDisk);
+            if (changedLines >= EXTERNAL_CHANGE_MIN_LINES) {
+                await this.sendTelemetry('external_file_change', { file: name, changed_lines: changedLines });
+            }
+        }
+        if (anyChanged) {
+            await this.computeAndSyncDiffs();
+        }
     }
     /**
      * Feature 1: Filename integrity watcher - verify all required starter files exist.
@@ -1050,13 +1159,43 @@ class SidebarProvider {
             return;
         }
         this._fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
-        this._workspaceDisposables.push(this._fileWatcher, this._fileWatcher.onDidCreate(() => this.verifyWorkspaceFileIntegrity()), this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity()), 
+        this._workspaceDisposables.push(this._fileWatcher, this._fileWatcher.onDidCreate(() => {
+            this.verifyWorkspaceFileIntegrity();
+            this.scheduleDiskCheck();
+        }), this._fileWatcher.onDidChange(() => this.scheduleDiskCheck()), this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity()), 
         // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
         vscode.workspace.onDidChangeTextDocument(event => this.handleDocumentChange(event)), vscode.workspace.onDidChangeTextDocument(event => { void this.guardReadonlyFile(event); }), vscode.workspace.onDidSaveTextDocument(doc => {
             if (this._sessionId && this._lastSessionData && this.isStudentDocument(doc)) {
+                this.rememberSavedFile(doc);
                 this.computeAndSyncDiffs();
             }
         }));
+    }
+    /**
+     * The starter file a path on disk belongs to, if any.
+     */
+    starterFileNameFor(fileName) {
+        const path = fileName.replace(/\\/g, '/');
+        const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
+        for (const file of starterFiles) {
+            if (typeof file.name !== 'string') {
+                continue;
+            }
+            const name = file.name.replace(/\\/g, '/');
+            if (path === name || path.endsWith(`/${name}`)) {
+                return file.name;
+            }
+        }
+        return undefined;
+    }
+    /**
+     * What the editor just saved is the student's own work, not an outside change.
+     */
+    rememberSavedFile(doc) {
+        const name = this.starterFileNameFor(doc.fileName);
+        if (name !== undefined && this._starterDiskTexts.has(name)) {
+            this._starterDiskTexts.set(name, doc.getText());
+        }
     }
     handleDocumentChange(event) {
         if (this._restoringReadonly) {
@@ -1070,8 +1209,7 @@ class SidebarProvider {
             return;
         }
         this.recordActivity();
-        const fileName = event.document.fileName;
-        const isTracked = this._lastSessionData.laboratory?.starter_files?.some((f) => typeof f.name === 'string' && fileName.replace(/\\/g, '/').endsWith(f.name.replace(/\\/g, '/')));
+        const isTracked = this.starterFileNameFor(event.document.fileName) !== undefined;
         // Undo/redo re-applies text the student already had; it is neither typing nor a paste.
         const isUndoRedo = event.reason === vscode.TextDocumentChangeReason.Undo
             || event.reason === vscode.TextDocumentChangeReason.Redo;
@@ -1089,11 +1227,13 @@ class SidebarProvider {
                 // Suppression Rule A: Internal Move/Restructure check
                 const isSuppressedA = this.isStarterText(trimmedPaste);
                 // Suppression Rule B: Permitted Collaboration / Team Chat match.
-                // Short chat text is ignored so a one-word message cannot excuse arbitrary pastes.
+                // Short chat text is ignored so a one-word message cannot excuse arbitrary pastes,
+                // and a message found inside a paste must be most of it, or one line would excuse the rest.
                 let isSuppressedB = false;
                 if (!isSuppressedA && this._recentChatSnippets.length > 0) {
                     isSuppressedB = this._recentChatSnippets.some(snippet => snippet.length >= MIN_CHAT_SNIPPET_LENGTH
-                        && (snippet.includes(trimmedPaste) || trimmedPaste.includes(snippet)));
+                        && (snippet.includes(trimmedPaste)
+                            || (trimmedPaste.includes(snippet) && snippet.length >= trimmedPaste.length * MIN_CHAT_SHARE_OF_PASTE)));
                 }
                 // Flagging Rule: External paste without internal/chat justification. Snippets,
                 // quick fixes, completions and reloads from disk also insert big blocks, so only
@@ -1685,6 +1825,27 @@ class SidebarProvider {
     async handleSubmit() {
         return this.runGrading(() => this.submit());
     }
+    /**
+     * Bring the server up to date first: it compares the submission with these figures, and
+     * the diff and typing syncs otherwise wait for a save or their timers.
+     */
+    async syncActivityBeforeSubmit() {
+        if (this._diskCheckTimer) {
+            clearTimeout(this._diskCheckTimer);
+            this._diskCheckTimer = undefined;
+        }
+        await this.reportExternalFileChanges();
+        if (this._wpmSyncTimer) {
+            clearTimeout(this._wpmSyncTimer);
+            this._wpmSyncTimer = undefined;
+        }
+        await Promise.all([
+            this.computeAndSyncDiffs(),
+            this._totalKeystrokes > 0
+                ? this.sendTelemetry('wpm_update', { wpm: this._currentWpm, keystroke_count: this._totalKeystrokes })
+                : Promise.resolve(),
+        ]);
+    }
     async submit() {
         if (!this._sessionId) {
             vscode.window.showErrorMessage('No active CertiCode lab session.');
@@ -1708,6 +1869,7 @@ class SidebarProvider {
         const detectedLang = this.detectSubmissionLanguage(primaryFileName);
         const collectedDiagnostics = this.collectDiagnostics(fileUris);
         this._view?.webview.postMessage({ type: 'status', message: 'Running final submission & compilation...' });
+        await this.syncActivityBeforeSubmit();
         try {
             const prefix = API_PREFIX;
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/submit`, {
@@ -1771,6 +1933,7 @@ class SidebarProvider {
         this._lastSessionData = null;
         this._filesGenerated = false;
         this._starterFileSnapshots.clear();
+        this._starterDiskTexts.clear();
         this._missingFiles = [];
         this._keystrokeTimestamps = [];
         this._totalKeystrokes = 0;

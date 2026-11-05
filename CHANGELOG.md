@@ -4,6 +4,9 @@
 
 - VS Code extension 1.8.1 is out. It stops the false paste flag when a lab's starter files open, and sends up to 10,000 characters of pasted text so instructors can read the whole paste.
 - The landing and sign-in pages have a new animated ASCII background, and the extension screenshots on the landing page are up to date.
+- Instructors get three new integrity flags. "Low typing effort" appears when a submission is much larger than what was typed or flagged as pasted. "External file change" appears when a lab file changes outside the editor. "Starter files kept" appears when a lab starts from existing files instead of the starter code. These are prompts to look closer: none of them changes a grade, and group labs skip the typing check.
+- VS Code extension 1.8.2 sends these signals, tightens how team chat excuses a paste, and sends the latest typing and diff figures just before a submit.
+- Keystroke counts no longer drop back to zero when a student reloads VS Code during a lab.
 
 ## 2026-11-04
 

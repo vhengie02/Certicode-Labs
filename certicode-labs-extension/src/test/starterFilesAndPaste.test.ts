@@ -131,3 +131,158 @@ test('a long paste reaches the instructor whole', async () => {
     const [flag] = await insert(longPaste);
     assert.strictEqual(flag.payload.snippet, longPaste);
 });
+
+const SOLUTION = 'class Main {\n'
+    + Array.from({ length: 12 }, (_, i) => `    int value${i} = compute(${i});`).join('\n')
+    + '\n}\n';
+
+/** A provider whose telemetry is captured instead of sent. */
+function recording(state = memento()) {
+    const p = provider(state);
+    const sent: any[] = [];
+    p._sessionId = 1;
+    p._lastSessionData = { laboratory: { starter_files: LAB1 } };
+    p.sendTelemetry = async (type: string, payload: any) => { sent.push({ type, payload }); };
+    return { p, sent };
+}
+
+async function pasteWithChat(paste: string, chat: string) {
+    const { p, sent } = recording();
+    p.recordActivity = () => undefined;
+    p._recentChatSnippets = [chat];
+    stubState.clipboard = paste;
+    p.handleDocumentChange({
+        document: { uri: { scheme: 'file', fsPath: '/workspace/Main.java' }, fileName: '/workspace/Main.java', isDirty: true },
+        contentChanges: [{ text: paste }],
+        reason: undefined,
+    });
+    await new Promise(r => setTimeout(r, 10));
+    return sent.filter(s => s.type === 'paste_anomaly');
+}
+
+test('one chat line does not excuse a whole paste that contains it', async () => {
+    assert.strictEqual((await pasteWithChat(SOLUTION, '    int value3 = compute(3);'.trim())).length, 1);
+});
+
+test('pasting a teammate\'s snippet from chat is not flagged', async () => {
+    assert.strictEqual((await pasteWithChat(SOLUTION, SOLUTION.trim())).length, 0);
+});
+
+test('keeping files that differ from the starter code tells the instructor', async () => {
+    const { p, sent } = recording();
+    files.set('/workspace/Main.java', SOLUTION);
+    stubState.warningAnswer = 'Keep my files';
+
+    await p.provisionStarterFiles(LAB1);
+
+    assert.strictEqual(files.get('/workspace/Main.java'), SOLUTION);
+    const [kept] = sent.filter(s => s.type === 'starter_files_kept');
+    assert.deepStrictEqual(kept.payload.files, ['Main.java']);
+    assert.ok(kept.payload.changed_lines >= 12);
+});
+
+test('closing the dialog keeps the files too, so it also tells the instructor', async () => {
+    const { p, sent } = recording();
+    files.set('/workspace/Main.java', SOLUTION);
+    stubState.warningAnswer = undefined;
+
+    await p.provisionStarterFiles(LAB1);
+
+    assert.strictEqual(sent.filter(s => s.type === 'starter_files_kept').length, 1);
+});
+
+test('keeping a file with only a small difference is not reported', async () => {
+    const { p, sent } = recording();
+    files.set('/workspace/Main.java', 'class Main { /* lab 1, edited */ }');
+    stubState.warningAnswer = 'Keep my files';
+
+    await p.provisionStarterFiles(LAB1);
+
+    assert.strictEqual(sent.filter(s => s.type === 'starter_files_kept').length, 0);
+});
+
+/** A provider that has provisioned the lab, so it knows what is on disk. */
+async function provisioned() {
+    const recorded = recording();
+    await recorded.p.provisionStarterFiles(LAB1);
+    return recorded;
+}
+
+test('a lab file replaced on disk is reported', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', SOLUTION);
+    await p.reportExternalFileChanges();
+
+    const [change] = sent.filter(s => s.type === 'external_file_change');
+    assert.strictEqual(change.payload.file, 'Main.java');
+    assert.ok(change.payload.changed_lines >= 12);
+});
+
+test('the same outside change is reported once', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', SOLUTION);
+    await p.reportExternalFileChanges();
+    await p.reportExternalFileChanges();
+
+    assert.strictEqual(sent.filter(s => s.type === 'external_file_change').length, 1);
+});
+
+test('saving from the editor is not an outside change', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', SOLUTION);
+    p.rememberSavedFile({ fileName: '/workspace/Main.java', getText: () => SOLUTION });
+    await p.reportExternalFileChanges();
+
+    assert.strictEqual(sent.filter(s => s.type === 'external_file_change').length, 0);
+});
+
+test('saving a different file with a similar name leaves the lab file alone', async () => {
+    const { p } = await provisioned();
+
+    p.rememberSavedFile({ fileName: '/workspace/NotMain.java', getText: () => SOLUTION });
+
+    assert.strictEqual(p._starterDiskTexts.get('Main.java'), LAB1[0].content);
+});
+
+test('a small outside change is not reported', async () => {
+    const { p, sent } = await provisioned();
+
+    files.set('/workspace/Main.java', 'class Main { /* lab 1, edited */ }');
+    await p.reportExternalFileChanges();
+
+    assert.strictEqual(sent.filter(s => s.type === 'external_file_change').length, 0);
+});
+
+test('submitting sends pending typing figures and the latest diff first', async () => {
+    const { p, sent } = await provisioned();
+    const order: string[] = [];
+    p.computeAndSyncDiffs = async () => { order.push('diff'); };
+    p._totalKeystrokes = 250;
+    p._currentWpm = 30;
+    p._wpmSyncTimer = setTimeout(() => assert.fail('the pending sync should have been cancelled'), 5);
+
+    await p.syncActivityBeforeSubmit();
+    await new Promise(r => setTimeout(r, 10));
+
+    assert.deepStrictEqual(order, ['diff']);
+    const [typing] = sent.filter(s => s.type === 'wpm_update');
+    assert.strictEqual(typing.payload.keystroke_count, 250);
+});
+
+test('a reload carries on from the server\'s keystroke count', async () => {
+    const p = provider();
+    p._sessionId = 1;
+    p._filesGenerated = true;
+    p.warnIfOutdated = () => undefined;
+    p.makeRequest = async () => ({ status: 200, body: JSON.stringify({ keystroke_count: 800 }) });
+
+    await p.syncSessionState();
+    assert.strictEqual(p._totalKeystrokes, 800);
+
+    p._totalKeystrokes = 900;
+    await p.syncSessionState();
+    assert.strictEqual(p._totalKeystrokes, 900);
+});

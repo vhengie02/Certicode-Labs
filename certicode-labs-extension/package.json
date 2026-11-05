@@ -2,7 +2,7 @@
   "name": "certicode-labs",
   "displayName": "CertiCode Labs IDE",
   "description": "Integrate your CertiCode Labs Java sessions directly into VS Code.",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "publisher": "certicode",
   "repository": {
     "type": "git",

@@ -136,7 +136,8 @@ class LabSessionController extends Controller
 
         if ($request->event_type === 'wpm_update') {
             $wpm = (int) ($request->payload['wpm'] ?? 0);
-            $keystrokes = (int) ($request->payload['keystroke_count'] ?? 0);
+            // The count only grows: older extension builds restart it at zero after a window reload
+            $keystrokes = max((int) ($request->payload['keystroke_count'] ?? 0), (int) $session->keystroke_count);
             if ($keystrokes > 0 && (! isset($request->payload['wpm']) || $request->payload['wpm'] === null)) {
                 $session->keystroke_count = $keystrokes;
                 $wpm = $session->calculateOverallWpm();
@@ -169,6 +170,31 @@ class LabSessionController extends Controller
                 'severity' => $pastedLen > 100 ? 'high' : 'medium',
                 'description' => 'Unusual external code paste detected ('.$pastedLen.' chars): '.Str::limit($snippet, 70),
                 'metadata' => $metadata,
+            ]);
+        }
+
+        // Work after the attempt closed can't change the submission, so it isn't flagged
+        if ($eventType === 'starter_files_kept' && $session->status === 'in_progress') {
+            $lines = (int) ($request->payload['changed_lines'] ?? 0);
+            $names = collect((array) ($request->payload['files'] ?? []))->filter(fn ($name) => is_string($name))->implode(', ');
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'starter_files_kept',
+                'severity' => 'medium',
+                'description' => Str::limit("Started from files already in the folder instead of the starter code ({$lines} lines differ): {$names}", 250),
+                'metadata' => $this->boundedPayload($request->payload),
+            ]);
+        }
+
+        if ($eventType === 'external_file_change' && $session->status === 'in_progress') {
+            $lines = (int) ($request->payload['changed_lines'] ?? 0);
+            $file = (string) ($request->payload['file'] ?? 'a lab file');
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'external_file_change',
+                'severity' => $lines >= self::LARGE_EXTERNAL_CHANGE_LINES ? 'high' : 'medium',
+                'description' => Str::limit("{$lines} lines of {$file} changed outside the editor", 250),
+                'metadata' => $this->boundedPayload($request->payload),
             ]);
         }
 
@@ -307,6 +333,9 @@ class LabSessionController extends Controller
     }
 
     private const SNAPSHOT_INTERVAL_SECONDS = 120;
+
+    /** Lines changed outside the editor from which the flag is high severity. */
+    private const LARGE_EXTERNAL_CHANGE_LINES = 20;
 
     /** Camera flags in a lab within this many minutes of the last one don't notify again. */
     private const CAMERA_NOTIFY_QUIET_MINUTES = 15;
@@ -704,6 +733,7 @@ class LabSessionController extends Controller
             'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
             'performance_score' => $session->performance_score,
             'completed_tasks' => $session->completed_tasks ?? [],
+            'keystroke_count' => (int) $session->keystroke_count,
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
             'code_contributions' => $session->group_id ? $session->teamContributions() : ($session->code_contributions ?? []),
             'realtime' => Realtime::clientConfig(),
