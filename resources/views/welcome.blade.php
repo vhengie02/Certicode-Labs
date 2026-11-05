@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-[#0b0c0b] text-[#ececea] scroll-smooth">
+<html lang="en" class="h-full bg-black text-white scroll-smooth">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,24 +12,24 @@
     <meta property="og:title" content="Certicode Labs | See how your students actually code">
     <meta property="og:description" content="Live coding labs with integrity signals, rubric-based AI grading, and verifiable certificates.">
     <meta property="og:type" content="website">
-    <meta name="theme-color" content="#0b0c0b">
+    <meta name="theme-color" content="#000000">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @vite(['resources/css/app.css', 'resources/js/app.js', 'resources/js/landing-background.js'])
 
     <style>
         :root {
-            --ink: #0b0c0b;
-            --ink-raised: #121412;
-            --ink-card: #151815;
-            --line: rgba(236, 236, 234, 0.08);
-            --line-strong: rgba(236, 236, 234, 0.14);
-            --text: #ececea;
-            --text-dim: #a6a9a4;
-            --text-faint: #6f736d;
+            --ink: #000000;
+            --ink-raised: #070a08;
+            --ink-card: #0a0e0b;
+            --line: rgba(62, 207, 142, 0.14);
+            --line-strong: rgba(62, 207, 142, 0.26);
+            --text: #ffffff;
+            --text-dim: #a9efcb;
+            --text-faint: #6fcf9f;
             --brand: #3ecf8e;
             --brand-deep: #1f8a5c;
             --brand-glow: rgba(62, 207, 142, 0.16);
@@ -55,6 +55,12 @@
             position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0.06; mix-blend-mode: overlay;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
         }
+
+
+        /* Hero headline painted by tech-text.js: the h1 text stays in the DOM for layout and screen
+           readers. The canvas overhangs the h1 so frames, specks and dragged letters have room. */
+        .tech-text-canvas { position: absolute; top: -128px; left: -128px; width: calc(100% + 256px); height: calc(100% + 256px); pointer-events: none; }
+        .tech-text-live { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-text-fill-color: transparent; }
 
         /* Hero atmosphere: offset emerald light */
         .hero-atmosphere {
@@ -122,12 +128,13 @@
 <body class="min-h-full flex flex-col selection:bg-[#3ecf8e]/25 selection:text-white">
     <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#3ecf8e] focus:text-[#06150e] focus:font-semibold">Skip to content</a>
     <div class="grain" aria-hidden="true"></div>
+    <div id="ascii-background" class="ascii-bg" aria-hidden="true"></div>
 
     <!-- Navigation -->
-    <header class="sticky top-0 z-40 border-b border-[var(--line)] bg-[#0b0c0b]/75 backdrop-blur-xl">
+    <header class="sticky top-0 z-40 border-b border-[var(--line)] bg-black/75 backdrop-blur-xl">
         <div class="max-w-[1240px] mx-auto px-6 h-16 flex items-center justify-between">
             <a href="/" class="flex items-center gap-2.5 group" aria-label="Certicode Labs home">
-                <x-logo-mark class="w-7 h-7 text-[#ececea] transition-transform duration-300 group-hover:-translate-y-px" />
+                <x-logo-mark class="w-7 h-7 text-white transition-transform duration-300 group-hover:-translate-y-px" />
                 <span class="font-display text-[17px] font-semibold whitespace-nowrap">Certicode <span class="text-[var(--text-dim)] font-medium">Labs</span></span>
             </a>
 
@@ -147,7 +154,7 @@
         </div>
     </header>
 
-    <main id="main" class="flex-1">
+    <main id="main" class="relative z-10 flex-1">
 
         <!-- Hero: the pitch, then the real instructor monitoring screen it describes -->
         <section class="relative overflow-hidden">
@@ -157,7 +164,7 @@
                 <div class="max-w-[940px]">
                     <p class="rise text-[13px] font-medium text-[#3ecf8e]" style="--d:0">Live coding labs for Java courses</p>
 
-                    <h1 class="rise font-display mt-5 pb-2 text-[44px] leading-[1.06] sm:text-6xl lg:text-[76px] lg:leading-[1.02] font-bold balance" style="--d:1">
+                    <h1 id="hero-title" class="rise relative font-display mt-5 pb-2 text-[44px] leading-[1.06] sm:text-6xl lg:text-[76px] lg:leading-[1.02] font-bold balance" style="--d:1">
                         See how your students <span class="font-serif-accent text-[#3ecf8e] font-normal text-[1.12em]">actually</span> code.
                     </h1>
 
@@ -239,34 +246,34 @@
                     <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="mt-7 inline-flex text-sm font-medium text-[#3ecf8e] link-underline">Download the extension (.vsix)</a>
                 </div>
 
-                <div class="mt-14 -mx-6 px-6 flex gap-5 overflow-x-auto snap-x snap-mandatory pb-4 md:mx-0 md:px-0 md:grid md:grid-cols-4 md:gap-6 md:overflow-visible md:pb-0 items-start">
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:0ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-tasks.jpg') }}" width="760" height="1016" loading="lazy" decoding="async" alt="The Tasks tab: a progress bar at 75% and four lab tasks, three done and one to do." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                <div class="mt-14 -mx-6 px-6 flex gap-5 overflow-x-auto snap-x snap-mandatory scroll-px-6 pb-4 md:mx-0 md:px-0 md:grid md:grid-cols-4 md:gap-6 md:overflow-visible md:pb-0 items-start">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:0ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Tasks</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Marked off each time the grader checks their code.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-tasks.jpg') }}" width="760" height="1016" loading="lazy" decoding="async" alt="The Tasks tab: a progress bar at 75% and four lab tasks, three done and one to do." class="block w-full h-auto rounded-lg"></div>
                     </figure>
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:90ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-leaderboard.jpg') }}" width="760" height="1406" loading="lazy" decoding="async" alt="The Standings tab during a live lab: seven students ranked by tasks done, with the shared clock." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:90ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Standings</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Ranked by tasks done, then by time taken.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-leaderboard.jpg') }}" width="760" height="1406" loading="lazy" decoding="async" alt="The Standings tab during a live lab: seven students ranked by tasks done, with the shared clock." class="block w-full h-auto rounded-lg"></div>
                     </figure>
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:180ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-diff.jpg') }}" width="760" height="1130" loading="lazy" decoding="async" alt="The Changes tab: 24 lines added, 5 deleted and 7 modified, broken down across three Java files, with each teammate's share of the work." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:180ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Changes</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Every line added and removed, file by file.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-diff.jpg') }}" width="760" height="1130" loading="lazy" decoding="async" alt="The Changes tab: 24 lines added, 5 deleted and 7 modified, broken down across three Java files, with each teammate's share of the work." class="block w-full h-auto rounded-lg"></div>
                     </figure>
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:270ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1096" loading="lazy" decoding="async" alt="The Chat tab in a pair lab: two students split the work, one sharing the Java age check as a snippet." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:270ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Chat</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">For pair labs, with code snippets inline.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1096" loading="lazy" decoding="async" alt="The Chat tab in a pair lab: two students split the work, one sharing the Java age check as a snippet." class="block w-full h-auto rounded-lg"></div>
                     </figure>
                 </div>
             </div>
@@ -372,10 +379,10 @@
         </section>
     </main>
 
-    <footer class="border-t border-[var(--line)]">
+    <footer class="relative z-10 border-t border-[var(--line)]">
         <div class="max-w-[1240px] mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--text-faint)]">
             <div class="flex items-center gap-2.5">
-                <x-logo-mark class="w-4 h-4 text-[#ececea]" />
+                <x-logo-mark class="w-4 h-4 text-white" />
                 <span>&copy; {{ date('Y') }} Certicode Labs</span>
             </div>
             <nav class="flex items-center gap-6" aria-label="Footer">

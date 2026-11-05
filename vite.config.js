@@ -6,7 +6,7 @@ export default defineConfig({
     base: process.env.ASSET_URL || '',
     plugins: [
         laravel({
-            input: ['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js'],
+            input: ['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js', 'resources/js/landing-background.js', 'resources/js/ascii-background.js'],
             refresh: true,
         }),
         tailwindcss(),
