@@ -2,6 +2,7 @@
 
 ## 2026-11-05
 
+- A class's page now shows its card background behind the title and key facts, with the same fade as the card.
 - Class cards now have pattern backgrounds. Instructors choose one of eight patterns, such as contour lines, moons and stars, or waves, when creating or editing a class, or upload their own picture. Classes without a choice get a pattern automatically. Every pattern has its own colours for light and dark mode, and backgrounds fade out before the text starts. Large pictures are resized before they upload, which also removes their location data.
 - Pop-up notifications now wait for the page to finish loading, slide in from the right edge of the screen and slide back out after 3 seconds, or longer for a long message. Error pop-ups still stay until closed. With the "reduce motion" system setting they fade instead.
 - VS Code extension 1.8.5 no longer flags a student for moving their own code. Text copied or cut from the same file or another open lab file is not reported as a paste. Code from any other file still is.
