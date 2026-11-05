@@ -231,7 +231,7 @@
                 'state_label' => $stateLabels[$state] ?? ucfirst($state),
                 'status' => $s->status,
                 'last_seen' => $s->last_ping_at?->diffForHumans() ?? $s->started_at?->diffForHumans(),
-                'started_at' => $s->started_at?->format('M j, H:i'),
+                'started_at' => \App\Support\DisplayTime::in($s->started_at)?->format('M j, H:i'),
                 'tasks_done' => is_array($s->completed_tasks) ? count($s->completed_tasks) : 0,
                 'task_total' => $taskTotal,
                 'wpm' => (int) ($s->wpm ?? 0),
@@ -781,7 +781,7 @@
 
                                     <template x-if="item.metadata && item.metadata.snippet">
                                         <div class="rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]"
-                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5 }">
+                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5, cutOff: (item.metadata.pasted_length || 0) > item.metadata.snippet.length }">
                                             <span class="block px-3 pt-2 text-xs text-[#888888]">Pasted text</span>
                                             <pre class="px-3 pb-2.5 pt-1 text-xs font-mono text-amber-200/90 whitespace-pre-wrap break-words"
                                                  :class="long && !open ? 'max-h-24 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : 'max-h-96 overflow-y-auto'"
@@ -789,7 +789,11 @@
                                             <template x-if="long">
                                                 <button type="button" @click="open = !open"
                                                         class="block w-full px-3 py-1.5 border-t border-[#2e2e2e] text-left text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] transition-colors"
-                                                        x-text="open ? 'Show less' : 'Show more'"></button>
+                                                        x-text="open ? 'Show less' : 'See all'"></button>
+                                            </template>
+                                            <template x-if="cutOff">
+                                                <p class="px-3 py-1.5 border-t border-[#2e2e2e] text-xs text-amber-300/90"
+                                                   x-text="'Only the first ' + item.metadata.snippet.length + ' of ' + item.metadata.pasted_length + ' characters were saved.'"></p>
                                             </template>
                                         </div>
                                     </template>

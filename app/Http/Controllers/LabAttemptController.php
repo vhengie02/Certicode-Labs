@@ -302,7 +302,8 @@ class LabAttemptController extends Controller
 
         $session->notifyStudents(
             "Lab submitted: {$lab->title}",
-            "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%."
+            "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%.",
+            type: 'grade',
         );
 
         return redirect()->route('sessions.show', $session->id)

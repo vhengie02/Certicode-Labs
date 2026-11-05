@@ -343,7 +343,7 @@
                                         <span class="text-xs text-[#888888]">Not submitted</span>
                                     @endif
                                 </td>
-                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \Carbon\Carbon::parse($sess->started_at)->format('M j, H:i') : 'Not started' }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \App\Support\DisplayTime::in($sess->started_at)->format('M j, H:i') : 'Not started' }}</td>
                                 <td class="px-5 py-3 whitespace-nowrap text-right">
                                     <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors">Timeline</a>
                                 </td>

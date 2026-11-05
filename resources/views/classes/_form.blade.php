@@ -1,7 +1,7 @@
 {{-- Class fields, shared by classes/create and classes/edit. $class is null when creating. --}}
 @php
     $class = $class ?? null;
-    $endDate = old('scheduled_end_date', $class?->scheduled_end_date?->format('Y-m-d\TH:i'));
+    $endDate = old('scheduled_end_date', \App\Support\DisplayTime::in($class?->scheduled_end_date)?->format('Y-m-d\TH:i'));
 @endphp
 <div class="ui-card">
     <div class="ui-card-header">
@@ -67,7 +67,7 @@
             <label for="scheduled_end_date" class="ui-label">End date <span class="ui-optional">(optional)</span></label>
             <input type="datetime-local" name="scheduled_end_date" id="scheduled_end_date" value="{{ $endDate }}"
                    class="ui-input" aria-describedby="end-hint" @error('scheduled_end_date') aria-invalid="true" @enderror>
-            <p id="end-hint" class="ui-hint">On this date the class closes automatically and certificates are issued. Leave empty to end it yourself.</p>
+            <p id="end-hint" class="ui-hint">On this date the class closes automatically and certificates are issued. Leave empty to end it yourself.@if (\App\Support\DisplayTime::zone()) Times are in {{ \App\Support\DisplayTime::zone() }}.@endif</p>
             @error('scheduled_end_date') <p class="ui-error">{{ $message }}</p> @enderror
         </div>
     </div>

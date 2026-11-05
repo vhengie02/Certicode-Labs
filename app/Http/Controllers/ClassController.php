@@ -14,6 +14,7 @@ use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Notifications\ClassActivityNotification;
+use App\Support\DisplayTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -109,7 +110,7 @@ class ClassController extends Controller
             'code' => $code,
             'instructor_id' => (int) Auth::id(),
             'passing_threshold' => $validated['passing_threshold'] ?? 75,
-            'scheduled_end_date' => $validated['scheduled_end_date'] ?? null,
+            'scheduled_end_date' => DisplayTime::fromInput($validated['scheduled_end_date'] ?? null),
             'status' => 'active',
         ]);
 
@@ -193,6 +194,10 @@ class ClassController extends Controller
         $previousInstructorId = (int) $class->instructor_id;
         if (Auth::user()->role !== 'admin' || empty($validated['instructor_id'])) {
             unset($validated['instructor_id']);
+        }
+
+        if (array_key_exists('scheduled_end_date', $validated)) {
+            $validated['scheduled_end_date'] = DisplayTime::fromInput($validated['scheduled_end_date']);
         }
 
         $class->update($validated);

@@ -285,7 +285,8 @@ class InstructorMonitoringController extends Controller
         $session->notifyStudents(
             "Lab reviewed: {$labTitle}",
             "{$instructorName} reviewed your work on '{$labTitle}' and {$outcome}"
-                .($reason ? " Reason: {$reason}" : '')
+                .($reason ? " Reason: {$reason}" : ''),
+            type: 'grade',
         );
 
         if ($request->expectsJson() || $request->ajax()) {
