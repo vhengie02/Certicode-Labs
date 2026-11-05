@@ -753,7 +753,7 @@
                     @elseif ($laboratory->isLiveActive())
                         <p class="ui-card-subtitle">Running now with {{ max(1, (int) ceil($liveLeft / 60)) }} min left on the shared timer.</p>
                         <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" class="mt-4"
-                              onsubmit="return confirm('End this live lab now? Every open student workspace will be submitted and graded.');">
+                              data-confirm-title="End this live lab now?" data-confirm="Every open student workspace will be submitted and graded." data-confirm-action="End lab">
                             @csrf
                             <button type="submit" class="ui-btn ui-btn-danger w-full">End lab now</button>
                         </form>
@@ -880,7 +880,7 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         async leaveSessionAndStopProctoring() {
-            if (confirm('Are you sure you want to stop camera proctoring and exit this laboratory session?')) {
+            if (await window.confirmDialog({ title: 'Exit this lab session?', message: 'Camera proctoring stops and you leave this laboratory session.', action: 'Stop and exit' })) {
                 const sid = this.activeSessionId;
                 this.stopProctoring();
                 if (sid) {

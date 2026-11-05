@@ -161,7 +161,7 @@
                                 @endif
                             </span>
                             <span class="block text-xs text-[#888888] mt-0.5">
-                                {{ $class->students_count }} {{ \Illuminate\Support\Str::plural('student', $class->students_count) }} &middot; <span class="font-mono">{{ $class->code }}</span>
+                                {{ $class->students_count }} {{ \Illuminate\Support\Str::plural('student', $class->students_count) }}
                             </span>
                         </a>
                     @empty

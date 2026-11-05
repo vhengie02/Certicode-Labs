@@ -38,7 +38,7 @@
                         <span class="text-xs text-[#888888]">left</span>
                         <x-info-tip align="right">Every student shares this one timer. Students who join late only get the time that's left, and every open workspace is submitted automatically when it reaches zero.</x-info-tip>
                     </div>
-                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? Every open student workspace will be submitted and graded.');">
+                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" data-confirm-title="End this live lab now?" data-confirm="Every open student workspace will be submitted and graded." data-confirm-action="End lab">
                         @csrf
                         <button type="submit" class="inline-flex items-center gap-2 h-10 px-3.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-300 hover:bg-red-500/20 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -442,7 +442,7 @@
                                        class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors active:scale-[0.98]">Code</a>
                                 @endif
                                 @if($session->status === 'in_progress')
-                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student\'s session? Their code is submitted and graded now.');">
+                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" data-confirm-title="End this student's session?" data-confirm="Their code is submitted and graded now." data-confirm-action="End session">
                                         @csrf
                                         <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-colors active:scale-[0.98]">End session</button>
                                     </form>

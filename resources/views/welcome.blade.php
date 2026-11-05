@@ -10,7 +10,7 @@
     <title>Certicode Labs | See how your students actually code</title>
     <meta name="description" content="Students write Java in VS Code while Certicode watches the process: camera presence, focus, pasted code. Work is graded against your rubric and earns a verifiable certificate.">
     <meta property="og:title" content="Certicode Labs | See how your students actually code">
-    <meta property="og:description" content="Live coding labs with integrity signals, rubric-based AI grading, and verifiable certificates.">
+    <meta property="og:description" content="Live and self-paced coding labs with integrity signals, rubric-based AI grading, and verifiable certificates.">
     <meta property="og:type" content="website">
     <meta name="theme-color" content="#000000">
 
@@ -162,7 +162,7 @@
 
             <div class="relative max-w-[1240px] mx-auto px-6 pt-16 lg:pt-24">
                 <div class="max-w-[940px]">
-                    <p class="rise text-[13px] font-medium text-[#3ecf8e]" style="--d:0">Live coding labs for Java courses</p>
+                    <p class="rise text-[13px] font-medium text-[#3ecf8e]" style="--d:0">Live and self-paced coding labs for Java courses</p>
 
                     <h1 id="hero-title" class="rise relative font-display mt-5 pb-2 text-[44px] leading-[1.06] sm:text-6xl lg:text-[76px] lg:leading-[1.02] font-bold balance" style="--d:1">
                         See how your students <span class="font-serif-accent text-[#3ecf8e] font-normal text-[1.12em]">actually</span> code.
@@ -219,7 +219,7 @@
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:0ms">
                         <span class="font-code text-sm text-[#3ecf8e]">01</span>
                         <h3 class="mt-6 text-xl font-semibold">Start with a camera check</h3>
-                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">The student confirms they&rsquo;re present on camera, then the lab opens straight into VS Code with the starter files in place.</p>
+                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">A camera check looks for the student&rsquo;s face, and a low-light pass is noted for you. Then the lab opens straight into VS Code with the starter files in place.</p>
                     </li>
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:120ms">
                         <span class="font-code text-sm text-[#3ecf8e]">02</span>
@@ -229,7 +229,7 @@
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:240ms">
                         <span class="font-code text-sm text-[#3ecf8e]">03</span>
                         <h3 class="mt-6 text-xl font-semibold">Graded, then certified</h3>
-                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">The AI scores the submission against your rubric. You can override any grade. Pass the threshold and the certificate is issued.</p>
+                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">The AI scores the submission against your rubric. You can override any grade. Pass enough of the class&rsquo;s labs and the certificate is issued when the student claims it or the class ends.</p>
                     </li>
                 </ol>
             </div>
@@ -241,7 +241,7 @@
                 <div class="reveal max-w-[720px]">
                     <h2 class="font-display text-4xl sm:text-5xl font-bold leading-[1.05] balance">The whole lab lives inside VS Code.</h2>
                     <p class="mt-5 text-[var(--text-dim)] text-lg leading-relaxed max-w-[56ch] pretty">
-                        The extension adds one sidebar with the tasks, the shared timer, live standings, their own changes and team chat.
+                        The extension adds one sidebar with the tasks, the timer, live standings, their own changes and team chat.
                     </p>
                     <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="mt-7 inline-flex text-sm font-medium text-[#3ecf8e] link-underline">Download the extension (.vsix)</a>
                 </div>
@@ -271,7 +271,7 @@
                     <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:270ms">
                         <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Chat</span>
-                            <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">For pair labs, with code snippets inline.</span>
+                            <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">For team labs, with code snippets inline.</span>
                         </figcaption>
                         <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1096" loading="lazy" decoding="async" alt="The Chat tab in a pair lab: two students split the work, one sharing the Java age check as a snippet." class="block w-full h-auto rounded-lg"></div>
                     </figure>
@@ -288,7 +288,7 @@
                 <div class="mt-14 grid grid-cols-1 lg:grid-cols-5 gap-6 [&>*]:min-w-0">
                     <article class="reveal panel rounded-2xl p-6 sm:p-8 lg:col-span-3">
                         <h3 class="text-xl font-semibold">Every flag, with the moment it happened.</h3>
-                        <p class="mt-2 text-[15px] text-[var(--text-dim)] leading-relaxed max-w-[56ch] pretty">Pastes that match nothing in the file or team chat, time away from VS Code, and missing faces on camera.</p>
+                        <p class="mt-2 text-[15px] text-[var(--text-dim)] leading-relaxed max-w-[56ch] pretty">Pastes that match nothing in the lab files or team chat, time away from VS Code, and missing faces on camera.</p>
                         <div class="mt-6 rounded-xl overflow-hidden border border-[var(--line)]"><img src="{{ asset('images/landing/integrity-trail.jpg') }}" width="1100" height="563" loading="lazy" decoding="async" alt="A student's integrity trail: a high-severity paste of 14 lines that matches nothing in the file or chat, and a low-severity 41 seconds away from VS Code." class="block w-full h-auto"></div>
                     </article>
 
@@ -349,7 +349,7 @@
                     </div>
                     <div class="reveal py-8 sm:px-8" style="transition-delay:160ms">
                         <h3 class="font-semibold">Team labs</h3>
-                        <p class="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">Pairs share a chat, and each person&rsquo;s lines are counted toward the team.</p>
+                        <p class="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">Teammates share a chat, and each person&rsquo;s lines are counted toward the team.</p>
                     </div>
                     <div class="reveal py-8 sm:px-8" style="transition-delay:240ms">
                         <h3 class="font-semibold">Competency tracking</h3>
@@ -366,7 +366,7 @@
                 <h2 class="font-display text-4xl sm:text-6xl font-bold leading-[1.02] balance max-w-3xl mx-auto">
                     Grade the <span class="font-serif-accent font-normal text-[#3ecf8e]">process,</span> not just the output.
                 </h2>
-                <p class="mt-6 text-lg text-[var(--text-dim)] max-w-[46ch] mx-auto pretty">Set up a class, add a lab, and send students the join code.</p>
+                <p class="mt-6 text-lg text-[var(--text-dim)] max-w-[46ch] mx-auto pretty">Once an admin approves your instructor access, set up a class, add a lab, and send students the join code.</p>
                 <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
                     @auth
                         <a href="{{ route('dashboard') }}" class="btn btn-brand">Open dashboard <span class="arrow" aria-hidden="true">&rarr;</span></a>

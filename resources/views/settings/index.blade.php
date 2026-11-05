@@ -36,6 +36,15 @@
         'dark' => ['Dark Mode', 'Easy on the eyes at night.'],
         'light' => ['Light Mode', 'Best in bright rooms.'],
     ];
+    // Inline colors, not Tailwind classes: the light theme in layouts/app.blade.php
+    // remaps the dark hex classes with !important, which would turn these previews light.
+    $darkPreview = ['canvas' => '#0f0f0f', 'line' => '#2e2e2e', 'field' => '#171717', 'accent' => '#3ecf8e'];
+    $lightPreview = ['canvas' => '#f8f9fa', 'line' => '#e5e7eb', 'field' => '#ffffff', 'accent' => '#059669'];
+    $themePreviews = [
+        'system' => [$darkPreview, $lightPreview],
+        'dark' => [$darkPreview],
+        'light' => [$lightPreview],
+    ];
 @endphp
 
 @section('content')
@@ -265,20 +274,13 @@
                         <button type="button" onclick="selectTheme('{{ $key }}')" id="theme-card-{{ $key }}" role="radio" aria-checked="false"
                                 class="theme-card group rounded-xl border-2 border-[#2e2e2e] bg-[#141414] p-3 text-left transition-colors hover:border-[#3ecf8e]/50">
                             <span class="flex h-20 w-full overflow-hidden rounded-lg border border-[#2e2e2e]" aria-hidden="true">
-                                @if ($key !== 'dark')
-                                    <span class="flex flex-col justify-between bg-[#f8f9fa] p-2 {{ $key === 'system' ? 'w-1/2 border-r border-[#e5e7eb]' : 'w-full' }}">
-                                        <span class="h-1.5 w-2/3 rounded bg-[#e5e7eb]"></span>
-                                        <span class="h-1.5 w-full rounded border border-[#e5e7eb] bg-white"></span>
-                                        <span class="h-1.5 w-1/2 rounded-full bg-[#059669]"></span>
+                                @foreach ($themePreviews[$key] as $palette)
+                                    <span class="flex flex-1 flex-col justify-between p-2" style="background-color: {{ $palette['canvas'] }}">
+                                        <span class="h-1.5 w-2/3 rounded" style="background-color: {{ $palette['line'] }}"></span>
+                                        <span class="h-1.5 w-full rounded border" style="background-color: {{ $palette['field'] }}; border-color: {{ $palette['line'] }}"></span>
+                                        <span class="h-1.5 w-1/2 rounded-full" style="background-color: {{ $palette['accent'] }}"></span>
                                     </span>
-                                @endif
-                                @if ($key !== 'light')
-                                    <span class="flex flex-col justify-between bg-[#0f0f0f] p-2 {{ $key === 'system' ? 'w-1/2' : 'w-full' }}">
-                                        <span class="h-1.5 w-2/3 rounded bg-[#2e2e2e]"></span>
-                                        <span class="h-1.5 w-full rounded border border-[#2e2e2e] bg-[#171717]"></span>
-                                        <span class="h-1.5 w-1/2 rounded-full bg-[#3ecf8e]"></span>
-                                    </span>
-                                @endif
+                                @endforeach
                             </span>
                             <span class="mt-3 flex items-center justify-between">
                                 <span class="text-sm font-medium text-[#ededed]">{{ $label }}</span>

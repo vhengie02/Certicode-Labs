@@ -302,4 +302,20 @@
         </div>
     </div>
 
+    {{-- Rubric --}}
+    <div class="ui-card">
+        <div class="ui-card-header">
+            <h2 class="ui-card-title">Rubric <span class="ui-optional">(optional)</span></h2>
+            <p class="ui-card-subtitle">How the AI grader should judge the work. Students never see this.</p>
+        </div>
+        <div class="ui-card-body">
+            <label for="rubric" class="sr-only">Rubric</label>
+            <textarea name="rubric" id="rubric" rows="5" maxlength="10000"
+                      placeholder="e.g. Correct exception handling counts for half the grade. Take marks off for unclear variable names."
+                      class="ui-input" @error('rubric') aria-invalid="true" @enderror>{{ old('rubric', $laboratory?->rubric) }}</textarea>
+            <p class="ui-hint">Leave this empty and the grader uses the instructions and tasks alone.</p>
+            @error('rubric') <p class="ui-error">{{ $message }}</p> @enderror
+        </div>
+    </div>
+
 </div>

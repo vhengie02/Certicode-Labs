@@ -44,7 +44,7 @@
                 <a href="{{ route('modules.edit', [$class->id, $module->id]) }}" class="ui-btn ui-btn-ghost ui-btn-sm !px-2" aria-label="Edit {{ $module->title }}" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg></a>
                 @php $labsInside = count($module->getAllLaboratoryIds()); @endphp
                 <form action="{{ route('modules.destroy', [$class->id, $module->id]) }}" method="POST"
-                      onsubmit="return confirm('Delete the module “{{ addslashes($module->title) }}” and its sections and attachments? This can\'t be undone.');">
+                      data-confirm-title="Delete “{{ $module->title }}”?" data-confirm="Its sections and attachments are deleted too. This can't be undone." data-confirm-action="Delete module">
                     @csrf
                     @method('DELETE')
                     @if ($labsInside > 0)
@@ -116,7 +116,7 @@
                             <div class="line-sidebar__actions opacity-100 sm:opacity-0 sm:group-hover/lab:opacity-100 sm:group-focus-within/lab:opacity-100 transition-opacity">
                                 <a href="{{ route('laboratories.edit', $lab->id) }}" class="ui-btn ui-btn-ghost ui-btn-sm !px-2" aria-label="Edit {{ $lab->title }}" title="Edit"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg></a>
                                 <form action="{{ route('laboratories.destroy', $lab->id) }}" method="POST"
-                                      onsubmit="return confirm('Delete the lab “{{ addslashes($lab->title) }}”? Student sessions for it are deleted too.');">
+                                      data-confirm-title="Delete “{{ $lab->title }}”?" data-confirm="Student sessions for it are deleted too." data-confirm-action="Delete lab">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm !px-2 hover:!text-red-400" aria-label="Delete {{ $lab->title }}" title="Delete"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V4h6v3m-7 0l1 13h6l1-13"/></svg></button>

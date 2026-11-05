@@ -2,6 +2,11 @@
 
 ## 2026-11-05
 
+- Pop-up notifications now wait for the page to finish loading, slide in from the right edge of the screen and slide back out after 3 seconds, or longer for a long message. Error pop-ups still stay until closed. With the "reduce motion" system setting they fade instead.
+- VS Code extension 1.8.5 no longer flags a student for moving their own code. Text copied or cut from the same file or another open lab file is not reported as a paste. Code from any other file still is.
+- Instructors can now write a rubric on a lab. The AI grader reads it, and students never see it.
+- The landing page, sign-in pages and READMEs now describe the product accurately: live and self-paced labs, how certificates are issued, what a paste is compared with, team sizes and instructor approval. The READMEs also name the right AI key and provider.
+- Confirmations now open a pop-up in the app's own style instead of the browser's alert box. This covers deleting classes, modules, labs, teams, competencies and accounts, and ending classes, live labs and student sessions. Each pop-up names what it affects, and Cancel is selected first.
 - Low-light mode no longer passes a blocked camera. A black or blank picture now fails the pre-lab camera check with a message to uncover the camera or turn on a light, and the low-light option only appears in a dim room. During a lab, the status shows "Camera Blocked", and the warning count stops at 4/4.
 - The lab page now leaves camera mode about 12 to 17 seconds after VS Code closes, down from about 40. A window reload that takes longer than 12 seconds now counts as closed: the attempt stays open, and the student starts again from the lab page.
 - VS Code extension 1.8.3 opens the starter file under its real name, such as `Strings.java`, when no folder is open. It used to open as "Untitled-1", and a new copy opened on every session sync. The minimum extension version is now 1.8.3, so students on older builds see the update message and instructors see the "Old ext" badge. Those builds still connect.

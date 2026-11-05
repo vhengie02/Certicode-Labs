@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './branched-menu.css';
+@import './confirm-dialog.css';
 @import './line-sidebar.css';
 @import './staggered-menu.css';
 @import './stepper.css';

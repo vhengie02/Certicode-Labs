@@ -16,6 +16,9 @@
     --toast-border: #2e2e2e;
     --toast-text: #ededed;
     --toast-muted: #a1a1a1;
+    /* Off the right edge, far enough that the shadow is out of view too. */
+    --toast-hidden-transform: translateX(calc(100% + 3rem));
+    --toast-hidden-opacity: 1;
     display: flex;
     align-items: flex-start;
     gap: 0.625rem;
@@ -29,10 +32,22 @@
     line-height: 1.45;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     pointer-events: auto;
-    animation: toast-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transform: var(--toast-hidden-transform);
+    opacity: var(--toast-hidden-opacity);
+    transition:
+        transform 280ms cubic-bezier(0.23, 1, 0.32, 1),
+        opacity 280ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.toast.is-leaving { animation: toast-out 160ms ease-in forwards; }
+/* Toasts start hidden until resources/js/toast.js adds this class. Transitions, not keyframes,
+   so closing a toast mid-entry reverses it from where it is. */
+.toast.is-shown {
+    transform: none;
+    opacity: 1;
+}
+
+/* LEAVE_MS in resources/js/toast.js matches this duration. */
+.toast.is-leaving { transition-duration: 275ms; }
 
 .toast-success { --toast-accent: #3ecf8e; }
 .toast-error { --toast-accent: #f87171; }
@@ -56,15 +71,9 @@
 .toast-close:hover { color: var(--toast-text); }
 .toast-close svg { width: 0.875rem; height: 0.875rem; }
 
-@keyframes toast-in {
-    from { opacity: 0; transform: translateX(1rem); }
-    to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes toast-out {
-    to { opacity: 0; transform: translateX(1rem); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-    .toast, .toast.is-leaving { animation: none; }
+    .toast {
+        --toast-hidden-transform: none;
+        --toast-hidden-opacity: 0;
+    }
 }

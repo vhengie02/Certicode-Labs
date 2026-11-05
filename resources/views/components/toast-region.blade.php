@@ -3,6 +3,7 @@
     {{ $slot }}
     @stack('toasts')
 </div>
+<noscript><style>.toast { transform: none; opacity: 1; }</style></noscript>
 
 @foreach (['success', 'error', 'warning'] as $tone)
     <template data-toast-template="{{ $tone }}">

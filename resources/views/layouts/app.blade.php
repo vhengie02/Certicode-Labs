@@ -33,6 +33,15 @@
         })();
     </script>
 
+    <!-- Holds back data-confirm forms until confirm-dialog.js loads, so a quick click can't skip the question -->
+    <script>
+        document.addEventListener('submit', function (event) {
+            if (!window.confirmDialog && event.target.matches('[data-confirm]')) {
+                event.preventDefault();
+            }
+        }, true);
+    </script>
+
     <!-- Vite Compiled Assets -->
     @vite(['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js'])
     <!-- Brand fonts: Geist (UI), Geist Mono (code, labels), Instrument Serif (accents) -->
@@ -271,6 +280,7 @@
         html:not(.dark) input[type="email"],
         html:not(.dark) input[type="password"],
         html:not(.dark) input[type="number"],
+        html:not(.dark) .ui-input,
         html:not(.dark) select,
         html:not(.dark) textarea {
             background-color: #ffffff !important;
@@ -496,6 +506,8 @@
         #notifications-dropdown.is-opening .notif-item:nth-child(4) { animation-delay: 90ms; }
         #notifications-dropdown.is-opening .notif-item:nth-child(5) { animation-delay: 120ms; }
         .notif-dot-pop { animation: notif-dot-pop 280ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+        /* The dot's dark ring reads as a black outline on the light header */
+        html:not(.dark) .notif-dot { box-shadow: none; }
         @keyframes notif-panel-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
         @keyframes notif-panel-out { to { opacity: 0; transform: translateY(-4px) scale(0.98); } }
         @keyframes notif-row-in { from { opacity: 0; transform: translateY(6px); } }
@@ -670,6 +682,7 @@
         html:not(.dark) .toast-success { --toast-accent: #059669; }
         html:not(.dark) .toast-error { --toast-accent: #dc2626; }
         html:not(.dark) .toast-warning { --toast-accent: #d97706; }
+        html:not(.dark) .confirm-dialog { --confirm-bg: #ffffff; --confirm-border: #e5e7eb; --confirm-text: #111827; --confirm-muted: #6b7280; --confirm-accent: #dc2626; --confirm-accent-bg: #fef2f2; box-shadow: 0 30px 80px -20px rgba(17, 24, 39, 0.35); }
         html:not(.dark) .app-flash-info { color: #075985 !important; background-color: #f0f9ff !important; border-color: #bae6fd !important; }
         html:not(.dark) :focus-visible { outline-color: #059669; }
     </style>
@@ -840,6 +853,7 @@
             <x-toast :tone="$tone"><p>{{ $message }}</p></x-toast>
         @endforeach
     </x-toast-region>
+    <x-confirm-dialog />
 
 
     @yield('scripts')

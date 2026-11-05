@@ -119,7 +119,7 @@ class DashboardController extends Controller
                 ->withCount(['students' => fn ($q) => $q->where('class_student.status', 'enrolled')])
                 ->latest()
                 ->take(5)
-                ->get(['id', 'name', 'code', 'status', 'scheduled_end_date', 'created_at']),
+                ->get(['id', 'name', 'status', 'scheduled_end_date', 'created_at']),
         ];
     }
 

@@ -62,6 +62,7 @@ class LaboratoryController extends Controller
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'rubric' => 'nullable|string|max:10000',
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
@@ -124,6 +125,7 @@ class LaboratoryController extends Controller
             'live_status' => $availabilityMode === 'live' ? 'not_started' : 'active',
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            'rubric' => $validated['rubric'] ?? null,
             'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ]);
 
@@ -224,6 +226,7 @@ class LaboratoryController extends Controller
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'rubric' => 'nullable|string|max:10000',
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
@@ -286,6 +289,8 @@ class LaboratoryController extends Controller
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            // A request without the field keeps the saved rubric; the form sends it empty to clear it
+            'rubric' => array_key_exists('rubric', $validated) ? $validated['rubric'] : $laboratory->rubric,
             'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ];
 

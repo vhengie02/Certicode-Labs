@@ -29,9 +29,19 @@
     {{-- Key facts --}}
     <div class="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
         @if ($isStaff)
-            <div class="flex items-center gap-2">
+            {{-- The code stays masked, even without JS, and shows only while the button is held down --}}
+            <div class="flex items-center gap-2" x-data="{ revealed: false }">
                 <span class="text-[#888888]">Join code</span>
-                <code class="font-mono text-[#ededed] tracking-wider">{{ $class->code }}</code>
+                <span aria-live="polite">
+                    <code class="hidden font-mono text-[#ededed] tracking-wider" :class="{ hidden: !revealed }">{{ $class->code }}</code>
+                    <code class="font-mono text-[#ededed] tracking-wider" :class="{ hidden: revealed }" aria-hidden="true">••••••</code>
+                </span>
+                <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2 select-none touch-none" aria-label="Press and hold to unhide join code"
+                        @pointerdown="revealed = true" @pointerup="revealed = false" @pointercancel="revealed = false" @pointerleave="revealed = false"
+                        @keydown.space.prevent="revealed = true" @keydown.enter.prevent="revealed = true" @keyup.space="revealed = false" @keyup.enter="revealed = false"
+                        @blur="revealed = false" @blur.window="revealed = false" @contextmenu.prevent>
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12C3.5 9.5 7 5 12 5s8.5 4.5 9.5 7c-1 2.5-4.5 7-9.5 7s-8.5-4.5-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
                 <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2" data-copy="{{ $class->code }}" aria-label="Copy join code">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
                     <span data-copy-label>Copy</span>
@@ -167,7 +177,7 @@
                         <h2 id="end-heading" class="ui-card-title">End the class</h2>
                         <p class="ui-card-subtitle">Closes the class and issues certificates to every student at or above {{ $threshold }}%. This can't be undone.</p>
                         <form action="{{ route('classes.end', $class->id) }}" method="POST" class="mt-4"
-                              onsubmit="return confirm('End this class now? Students at or above {{ $threshold }}% get their certificates, and the class closes.');">
+                              data-confirm-title="End this class now?" data-confirm="Students at or above {{ $threshold }}% get their certificates, and the class closes. This can't be undone." data-confirm-action="End class">
                             @csrf
                             <button type="submit" class="ui-btn ui-btn-danger w-full">End class and issue certificates</button>
                         </form>

@@ -40,7 +40,7 @@
                     See how your students <span class="cc-serif text-[#3ecf8e] font-normal text-[1.1em]">actually</span> code.
                 </h1>
                 <p class="cc-rise mt-6 text-lg text-[var(--cc-text-dim)] leading-relaxed max-w-[44ch] cc-pretty" style="--d:1">
-                    Live Java labs in VS Code, graded against your rubric and certified when students clear the bar.
+                    Live and self-paced Java labs in VS Code, graded against your rubric and certified when students clear the bar.
                 </p>
             @endif
 

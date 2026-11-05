@@ -1,5 +1,6 @@
 import './bootstrap';
 import './toast';
+import './confirm-dialog';
 import './count-up';
 import './wake-bar';
 import './scramble-text';

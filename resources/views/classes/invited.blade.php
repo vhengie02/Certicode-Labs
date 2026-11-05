@@ -22,7 +22,6 @@
 
         <div class="p-4 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-left text-xs font-mono space-y-1.5">
             <div class="flex justify-between"><span class="text-[#666666]">Instructor:</span><span class="text-[#ededed]">{{ $class->instructor->name }}</span></div>
-            <div class="flex justify-between"><span class="text-[#666666]">Enrolment Code:</span><span class="text-[#3ecf8e]">{{ $class->code }}</span></div>
         </div>
 
         <div class="flex items-center space-x-3 pt-4 border-t border-[#232323]">

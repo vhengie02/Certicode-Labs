@@ -1,12 +1,13 @@
 // Pop-up notifications. Blade renders flash messages into #toast-region; this file times
 // and dismisses them, and exposes window.showToast() for messages raised in the browser.
 
-const LEAVE_MS = 160;
+const ENTER_DELAY_MS = 200;
+const LEAVE_MS = 275;
 const READING_MS_PER_CHAR = 60;
-const MIN_VISIBLE_MS = { success: 5000, warning: 8000 };
+const MIN_VISIBLE_MS = { success: 3000, warning: 3000 };
 
 function dismiss(toast) {
-    toast.classList.add('is-leaving');
+    toast.classList.replace('is-shown', 'is-leaving');
     setTimeout(() => toast.remove(), LEAVE_MS);
 }
 
@@ -31,6 +32,23 @@ function startTimer(toast) {
     start();
 }
 
+function reveal(toast) {
+    toast.getBoundingClientRect(); // Commits the hidden position, or a new toast skips the slide-in.
+    toast.classList.add('is-shown');
+    startTimer(toast);
+}
+
+// Flash messages wait for the page to load and paint, so they arrive on a finished page.
+function afterPageLoad(callback) {
+    const schedule = () => requestAnimationFrame(() => setTimeout(callback, ENTER_DELAY_MS));
+
+    if (document.readyState === 'complete') {
+        schedule();
+    } else {
+        window.addEventListener('load', schedule, { once: true });
+    }
+}
+
 function showToast(message, tone = 'success') {
     const region = document.getElementById('toast-region');
     const template = document.querySelector(`[data-toast-template="${tone}"]`);
@@ -41,7 +59,7 @@ function showToast(message, tone = 'success') {
     const toast = template.content.firstElementChild.cloneNode(true);
     toast.querySelector('[data-toast-message]').textContent = message;
     region.append(toast);
-    startTimer(toast);
+    reveal(toast);
 }
 
 document.addEventListener('click', (event) => {
@@ -51,6 +69,6 @@ document.addEventListener('click', (event) => {
     }
 });
 
-document.querySelectorAll('#toast-region [data-toast]').forEach(startTimer);
+afterPageLoad(() => document.querySelectorAll('#toast-region [data-toast]:not(.is-shown)').forEach(reveal));
 
 window.showToast = showToast;
