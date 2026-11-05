@@ -22,10 +22,11 @@ use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\StudentProfileController;
 use App\Models\User;
-use App\Support\InternalUrl;
+use App\Support\NotificationFeed;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -132,6 +133,10 @@ Route::middleware('auth')->group(function () {
     Route::put('/settings/profile', [SettingsController::class, 'updateProfile'])->name('settings.profile.update');
     Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password.update');
     Route::post('/settings/notifications', [SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
+    Route::put('/settings/date-time', [SettingsController::class, 'updateDateTime'])->name('settings.datetime.update');
+    Route::post('/settings/sessions/sign-out-others', [SettingsController::class, 'signOutOtherSessions'])->name('settings.sessions.signout')->middleware('throttle:10,1');
+    Route::get('/settings/export', [SettingsController::class, 'exportData'])->name('settings.export')->middleware('throttle:3,10');
+    Route::delete('/settings/account', [SettingsController::class, 'destroyAccount'])->name('settings.account.destroy')->middleware('throttle:5,1');
     Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect')->middleware('throttle:auth-mail');
     Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify')->middleware('throttle:code-verify');
     Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
@@ -143,8 +148,10 @@ Route::middleware('auth')->group(function () {
 
     // Classes & Module management (NetAcad inspired)
     Route::resource('classes', ClassController::class);
+    Route::get('/classes/{class_id}/card-image', [ClassController::class, 'cardImage'])->name('classes.card-image');
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
+    Route::get('/integrity-flags', [ClassController::class, 'integrityFlags'])->name('anomalies.index');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
@@ -189,6 +196,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/monitoring/data', [InstructorMonitoringController::class, 'streamData'])->name('instructor.monitoring.data');
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
+    Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
 
     // Student Profiles & Directory CRUD
     // The student directory became Admin > Users; keep the old address working
@@ -231,25 +239,7 @@ Route::middleware('auth')->group(function () {
         }
 
         $cacheKey = "user_notifs_{$user->id}";
-        $data = Cache::remember($cacheKey, 15, function () use ($user) {
-            $unreadCount = $user->unreadNotifications()->count();
-            $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
-                return [
-                    'id' => $notif->id,
-                    'unread' => $notif->unread(),
-                    'url' => InternalUrl::path($notif->data['url'] ?? null),
-                    'title' => $notif->data['title'] ?? 'Notification',
-                    'message' => $notif->data['message'] ?? '',
-                    'type' => $notif->data['type'] ?? 'info',
-                    'time' => $notif->created_at->diffForHumans(),
-                ];
-            });
-
-            return [
-                'unreadCount' => $unreadCount,
-                'notifications' => $notifications,
-            ];
-        });
+        $data = Cache::remember($cacheKey, 15, fn () => NotificationFeed::for($user));
 
         return response()->json($data)
             ->header('Cache-Control', 'private, max-age=15');
@@ -260,30 +250,34 @@ Route::middleware('auth')->group(function () {
         $user = auth()->user();
         if ($user) {
             $user->unreadNotifications->markAsRead();
-            Cache::forget("user_notifs_{$user->id}");
-            Cache::store('file')->forget("user_notifs_summary_{$user->id}");
+            NotificationFeed::forget($user);
 
-            $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
-                return [
-                    'id' => $notif->id,
-                    'unread' => false,
-                    'url' => InternalUrl::path($notif->data['url'] ?? null),
-                    'title' => $notif->data['title'] ?? 'Notification',
-                    'message' => $notif->data['message'] ?? '',
-                    'type' => $notif->data['type'] ?? 'info',
-                    'time' => $notif->created_at->diffForHumans(),
-                ];
-            });
-
-            return response()->json([
-                'status' => 'success',
-                'unreadCount' => 0,
-                'notifications' => $notifications,
-            ]);
+            return response()->json(['status' => 'success'] + NotificationFeed::for($user));
         }
 
-        return response()->json(['status' => 'success', 'unreadCount' => 0, 'notifications' => []]);
+        return response()->json(['status' => 'success', 'unreadCount' => 0, 'readCount' => 0, 'notifications' => []]);
     })->name('notifications.mark-as-read');
+
+    // Only read notifications can go: an unread id in the list is left alone, not an error,
+    // because it may have arrived in another tab after this one rendered
+    Route::post('/notifications/delete-read', function (Request $request) {
+        $validated = $request->validate([
+            'all' => ['sometimes', 'boolean'],
+            'ids' => ['sometimes', 'array', 'max:100'],
+            'ids.*' => ['uuid'],
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $notifications = $user->readNotifications();
+        if (! ($validated['all'] ?? false)) {
+            $notifications->whereIn('id', $validated['ids'] ?? []);
+        }
+        $notifications->delete();
+        NotificationFeed::forget($user);
+
+        return response()->json(['status' => 'success'] + NotificationFeed::for($user));
+    })->name('notifications.delete-read');
 });
 
 // V1 lab routes. Called from the lab page in the browser (session cookie) and, on Vercel, by the

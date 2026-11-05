@@ -23,7 +23,7 @@ class CameraGateTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const SNAPSHOT = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    private const CAMERA_FRAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
     private User $student;
 
@@ -61,7 +61,7 @@ class CameraGateTest extends TestCase
     public function test_a_camera_check_recorded_by_the_server_opens_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
 
         $this->start()->assertOk()->assertJsonStructure(['session_id', 'vscode_url']);
@@ -74,7 +74,7 @@ class CameraGateTest extends TestCase
     public function test_a_low_light_pass_is_recorded_as_low_light_not_as_one_face(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'low_light' => true])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'low_light' => true, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
 
         $this->start()->assertOk();
@@ -97,7 +97,7 @@ class CameraGateTest extends TestCase
     public function test_an_old_camera_check_does_not_open_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
 
         $this->travel(11)->minutes();
@@ -108,7 +108,7 @@ class CameraGateTest extends TestCase
     private function check(int $faceCount, array $extra = [])
     {
         return $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => $faceCount] + $extra);
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => $faceCount, 'image_base64' => self::CAMERA_FRAME] + $extra);
     }
 
     private function failThreeTimes(array $lastCheck = []): void
@@ -133,7 +133,7 @@ class CameraGateTest extends TestCase
         $this->failThreeTimes();
 
         $this->actingAs($this->student)
-            ->postJson("/v1/sessions/{$session->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->postJson("/v1/sessions/{$session->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
             ->assertStatus(423);
     }
 
@@ -173,7 +173,7 @@ class CameraGateTest extends TestCase
         $otherLab = Laboratory::create(['module_id' => $this->laboratory->module_id, 'title' => 'Arrays', 'description' => 'Sort.', 'time_limit' => 45, 'is_group_lab' => false, 'tasks_definition' => []]);
 
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$otherLab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1])
+            ->postJson("/v1/labs/{$otherLab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
             ->assertOk();
     }
 
@@ -181,7 +181,7 @@ class CameraGateTest extends TestCase
     {
         $session = LabSession::create(['user_id' => $this->student->id, 'lab_id' => $this->laboratory->id, 'status' => 'in_progress']);
 
-        $this->failThreeTimes(['image_base64' => self::SNAPSHOT]);
+        $this->failThreeTimes();
 
         $flag = Anomaly::where('lab_session_id', $session->id)->sole();
         $this->assertSame('no_face', $flag->type);

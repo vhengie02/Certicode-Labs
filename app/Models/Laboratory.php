@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\CodeSimilarityService;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -31,10 +32,12 @@ class Laboratory extends Model
         'live_started_at',
         'live_elapsed_seconds',
         'max_attempts',
+        'due_at',
     ];
 
     protected $casts = [
         'max_attempts' => 'integer',
+        'due_at' => 'datetime',
         'tasks_definition' => 'array',
         'test_cases' => 'array',
         'is_group_lab' => 'boolean',
@@ -145,6 +148,31 @@ class Laboratory extends Model
         }
 
         return $this->live_status === 'closed' || ($this->live_status === 'active' && $this->getRemainingLiveSeconds() <= 0);
+    }
+
+    /**
+     * The badge on a student's syllabus row as ['label', 'class'], or null for none. A due date
+     * is only a label: late work is still accepted.
+     */
+    public function studentStatus(bool $isDone = false): ?array
+    {
+        if ($this->isLiveLab()) {
+            return match (true) {
+                $this->isLiveActive() => ['label' => 'Ongoing', 'class' => 'ui-badge-brand'],
+                $this->isLiveNotStarted() => ['label' => 'Locked', 'class' => ''],
+                default => ['label' => 'Live lab', 'class' => ''],
+            };
+        }
+
+        if ($isDone || ! $this->due_at) {
+            return null;
+        }
+
+        $gap = $this->due_at->diffForHumans(now(), CarbonInterface::DIFF_ABSOLUTE, false, 1);
+
+        return $this->due_at->isFuture()
+            ? ['label' => "Due in {$gap}", 'class' => 'ui-badge-warn']
+            : ['label' => "Late by {$gap}", 'class' => 'ui-badge-danger'];
     }
 
     /**

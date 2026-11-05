@@ -51,7 +51,8 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * **Open Lab**:
   * Self-paced; available immediately upon creation throughout active course duration.
   * Individual per-student timer begins when the student initiates the lab.
-  * Closes only when individually submitted, manually ended by instructor, or when the entire course concludes.
+  * An attempt ends when it is submitted, when the instructor ends it, or when the course concludes. It stops accepting work once the per-student time limit and a short grace period run out.
+  * An optional due date shows students how long is left, then how late they are. Late work is still accepted.
 
 ### 2. Real-Time Line Diff Tracking
 * Calculates line-level deltas (`+added`, `-deleted`, `~modified`) against the original starter file baseline in real time.
@@ -67,13 +68,13 @@ Instructors configure lab accessibility independently of participation mode (Sol
 ### 4. AI Proctoring & Anomaly Telemetry
 * **WPM Behavioral Baseline**: Tracks continuous typing speed over rolling time windows.
 * **Smart Paste Anomaly Detection**:
-  * **Suppression Rule A**: Ignores paste if content matches existing text elsewhere in the same file (internal move/restructure).
+  * **Suppression Rule A**: Ignores paste if content matches the lab's starter files, or is the student's own code: already in the same file, in an open lab file, or cut from one of them earlier in the attempt.
   * **Suppression Rule B**: Ignores paste if content matches recent snippets from the active team chat.
-  * **Contextual AI Validation**: Flags unsuppressed external pastes to the instructor panel without interrupting the student.
+  * **Clipboard Check**: Flags a remaining paste to the instructor panel, without interrupting the student, only if the inserted text is on the clipboard. These rules are deterministic; no AI reviews a paste.
 * **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches.
 
 ### 5. Camera Presence Gate & Continuous Verification
-* **Pre-Lab Gate**: Requires browser webcam permission and passes AI face detection before the lab workspace is unlocked.
+* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A low-light pass skips face detection and is recorded for the instructor.
 * **Continuous Background Proctoring**: Performs non-interruptive periodic background presence checks. Mid-session face-loss alerts are quietly streamed to the instructor with snapshot attachments while the student continues working.
 
 ### 6. In-Lab VS Code Sidebar & Live Leaderboard
@@ -89,8 +90,8 @@ Instructors configure lab accessibility independently of participation mode (Sol
 
 ### 8. Session Closure, Course Competency & E-Certification
 * **Lab Closure**: Auto-submits pending workspaces, assesses competency scores, terminates WebSocket channels, and purges chat.
-* **Course Completion**: Evaluates cumulative competencies across all labs against an instructor-configured passing threshold percentage (e.g. 75%).
-* **E-Certification**: Automatically issues verifiable cryptographic certificates with QR codes for qualifying students upon course conclusion.
+* **Course Completion**: Counts the labs where a student reached the class's lab pass score, and compares that share of all labs with an instructor-configured passing threshold (e.g. 75%). Grades awaiting instructor review do not count. Competency scores are tracked separately and do not affect certificates.
+* **E-Certification**: Issues certificates with QR codes to qualifying students when the class ends, or earlier when a student claims one. Each has a random verification code that a public page looks up in the database; certificates are not cryptographically signed.
 
 ---
 
@@ -114,7 +115,7 @@ flowchart TD
     subgraph Backend ["Laravel Backend & Services"]
         Reverb["Laravel Reverb Server"]
         Controllers["Session, Telemetry & Lab Controllers"]
-        AIService["AI Engine (LLM Evaluation & Face Detection)"]
+        AIService["AI Grader (Claude)"]
         DB[(SQL Database)]
         Scheduler["Artisan Scheduler & Cron"]
     end
@@ -208,7 +209,7 @@ VITE_REVERB_PORT="${REVERB_PORT}"
 VITE_REVERB_SCHEME="${REVERB_SCHEME}"
 
 # AI Evaluation Engine
-OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
 
 # Cron Security Token (Used by Vercel Cron / Cloud Scheduler)
 CRON_SECRET=your-secure-cron-token
@@ -241,7 +242,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.1.0**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.8.5**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force
@@ -261,7 +262,7 @@ npx @vscode/vsce package -o ../public/downloads/certicode-labs.vsix
 
 ## Automated Testing
 
-CertiCode Labs includes a comprehensive test suite of **131 tests (563 assertions)** covering:
+CertiCode Labs includes a test suite covering:
 * Live Lab availability lifecycle, synchronous countdowns, and late-joiner gating
 * Pre-lab camera face detection gates and continuous proctoring
 * OS focus loss and typing anomaly telemetry
@@ -299,4 +300,4 @@ The repository includes a production-ready `vercel.json` configuration:
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT License.

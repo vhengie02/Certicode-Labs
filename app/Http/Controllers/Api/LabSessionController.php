@@ -114,7 +114,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $this->boundedPayload($logPayload),
+            'payload' => $this->boundedPayload($logPayload, $eventType === 'paste_anomaly' ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
         ]);
 
         // Smart anomaly checks
@@ -136,7 +136,8 @@ class LabSessionController extends Controller
 
         if ($request->event_type === 'wpm_update') {
             $wpm = (int) ($request->payload['wpm'] ?? 0);
-            $keystrokes = (int) ($request->payload['keystroke_count'] ?? 0);
+            // The count only grows: older extension builds restart it at zero after a window reload
+            $keystrokes = max((int) ($request->payload['keystroke_count'] ?? 0), (int) $session->keystroke_count);
             if ($keystrokes > 0 && (! isset($request->payload['wpm']) || $request->payload['wpm'] === null)) {
                 $session->keystroke_count = $keystrokes;
                 $wpm = $session->calculateOverallWpm();
@@ -156,19 +157,44 @@ class LabSessionController extends Controller
             $session->recordIdleAnomaly($idleMinutes, $request->payload);
         }
 
-        if ($request->event_type === 'paste_anomaly') {
+        if ($request->event_type === 'paste_anomaly' && ! $this->isStarterPaste($session, $request->payload ?? [])) {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
-            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
+            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
             $metadata = $request->payload;
             $metadata['snippet'] = $snippet;
-            $metadata = $this->boundedPayload($metadata);
+            $metadata = $this->boundedPayload($metadata, self::MAX_PASTE_PAYLOAD_BYTES);
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
                 'severity' => $pastedLen > 100 ? 'high' : 'medium',
                 'description' => 'Unusual external code paste detected ('.$pastedLen.' chars): '.Str::limit($snippet, 70),
                 'metadata' => $metadata,
+            ]);
+        }
+
+        // Work after the attempt closed can't change the submission, so it isn't flagged
+        if ($eventType === 'starter_files_kept' && $session->status === 'in_progress') {
+            $lines = (int) ($request->payload['changed_lines'] ?? 0);
+            $names = collect((array) ($request->payload['files'] ?? []))->filter(fn ($name) => is_string($name))->implode(', ');
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'starter_files_kept',
+                'severity' => 'medium',
+                'description' => Str::limit("Started from files already in the folder instead of the starter code ({$lines} lines differ): {$names}", 250),
+                'metadata' => $this->boundedPayload($request->payload),
+            ]);
+        }
+
+        if ($eventType === 'external_file_change' && $session->status === 'in_progress') {
+            $lines = (int) ($request->payload['changed_lines'] ?? 0);
+            $file = (string) ($request->payload['file'] ?? 'a lab file');
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'external_file_change',
+                'severity' => $lines >= self::LARGE_EXTERNAL_CHANGE_LINES ? 'high' : 'medium',
+                'description' => Str::limit("{$lines} lines of {$file} changed outside the editor", 250),
+                'metadata' => $this->boundedPayload($request->payload),
             ]);
         }
 
@@ -308,6 +334,9 @@ class LabSessionController extends Controller
 
     private const SNAPSHOT_INTERVAL_SECONDS = 120;
 
+    /** Lines changed outside the editor from which the flag is high severity. */
+    private const LARGE_EXTERNAL_CHANGE_LINES = 20;
+
     /** Camera flags in a lab within this many minutes of the last one don't notify again. */
     private const CAMERA_NOTIFY_QUIET_MINUTES = 15;
 
@@ -350,12 +379,20 @@ class LabSessionController extends Controller
     private const MAX_PAYLOAD_BYTES = 8192;
 
     /**
+     * Pasted text kept for the instructor, and room for it in a payload: JSON can spend up to
+     * six bytes on a character. Going over the byte limit would cut the text to 500 characters.
+     */
+    private const MAX_PASTE_SNIPPET_CHARS = 10000;
+
+    private const MAX_PASTE_PAYLOAD_BYTES = 65536;
+
+    /**
      * A client-sent payload, cut down if it is too large to store. Small scalar fields are
      * kept so the event still says what happened.
      */
-    private function boundedPayload(?array $payload): ?array
+    private function boundedPayload(?array $payload, int $maxBytes = self::MAX_PAYLOAD_BYTES): ?array
     {
-        if ($payload === null || strlen((string) json_encode($payload)) <= self::MAX_PAYLOAD_BYTES) {
+        if ($payload === null || strlen((string) json_encode($payload)) <= $maxBytes) {
             return $payload;
         }
 
@@ -365,9 +402,43 @@ class LabSessionController extends Controller
             ->take(20)
             ->all();
 
-        return strlen((string) json_encode($kept)) <= self::MAX_PAYLOAD_BYTES
+        return strlen((string) json_encode($kept)) <= $maxBytes
             ? $kept + ['truncated' => true]
             : ['truncated' => true];
+    }
+
+    /**
+     * Whether a reported paste is only the lab's own starter code, which older extension builds
+     * report when they open a starter file. Line endings are ignored: starter files use LF, but
+     * Windows editors report CRLF. Those builds send just the first 100 characters, so a cut-off
+     * snippet also has to match the starter file's full length.
+     */
+    private function isStarterPaste(LabSession $session, array $payload): bool
+    {
+        $unifyEol = fn (string $text): string => str_replace(["\r\n", "\r"], "\n", $text);
+        $rawSnippet = (string) ($payload['snippet'] ?? '');
+        $snippet = trim($unifyEol($rawSnippet));
+        if ($snippet === '') {
+            return false;
+        }
+
+        $pastedLength = (int) ($payload['pasted_length'] ?? 0);
+        $isWholePaste = $pastedLength <= mb_strlen($rawSnippet);
+
+        foreach ($session->laboratory?->getStarterFilesList() ?? [] as $file) {
+            $content = $unifyEol((string) ($file['content'] ?? ''));
+            if (! str_contains($content, $snippet)) {
+                continue;
+            }
+
+            $lfLength = mb_strlen($content);
+            $crlfLength = $lfLength + substr_count($content, "\n");
+            if ($isWholePaste || $pastedLength === $lfLength || $pastedLength === $crlfLength) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -406,9 +477,9 @@ class LabSessionController extends Controller
         }
 
         $request->validate([
-            'code' => 'required|string',
+            'code' => 'required|string|max:'.self::MAX_SUBMISSION_CHARS,
             'language' => 'required|string',
-        ]);
+        ], ['code.max' => self::SUBMISSION_TOO_LONG]);
 
         $result = $this->sandboxService->execute($request->code, $request->language);
 
@@ -662,6 +733,7 @@ class LabSessionController extends Controller
             'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
             'performance_score' => $session->performance_score,
             'completed_tasks' => $session->completed_tasks ?? [],
+            'keystroke_count' => (int) $session->keystroke_count,
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
             'code_contributions' => $session->group_id ? $session->teamContributions() : ($session->code_contributions ?? []),
             'realtime' => Realtime::clientConfig(),
@@ -678,12 +750,56 @@ class LabSessionController extends Controller
     }
 
     /**
+     * Largest submission, in characters. Far above any lab's code, and small enough that the
+     * grader isn't pushed into a timeout, which would fall back to the weaker pattern checks.
+     */
+    private const MAX_SUBMISSION_CHARS = 100000;
+
+    private const MAX_SUBMISSION_FILES = 50;
+
+    private const SUBMISSION_TOO_LONG = 'This submission is too large to grade. Remove generated or unrelated code and try again.';
+
+    /** Diagnostics kept for the grading prompt, and how much of each field. */
+    private const MAX_DIAGNOSTICS = 50;
+
+    private const MAX_DIAGNOSTIC_FIELD_CHARS = 500;
+
+    private function validateSubmission(Request $request): void
+    {
+        $request->validate([
+            'code' => 'nullable|string|max:'.self::MAX_SUBMISSION_CHARS,
+            'files' => 'nullable|array|max:'.self::MAX_SUBMISSION_FILES,
+            'files.*.content' => 'nullable|string|max:'.self::MAX_SUBMISSION_CHARS,
+            'language' => 'required|string',
+            'diagnostics' => 'nullable|array',
+        ], [
+            'code.max' => self::SUBMISSION_TOO_LONG,
+            'files.max' => self::SUBMISSION_TOO_LONG,
+            'files.*.content.max' => self::SUBMISSION_TOO_LONG,
+        ]);
+    }
+
+    /**
+     * The submission's other code files, for the grader: everything sent except the main file
+     * ($code), blank files, and notes and data.
+     */
+    private function otherCodeFiles(Request $request, string $code): array
+    {
+        return collect(LabSession::normalizeSubmittedFiles($request->input('files')))
+            ->filter(fn ($file) => LabSession::isCodeFile($file['name']) && trim($file['content']) !== '' && $file['content'] !== $code)
+            ->values()
+            ->all();
+    }
+
+    /**
      * Run an AI-based check progress check-in-progress assessment.
      */
     /**
      * Keep only IDE diagnostics that belong to the submitted files. The extension reports
      * diagnostics for every document VS Code knows about, and an error in an unrelated file
-     * (settings.json, another project) must not fail the submission's syntax gate.
+     * (settings.json, another project) must not fail the submission's syntax gate. They go into
+     * the grading prompt, so they are cut down here rather than refused: a badly broken file
+     * has many errors, and that must not stop the student submitting.
      */
     private function submittedFileDiagnostics(Request $request): array
     {
@@ -693,15 +809,21 @@ class LabSessionController extends Controller
             ->filter()
             ->map(fn ($name) => ltrim(str_replace('\\', '/', (string) $name), '/'));
 
-        if ($fileNames->isEmpty()) {
-            return array_values($diagnostics);
+        if ($fileNames->isNotEmpty()) {
+            $diagnostics = array_filter($diagnostics, function ($diag) use ($fileNames) {
+                $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
+
+                return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
+            });
         }
 
-        return array_values(array_filter($diagnostics, function ($diag) use ($fileNames) {
-            $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
-
-            return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
-        }));
+        return array_map(
+            fn (array $diag) => array_map(
+                fn ($value) => is_scalar($value) ? mb_substr((string) $value, 0, self::MAX_DIAGNOSTIC_FIELD_CHARS) : '',
+                Arr::only($diag, ['file', 'line', 'message', 'source'])
+            ),
+            array_slice(array_values($diagnostics), 0, self::MAX_DIAGNOSTICS)
+        );
     }
 
     public function checkProgress(Request $request, int $sessionId)
@@ -712,12 +834,7 @@ class LabSessionController extends Controller
             return $this->attemptClosedResponse($session);
         }
 
-        $request->validate([
-            'code' => 'nullable|string',
-            'files' => 'nullable|array',
-            'language' => 'required|string',
-            'diagnostics' => 'nullable|array',
-        ]);
+        $this->validateSubmission($request);
 
         return $this->whileGrading($session, fn () => $this->gradeProgress($request, $session));
     }
@@ -740,7 +857,7 @@ class LabSessionController extends Controller
 
         $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics, $this->otherCodeFiles($request, $code));
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -802,12 +919,7 @@ class LabSessionController extends Controller
             return $this->attemptClosedResponse($session);
         }
 
-        $request->validate([
-            'code' => 'nullable|string',
-            'files' => 'nullable|array',
-            'language' => 'required|string',
-            'diagnostics' => 'nullable|array',
-        ]);
+        $this->validateSubmission($request);
 
         return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
     }
@@ -842,7 +954,7 @@ class LabSessionController extends Controller
         // AI task-completion evaluation
         $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics, $this->otherCodeFiles($request, $code));
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -900,7 +1012,8 @@ class LabSessionController extends Controller
         $session->notifyStudents(
             "Lab submitted: {$labTitle}",
             "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (".count($completedTasks).' tasks passed).'
-                .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : '')
+                .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : ''),
+            type: 'grade',
         );
 
         $studentEvaluation = Arr::except($evaluation, [
@@ -1599,7 +1712,7 @@ class LabSessionController extends Controller
     }
 
     /** How long after a clean shutdown the extension may resume before VS Code counts as closed. */
-    private const VSCODE_RELOAD_GRACE_SECONDS = 30;
+    private const VSCODE_RELOAD_GRACE_SECONDS = 12;
 
     /**
      * Whether the extension connected to this session is older than the minimum supported build.
@@ -1730,7 +1843,7 @@ class LabSessionController extends Controller
         $session = LabSession::findOrFail($sessionId);
 
         $status = $request->input('status', 'granted'); // granted, denied, blocked
-        $faceCount = (int) $request->input('face_count', 1);
+        $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
         $imageBase64 = $request->input('image_base64');
 
         if ($status === 'denied' || $status === 'blocked') {
@@ -1788,6 +1901,10 @@ class LabSessionController extends Controller
             return $this->cameraBlockedResponse($blockMinutes);
         }
 
+        if (! WebcamSnapshot::decode($imageBase64)) {
+            return $this->unreadableCameraFrameResponse();
+        }
+
         // Successfully verified. The reference frame isn't kept: nothing reads it, and a
         // webcam picture of a student who passed has no place in storage.
         TelemetryLog::create([
@@ -1819,7 +1936,7 @@ class LabSessionController extends Controller
         $this->authorizeLabViewer($lab);
 
         $status = $request->input('status', 'granted'); // granted, denied, blocked
-        $faceCount = (int) $request->input('face_count', 1);
+        $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
 
         if ($status === 'denied' || $status === 'blocked') {
             return response()->json([
@@ -1847,6 +1964,10 @@ class LabSessionController extends Controller
                 $request, $lab, 'multiple_faces',
                 'Multiple faces detected in frame. Only one student is permitted.',
             );
+        }
+
+        if (! WebcamSnapshot::decode($request->input('image_base64'))) {
+            return $this->unreadableCameraFrameResponse();
         }
 
         LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
@@ -1921,5 +2042,19 @@ class LabSessionController extends Controller
         } catch (\Throwable $e) {
             Log::warning('Camera block notification failed: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Faces are counted in the browser, so the count is only a claim. A check must at least
+     * come with the real camera frame it was made on.
+     */
+    private function unreadableCameraFrameResponse(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'unreadable_camera_frame',
+            'message' => 'Your camera image could not be read. Please try again.',
+        ], 422);
     }
 }

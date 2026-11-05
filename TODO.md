@@ -305,7 +305,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Server-side camera gate**:
   - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. A low-light pass is logged as `low_light`, and the low-light option is hidden after a multiple-faces failure.
 - [x] **Low-light mode no longer skips the camera check**:
-  - "Continue in low-light mode" appeared after any failed check and passed without looking for a face. It now shows only on a dim frame and needs exactly one face on a brightened frame.
+  - "Continue in low-light mode" appeared after any failed check and passed without looking for a face. It now shows only on a dim frame and needs exactly one face on a brightened frame. If the face models failed to load there is nothing to detect with, so a picture that is not black or blank still passes.
 - [x] **Three failed camera checks lock the lab**:
   - The lab page reports each failed check to `POST /v1/labs/{id}/verify-camera`, and the third locks that lab for 15 minutes (`LabAttemptController::CAMERA_BLOCK_MINUTES`), even for a check that then passes. The count lives in the login session, so a reload doesn't reset it but signing in again does.
   - With an attempt open, the lockout raises a high-severity flag with the last picture. With none, the instructor gets an in-app notification.

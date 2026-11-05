@@ -40,6 +40,10 @@ class User extends Authenticatable
         'notify_lab',
         'notify_certificate',
         'notify_email_channel',
+        'notify_grade',
+        'notify_integrity',
+        'timezone',
+        'date_style',
         'auth_user_id',
     ];
 
@@ -109,6 +113,8 @@ class User extends Authenticatable
             'notify_lab' => 'boolean',
             'notify_certificate' => 'boolean',
             'notify_email_channel' => 'boolean',
+            'notify_grade' => 'boolean',
+            'notify_integrity' => 'boolean',
         ];
     }
 

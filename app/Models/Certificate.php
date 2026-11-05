@@ -46,18 +46,24 @@ class Certificate extends Model
     }
 
     /**
-     * Issue a student's certificate for a class if their progress meets the pass mark. The one
+     * Issue a student's certificate for a class if enough labs reach the lab pass score. The one
      * place certificates are created: ending a class, the scheduled auto-conclude and the
      * student's claim button all come through here. An existing certificate is returned, not
-     * duplicated. 'created' says whether this call made it, so callers notify only once.
+     * duplicated, even if the class's rules have since tightened. 'created' says whether this
+     * call made it, so callers notify only once.
      *
      * @return array{certificate: ?Certificate, created: bool, progress: array, threshold: int}
      */
     public static function issueFor(SchoolClass $class, User $student): array
     {
         $threshold = $class->passing_threshold ?? 75;
-        $progress = $class->getStudentProgress($student);
+        $progress = $class->certificateProgress($student);
         $result = ['certificate' => null, 'created' => false, 'progress' => $progress, 'threshold' => $threshold];
+
+        $existing = static::where('user_id', $student->id)->where('class_id', $class->id)->first();
+        if ($existing) {
+            return ['certificate' => $existing] + $result;
+        }
 
         if ($progress['total'] === 0 || $progress['percent'] < $threshold) {
             return $result;
@@ -216,6 +222,7 @@ class Certificate extends Model
             'completion' => $total > 0 ? (int) round($completed / $total * 100) : 0,
             'average_grade' => $grades->isNotEmpty() ? round((float) $grades->avg(), 1) : null,
             'pass_mark' => $class->passing_threshold ?? 75,
+            'lab_pass_score' => $class->lab_pass_score ?? SchoolClass::DEFAULT_LAB_PASS_SCORE,
             'minutes' => $minutes,
             'competencies' => $competencies,
             'first_activity' => $sessions->min('started_at'),

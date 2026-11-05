@@ -9,6 +9,7 @@
     $enrolled = $class->students->filter(fn ($s) => $s->pivot->status === 'enrolled');
     $invited = $class->students->filter(fn ($s) => $s->pivot->status === 'invited');
     $threshold = $class->passing_threshold ?? 75;
+    $labPassScore = $class->lab_pass_score ?? \App\Models\SchoolClass::DEFAULT_LAB_PASS_SCORE;
     $isEnded = $class->isEnded();
 @endphp
 
@@ -28,9 +29,19 @@
     {{-- Key facts --}}
     <div class="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
         @if ($isStaff)
-            <div class="flex items-center gap-2">
+            {{-- The code stays masked, even without JS, and shows only while the button is held down --}}
+            <div class="flex items-center gap-2" x-data="{ revealed: false }">
                 <span class="text-[#888888]">Join code</span>
-                <code class="font-mono text-[#ededed] tracking-wider">{{ $class->code }}</code>
+                <span aria-live="polite">
+                    <code class="hidden font-mono text-[#ededed] tracking-wider" :class="{ hidden: !revealed }">{{ $class->code }}</code>
+                    <code class="font-mono text-[#ededed] tracking-wider" :class="{ hidden: revealed }" aria-hidden="true">••••••</code>
+                </span>
+                <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2 select-none touch-none" aria-label="Press and hold to unhide join code"
+                        @pointerdown="revealed = true" @pointerup="revealed = false" @pointercancel="revealed = false" @pointerleave="revealed = false"
+                        @keydown.space.prevent="revealed = true" @keydown.enter.prevent="revealed = true" @keyup.space="revealed = false" @keyup.enter="revealed = false"
+                        @blur="revealed = false" @blur.window="revealed = false" @contextmenu.prevent>
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12C3.5 9.5 7 5 12 5s8.5 4.5 9.5 7c-1 2.5-4.5 7-9.5 7s-8.5-4.5-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
                 <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2" data-copy="{{ $class->code }}" aria-label="Copy join code">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
                     <span data-copy-label>Copy</span>
@@ -38,9 +49,9 @@
             </div>
         @endif
         <div><span class="text-[#888888]">Instructor</span> <span class="text-[#ededed]">{{ $class->instructor->name ?? 'Unassigned' }}</span></div>
-        <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}%</span></div>
+        <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}% of labs at {{ $labPassScore }}% or more</span></div>
         @if ($class->scheduled_end_date)
-            <div><span class="text-[#888888]">{{ $isEnded ? 'Ended' : 'Ends' }}</span> <span class="text-[#ededed]">{{ $class->scheduled_end_date->format('M j, Y') }}</span></div>
+            <div><span class="text-[#888888]">{{ $isEnded ? 'Ended' : 'Ends' }}</span> <span class="text-[#ededed]">{{ \App\Support\DisplayTime::format($class->scheduled_end_date, true) }}</span></div>
         @endif
         @if ($isStaff)
             <div><span class="text-[#888888]">Students</span> <span class="text-[#ededed]">{{ $enrolled->count() }}</span></div>
@@ -77,9 +88,9 @@
                     @endif
                 </div>
             @else
-                <ul role="list">
+                <ul class="line-sidebar px-5 py-4" role="list" x-data="lineSidebar">
                     @foreach ($topModules as $module)
-                        @include('classes._syllabus-module', ['module' => $module, 'depth' => 0])
+                        @include('classes._syllabus-module', ['module' => $module, 'number' => str_pad($loop->iteration, 2, '0', STR_PAD_LEFT)])
                     @endforeach
                 </ul>
             @endif
@@ -89,20 +100,20 @@
         <aside class="space-y-6">
             @if (!$isStaff)
                 @php
-                    $progress = $class->getStudentProgress($user, $completedLabIds ?? null);
+                    $progress = $class->certificateProgress($user);
                     $certificate = $existingCertificate ?? null;
                     $canClaim = $progress['total'] > 0 && $progress['percent'] >= $threshold;
                 @endphp
                 <section class="ui-card ui-card-body" aria-labelledby="progress-heading">
                     <div class="flex items-baseline justify-between">
                         <h2 id="progress-heading" class="ui-card-title">Your progress</h2>
-                        <span class="cc-display text-2xl font-bold tabular-nums text-[#ededed]">{{ $progress['percent'] }}%</span>
+                        <span data-count-up class="cc-display text-2xl font-bold tabular-nums text-[#ededed]">{{ $progress['percent'] }}%</span>
                     </div>
-                    <div class="relative mt-4 h-2 rounded-full bg-[#232323]" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $progress['percent'] }}" aria-label="Labs done">
-                        <div class="h-2 rounded-full bg-[#3ecf8e] transition-all duration-500" style="width: {{ $progress['percent'] }}%"></div>
-                        <span class="absolute -top-1 h-4 w-0.5 rounded bg-[#ededed]/60" style="left: {{ $threshold }}%" title="Pass mark: {{ $threshold }}%" aria-hidden="true"></span>
-                    </div>
-                    <p class="mt-3 text-sm text-[#a3a3a3]">{{ $progress['completed'] }} of {{ $progress['total'] }} labs done. You need {{ $threshold }}% for a certificate.</p>
+                    <x-wake-bar class="mt-4" :value="$progress['percent']" label="Labs passed" :marker="$threshold" marker-title="Pass mark: {{ $threshold }}%" />
+                    <p class="mt-3 text-sm text-[#a3a3a3]">{{ $progress['passed'] }} of {{ $progress['total'] }} labs passed at {{ $labPassScore }}% or more. You need {{ $threshold }}% of labs for a certificate.</p>
+                    @if ($progress['under_review'] > 0)
+                        <p class="mt-1 text-sm text-[#a3a3a3]">{{ $progress['under_review'] }} {{ \Illuminate\Support\Str::plural('grade', $progress['under_review']) }} waiting for your instructor's review.</p>
+                    @endif
 
                     <div class="mt-5">
                         @if ($certificate)
@@ -113,12 +124,12 @@
                                 <button type="submit" class="ui-btn ui-btn-primary w-full">Claim your certificate</button>
                             </form>
                         @else
-                            @php $labsNeeded = max(0, (int) ceil($progress['total'] * $threshold / 100) - $progress['completed']); @endphp
+                            @php $labsNeeded = max(0, (int) ceil($progress['total'] * $threshold / 100) - $progress['passed']); @endphp
                             <p class="rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 text-sm text-[#888888]">
                                 @if ($progress['total'] === 0)
                                     Certificates unlock once this class has labs.
                                 @else
-                                    {{ $labsNeeded }} more {{ \Illuminate\Support\Str::plural('lab', $labsNeeded) }} to unlock your certificate.
+                                    Pass {{ $labsNeeded }} more {{ \Illuminate\Support\Str::plural('lab', $labsNeeded) }} to unlock your certificate.
                                 @endif
                             </p>
                         @endif
@@ -166,7 +177,7 @@
                         <h2 id="end-heading" class="ui-card-title">End the class</h2>
                         <p class="ui-card-subtitle">Closes the class and issues certificates to every student at or above {{ $threshold }}%. This can't be undone.</p>
                         <form action="{{ route('classes.end', $class->id) }}" method="POST" class="mt-4"
-                              onsubmit="return confirm('End this class now? Students at or above {{ $threshold }}% get their certificates, and the class closes.');">
+                              data-confirm-title="End this class now?" data-confirm="Students at or above {{ $threshold }}% get their certificates, and the class closes. This can't be undone." data-confirm-action="End class">
                             @csrf
                             <button type="submit" class="ui-btn ui-btn-danger w-full">End class and issue certificates</button>
                         </form>
