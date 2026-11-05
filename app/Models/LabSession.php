@@ -502,6 +502,18 @@ class LabSession extends Model
     }
 
     /**
+     * Ids of the labs the user has a session open in, keyed by lab id.
+     */
+    public static function activeLabIdsFor(int $userId): array
+    {
+        return static::where('user_id', $userId)
+            ->where('status', 'in_progress')
+            ->distinct()
+            ->pluck('lab_id', 'lab_id')
+            ->toArray();
+    }
+
+    /**
      * Progress over a set of labs: how many of them are in $completedLabIds (keyed by lab id).
      */
     public static function progressOver(array $labIds, array $completedLabIds): array

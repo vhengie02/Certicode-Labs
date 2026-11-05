@@ -661,6 +661,7 @@ class ClassController extends Controller
         }
 
         $completedLabIds = null;
+        $activeLabIds = [];
 
         // Check if student is enrolled in the class
         if ($user->role === 'student') {
@@ -683,11 +684,15 @@ class ClassController extends Controller
 
             // One query for the whole outline instead of one progress count per module.
             $completedLabIds = LabSession::completedLabIdsFor($user->id);
+
+            // Stale sessions are closed first, so "Continue lab" never leads to an expired one
+            LabSession::autoExpireStaleSessions(null, $user->id);
+            $activeLabIds = LabSession::activeLabIdsFor($user->id);
         } else {
             $this->authorizeClassManager($class);
         }
 
-        return view('classes.module-show', compact('class', 'module', 'completedLabIds'));
+        return view('classes.module-show', compact('class', 'module', 'completedLabIds', 'activeLabIds'));
     }
 
     /**
