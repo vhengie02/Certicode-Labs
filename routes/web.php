@@ -197,6 +197,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
     Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
+    Route::get('/instructor/sessions/{id}/files/download/{file?}', [InstructorMonitoringController::class, 'downloadSessionFiles'])->whereNumber('file')->name('instructor.sessions.files.download');
 
     // Student Profiles & Directory CRUD
     // The student directory became Admin > Users; keep the old address working

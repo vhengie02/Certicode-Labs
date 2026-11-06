@@ -3,6 +3,7 @@
 ## 2026-11-06
 
 - VS Code extension 1.8.7 stops the lab clock as soon as a student confirms Submit lab. It used to keep running until the grade came back. If the submit fails, the attempt stays open and the clock carries on, counting the time lost. Time spent on a lab no longer includes grading time, for any extension version.
+- Instructors can now download a student's submitted files from the Submitted files section of the results page. Each file has a Download button next to Copy code, and an attempt with several files also has Download all, which saves them as a zip with their folders kept. Students can't download from here.
 - The camera check now finds faces in much darker rooms. The old brightening step pushed dark faces back to black, so a student in a dim room could be flagged "No face" while sitting at the screen. A face in near-total shadow can still be missed. During a lab, a student in a dark room now sees "Too Dark, Add Light" instead of "Face Searching", so they know how to clear the warning before it reaches 4/4.
 - A dark room with movement on camera now raises a softer flag. When no face can be found but the picture keeps moving, instructors see a low-severity "Too dark" flag with the picture instead of "No face", and it doesn't send a notification. A still dark room keeps the "No face" flag. A moving curtain or TV in an empty room can also raise "Too dark", so the picture is there to check.
 
