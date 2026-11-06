@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\CodeSimilarityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class InstructorMonitoringController extends Controller
 {
@@ -158,6 +159,71 @@ class InstructorMonitoringController extends Controller
         $this->authorizeSessionManager($session);
 
         return response()->json(['files' => $session->submittedFileList()]);
+    }
+
+    /**
+     * Download one of an attempt's files, or all of them as a zip when no file is given.
+     */
+    public function downloadSessionFiles(int $id, ?int $file = null)
+    {
+        $this->authorizeInstructor();
+
+        $session = LabSession::with(['user', 'group', 'laboratory'])->findOrFail($id);
+        $this->authorizeSessionManager($session);
+
+        $files = $session->submittedFileList();
+        abort_if($files === [], 404);
+
+        if ($file !== null) {
+            abort_unless(isset($files[$file]), 404);
+            $content = $files[$file]['content'];
+
+            return response()->streamDownload(function () use ($content) {
+                echo $content;
+            }, basename($this->downloadPath($files[$file]['name'])), [
+                'Content-Type' => 'application/octet-stream',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        }
+
+        $owner = $session->group?->name ?? $session->user?->name ?? 'student';
+        $zipName = Str::slug("{$session->laboratory->title} {$owner}").'-files.zip';
+        $tempPath = tempnam(sys_get_temp_dir(), 'certicode_zip_');
+        $zip = new \ZipArchive;
+
+        if ($zip->open($tempPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return back()->with('error', 'The files could not be packed into a zip. Try again.');
+        }
+
+        $used = [];
+        foreach ($files as $entry) {
+            $path = $this->downloadPath($entry['name']);
+            $copy = $used[strtolower($path)] = ($used[strtolower($path)] ?? 0) + 1;
+            // Two files can share a name once cleaned; a zip entry would overwrite the first
+            $zip->addFromString($copy > 1 ? preg_replace('/(\.[^.\/]+)?$/', " ({$copy})$1", $path, 1) : $path, $entry['content']);
+        }
+        $zip->close();
+
+        return response()->download($tempPath, $zipName)->deleteFileAfterSend(true);
+    }
+
+    /**
+     * A file's relative path, safe to save. The name comes from the student's computer, so a
+     * name like ../../run.sh must not unpack outside the folder the instructor chose.
+     */
+    private function downloadPath(string $name): string
+    {
+        // Stand-in names from LabSession, for code that came without a file name
+        if (in_array($name, ['Submitted code', 'Untitled file'], true)) {
+            return Str::slug($name).'.txt';
+        }
+
+        $path = collect(explode('/', str_replace('\\', '/', $name)))
+            ->map(fn ($part) => rtrim(preg_replace('/[\x00-\x1F\x7F<>:"|?*]/', '_', $part), ' .'))
+            ->filter(fn ($part) => $part !== '')
+            ->implode('/');
+
+        return $path !== '' ? $path : 'file.txt';
     }
 
     /**

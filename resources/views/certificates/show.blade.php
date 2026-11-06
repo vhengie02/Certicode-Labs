@@ -42,6 +42,7 @@
             try {
                 await navigator.clipboard.writeText(button.dataset.copyLink);
                 label.textContent = 'Link copied';
+                window.pulseSuccess?.(button);
             } catch (e) {
                 label.textContent = button.dataset.copyLink;
             }

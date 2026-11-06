@@ -98,6 +98,7 @@
     <!-- Live WebSocket Telemetry Alert Banner -->
     <div x-show="hasLiveUpdate" x-cloak role="status"
          x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-out duration-160" x-transition:leave-end="opacity-0 -translate-y-1"
          class="flex items-center justify-between gap-3 p-3 pl-4 rounded-xl border text-sm"
          :class="liveAlertAnomaly ? 'border-amber-400/30 bg-amber-400/[0.06] text-amber-100' : 'border-[#2e2e2e] bg-[#171717] text-[#ededed]'">
         <div class="flex items-center gap-3 min-w-0">
@@ -113,7 +114,7 @@
             <span class="min-w-0" x-text="liveUpdateMessage"></span>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-            <button type="button" @click="refreshData()" class="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/10 text-xs font-medium transition-colors active:scale-[0.98]">
+            <button type="button" @click="refreshData()" class="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/10 text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97]">
                 Load changes
             </button>
             <button type="button" @click="hasLiveUpdate = false; liveAlertAnomaly = null" class="h-8 w-8 inline-flex items-center justify-center rounded-lg text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors" aria-label="Dismiss">
@@ -296,7 +297,7 @@
                     @foreach($filters as $key => $label)
                         <button type="button" role="tab" @click="statusFilter = '{{ $key }}'" :aria-selected="statusFilter === '{{ $key }}'"
                                 x-show="'{{ $key }}' === 'all' || filterCount('{{ $key }}') > 0"
-                                class="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-colors active:scale-[0.98]"
+                                class="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97]"
                                 :class="statusFilter === '{{ $key }}' ? 'border-[#3ecf8e]/50 bg-[#3ecf8e]/10 text-[#ededed]' : 'border-[#2e2e2e] text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e]'">
                             {{ $label }}
                             <span class="tabular-nums {{ $key === 'attention' ? 'text-amber-300' : 'text-[#888888]' }}" x-text="filterCount('{{ $key }}')"></span>
@@ -407,7 +408,7 @@
                             {{-- Flags --}}
                             <div>
                                 <button type="button" @click="openStudent({{ $session->id }}, 'flags')"
-                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors active:scale-[0.98] {{ $openFlags > 0 ? 'bg-amber-400/10 text-amber-200 border border-amber-400/30 hover:bg-amber-400/15' : 'text-[#888888] border border-transparent hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
+                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97] {{ $openFlags > 0 ? 'bg-amber-400/10 text-amber-200 border border-amber-400/30 hover:bg-amber-400/15' : 'text-[#888888] border border-transparent hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
                                         title="Review this student's flags">
                                     @if($openFlags > 0)
                                         {{ $openFlags }} open
@@ -422,7 +423,7 @@
                             {{-- Grade --}}
                             <div>
                                 <button type="button" @click="openStudent({{ $session->id }}, 'grade')"
-                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors active:scale-[0.98] border {{ $isGraded ? 'border-[#2e2e2e] text-[#ededed] hover:border-[#3e3e3e]' : 'border-transparent text-[#888888] hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
+                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97] border {{ $isGraded ? 'border-[#2e2e2e] text-[#ededed] hover:border-[#3e3e3e]' : 'border-transparent text-[#888888] hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
                                         title="See how the AI graded this and change the grade">
                                     @if($isGraded)
                                         <span class="tabular-nums">{{ rtrim(rtrim(number_format($session->effective_score, 1), '0'), '.') }}%</span>
@@ -439,17 +440,17 @@
                             <div class="flex items-center justify-end gap-1">
                                 @if($session->status !== 'in_progress' && filled($session->submitted_code))
                                     <a href="{{ route('sessions.show', $session->id) }}#submitted-files" title="Read the submitted files"
-                                       class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors active:scale-[0.98]">Code</a>
+                                       class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-[color,background-color,border-color,scale] active:scale-[0.97]">Code</a>
                                 @endif
                                 @if($session->status === 'in_progress')
                                     <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" data-confirm-title="End this student's session?" data-confirm="Their code is submitted and graded now." data-confirm-action="End session">
                                         @csrf
-                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-colors active:scale-[0.98]">End session</button>
+                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-[color,background-color,border-color,scale] active:scale-[0.97]">End session</button>
                                     </form>
                                 @else
                                     <form action="{{ route('instructor.sessions.reopen', $session->id) }}" method="POST">
                                         @csrf
-                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors active:scale-[0.98]">Reopen</button>
+                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-[color,background-color,border-color,scale] active:scale-[0.97]">Reopen</button>
                                     </form>
                                 @endif
                             </div>
@@ -492,12 +493,12 @@
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <button type="button" @click="showSimilarityMatrix = !showSimilarityMatrix" :aria-expanded="showSimilarityMatrix.toString()"
-                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e] transition-colors active:scale-[0.98]">
+                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e] transition-[color,background-color,border-color,scale] active:scale-[0.97]">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
                     <span x-text="showSimilarityMatrix ? 'Hide grid' : 'Show every pair'"></span>
                 </button>
                 <button type="button" @click="runPlagiarismScan()" :disabled="isScanningPlagiarism"
-                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50">
+                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-[color,background-color,border-color,scale] active:scale-[0.97] disabled:opacity-50">
                     <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': isScanningPlagiarism }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     <span x-text="isScanningPlagiarism ? 'Comparing…' : 'Compare again'"></span>
                 </button>
@@ -549,7 +550,7 @@
                             <p class="col-span-2 md:col-span-1 order-5 md:order-none text-xs text-[#888888] line-clamp-2" :title="pair.reason" x-text="pair.reason"></p>
                             <div class="order-2 md:order-none flex justify-end">
                                 <button type="button" @click="openCompareModal(pair)"
-                                        class="h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3e3e3e] hover:bg-white/[0.03] transition-colors active:scale-[0.98]">
+                                        class="h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3e3e3e] hover:bg-white/[0.03] transition-[color,background-color,border-color,scale] active:scale-[0.97]">
                                     Compare
                                 </button>
                             </div>
@@ -560,7 +561,7 @@
         </template>
 
         {{-- Every pair, as a grid --}}
-        <div x-show="showSimilarityMatrix" x-cloak x-transition.opacity class="p-4 sm:p-5 border-t border-[#2e2e2e] space-y-3">
+        <div x-show="showSimilarityMatrix" x-cloak x-transition:enter.opacity.duration.200ms x-transition:leave.opacity.duration.160ms class="p-4 sm:p-5 border-t border-[#2e2e2e] space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888888]">
                 <span class="text-sm text-[#a3a3a3]">% alike, every pair</span>
                 <span class="flex items-center gap-3">
@@ -605,10 +606,10 @@
     {{-- Side-by-side code comparison --}}
     <div x-show="isCompareModalOpen" x-cloak @keydown.escape.window="isCompareModalOpen = false"
          class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="compare-title">
-        <div x-show="isCompareModalOpen" x-transition.opacity class="absolute inset-0 bg-black/70 backdrop-blur-[2px]" @click="isCompareModalOpen = false" aria-hidden="true"></div>
+        <div x-show="isCompareModalOpen" x-transition:enter.opacity.duration.200ms x-transition:leave.opacity.duration.160ms class="absolute inset-0 bg-black/70 backdrop-blur-[2px]" @click="isCompareModalOpen = false" aria-hidden="true"></div>
         <div x-show="isCompareModalOpen"
-             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-[0.98]" x-transition:enter-end="opacity-100 scale-100"
-             x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-[0.95]" x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-out duration-160" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0 scale-[0.95]"
              class="relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl border border-[#2e2e2e] bg-[#171717] shadow-2xl shadow-black/50">
             <template x-if="selectedPair">
                 <div class="flex flex-col min-h-0">
@@ -660,10 +661,10 @@
 
     {{-- Student drawer: overview, flags and grade for one student --}}
     <div x-show="drawerOpen" x-cloak @keydown.escape.window="closeStudent()" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-        <div x-show="drawerOpen" x-transition.opacity.duration.200ms class="absolute inset-0 bg-black/60" @click="closeStudent()" aria-hidden="true"></div>
+        <div x-show="drawerOpen" x-transition:enter.opacity.duration.300ms x-transition:leave.opacity.duration.240ms class="absolute inset-0 bg-black/60" @click="closeStudent()" aria-hidden="true"></div>
         <aside x-show="drawerOpen" x-ref="drawer" tabindex="-1"
                x-transition:enter="transition ease-out duration-300" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
-               x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+               x-transition:leave="transition ease-out duration-240" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
                class="absolute inset-y-0 right-0 w-full max-w-xl flex flex-col bg-[#171717] border-l border-[#2e2e2e] shadow-2xl shadow-black/60 focus:outline-none">
             <template x-if="student">
                 <div class="flex flex-col h-full min-h-0">
@@ -695,11 +696,11 @@
                         </div>
 
                         {{-- Tabs --}}
-                        <div class="mt-5 flex gap-1 border-b border-[#2e2e2e] -mx-5 px-5" role="tablist" aria-label="Student details">
+                        <div class="relative mt-5 flex gap-1 border-b border-[#2e2e2e] -mx-5 px-5" role="tablist" x-tab-indicator aria-label="Student details">
                             <template x-for="t in [['overview', 'Overview'], ['flags', 'Flags'], ['grade', 'Grade']]" :key="t[0]">
                                 <button type="button" role="tab" @click="drawerTab = t[0]" :aria-selected="(drawerTab === t[0]).toString()"
                                         class="relative inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors"
-                                        :class="drawerTab === t[0] ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]'">
+                                        :class="drawerTab === t[0] ? 'text-[#ededed]' : 'text-[#888888] hover:text-[#ededed]'">
                                     <span x-text="t[1]"></span>
                                     <span x-show="t[0] === 'flags' && openFlagCount(student) > 0" class="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-400/15 text-amber-300 text-[11px] tabular-nums inline-flex items-center justify-center" x-text="openFlagCount(student)"></span>
                                 </button>
@@ -793,7 +794,7 @@
                                         </template>
                                         <template x-if="!item.resolved">
                                             <button type="button" @click="resolveFlag(item)" :disabled="!!item._resolving"
-                                                    class="h-8 px-3 shrink-0 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50"
+                                                    class="h-8 px-3 shrink-0 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-[color,background-color,border-color,scale] active:scale-[0.97] disabled:opacity-50"
                                                     x-text="item._resolving ? 'Resolving…' : 'Resolve'"></button>
                                         </template>
                                     </div>
@@ -820,7 +821,7 @@
 
                                     <template x-if="item.snapshot_url">
                                         <a :href="item.snapshot_url" target="_blank" rel="noopener" class="block w-fit" title="Open full size">
-                                            <img :src="item.snapshot_url" loading="lazy" class="w-56 h-auto rounded-lg border border-[#2e2e2e] hover:border-[#3e3e3e] transition-colors" alt="Webcam snapshot taken when this flag was raised">
+                                            <img :src="item.snapshot_url" loading="lazy" class="h-40 w-auto max-w-full rounded-lg border border-[#2e2e2e] hover:border-[#3e3e3e] transition-colors" alt="Webcam snapshot taken when this flag was raised">
                                         </a>
                                     </template>
 
@@ -927,7 +928,7 @@
                                 <div class="flex items-center justify-between gap-3">
                                     <p class="text-xs min-w-0" :class="overrideFeedbackSuccess ? 'text-[#3ecf8e]' : 'text-red-300'" x-text="overrideFeedbackMessage" role="status"></p>
                                     <button type="submit" :disabled="isSavingOverride"
-                                            class="h-9 px-4 shrink-0 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-colors active:scale-[0.98] disabled:opacity-50"
+                                            class="h-9 px-4 shrink-0 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-[color,background-color,border-color,scale] active:scale-[0.97] disabled:opacity-50"
                                             x-text="isSavingOverride ? 'Saving…' : 'Save grade'"></button>
                                 </div>
                             </form>

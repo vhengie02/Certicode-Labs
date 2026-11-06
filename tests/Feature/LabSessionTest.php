@@ -55,6 +55,7 @@ class LabSessionTest extends TestCase
     public function test_student_can_start_a_lab_session(): void
     {
         $response = $this->actingAs($this->student)
+            ->withCameraCheck($this->laboratory->id)
             ->postJson("/api/v1/labs/{$this->laboratory->id}/start");
 
         $response->assertStatus(200);

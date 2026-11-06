@@ -33,7 +33,7 @@
                             <span class="relative shrink-0">
                                 <input type="checkbox" name="{{ $key }}" id="{{ $key }}" value="1" @checked($settings[$key]) class="sr-only peer">
                                 <span class="block h-6 w-11 rounded-full border border-[#2e2e2e] bg-[#232323] transition-colors peer-checked:border-[#3ecf8e] peer-checked:bg-[#3ecf8e] peer-focus-visible:ring-2 peer-focus-visible:ring-[#3ecf8e]/50"></span>
-                                <span class="absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-[#a3a3a3] transition-transform peer-checked:translate-x-5 peer-checked:bg-[#06150e]" aria-hidden="true"></span>
+                                <span class="absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-[#a3a3a3] motion-knob peer-checked:translate-x-5 peer-checked:bg-[#06150e]" aria-hidden="true"></span>
                             </span>
                         </label>
                     @endforeach

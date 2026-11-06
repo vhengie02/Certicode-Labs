@@ -265,6 +265,9 @@ class LoginController extends Controller
 
             $request->validate([
                 'password' => $passwordRules,
+                'terms' => 'accepted',
+            ], [
+                'terms.accepted' => 'Please confirm your age and agree to the Terms and Privacy Policy.',
             ]);
 
             $password = $request->password ?: Str::random(16);
@@ -286,6 +289,7 @@ class LoginController extends Controller
                 'role' => 'student', // instructor access needs an admin's approval
                 'github_username' => $githubUsername,
             ]);
+            $newUser->acceptTerms();
 
             if ($request->role === 'instructor') {
                 $newUser->requestInstructorAccess();
@@ -331,7 +335,15 @@ class LoginController extends Controller
             return redirect()->route('login')->withErrors(['email' => "{$provider} OAuth credentials not configured in system services."]);
         }
 
-        return Socialite::driver($provider)->redirect();
+        $driver = Socialite::driver($provider);
+
+        // Without this Google silently reuses the browser's active account, so people with several
+        // Gmail accounts could never pick one
+        if ($provider === 'google') {
+            $driver->with(['prompt' => 'select_account']);
+        }
+
+        return $driver->redirect();
     }
 
     /**

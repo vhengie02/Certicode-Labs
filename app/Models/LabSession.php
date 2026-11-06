@@ -350,6 +350,41 @@ class LabSession extends Model
         }
     }
 
+    /** Submissions in a lab within this many minutes of the last one don't notify again. */
+    private const SUBMISSION_NOTIFY_QUIET_MINUTES = 15;
+
+    /**
+     * Tell the class instructor about the first submission in a lab after a quiet spell, so a
+     * class submitting together sends one notification. It opens this attempt's code. Later ones
+     * show on the dashboard and the monitoring page.
+     *
+     * Only earlier submissions count, with the session ID breaking a tie. Two students
+     * submitting at once can't each wait for the other, so the first always notifies. This reads
+     * the sessions rather than the cache, because production's cache lasts one request.
+     */
+    public function notifyInstructorOfSubmission(): void
+    {
+        $endedAt = $this->ended_at;
+        $hadEarlierSubmission = $endedAt && self::where('lab_id', $this->lab_id)
+            ->where('status', 'completed')
+            ->whereKeyNot($this->id)
+            ->where('ended_at', '>=', $endedAt->copy()->subMinutes(self::SUBMISSION_NOTIFY_QUIET_MINUTES))
+            ->where(fn ($q) => $q->where('ended_at', '<', $endedAt)
+                ->orWhere(fn ($tie) => $tie->where('ended_at', $endedAt)->where('id', '<', $this->id)))
+            ->exists();
+        if ($hadEarlierSubmission) {
+            return;
+        }
+
+        $lab = $this->laboratory;
+        $who = $this->group?->name ?? $this->user?->name ?? 'A student';
+        $lab?->notifyInstructor(
+            "New submission: {$lab->title}",
+            "{$who} submitted '{$lab->title}'. Open this to read their code. Submissions that follow are on your dashboard.",
+            route('sessions.show', $this->id).'#submitted-files',
+        );
+    }
+
     /**
      * Get the telemetry logs.
      */
@@ -496,6 +531,18 @@ class LabSession extends Model
         return static::where('user_id', $userId)
             ->where('status', 'completed')
             ->when($labIds !== null, fn ($q) => $q->whereIn('lab_id', $labIds))
+            ->distinct()
+            ->pluck('lab_id', 'lab_id')
+            ->toArray();
+    }
+
+    /**
+     * Ids of the labs the user has a session open in, keyed by lab id.
+     */
+    public static function activeLabIdsFor(int $userId): array
+    {
+        return static::where('user_id', $userId)
+            ->where('status', 'in_progress')
             ->distinct()
             ->pluck('lab_id', 'lab_id')
             ->toArray();

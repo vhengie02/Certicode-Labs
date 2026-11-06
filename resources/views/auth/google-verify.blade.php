@@ -42,6 +42,10 @@
                 </div>
                 <p id="password-hint" class="mt-2 text-[13px] text-[var(--cc-text-faint)]">Lets you sign in with your email too, not just Google.</p>
             </div>
+
+            <div>
+                @include('auth.partials.terms-consent')
+            </div>
         @endif
 
         @unless ($oauthVerified)

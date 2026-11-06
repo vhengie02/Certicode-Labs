@@ -64,6 +64,7 @@ class SettingsController extends Controller
         $toggles['notify_certificate'] = ['Certificates', 'When you reach a class’s pass mark and your certificate is issued.'];
 
         if ($user->role !== 'student') {
+            $toggles['notify_lab'] = ['Labs', 'When a lab is added to one of your classes, or students submit one of your labs. At most one email per quiet spell for submissions.'];
             $toggles['notify_integrity'] = ['Camera flags', 'When the camera flags a student in one of your labs. At most one email per quiet spell.'];
         }
 

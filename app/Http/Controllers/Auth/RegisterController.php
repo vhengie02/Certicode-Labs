@@ -37,6 +37,9 @@ class RegisterController extends Controller
             )],
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => 'required|string|in:student,instructor',
+            'terms' => 'accepted',
+        ], [
+            'terms.accepted' => 'Please confirm your age and agree to the Terms and Privacy Policy.',
         ]);
 
         // Instructors see every student's work, so that role needs an admin's approval:
@@ -47,6 +50,7 @@ class RegisterController extends Controller
             'password' => Hash::make($validated['password']),
             'role' => 'student',
         ]);
+        $user->acceptTerms();
 
         $requestedInstructor = $validated['role'] === 'instructor' && SystemSetting::read('instructor_requests_open');
         if ($requestedInstructor) {

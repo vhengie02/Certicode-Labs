@@ -72,7 +72,7 @@ class AttemptRaceTest extends TestCase
     {
         $this->loseTheRace();
 
-        $response = $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->lab->id}/start");
+        $response = $this->actingAs($this->student)->withCameraCheck($this->lab->id)->postJson("/api/v1/labs/{$this->lab->id}/start");
 
         $response->assertOk();
         $this->assertSame(1, $this->openAttempts());

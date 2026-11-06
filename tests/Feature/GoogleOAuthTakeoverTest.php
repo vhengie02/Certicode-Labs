@@ -56,7 +56,7 @@ class GoogleOAuthTakeoverTest extends TestCase
         $this->post('/auth/google/callback')->assertSessionHasErrors('code');
         $this->assertGuest();
 
-        $this->post('/auth/google/callback', ['role' => 'student', 'password' => 'long-enough-pass']);
+        $this->post('/auth/google/callback', ['role' => 'student', 'password' => 'long-enough-pass', 'terms' => '1']);
         $this->assertGuest();
         $this->assertSame(1, User::count());
     }
@@ -95,7 +95,7 @@ class GoogleOAuthTakeoverTest extends TestCase
 
         // 2. The next person signs up with their own address and the code emailed to it
         $this->from('/auth/google')->post('/auth/google/email', ['gmail' => 'student@gmail.com']);
-        $this->post('/auth/google/callback', ['code' => session('google_auth_code'), 'role' => 'student', 'password' => 'long-enough-pass'])
+        $this->post('/auth/google/callback', ['code' => session('google_auth_code'), 'role' => 'student', 'password' => 'long-enough-pass', 'terms' => '1'])
             ->assertRedirect('/dashboard');
 
         // 3. The new account carries neither the GitHub identity nor the stranger's name
@@ -111,7 +111,7 @@ class GoogleOAuthTakeoverTest extends TestCase
         $this->get('/auth/google/callback')->assertRedirect('/auth/google/verify?needs_role=1');
         $this->get('/auth/google/verify?needs_role=1')->assertOk()->assertDontSee('name="code"', false);
 
-        $this->post('/auth/google/callback', ['role' => 'student', 'password' => 'long-enough-pass'])
+        $this->post('/auth/google/callback', ['role' => 'student', 'password' => 'long-enough-pass', 'terms' => '1'])
             ->assertRedirect('/dashboard');
 
         $this->assertAuthenticated();

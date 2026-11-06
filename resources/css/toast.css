@@ -17,7 +17,8 @@
     --toast-text: #ededed;
     --toast-muted: #a1a1a1;
     /* Off the right edge, far enough that the shadow is out of view too. */
-    --toast-hidden-transform: translateX(calc(100% + 3rem));
+    --toast-hidden-translate: calc(100% + 3rem) 0;
+    --toast-hidden-lift: translateY(-1.25rem);
     --toast-hidden-opacity: 1;
     display: flex;
     align-items: flex-start;
@@ -32,22 +33,38 @@
     line-height: 1.45;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     pointer-events: auto;
-    transform: var(--toast-hidden-transform);
+    /* A swipe sideways is the toast's to handle, and a swipe up or down still scrolls the page. */
+    touch-action: pan-y;
+    translate: var(--toast-translate, var(--toast-hidden-translate));
+    transform: var(--toast-hidden-lift);
     opacity: var(--toast-hidden-opacity);
+    /* Across and down run on different curves, so the toast travels on an arc, not a straight line. */
     transition:
-        transform 280ms cubic-bezier(0.23, 1, 0.32, 1),
-        opacity 280ms cubic-bezier(0.23, 1, 0.32, 1);
+        translate 280ms var(--ease-out),
+        transform 280ms var(--ease-in-out),
+        opacity 280ms var(--ease-out);
 }
 
 /* Toasts start hidden until resources/js/toast.js adds this class. Transitions, not keyframes,
    so closing a toast mid-entry reverses it from where it is. */
 .toast.is-shown {
+    /* Set through a variable: the CSS minifier folds a plain `translate` into `transform` and loses it. */
+    --toast-translate: none;
     transform: none;
     opacity: 1;
 }
 
-/* LEAVE_MS in resources/js/toast.js matches this duration. */
-.toast.is-leaving { transition-duration: 275ms; }
+/* LEAVE_MS in resources/js/toast.js matches this duration, 20% under the entrance. */
+.toast.is-leaving { transition-duration: 224ms; }
+
+/* A held toast sits under the finger, so nothing eases it. */
+.toast.is-dragging { transition: none; }
+
+/* The tick swells once the toast has landed, to confirm the action worked. */
+.toast-success.is-shown .toast-icon { animation: toast-confirm 320ms var(--ease-out) 220ms; }
+@keyframes toast-confirm {
+    40% { transform: scale(1.25); }
+}
 
 .toast-success { --toast-accent: #3ecf8e; }
 .toast-error { --toast-accent: #f87171; }
@@ -73,7 +90,9 @@
 
 @media (prefers-reduced-motion: reduce) {
     .toast {
-        --toast-hidden-transform: none;
+        --toast-hidden-translate: 0 0;
+        --toast-hidden-lift: none;
         --toast-hidden-opacity: 0;
     }
+    .toast-success.is-shown .toast-icon { animation: none; }
 }

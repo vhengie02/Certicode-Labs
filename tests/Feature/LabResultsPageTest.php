@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Anomaly;
 use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
@@ -510,6 +511,60 @@ class LabResultsPageTest extends TestCase
             ->assertSee('33%')
             ->assertSee('Focus lost')
             ->assertSee('4,321');
+    }
+
+    public function test_session_details_show_code_flags_to_the_student_and_instructor(): void
+    {
+        $session = $this->finishedSession();
+        $this->flag($session, 'large_insert');
+        $this->flag($session, 'large_insert');
+        $this->flag($session, 'low_typing_effort');
+        $url = route('sessions.show', $session->id);
+
+        foreach ([$this->student, $this->instructor] as $viewer) {
+            $this->actingAs($viewer)->get($url)
+                ->assertOk()
+                ->assertSeeInOrder(['Large inserts', '<dd class="tabular-nums text-[#ededed]">2</dd>'], false)
+                ->assertSeeInOrder(['Low typing effort', '<dd class="text-[#ededed]">Flagged</dd>'], false);
+        }
+    }
+
+    public function test_session_details_leave_out_cleared_flags(): void
+    {
+        $session = $this->finishedSession();
+        $this->flag($session, 'large_insert', resolved: true);
+        $this->flag($session, 'low_typing_effort', resolved: true);
+
+        $this->actingAs($this->student)->get(route('sessions.show', $session->id))
+            ->assertOk()
+            ->assertSeeInOrder(['Large inserts', '<dd class="tabular-nums text-[#ededed]">0</dd>'], false)
+            ->assertSeeInOrder(['Low typing effort', '<dd class="text-[#ededed]">No</dd>'], false);
+    }
+
+    public function test_a_teammate_does_not_see_the_owners_code_flags(): void
+    {
+        $teammate = $this->user('Team Mate', 'student');
+        $this->schoolClass->students()->attach($teammate->id, ['status' => 'enrolled']);
+        $group = Group::create(['lab_id' => $this->laboratory->id, 'name' => 'Team A']);
+        $group->members()->attach([$this->student->id, $teammate->id]);
+        $session = $this->finishedSession(['group_id' => $group->id]);
+        $this->flag($session, 'large_insert');
+
+        $this->actingAs($teammate)->get(route('sessions.show', $session->id))
+            ->assertOk()
+            ->assertDontSee('Large inserts')
+            ->assertDontSee('Low typing effort');
+    }
+
+    private function flag(LabSession $session, string $type, bool $resolved = false): Anomaly
+    {
+        return Anomaly::create([
+            'lab_session_id' => $session->id,
+            'type' => $type,
+            'severity' => 'medium',
+            'description' => 'Flagged in a test.',
+            'resolved' => $resolved,
+        ]);
     }
 
     public function test_guests_are_sent_to_log_in(): void

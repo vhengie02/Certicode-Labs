@@ -68,7 +68,10 @@
             </div>
         </div>
 
-        <p class="relative z-10 text-sm text-[var(--cc-text-faint)]">&copy; {{ date('Y') }} Certicode Labs</p>
+        <div class="relative z-10 flex items-center justify-between gap-4 text-sm text-[var(--cc-text-faint)]">
+            <p>&copy; {{ date('Y') }} Certicode Labs</p>
+            <x-legal-links />
+        </div>
     </aside>
 
     {{-- Form side --}}
@@ -89,6 +92,9 @@
                 @yield('content')
             </div>
         </div>
+
+        {{-- The brand side holds these links on large screens --}}
+        <x-legal-links class="lg:hidden justify-center px-6 pb-8 text-[13px] text-[var(--cc-text-faint)]" />
     </main>
 
     <x-toast-region />

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     {{-- Certificates carry student names; keep them out of search engines --}}
-    <meta name="robots" content="noindex, nofollow">
+    <meta name="robots" content="@yield('robots', 'noindex, nofollow')">
     <meta name="theme-color" content="#0b0c0b">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     <title>@yield('title') — Certicode Labs</title>
@@ -21,12 +21,18 @@
                 <x-logo-mark class="w-[22px] h-[22px] text-[#ececea]" />
                 <span class="text-[15px] font-semibold tracking-tight">Certicode <span class="text-[#888888] font-medium">Labs</span></span>
             </a>
-            <span class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">Certificate verification</span>
+            <span class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">@yield('headerLabel', 'Certificate verification')</span>
         </div>
     </header>
     <main class="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
         @yield('content')
     </main>
+    <footer class="border-t border-[#2e2e2e]">
+        <div class="mx-auto max-w-5xl px-4 sm:px-6 py-6 flex flex-wrap items-center justify-between gap-3 text-[13px] text-[#888888]">
+            <span>&copy; {{ date('Y') }} Certicode Labs</span>
+            <x-legal-links />
+        </div>
+    </footer>
     @stack('scripts')
 </body>
 </html>
