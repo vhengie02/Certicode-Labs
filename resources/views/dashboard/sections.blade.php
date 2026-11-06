@@ -104,44 +104,75 @@
         </div>
     @elseif ($role === 'instructor')
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <section class="lg:col-span-2 rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
-                <div class="flex items-baseline justify-between gap-3 px-5 pt-5 pb-2">
-                    <h2 id="flags-heading" class="text-sm font-semibold text-[#ededed]">Recent integrity flags</h2>
-                    <span class="flex items-baseline gap-3 shrink-0">
-                        <span class="text-xs tabular-nums {{ $openFlagCount > 0 ? 'text-amber-400' : 'text-[#888888]' }}">{{ number_format($openFlagCount) }} open</span>
-                        <a href="{{ route('anomalies.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
-                    </span>
-                </div>
-                @forelse ($recentAnomalies as $anomaly)
-                    @php
-                        $flagSession = $anomaly->labSession;
-                        $severityStyle = [
-                            'high' => 'bg-red-500/10 text-red-400 border-red-500/20',
-                            'medium' => 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-                        ][$anomaly->severity] ?? 'bg-sky-500/10 text-sky-400 border-sky-500/20';
-                    @endphp
-                    <a href="{{ $flagSession ? route('instructor.monitoring.show', $flagSession->lab_id) : '#' }}" class="flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
-                        <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
-                            {{ strtoupper(\Illuminate\Support\Str::substr($flagSession?->user?->name ?? '?', 0, 2)) }}
-                        </span>
-                        <span class="flex-1 min-w-0">
-                            <span class="block text-sm font-medium text-[#ededed] truncate">
-                                {{ $flagSession?->user?->name ?? 'Unknown student' }}
-                                <span class="font-normal text-[#888888]">&middot; {{ $flagSession?->laboratory?->title ?? 'Lab' }}</span>
+            <div class="lg:col-span-2 space-y-4">
+                <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="submissions-heading">
+                    <div class="px-5 pt-5 pb-2">
+                        <h2 id="submissions-heading" class="text-sm font-semibold text-[#ededed]">Latest submissions</h2>
+                    </div>
+                    @forelse ($latestSubmissions as $submission)
+                        @php
+                            $submitter = $submission->group?->name ?? $submission->user?->name ?? 'Unknown student';
+                        @endphp
+                        <a href="{{ route('sessions.show', $submission->id) }}#submitted-files" class="group flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
+                            <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
+                                {{ strtoupper(\Illuminate\Support\Str::substr($submitter, 0, 2)) }}
                             </span>
-                            <span class="block font-mono text-xs text-[#888888] truncate mt-0.5">{{ str_replace('_', ' ', $anomaly->type) }} &middot; {{ $anomaly->created_at?->diffForHumans() }}</span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm font-medium text-[#ededed] truncate">
+                                    {{ $submitter }}
+                                    <span class="font-normal text-[#888888]">&middot; {{ $submission->laboratory?->title ?? 'Lab' }}</span>
+                                </span>
+                                <span class="block text-xs text-[#888888] truncate mt-0.5">
+                                    {{ $submission->laboratory?->module?->schoolClass?->name ?? 'Class' }} &middot; {{ $submission->ended_at->diffForHumans() }}
+                                </span>
+                            </span>
+                            <span class="text-sm font-medium tabular-nums text-[#ededed] shrink-0">{{ round($submission->effective_score, 1) }}%</span>
+                            <span class="text-xs font-semibold text-[#3ecf8e] shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">Code &rarr;</span>
+                        </a>
+                    @empty
+                        <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No submissions yet. When a student submits a lab, it shows up here.</p>
+                    @endforelse
+                </section>
+
+                <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
+                    <div class="flex items-baseline justify-between gap-3 px-5 pt-5 pb-2">
+                        <h2 id="flags-heading" class="text-sm font-semibold text-[#ededed]">Recent integrity flags</h2>
+                        <span class="flex items-baseline gap-3 shrink-0">
+                            <span class="text-xs tabular-nums {{ $openFlagCount > 0 ? 'text-amber-400' : 'text-[#888888]' }}">{{ number_format($openFlagCount) }} open</span>
+                            <a href="{{ route('anomalies.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
                         </span>
-                        <span class="hidden sm:inline-flex items-center gap-1.5 shrink-0">
-                            <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] uppercase tracking-wider {{ $severityStyle }}">{{ $anomaly->severity }}</span>
-                            @if ($anomaly->resolved)
-                                <span class="text-xs text-[#888888]">resolved</span>
-                            @endif
-                        </span>
-                    </a>
-                @empty
-                    <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No flags. When a student's session trips a proctoring rule, it shows up here.</p>
-                @endforelse
-            </section>
+                    </div>
+                    @forelse ($recentAnomalies as $anomaly)
+                        @php
+                            $flagSession = $anomaly->labSession;
+                            $severityStyle = [
+                                'high' => 'bg-red-500/10 text-red-400 border-red-500/20',
+                                'medium' => 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+                            ][$anomaly->severity] ?? 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+                        @endphp
+                        <a href="{{ $flagSession ? route('instructor.monitoring.show', $flagSession->lab_id) : '#' }}" class="flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
+                            <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
+                                {{ strtoupper(\Illuminate\Support\Str::substr($flagSession?->user?->name ?? '?', 0, 2)) }}
+                            </span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm font-medium text-[#ededed] truncate">
+                                    {{ $flagSession?->user?->name ?? 'Unknown student' }}
+                                    <span class="font-normal text-[#888888]">&middot; {{ $flagSession?->laboratory?->title ?? 'Lab' }}</span>
+                                </span>
+                                <span class="block font-mono text-xs text-[#888888] truncate mt-0.5">{{ str_replace('_', ' ', $anomaly->type) }} &middot; {{ $anomaly->created_at?->diffForHumans() }}</span>
+                            </span>
+                            <span class="hidden sm:inline-flex items-center gap-1.5 shrink-0">
+                                <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] uppercase tracking-wider {{ $severityStyle }}">{{ $anomaly->severity }}</span>
+                                @if ($anomaly->resolved)
+                                    <span class="text-xs text-[#888888]">resolved</span>
+                                @endif
+                            </span>
+                        </a>
+                    @empty
+                        <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No flags. When a student's session trips a proctoring rule, it shows up here.</p>
+                    @endforelse
+                </section>
+            </div>
 
             <section class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5" aria-labelledby="classes-heading">
                 <div class="flex items-baseline justify-between gap-3">
