@@ -17,15 +17,18 @@
 .class-pattern .cp-ring-ink { fill: none; stroke: var(--cp-ink); }
 .class-pattern .cp-ring-paper { fill: none; stroke: var(--cp-paper); }
 .class-pattern .cp-rim { fill: none; stroke: var(--cp-paper); stroke-width: 2.5; }
+.class-pattern .cp-line-accent { fill: none; stroke: var(--cp-accent); }
+.class-pattern .cp-inlay { fill: none; stroke: var(--cp-inlay); }
+.class-pattern .cp-gem { fill: var(--cp-gem); }
 
 .class-pattern--contour { --cp-paper: #e6f7ef; --cp-ink: #059669; --cp-accent: #059669; }
 .class-pattern--dots { --cp-paper: #eef1f5; --cp-ink: #1f2937; --cp-accent: #1f2937; }
 .class-pattern--chevrons { --cp-paper: #f5f5f4; --cp-ink: #d3d1cd; --cp-accent: #d3d1cd; }
 .class-pattern--moons { --cp-paper: #f5ecdc; --cp-ink: #1d2340; --cp-accent: #c08a3e; }
 .class-pattern--triangles { --cp-paper: #ffffff; --cp-ink: #171717; --cp-accent: #171717; }
-.class-pattern--glyphs { --cp-paper: #efe8de; --cp-ink: #ffffff; --cp-accent: #ffffff; }
+.class-pattern--glyphs { --cp-paper: #fbe6c8; --cp-ink: #c2410c; --cp-accent: #0f766e; }
 .class-pattern--scallops { --cp-paper: #f6f0e4; --cp-ink: #14264f; --cp-accent: #8fb0d6; }
-.class-pattern--harlequin { --cp-paper: #f8efe0; --cp-ink: #5c1119; --cp-accent: #f8efe0; }
+.class-pattern--harlequin { --cp-paper: #fecdd3; --cp-ink: #be123c; --cp-accent: #e11d48; --cp-inlay: #fecdd3; --cp-gem: #f59e0b; }
 
 .dark .class-pattern--contour { --cp-paper: #0e1f18; --cp-ink: #3ecf8e; --cp-accent: #3ecf8e; }
 .dark .class-pattern--dots { --cp-paper: #12161c; --cp-ink: #9aa7b8; --cp-accent: #9aa7b8; }
@@ -34,7 +37,7 @@
 .dark .class-pattern--triangles { --cp-paper: #101010; --cp-ink: #8c8c8c; --cp-accent: #8c8c8c; }
 .dark .class-pattern--glyphs { --cp-paper: #211c16; --cp-ink: #6f604e; --cp-accent: #6f604e; }
 .dark .class-pattern--scallops { --cp-paper: #0c1730; --cp-ink: #2b4a80; --cp-accent: #8fb0d6; }
-.dark .class-pattern--harlequin { --cp-paper: #1f0a0e; --cp-ink: #5c1620; --cp-accent: #8a3a44; }
+.dark .class-pattern--harlequin { --cp-paper: #1f0a0e; --cp-ink: #5c1620; --cp-accent: #8a3a44; --cp-inlay: transparent; --cp-gem: transparent; }
 
 /* High contrast mode flattens the colours, so the pattern would only get in the way */
 @media (forced-colors: active) {
