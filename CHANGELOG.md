@@ -2,6 +2,7 @@
 
 ## 2026-11-06
 
+- Continue with Google now shows Google's account chooser, so people with several Gmail accounts can pick one. It used to sign in with the browser's active account without asking.
 - Motion across the app now follows one set of rules, kept in `resources/css/motion.css`. Menus and pop-ups grow out of the button that opened them and shrink back into it, exits run 20% faster than entrances, and everyday UI no longer bounces. Buttons press in, switches stretch as they slide, tab underlines travel between tabs, list rows arrive in turn, and the theme switch spreads out from its button. On touch screens, toasts swipe away to the right.
 - Certicode now has a Privacy Policy, Terms of Service and Cookie Notice at `/privacy`, `/terms` and `/cookies`, linked from the home page, sign-in pages and Settings. They are written for the Philippine Data Privacy Act. The retention periods on the Privacy Policy come from the app's settings, so they can't drift from what the app does.
 - Signing up now needs a tick confirming your age and agreeing to the Terms and Privacy Policy. Accounts made earlier are asked once at their next sign-in, and everyone is asked again when `terms_version` in `config/legal.php` goes up. Someone who won't agree can still download their data or delete their account in Settings.
