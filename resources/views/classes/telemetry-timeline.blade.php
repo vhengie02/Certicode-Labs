@@ -210,7 +210,11 @@
                                 </p>
                             @elseif($log->event_type === 'camera_absence' || $log->event_type === 'prelab_verification_failed')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
-                                    Camera presence check failed{{ !empty($log->payload['low_light']) ? ' (low-light mode)' : '' }}.
+                                    @if(!empty($log->payload['low_light']) && !empty($log->payload['movement_seen']))
+                                        Too dark to confirm a face, but the camera saw movement.
+                                    @else
+                                        Camera presence check failed{{ !empty($log->payload['low_light']) ? ' (low-light mode)' : '' }}.
+                                    @endif
                                 </p>
                             @elseif($log->event_type === 'webcam_permission_denied')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">

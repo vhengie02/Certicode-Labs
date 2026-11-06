@@ -214,16 +214,26 @@ class LabSessionController extends Controller
         }
 
         if ($request->event_type === 'camera_absence') {
-            // In low-light mode the check is a brightness comparison, not face detection,
-            // so a miss is less certain and the instructor should see why.
+            // Face detection is less reliable in a dim room, so a miss is less certain and the
+            // instructor should see why.
             $lowLight = (bool) ($request->payload['low_light'] ?? false);
-            $this->recordCameraAnomaly($session, $request->payload, [
-                'type' => 'no_face',
-                'severity' => $lowLight ? 'medium' : 'high',
-                'description' => $lowLight
-                    ? 'Camera presence check failed during active lab session (low-light mode).'
-                    : 'Camera presence check failed during active lab session.',
-            ]);
+            // Movement in a dark frame suggests someone the detector can't see. It can't prove
+            // who, so the flag stays, softer and with the picture for the instructor to judge.
+            if ($lowLight && ! empty($request->payload['movement_seen'])) {
+                $this->recordCameraAnomaly($session, $request->payload, [
+                    'type' => 'too_dark',
+                    'severity' => 'low',
+                    'description' => 'Too dark to confirm a face, but the camera saw movement.',
+                ]);
+            } else {
+                $this->recordCameraAnomaly($session, $request->payload, [
+                    'type' => 'no_face',
+                    'severity' => $lowLight ? 'medium' : 'high',
+                    'description' => $lowLight
+                        ? 'Camera presence check failed during active lab session (low-light mode).'
+                        : 'Camera presence check failed during active lab session.',
+                ]);
+            }
         }
 
         if ($request->event_type === 'prelab_verification_failed') {
@@ -362,6 +372,11 @@ class LabSessionController extends Controller
      */
     private function notifyInstructorOfCameraFlag(LabSession $session, Anomaly $anomaly): void
     {
+        // Too soft a sign to interrupt anyone: it waits on the monitoring page
+        if ($anomaly->type === 'too_dark') {
+            return;
+        }
+
         try {
             $hadRecentFlag = Anomaly::whereIn('type', ['no_face', 'multiple_faces'])
                 ->whereKeyNot($anomaly->id)
@@ -1915,6 +1930,11 @@ class LabSessionController extends Controller
             return $this->unreadableCameraFrameResponse();
         }
 
+        $blockMinutes = LabAttemptController::cameraBlockMinutesLeft($request, $session->lab_id);
+        if ($blockMinutes > 0) {
+            return $this->cameraBlockedResponse($blockMinutes);
+        }
+
         // Successfully verified. The reference frame isn't kept: nothing reads it, and a
         // webcam picture of a student who passed has no place in storage.
         TelemetryLog::create([
@@ -1957,22 +1977,23 @@ class LabSessionController extends Controller
             ], 403);
         }
 
+        $blockMinutes = LabAttemptController::cameraBlockMinutesLeft($request, $labId);
+        if ($blockMinutes > 0) {
+            return $this->cameraBlockedResponse($blockMinutes);
+        }
+
         if ($faceCount === 0) {
-            return response()->json([
-                'status' => 'error',
-                'verified' => false,
-                'error' => 'no_face_detected',
-                'message' => 'No face detected in camera reference frame. Please face the webcam directly.',
-            ], 422);
+            return $this->failedCameraCheckResponse(
+                $request, $lab, 'no_face_detected',
+                'No face detected in camera reference frame. Please face the webcam directly.',
+            );
         }
 
         if ($faceCount > 1) {
-            return response()->json([
-                'status' => 'error',
-                'verified' => false,
-                'error' => 'multiple_faces',
-                'message' => 'Multiple faces detected in frame. Only one student is permitted.',
-            ], 422);
+            return $this->failedCameraCheckResponse(
+                $request, $lab, 'multiple_faces',
+                'Multiple faces detected in frame. Only one student is permitted.',
+            );
         }
 
         if (! WebcamSnapshot::decode($request->input('image_base64'))) {
@@ -1986,6 +2007,71 @@ class LabSessionController extends Controller
             'verified' => true,
             'message' => 'Camera permission and AI presence verified. Workspace unlocked.',
         ]);
+    }
+
+    /** Count a failed pre-lab check, locking the student out when it was their last attempt. */
+    private function failedCameraCheckResponse(Request $request, Laboratory $lab, string $error, string $message): JsonResponse
+    {
+        $failure = LabAttemptController::recordFailedCameraCheck($request, $lab->id);
+
+        if ($failure['blocked']) {
+            $this->reportCameraBlock($request, $lab, $error);
+
+            return $this->cameraBlockedResponse(LabAttemptController::CAMERA_BLOCK_MINUTES);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => $error,
+            'message' => $message,
+            'attempts_used' => $failure['attempts_used'],
+        ], 422);
+    }
+
+    private function cameraBlockedResponse(int $minutes): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'camera_check_blocked',
+            'message' => "Too many failed camera checks. Contact your instructor. You can try again in {$minutes} ".Str::plural('minute', $minutes).'.',
+            'attempts_used' => LabAttemptController::CAMERA_MAX_ATTEMPTS,
+        ], 423);
+    }
+
+    /**
+     * Tell the instructor a student was locked out. A flag needs an attempt to sit on, and a
+     * student who never got past the check has none, so they get a notification instead.
+     */
+    private function reportCameraBlock(Request $request, Laboratory $lab, string $error): void
+    {
+        $student = $request->user();
+        $attempts = LabAttemptController::CAMERA_MAX_ATTEMPTS;
+
+        $session = $student ? $lab->openAttemptOf($student) : null;
+        if ($session) {
+            $multipleFaces = $error === 'multiple_faces';
+            $this->recordCameraAnomaly($session, ['image_base64' => $request->input('image_base64')], [
+                'type' => $multipleFaces ? 'multiple_faces' : 'no_face',
+                'severity' => 'high',
+                'description' => "Pre-lab camera presence verification failed after {$attempts} attempts: "
+                    .($multipleFaces ? 'Multiple faces detected.' : 'No face detected.'),
+            ], ['pre_lab' => true]);
+
+            return;
+        }
+
+        try {
+            $lab->loadMissing('module.schoolClass.instructor');
+            $lab->module?->schoolClass?->instructor?->notify(new CameraFlagNotification(
+                "Camera check failed: {$lab->title}",
+                ($student->name ?? 'A student')." failed the camera check {$attempts} times in '{$lab->title}' and can't start the lab for ".LabAttemptController::CAMERA_BLOCK_MINUTES.' minutes.',
+                route('classes.telemetry', ['class_id' => $lab->module->class_id, 'lab' => $lab->id])
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Camera block notification failed: '.$e->getMessage());
+        }
     }
 
     /**

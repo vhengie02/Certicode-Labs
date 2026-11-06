@@ -1,9 +1,16 @@
 # Changelog
 
+## 2026-11-06
+
+- The camera check now finds faces in much darker rooms. The old brightening step pushed dark faces back to black, so a student in a dim room could be flagged "No face" while sitting at the screen. A face in near-total shadow can still be missed. During a lab, a student in a dark room now sees "Too Dark, Add Light" instead of "Face Searching", so they know how to clear the warning before it reaches 4/4.
+- A dark room with movement on camera now raises a softer flag. When no face can be found but the picture keeps moving, instructors see a low-severity "Too dark" flag with the picture instead of "No face", and it doesn't send a notification. A still dark room keeps the "No face" flag. A moving curtain or TV in an empty room can also raise "Too dark", so the picture is there to check.
+
 ## 2026-11-05
 
 - VS Code extension 1.8.6 adds a "Large insert" flag. It appears when 100 or more characters of code reach a file without being typed or pasted, such as from an AI tool. An answer written in parts within a few seconds counts as one insert. Instructors can read the code in the session timeline. Generated code and large snippets can also raise it, so it is medium severity at most, and it doesn't change a grade. The Your data section in Settings now mentions it. Older extension builds don't send this flag.
 - The "Low typing effort" flag now covers short labs. It used to skip submissions with under 300 characters of new code, so a short answer written by an AI tool with no typing behind it raised no flag. The limit is now 100 characters. The flag still doesn't change a grade.
+- The camera check now always needs a detected face. The "Continue in low-light mode" button is gone, because it let an empty dim room pass. A dim room gets a stronger check on a brightened picture, and if no face is found the student is asked to add light and retry. During a lab, a dim room no longer counts as present without a face, so students in very dark rooms may see more absence warnings. Faces too small to be someone at the screen no longer count.
+- Three failed camera checks in a row now lock that lab for 15 minutes. The retry count used to run past its limit, such as 4/3, and reloading the page reset it. The server now keeps the count. A lockout flags the student's open attempt with the last picture, or notifies the instructor if there is no attempt yet.
 - The Glyphs and Diamonds backgrounds are bolder in light mode. Glyphs is now a terracotta and teal block print on warm sand, and Diamonds is crimson on rose with gold gems.
 - A class's page now shows its card background behind the title and key facts, with the same fade as the card.
 - Class cards now have pattern backgrounds. Instructors choose one of eight patterns, such as contour lines, moons and stars, or waves, when creating or editing a class, or upload their own picture. Classes without a choice get a pattern automatically. Every pattern has its own colours for light and dark mode, and backgrounds fade out before the text starts. Large pictures are resized before they upload, which also removes their location data.

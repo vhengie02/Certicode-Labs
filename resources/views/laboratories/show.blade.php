@@ -468,7 +468,7 @@
                             </div>
 
                             <p class="text-xs text-[#a3a3a3] leading-relaxed mb-4">
-                                To ensure academic integrity, CertiCode Labs verifies facial camera presence before unlocking your workspace. Low-light mode is automatically supported.
+                                To ensure academic integrity, CertiCode Labs verifies facial camera presence before unlocking your workspace. Dim rooms get a stronger check, but your face must be visible.
                             </p>
 
                             <!-- Live Camera Viewport -->
@@ -499,7 +499,7 @@
                                         <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
                                         Running AI Face & Presence Verification...
                                     </span>
-                                    <span class="text-xs text-[#a3a3a3]" x-text="`Attempt ${attempts + 1} of ${maxAttempts}`"></span>
+                                    <span class="text-xs text-[#a3a3a3]" x-text="`Attempt ${Math.min(attempts + 1, maxAttempts)} of ${maxAttempts}`"></span>
                                 </div>
 
                                 <div x-show="status === 'failed'" class="absolute bottom-2 left-2 right-2 bg-amber-950/95 border border-amber-500/60 p-2.5 rounded text-[11px] font-mono text-amber-200 flex flex-col gap-2">
@@ -507,22 +507,12 @@
                                         <span x-text="errorMessage" class="leading-tight"></span>
                                         <button type="button" @click="runAiPresenceValidation()" class="underline font-bold text-amber-400 hover:text-white ml-2 flex-shrink-0">Retry</button>
                                     </div>
-                                    <div class="flex justify-end" x-show="lowLightAllowed">
-                                        <button type="button" @click="acceptLowLightPresence()" class="px-2.5 py-1 rounded bg-[#3ecf8e] text-[#0f0f0f] font-bold text-[11px] hover:bg-[#00c573] transition">
-                                            Continue in low-light mode &rarr;
-                                        </button>
-                                    </div>
                                 </div>
 
                                 <div x-show="status === 'hard_blocked'" class="absolute inset-0 bg-[#171717]/95 border border-amber-500/80 flex flex-col items-center justify-center p-4 text-center">
                                     <svg class="w-10 h-10 text-amber-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                    <span class="text-xs font-bold text-amber-200 uppercase tracking-wide">Dim Camera Lighting Detected</span>
-                                    <span class="text-[11px] text-[#a3a3a3] mt-1.5 max-w-sm leading-relaxed">
-                                        Camera lighting is low or backlit. You can proceed with low-light verified mode:
-                                    </span>
-                                    <button type="button" @click="acceptLowLightPresence()" class="mt-3 px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
-                                        Continue in low-light mode &rarr;
-                                    </button>
+                                    <span class="text-xs font-bold text-amber-200 uppercase tracking-wide">Camera Check Locked</span>
+                                    <span class="text-[11px] text-[#a3a3a3] mt-1.5 max-w-sm leading-relaxed" x-text="errorMessage"></span>
                                 </div>
 
                                 <div x-show="status === 'verified'" class="absolute inset-0 bg-emerald-950/90 border border-emerald-500/60 flex flex-col items-center justify-center p-4 text-center">
@@ -550,14 +540,7 @@
                                             type="button" 
                                             @click="runAiPresenceValidation()" 
                                             class="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-xs font-medium text-[#ededed] transition">
-                                        <span x-text="`Retry (${attempts + 1}/${maxAttempts})`"></span>
-                                    </button>
-
-                                    <button x-show="(status === 'failed' || attempts > 0) && lowLightAllowed"
-                                            type="button" 
-                                            @click="acceptLowLightPresence()" 
-                                            class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition flex items-center gap-1.5 shadow-sm">
-                                        <span>Continue in low-light mode &rarr;</span>
+                                        <span x-text="`Retry (${Math.min(attempts + 1, maxAttempts)}/${maxAttempts})`"></span>
                                     </button>
 
                                     <button x-show="status === 'verified'"
@@ -798,8 +781,9 @@ function preLabCameraGate(labId, initialSessionId) {
         errorMessage: '',
         faceCount: 0,
         cameraVerified: false,
-        attempts: 0,
-        maxAttempts: 3,
+        // The server owns this count, so a reload picks up where the student left off
+        attempts: {{ \App\Http\Controllers\LabAttemptController::cameraFailedAttempts(request(), $laboratory->id) }},
+        maxAttempts: {{ \App\Http\Controllers\LabAttemptController::CAMERA_MAX_ATTEMPTS }},
         modelLoaded: false,
         modelLoading: false,
         launchingVsCode: false,
@@ -832,15 +816,17 @@ function preLabCameraGate(labId, initialSessionId) {
         extensionDownloadUrl: @js(asset(config('services.vscode_extension.download_path'))),
         leavingAfterVsCodeClosed: false,
         lowLightingDetected: false,
-        // Set by the last failed check: low-light mode is for a dark room, nothing else
-        lowLightAllowed: false,
         // A covered camera gives a black or flat picture; a dark room still has some contrast
         blockedMaxLuminance: 6,
         blockedMinContrast: 3,
+        // The student verified in a dim room, so in-lab checks always try a brightened frame too
         isLowLightMode: false,
-        // Small luminance grid of the frame the student verified with in low-light mode.
-        // In-lab checks compare against it, since face detection is unreliable in the dark.
-        lowLightReference: null,
+        // Brightening also lifts clutter: clothes in an empty dim room scored 0.12 on SSD
+        boostedSsdMinConfidence: 0.2,
+        // On the brightened frame, most dark faces scored above 0.6 and clutter stayed under 0.1
+        brightenedSsdMinConfidence: 0.4,
+        // Narrower than this is background clutter, not a student at their screen
+        minFaceWidthRatio: 0.08,
 
         // Continuous in-browser proctoring & heartbeat states
         browserProctorActive: false,
@@ -853,6 +839,12 @@ function preLabCameraGate(labId, initialSessionId) {
         lastAbsenceAlertAt: 0,
         lastMultiFaceAlertAt: 0,
         multiFaceStreak: 0,
+        // The last check's luminance grid, and whether each of the last four checks saw movement
+        previousGrid: null,
+        recentMovement: [],
+        // A 2x2 block must change this much, on this share of the frame, to count as movement
+        movementMinChange: 5,
+        movementMinShare: 0.03,
         proctorInterval: null,
         pingInterval: null,
 
@@ -994,7 +986,9 @@ function preLabCameraGate(labId, initialSessionId) {
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
             this.status = 'analyzing';
-            this.lowLightAllowed = false;
+
+            // A retry after a failed download tries the models again: nobody can pass without them
+            if (!this.modelLoaded) await this.ensureSsdModel();
 
             // Measure frame luminance to detect low light / dark rooms
             let avgLuminance = 100;
@@ -1060,7 +1054,7 @@ function preLabCameraGate(labId, initialSessionId) {
                     if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
                         const enhancedSsd = await window.faceapi.detectAllFaces(
                             enhancedCanvas,
-                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.12 })
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: this.boostedSsdMinConfidence })
                         );
                         if (enhancedSsd.length > 0) {
                             detectedFaces = this.countFaces(enhancedSsd);
@@ -1080,65 +1074,81 @@ function preLabCameraGate(labId, initialSessionId) {
                 } catch (e) {}
             }
 
+            // Strategy 5: A dim room gets one stronger brightening pass
+            if (detectedFaces === 0 && this.lowLightingDetected) {
+                detectedFaces = await this.detectFacesBoosted(video);
+            }
+
             this.faceCount = detectedFaces;
 
             if (detectedFaces === 1) {
-                await this.completeVerification(imageBase64, 1, false);
+                await this.completeVerification(imageBase64, 1, this.lowLightingDetected);
             } else if (detectedFaces > 1) {
-                // Low-light mode skips face detection, so it is no way around this failure
-                this.attempts++;
-                this.errorMessage = `Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`;
+                await this.failCheck(`Multiple faces detected (${detectedFaces}). Only one person is permitted in the webcam frame.`, detectedFaces, imageBase64);
+            } else if (!this.modelLoaded && !('FaceDetector' in window)) {
+                // Our failure, not the student's, so it doesn't use up an attempt
+                this.errorMessage = 'Face detection could not load. Check your connection, then retry.';
                 this.status = 'failed';
+            } else if (this.isFrameBlocked(this.luminanceGrid(video))) {
+                await this.failCheck(this.blockedCameraMessage(), 0, imageBase64);
+            } else if (this.lowLightingDetected) {
+                await this.failCheck('Your room is too dark to see your face. Turn on a light or raise your screen brightness, then retry.', 0, imageBase64);
             } else {
-                this.attempts++;
-                const blocked = this.isFrameBlocked(this.luminanceGrid(video));
-                // Without the face models nobody can pass normally, so low-light stays open then
-                this.lowLightAllowed = !blocked && (this.lowLightingDetected || !this.modelLoaded);
-                if (blocked) {
-                    this.errorMessage = this.blockedCameraMessage();
-                } else if (this.lowLightingDetected) {
-                    this.errorMessage = 'Low light or backlit camera detected. Position yourself in front of the screen, or click "Continue in low-light mode".';
-                } else {
-                    this.errorMessage = 'No face detected. Please face the webcam directly with your face visible.';
-                }
-                this.status = 'failed';
+                await this.failCheck('No face detected. Please face the webcam directly with your face visible.', 0, imageBase64);
             }
+        },
+
+        // The server keeps the attempt count, so reloading the page doesn't reset it. Only the
+        // last attempt sends its picture: that's the one the instructor gets to see.
+        async failCheck(message, faceCount, imageBase64) {
+            const lastAttempt = this.attempts + 1 >= this.maxAttempts;
+            let reply = {};
+            try {
+                const res = await fetch(`/v1/labs/${labId}/verify-camera`, {
+                    method: 'POST',
+                    headers: this.cameraCheckHeaders(),
+                    body: JSON.stringify({
+                        status: 'granted',
+                        face_count: faceCount,
+                        ...(lastAttempt ? { image_base64: imageBase64 } : {}),
+                    }),
+                });
+                reply = await res.json();
+            } catch (e) {
+                console.warn('Camera check failure could not be reported:', e);
+            }
+
+            // Set only once the server has answered, so a lockout never flashes Retry first
+            this.errorMessage = message;
+            this.status = 'failed';
+            this.applyCheckResponse(reply);
+        },
+
+        applyCheckResponse(data) {
+            if (typeof data.attempts_used === 'number') {
+                this.attempts = data.attempts_used;
+            }
+            if (data.error === 'camera_check_blocked') {
+                this.errorMessage = data.message;
+                this.status = 'hard_blocked';
+            }
+        },
+
+        cameraCheckHeaders() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            return {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
+            };
         },
 
         blockedCameraMessage() {
             return 'Your camera shows a black or blank picture. Uncover it or turn on a light, then retry.';
         },
 
-        async acceptLowLightPresence() {
-            if (!this.$refs.videoEl || !this.lowLightAllowed) return;
-            const video = this.$refs.videoEl;
-
-            // The camera may have been covered since the failed check
-            if (this.isFrameBlocked(this.luminanceGrid(video))) {
-                this.lowLightAllowed = false;
-                this.errorMessage = this.blockedCameraMessage();
-                this.status = 'failed';
-                return;
-            }
-
-            const canvas = this.$refs.canvasEl || document.createElement('canvas');
-            canvas.width = video.videoWidth || 640;
-            canvas.height = video.videoHeight || 480;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
-
-            this.status = 'analyzing';
-            await this.completeVerification(imageBase64, 1, true);
-        },
-
         async completeVerification(imageBase64, faceCount = 1, isLowLight = false) {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-            const headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {})
-            };
+            const headers = this.cameraCheckHeaders();
             const verifyPayload = JSON.stringify({
                 status: 'granted',
                 face_count: faceCount,
@@ -1162,6 +1172,10 @@ function preLabCameraGate(labId, initialSessionId) {
                         recorded = true;
                         break;
                     }
+                    if (res.status === 423) {
+                        this.applyCheckResponse(await res.json());
+                        return;
+                    }
                 } catch (e) {
                     console.warn(`Verify endpoint ${url} network warning:`, e);
                 }
@@ -1169,7 +1183,6 @@ function preLabCameraGate(labId, initialSessionId) {
 
             // The lab only starts once the server has recorded the check
             if (!recorded) {
-                this.attempts++;
                 this.errorMessage = 'Your camera check could not be saved. Check your connection and try again.';
                 this.status = 'failed';
                 return;
@@ -1177,11 +1190,7 @@ function preLabCameraGate(labId, initialSessionId) {
 
             this.status = 'verified';
             this.cameraVerified = true;
-            this.lowLightAllowed = false;
             this.isLowLightMode = isLowLight;
-            if (isLowLight && this.$refs.videoEl) {
-                this.lowLightReference = this.luminanceGrid(this.$refs.videoEl);
-            }
             setTimeout(() => {
                 this.launchLab();
             }, 600);
@@ -1423,18 +1432,49 @@ function preLabCameraGate(labId, initialSessionId) {
             const video = this.$refs.proctorLiveVideo || this.$refs.videoEl;
             if (!video || video.readyState < 2) return;
 
-            // Students who verified in low-light mode, or whose room has gone dark since,
-            // get the low-light check instead of normal face detection.
+            // Students who verified in a dim room, or whose room has gone dark since, also get
+            // a stronger brightening pass. Presence always needs a detected face.
             const grid = this.luminanceGrid(video);
             const avgLuminance = grid ? grid.reduce((a, b) => a + b, 0) / grid.length : 100;
             this.lowLightingDetected = avgLuminance < 75;
             const lowLight = this.isLowLightMode || this.lowLightingDetected;
 
-            const detectedFaces = lowLight
-                ? await this.detectFacesLowLight(video, grid)
-                : await this.detectFacesNormal(video);
+            let detectedFaces = await this.detectFacesNormal(video);
+            if (detectedFaces === 0 && lowLight) {
+                detectedFaces = await this.detectFacesBoosted(video);
+            }
+
+            // Noted every cycle so the first missed face already has a frame to compare with
+            this.recentMovement = [...this.recentMovement, this.frameMoved(this.previousGrid, grid)].slice(-4);
+            this.previousGrid = grid;
 
             await this.applyProctorResult(video, detectedFaces, lowLight, this.isFrameBlocked(grid));
+        },
+
+        // Whether two luminance grids differ by more than camera noise. Cells are averaged in
+        // 2x2 blocks to quiet the noise a dark picture has, and the frames are matched in
+        // overall brightness so the camera adjusting its exposure doesn't count as movement.
+        frameMoved(previous, grid) {
+            if (!previous || !grid) return false;
+
+            const blocks = (cells) => {
+                const out = [];
+                for (let y = 0; y < 30; y += 2) {
+                    for (let x = 0; x < 40; x += 2) {
+                        const i = y * 40 + x;
+                        out.push((cells[i] + cells[i + 1] + cells[i + 40] + cells[i + 41]) / 4);
+                    }
+                }
+                return out;
+            };
+            const before = blocks(previous);
+            const after = blocks(grid);
+            const sum = (cells) => cells.reduce((a, b) => a + b, 0);
+            if (sum(after) === 0) return false;
+
+            const gain = sum(before) / sum(after);
+            const changed = before.filter((lum, i) => Math.abs(lum - after[i] * gain) >= this.movementMinChange).length;
+            return changed >= before.length * this.movementMinShare;
         },
 
         async detectFacesNormal(video) {
@@ -1483,7 +1523,7 @@ function preLabCameraGate(labId, initialSessionId) {
                     if (detectedFaces === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
                         const boostedSsd = await window.faceapi.detectAllFaces(
                             canvas,
-                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
+                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: this.boostedSsdMinConfidence })
                         );
                         if (boostedSsd.length > 0) detectedFaces = this.countFaces(boostedSsd);
                     }
@@ -1502,43 +1542,105 @@ function preLabCameraGate(labId, initialSessionId) {
             return detectedFaces;
         },
 
-        async detectFacesLowLight(video, grid) {
-            // Boost the frame first: raw detection mostly misses faces in the dark
-            if (window.faceapi && this.modelLoaded) {
+        // Last pass for a dim room: raw detection mostly misses faces in the dark. A brightness
+        // and contrast filter can't rescue them, because contrast pushes dark pixels back to
+        // black. Only SSD runs on this picture: evening out the contrast makes clutter look
+        // like a face to TinyFaceDetector.
+        async detectFacesBoosted(video) {
+            if (window.faceapi && this.modelLoaded && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
                 try {
-                    const canvas = this.$refs.proctorCanvas || document.createElement('canvas');
-                    canvas.width = video.videoWidth || 640;
-                    canvas.height = video.videoHeight || 480;
-                    const ctx = canvas.getContext('2d');
-                    ctx.filter = 'brightness(2.4) contrast(1.6)';
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    ctx.filter = 'none';
-
-                    let detections = [];
-                    if (window.faceapi.nets.tinyFaceDetector?.isLoaded) {
-                        detections = await window.faceapi.detectAllFaces(
-                            canvas,
-                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
-                        );
-                    }
-                    if (detections.length === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
-                        detections = await window.faceapi.detectAllFaces(
-                            canvas,
-                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: 0.10 })
-                        );
-                    }
+                    const detections = await window.faceapi.detectAllFaces(
+                        this.brightenedFrame(video),
+                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: this.brightenedSsdMinConfidence })
+                    );
                     if (detections.length > 0) return this.countFaces(detections);
                 } catch (e) {}
             }
 
-            if ('FaceDetector' in window) {
-                try {
-                    const faces = await new window.FaceDetector({ fastMode: true }).detect(video);
-                    if (faces.length > 0) return this.countFaces(faces);
-                } catch (e) {}
+            return 0;
+        },
+
+        // A greyscale copy of the frame with its shadows lifted, then its contrast evened out
+        // tile by tile (CLAHE), so a dark face beside a bright wall still shows its features.
+        brightenedFrame(video) {
+            const tiles = 8;
+            const clipLimit = 3;
+            const sourceWidth = video.videoWidth || video.width || 640;
+            const sourceHeight = video.videoHeight || video.height || 480;
+            const width = Math.min(sourceWidth, 640);
+            const height = Math.round(sourceHeight * width / sourceWidth);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, 0, 0, width, height);
+            const image = ctx.getImageData(0, 0, width, height);
+            const pixels = image.data;
+
+            const lifted = new Uint8Array(256);
+            for (let v = 0; v < 256; v++) lifted[v] = Math.round(255 * Math.sqrt(v / 255));
+
+            const lum = new Uint8Array(width * height);
+            for (let i = 0; i < lum.length; i++) {
+                lum[i] = lifted[Math.round(0.299 * pixels[i * 4] + 0.587 * pixels[i * 4 + 1] + 0.114 * pixels[i * 4 + 2])];
             }
 
-            return this.checkLowLightPresence(grid) ? 1 : 0;
+            // One tone curve per tile. The clip limit stops flat areas turning into noise.
+            const tileWidth = width / tiles;
+            const tileHeight = height / tiles;
+            const curves = [];
+            for (let ty = 0; ty < tiles; ty++) {
+                for (let tx = 0; tx < tiles; tx++) {
+                    const histogram = new Float64Array(256);
+                    let count = 0;
+                    for (let y = Math.floor(ty * tileHeight); y < Math.floor((ty + 1) * tileHeight); y++) {
+                        for (let x = Math.floor(tx * tileWidth); x < Math.floor((tx + 1) * tileWidth); x++) {
+                            histogram[lum[y * width + x]]++;
+                            count++;
+                        }
+                    }
+
+                    const limit = clipLimit * count / 256;
+                    let excess = 0;
+                    for (let v = 0; v < 256; v++) {
+                        if (histogram[v] > limit) {
+                            excess += histogram[v] - limit;
+                            histogram[v] = limit;
+                        }
+                    }
+
+                    const curve = new Float64Array(256);
+                    let total = 0;
+                    for (let v = 0; v < 256; v++) {
+                        total += histogram[v] + excess / 256;
+                        curve[v] = 255 * total / count;
+                    }
+                    curves.push(curve);
+                }
+            }
+
+            // Blend the four nearest tiles' curves so no tile edges show in the picture
+            const position = (pixel, tileSize) => Math.min(tiles - 1.001, Math.max(0, pixel / tileSize - 0.5));
+            for (let y = 0; y < height; y++) {
+                const fy = position(y, tileHeight);
+                const top = Math.floor(fy);
+                const down = fy - top;
+                for (let x = 0; x < width; x++) {
+                    const fx = position(x, tileWidth);
+                    const left = Math.floor(fx);
+                    const across = fx - left;
+                    const v = lum[y * width + x];
+                    const upper = curves[top * tiles + left][v] * (1 - across) + curves[top * tiles + left + 1][v] * across;
+                    const lower = curves[(top + 1) * tiles + left][v] * (1 - across) + curves[(top + 1) * tiles + left + 1][v] * across;
+                    const out = upper * (1 - down) + lower * down;
+                    const i = (y * width + x) * 4;
+                    pixels[i] = pixels[i + 1] = pixels[i + 2] = out;
+                }
+            }
+
+            ctx.putImageData(image, 0, 0);
+            return canvas;
         },
 
         // How many people a set of detections represents. The thresholds above are low so a
@@ -1552,6 +1654,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 return {
                     score: d.score ?? d.classScore ?? d.detection?.score ?? 1,
                     x: box.x ?? 0, y: box.y ?? 0, w: box.width ?? 0, h: box.height ?? 0,
+                    // Native FaceDetector results don't carry the frame size
+                    frameWidth: d.imageWidth ?? d.detection?.imageWidth ?? this.$refs.videoEl?.videoWidth ?? 640,
                 };
             }).filter((f) => f.w > 0 && f.h > 0);
 
@@ -1559,6 +1663,8 @@ function preLabCameraGate(labId, initialSessionId) {
 
             faces.sort((a, b) => b.w * b.h - a.w * a.h);
             const main = faces[0];
+            if (main.w < main.frameWidth * this.minFaceWidthRatio) return 0;
+
             const overlap = (a, b) => {
                 const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
                 const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
@@ -1588,18 +1694,25 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.absenceCount++;
                 this.proctorStatus = 'absence';
                 const warning = Math.min(this.absenceCount, 4);
-                this.proctorStatusText = blocked
-                    ? `Camera Blocked (${warning}/4 warning)`
-                    : `Face Searching (${warning}/4 warning)`;
+                if (blocked) {
+                    this.proctorStatusText = `Camera Blocked (${warning}/4 warning)`;
+                } else if (this.lowLightingDetected) {
+                    this.proctorStatusText = `Too Dark, Add Light (${warning}/4 warning)`;
+                } else {
+                    this.proctorStatusText = `Face Searching (${warning}/4 warning)`;
+                }
 
                 if (this.absenceCount >= 4 && (nowTime - this.lastAbsenceAlertAt > 35000)) {
                     this.lastAbsenceAlertAt = nowTime;
                     const snapshot = this.captureSnapshot(video);
+                    // Two moving checks, because one is only someone walking out of the frame
+                    const movementSeen = !blocked && this.lowLightingDetected && this.recentMovement.filter(Boolean).length >= 2;
                     await this.logTelemetry('camera_absence', {
                         image_base64: snapshot,
                         face_count: 0,
                         consecutive_absences: this.absenceCount,
                         low_light: lowLight,
+                        movement_seen: movementSeen,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -1631,6 +1744,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 canvas.width = 40;
                 canvas.height = 30;
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                // Averages the pixels behind each cell. Otherwise a dark frame's noise looks like movement.
+                ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(video, 0, 0, 40, 30);
                 const data = ctx.getImageData(0, 0, 40, 30).data;
                 const grid = new Array(40 * 30);
@@ -1650,41 +1765,6 @@ function preLabCameraGate(labId, initialSessionId) {
             const mean = grid.reduce((sum, lum) => sum + lum, 0) / grid.length;
             const variance = grid.reduce((sum, lum) => sum + (lum - mean) ** 2, 0) / grid.length;
             return mean <= this.blockedMaxLuminance || Math.sqrt(variance) < this.blockedMinContrast;
-        },
-
-        checkLowLightPresence(grid) {
-            if (!grid || this.isFrameBlocked(grid)) return false;
-
-            let centerLum = 0, centerCount = 0;
-            let borderLum = 0, borderCount = 0;
-            let refDiff = 0;
-            const ref = this.lowLightReference;
-
-            for (let y = 0; y < 30; y++) {
-                for (let x = 0; x < 40; x++) {
-                    const i = y * 40 + x;
-                    if (x >= 10 && x < 30 && y >= 5 && y < 25) {
-                        centerLum += grid[i];
-                        centerCount++;
-                        if (ref) refDiff += Math.abs(grid[i] - ref[i]);
-                    } else {
-                        borderLum += grid[i];
-                        borderCount++;
-                    }
-                }
-            }
-
-            const avgCenter = centerLum / centerCount;
-            const avgBorder = borderLum / borderCount;
-
-            // A covered or switched-off camera is never "present"
-            if (avgCenter <= 4) return false;
-
-            // The middle of the frame still looks like it did when the student verified
-            if (ref && refDiff / centerCount < 14) return true;
-
-            // Silhouette: head darker (backlit) or lighter (screen glow) than the room around it
-            return Math.abs(avgBorder - avgCenter) > 6;
         },
 
         captureSnapshot(video) {

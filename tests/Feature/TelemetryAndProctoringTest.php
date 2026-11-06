@@ -515,6 +515,43 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertTrue($anomaly->metadata['low_light']);
     }
 
+    public function test_movement_in_a_dark_room_raises_a_soft_flag_without_a_notification()
+    {
+        Notification::fake();
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => true, 'movement_seen' => true],
+        ])->assertStatus(200);
+
+        $this->assertNull($this->latestNoFaceAnomaly());
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'too_dark')->first();
+        $this->assertNotNull($anomaly);
+        $this->assertEquals('low', $anomaly->severity);
+        $this->assertStringContainsString('saw movement', $anomaly->description);
+        Notification::assertNothingSent();
+    }
+
+    public function test_a_dark_room_without_movement_keeps_the_no_face_flag()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => true, 'movement_seen' => false],
+        ])->assertStatus(200);
+
+        $this->assertEquals('medium', $this->latestNoFaceAnomaly()->severity);
+    }
+
+    public function test_movement_in_a_lit_room_does_not_soften_the_flag()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => false, 'movement_seen' => true],
+        ])->assertStatus(200);
+
+        $this->assertEquals('high', $this->latestNoFaceAnomaly()->severity);
+    }
+
     public function test_low_light_pre_lab_verification_is_recorded()
     {
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
