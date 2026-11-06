@@ -217,7 +217,8 @@ class LabProgressTest extends TestCase
 
         $this->assertSame('completed', $this->class->fresh()->status);
         $this->assertSame(1, Certificate::where('user_id', $this->student->id)->count());
-        $this->assertSame(1, $this->student->notifications()->where('data->title', "Course Completed: {$this->class->name}")->count());
+        // Filtered in PHP: notifications.data is a text column, so Postgres has no JSON path on it
+        $this->assertSame(1, $this->student->notifications()->get()->where('data.title', "Course Completed: {$this->class->name}")->count());
     }
 
     public function test_the_class_page_leaves_a_class_with_time_left_open()
