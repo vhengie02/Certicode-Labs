@@ -1046,6 +1046,7 @@ class LabSessionController extends Controller
                 .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : ''),
             type: 'grade',
         );
+        $session->notifyInstructorOfSubmission();
 
         $studentEvaluation = Arr::except($evaluation, [
             'ai_grade_summary',

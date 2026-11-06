@@ -376,6 +376,7 @@ class LabAttemptController extends Controller
             "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%.",
             type: 'grade',
         );
+        $session->notifyInstructorOfSubmission();
 
         return redirect()->route('sessions.show', $session->id)
             ->with('success', "Laboratory session completed successfully! Final Performance Score: {$session->performance_score}%.");

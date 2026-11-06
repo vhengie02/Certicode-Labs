@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Notifications\ClassActivityNotification;
 use App\Services\CodeSimilarityService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class Laboratory extends Model
 {
@@ -249,8 +251,10 @@ class Laboratory extends Model
 
     /**
      * Close/End the live lab session, auto-submitting in-progress sessions.
+     *
+     * @return int How many in-progress sessions were submitted
      */
-    public function closeLive(): void
+    public function closeLive(): int
     {
         $this->live_elapsed_seconds = $this->getLiveElapsedSeconds();
         $this->live_status = 'closed';
@@ -281,6 +285,32 @@ class Laboratory extends Model
         // Those attempts are submissions now: compare them once for the monitoring page
         if ($inProgressSessions->isNotEmpty()) {
             app(CodeSimilarityService::class)->refreshLabReportQuietly($this->id);
+        }
+
+        return $inProgressSessions->count();
+    }
+
+    /**
+     * Send the class instructor a notification that opens this lab's monitoring page unless
+     * another link is given. It is skipped when the instructor caused the event. A failed send
+     * never breaks the caller.
+     */
+    public function notifyInstructor(string $title, string $message, ?string $url = null): void
+    {
+        try {
+            $instructor = $this->module?->schoolClass?->instructor;
+            if (! $instructor || $instructor->is(auth()->user())) {
+                return;
+            }
+
+            $instructor->notify(new ClassActivityNotification(
+                $title,
+                $message,
+                $url ?? route('classes.telemetry', ['class_id' => $this->module->class_id, 'lab' => $this->id]),
+                'lab'
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Instructor lab notification failed: '.$e->getMessage());
         }
     }
 
@@ -313,7 +343,16 @@ class Laboratory extends Model
     public function checkAndAutoCloseLive(): bool
     {
         if ($this->isLiveLab() && $this->live_status === 'active' && $this->getRemainingLiveSeconds() <= 0) {
-            $this->closeLive();
+            $submitted = $this->closeLive();
+
+            // The timer did this, so unlike ending a lab by hand, nobody may be watching
+            if ($submitted > 0) {
+                $attempts = $submitted === 1 ? '1 open attempt was' : "{$submitted} open attempts were";
+                $this->notifyInstructor(
+                    "Live lab ended: {$this->title}",
+                    "Time ran out on '{$this->title}', so {$attempts} submitted. Open monitoring to review them.",
+                );
+            }
 
             return true;
         }
