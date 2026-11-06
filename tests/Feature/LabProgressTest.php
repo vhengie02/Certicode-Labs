@@ -205,4 +205,27 @@ class LabProgressTest extends TestCase
 
         $this->assertSame(1, Certificate::where('user_id', $this->student->id)->count());
     }
+
+    public function test_opening_the_class_page_after_its_end_date_concludes_it_once()
+    {
+        $this->complete($this->labA);
+        $this->complete($this->labB);
+        $this->class->update(['scheduled_end_date' => now()->subMinute()]);
+
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertOk();
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertOk();
+
+        $this->assertSame('completed', $this->class->fresh()->status);
+        $this->assertSame(1, Certificate::where('user_id', $this->student->id)->count());
+        $this->assertSame(1, $this->student->notifications()->where('data->title', "Course Completed: {$this->class->name}")->count());
+    }
+
+    public function test_the_class_page_leaves_a_class_with_time_left_open()
+    {
+        $this->class->update(['scheduled_end_date' => now()->addDay()]);
+
+        $this->actingAs($this->student)->get("/classes/{$this->class->id}")->assertOk();
+
+        $this->assertNotSame('completed', $this->class->fresh()->status);
+    }
 }

@@ -176,8 +176,16 @@
                                 </p>
                             @elseif($log->event_type === 'session_completed')
                                 <p class="text-xs text-emerald-300 font-semibold leading-relaxed font-sans">
-                                    Completed and submitted lab exercise via VS Code. Final score: <span class="font-bold text-white">{{ $log->payload['final_score'] ?? 0 }}%</span> (<span class="font-bold text-white">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks passed, status: <span class="font-mono">{{ $log->payload['execution_status'] ?? 'completed' }}</span>).
+                                    Completed and submitted lab exercise via VS Code. Final score: <span class="font-bold text-white">{{ $log->payload['final_score'] ?? 0 }}%</span> (<span class="font-bold text-white">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks passed).
                                 </p>
+                                @if(!empty($log->payload['execution_status']))
+                                    <p class="text-xs text-slate-350 leading-relaxed font-sans mt-1">
+                                        Code run: <span class="font-mono">{{ $log->payload['execution_status'] }}</span>. This doesn't affect the grade.
+                                    </p>
+                                @endif
+                                @if(!empty($log->payload['execution_error']))
+                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['execution_error'] }}</pre>
+                                @endif
                             @elseif($log->event_type === 'paste_anomaly')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Pasted <span class="font-bold text-white">{{ $log->payload['pasted_length'] ?? 0 }} chars</span> of external code.

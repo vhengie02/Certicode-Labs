@@ -1,4 +1,5 @@
 import './bootstrap';
+import { tabIndicator } from './motion';
 import './toast';
 import './class-background';
 import './confirm-dialog';
@@ -13,6 +14,7 @@ import staggeredMenu from './staggered-menu';
 import stepper from './stepper';
 
 Alpine.plugin(collapse);
+Alpine.directive('tab-indicator', (element, _, utilities) => tabIndicator(element, utilities));
 Alpine.data('branchedMenu', branchedMenu);
 Alpine.data('lineSidebar', lineSidebar);
 Alpine.data('staggeredMenu', staggeredMenu);

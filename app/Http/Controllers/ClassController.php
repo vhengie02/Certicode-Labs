@@ -230,6 +230,8 @@ class ClassController extends Controller
         }
 
         $class = SchoolClass::with(['students', 'instructor'])->findOrFail($id);
+        // Before the tree below: concluding loads the modules without the instructor's counts
+        $class->concludeIfPastEndDate();
         $class->loadModuleTree($user->role !== 'student'
             ? fn ($q) => $q->withCount(['labSessions as completed_count' => fn ($sq) => $sq->where('status', 'completed')])
             : null);

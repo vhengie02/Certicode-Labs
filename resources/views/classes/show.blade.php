@@ -208,6 +208,7 @@
             try {
                 await navigator.clipboard.writeText(button.dataset.copy);
                 label.textContent = 'Copied';
+                window.pulseSuccess?.(button);
             } catch (e) {
                 label.textContent = 'Press Ctrl+C';
             }

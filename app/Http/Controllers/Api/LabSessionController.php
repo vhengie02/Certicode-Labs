@@ -14,6 +14,7 @@ use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
+use App\Models\User;
 use App\Notifications\CameraFlagNotification;
 use App\Services\CodeSimilarityService;
 use App\Services\LlmEvaluationService;
@@ -68,6 +69,14 @@ class LabSessionController extends Controller
                     'message' => 'The countdown for this Live Lab has expired. Late joiners are not permitted to start.',
                 ], 403);
             }
+        }
+
+        // The same pre-lab camera gate as the web start route
+        if ($user->role === 'student' && ! LabAttemptController::recentCameraCheck($lab->id)) {
+            return response()->json([
+                'error' => 'camera_not_verified',
+                'message' => 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.',
+            ], 403);
         }
 
         // Resume the open attempt or start one (shared with the web start route)
@@ -157,7 +166,9 @@ class LabSessionController extends Controller
             $session->recordIdleAnomaly($idleMinutes, $request->payload);
         }
 
-        if ($request->event_type === 'paste_anomaly' && ! $this->isStarterPaste($session, $request->payload ?? [])) {
+        if ($request->event_type === 'paste_anomaly'
+            && ! $this->isStarterPaste($session, $request->payload ?? [])
+            && ! $this->isAlreadyFlaggedPaste($session, $request->payload ?? [])) {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
             $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
@@ -326,9 +337,9 @@ class LabSessionController extends Controller
     /**
      * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
      * a flag without a picture (e.g. the camera was unplugged) is raised once per
-     * 5 minutes, and one with a picture at most every 20 seconds. The picture itself is
-     * stored at most once every SNAPSHOT_INTERVAL_SECONDS per type: a covered camera sends
-     * the same dark frame all lab long.
+     * 5 minutes, and one with a picture at most every 20 seconds. Each flag keeps its own
+     * picture, because the picture is the instructor's proof, up to MAX_SNAPSHOTS_PER_TYPE
+     * per attempt: a covered camera sends the same dark frame all lab long.
      */
     protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
     {
@@ -345,8 +356,7 @@ class LabSessionController extends Controller
             return null;
         }
 
-        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)
-            ->where('created_at', '>=', now()->subSeconds(self::SNAPSHOT_INTERVAL_SECONDS))->exists()) {
+        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)->count() >= self::MAX_SNAPSHOTS_PER_TYPE) {
             unset($attributes['metadata']['image_base64']);
             $attributes['image_path'] = null;
         }
@@ -357,7 +367,8 @@ class LabSessionController extends Controller
         return $anomaly;
     }
 
-    private const SNAPSHOT_INTERVAL_SECONDS = 120;
+    /** About 40 minutes of flags at the lab page's pace, so one attempt can't fill the database. */
+    public const MAX_SNAPSHOTS_PER_TYPE = 60;
 
     /** Lines changed outside the editor from which the flag is high severity. */
     private const LARGE_EXTERNAL_CHANGE_LINES = 20;
@@ -469,6 +480,24 @@ class LabSessionController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Whether this attempt already has an open flag for the same pasted text. Pasting it again,
+     * even into another file, stays on the timeline but doesn't alert the instructor again.
+     * Once the instructor resolves the flag, the next paste raises a new one.
+     */
+    private function isAlreadyFlaggedPaste(LabSession $session, array $payload): bool
+    {
+        $pastedLength = (int) ($payload['pasted_length'] ?? 0);
+        $snippet = mb_substr((string) ($payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
+
+        return Anomaly::where('lab_session_id', $session->id)
+            ->where('type', 'paste_anomaly')
+            ->where('resolved', false)
+            ->get(['metadata'])
+            ->contains(fn (Anomaly $flag) => (int) ($flag->metadata['pasted_length'] ?? 0) === $pastedLength
+                && ($flag->metadata['snippet'] ?? '') === $snippet);
     }
 
     /**
@@ -1029,6 +1058,8 @@ class LabSessionController extends Controller
                 'final_score' => $finalScore,
                 'completed_tasks_count' => count($completedTasks),
                 'execution_status' => $executionResult['status'] ?? 'unknown',
+                // Why the run failed, for the instructor's timeline
+                'execution_error' => Str::limit($executionResult['errors'] ?? '', self::MAX_LOGGED_RUN_ERROR_CHARS) ?: null,
             ],
         ]);
 
@@ -1071,6 +1102,11 @@ class LabSessionController extends Controller
     private const SUBMIT_BUDGET_SECONDS = 50;
 
     private const MIN_EXECUTION_SECONDS = 5;
+
+    private const MAX_LOGGED_RUN_ERROR_CHARS = 500;
+
+    /** Files kept in a diff's per-file list. */
+    private const MAX_DIFF_FILES = 50;
 
     /**
      * The answer to grading or submitting an attempt that is no longer open.
@@ -1217,11 +1253,15 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with(['laboratory', 'user'])->findOrFail($sessionId);
 
-        $request->validate([
+        $validated = $request->validate([
             'lines_added' => 'required|integer|min:0',
             'lines_deleted' => 'required|integer|min:0',
             'lines_modified' => 'nullable|integer|min:0',
             'files' => 'nullable|array',
+            'files.*.name' => 'required|string|max:255',
+            'files.*.added' => 'nullable|integer|min:0',
+            'files.*.deleted' => 'nullable|integer|min:0',
+            'files.*.modified' => 'nullable|integer|min:0',
             'blame_blocks' => 'nullable|array',
         ]);
 
@@ -1238,7 +1278,8 @@ class LabSessionController extends Controller
             'lines_added' => (int) $request->lines_added,
             'lines_deleted' => (int) $request->lines_deleted,
             'lines_modified' => (int) ($request->lines_modified ?? 0),
-            'files' => $request->files ?? [],
+            // Capped, not rejected: the totals above still count, and this goes out in a broadcast
+            'files' => array_slice($validated['files'] ?? [], 0, self::MAX_DIFF_FILES),
             'updated_at' => now()->toIso8601String(),
         ];
 
@@ -1874,6 +1915,10 @@ class LabSessionController extends Controller
     {
         $session = LabSession::findOrFail($sessionId);
 
+        if ($refusal = $this->monitoringConsentRefusal($request->user() ?? $session->user)) {
+            return $refusal;
+        }
+
         $status = $request->input('status', 'granted'); // granted, denied, blocked
         $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
         $imageBase64 = $request->input('image_base64');
@@ -1967,6 +2012,10 @@ class LabSessionController extends Controller
         $lab = Laboratory::findOrFail($labId);
         $this->authorizeLabViewer($lab);
 
+        if ($refusal = $this->monitoringConsentRefusal($request->user())) {
+            return $refusal;
+        }
+
         $status = $request->input('status', 'granted'); // granted, denied, blocked
         $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
 
@@ -2012,6 +2061,24 @@ class LabSessionController extends Controller
     }
 
     /** Count a failed pre-lab check, locking the student out when it was their last attempt. */
+    /**
+     * The refusal for a camera check from someone who hasn't agreed to monitoring, or null when
+     * it can go ahead. Every way into a lab needs a camera check, so this covers them all.
+     */
+    private function monitoringConsentRefusal(?User $user): ?JsonResponse
+    {
+        if (! config('legal.enforce') || ! $user || $user->hasMonitoringConsent()) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'monitoring_consent_required',
+            'message' => 'Agree to camera and activity monitoring before the camera check. Reload this page to see the notice.',
+        ], 403);
+    }
+
     private function failedCameraCheckResponse(Request $request, Laboratory $lab, string $error, string $message): JsonResponse
     {
         $failure = LabAttemptController::recordFailedCameraCheck($request, $lab->id);

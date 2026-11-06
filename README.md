@@ -1,7 +1,7 @@
 # CertiCode Labs
 
 > **Next-Generation AI-Proctored Programming Laboratory & Assessment Platform**  
-> Integrated seamlessly with the **CertiCode Labs VS Code Extension**, **Laravel 12 Backend**, **Laravel Reverb WebSockets**, and **Instructor Live Monitoring Dashboard**.
+> Integrated seamlessly with the **CertiCode Labs VS Code Extension**, **Laravel 12 Backend**, **Pusher Channels live updates**, and **Instructor Live Monitoring Dashboard**.
 
 ---
 
@@ -57,8 +57,8 @@ Instructors configure lab accessibility independently of participation mode (Sol
 ### 2. Real-Time Line Diff Tracking
 * Calculates line-level deltas (`+added`, `-deleted`, `~modified`) against the original starter file baseline in real time.
 * **Solo Mode**: Tracks personal diff stats and displays compact diff counters in the VS Code sidebar.
-* **Team Mode**: Provides line-level `git blame`-style attribution per teammate with avatar colors and contribution percentages.
-* **Transport**: Streams over persistent WebSocket channels (`DiffUpdated`) with automatic REST fallback.
+* **Team Mode**: Shows each teammate's share of the team's changed lines, with avatar colors and contribution percentages. It counts lines per teammate; it doesn't attribute individual lines.
+* **Transport**: The extension sends diffs over REST. When Pusher is set up, the server broadcasts them (`DiffUpdated`) to the sidebar and the monitoring panel. Without it, both poll.
 
 ### 3. Collaborative Team Chat & Ephemeral Storage
 * Embedded in the VS Code sidebar and web platform exclusively during team exercises.
@@ -75,7 +75,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches.
 
 ### 5. Camera Presence Gate & Continuous Verification
-* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor.
+* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor. Every way of starting a lab needs a recent pass, but detection runs in the browser and the server trusts the face count it reports. A student who crafts that request can pass the gate, so the check deters and doesn't prove presence.
 * **Continuous Background Proctoring**: Performs non-interruptive periodic background presence checks. Mid-session face-loss alerts are quietly streamed to the instructor with snapshot attachments while the student continues working.
 
 ### 6. In-Lab VS Code Sidebar & Live Leaderboard
@@ -90,7 +90,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * Comprehensive chronological anomaly timeline with captured camera snapshot previews.
 
 ### 8. Session Closure, Course Competency & E-Certification
-* **Lab Closure**: Auto-submits pending workspaces, assesses competency scores, terminates WebSocket channels, and purges chat.
+* **Lab Closure**: Closes open attempts with their last graded score, updates competency scores, and purges chat. Closing doesn't call the AI grader.
 * **Course Completion**: Counts the labs where a student reached the class's lab pass score, and compares that share of all labs with an instructor-configured passing threshold (e.g. 75%). Grades awaiting instructor review do not count. Competency scores are tracked separately and do not affect certificates.
 * **E-Certification**: Issues certificates with QR codes to qualifying students when the class ends, or earlier when a student claims one. Each has a random verification code that a public page looks up in the database; certificates are not cryptographically signed.
 
@@ -109,12 +109,11 @@ flowchart TD
     end
 
     subgraph Transport ["Transport Layer"]
-        WS["Persistent WebSocket Channel<br/>(Laravel Reverb)"]
-        REST["REST API<br/>(Laravel 12 Sanctum)"]
+        WS["Live Updates<br/>(Pusher Channels, optional)"]
+        REST["REST API<br/>(X-Session-Token or session cookie)"]
     end
 
     subgraph Backend ["Laravel Backend & Services"]
-        Reverb["Laravel Reverb Server"]
         Controllers["Session, Telemetry & Lab Controllers"]
         AIService["AI Grader (Claude)"]
         DB[(SQL Database)]
@@ -126,15 +125,16 @@ flowchart TD
         CourseSettings["Course Management<br/>(Threshold %, End Date, Certificates)"]
     end
 
-    Sidebar --> WS
-    DiffEngine --> WS
-    FocusSensor --> WS
-    PasteSensor --> WS
+    Sidebar <--> REST
+    DiffEngine --> REST
+    FocusSensor --> REST
+    PasteSensor --> REST
     Watcher --> Sidebar
     
-    WS <--> Reverb
     REST <--> Controllers
-    Reverb --> Monitor
+    Controllers --> WS
+    WS --> Sidebar
+    WS --> Monitor
     Controllers <--> DB
     Controllers <--> AIService
     Scheduler --> Controllers
@@ -194,20 +194,12 @@ APP_URL=http://localhost:8000
 # Database
 DB_CONNECTION=sqlite
 
-# WebSockets (Laravel Reverb)
-BROADCAST_CONNECTION=reverb
-REVERB_APP_ID=certicode-app
-REVERB_APP_KEY=certicode-key
-REVERB_APP_SECRET=certicode-secret
-REVERB_HOST=127.0.0.1
-REVERB_PORT=8080
-REVERB_SCHEME=http
-
-# Client-Side Vite Broadcast Config
-VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
-VITE_REVERB_HOST="${REVERB_HOST}"
-VITE_REVERB_PORT="${REVERB_PORT}"
-VITE_REVERB_SCHEME="${REVERB_SCHEME}"
+# Live updates. Leave as null to poll instead; set to pusher with the keys below to enable them.
+BROADCAST_CONNECTION=null
+# PUSHER_APP_ID=
+# PUSHER_APP_KEY=
+# PUSHER_APP_SECRET=
+# PUSHER_APP_CLUSTER=mt1
 
 # AI Evaluation Engine
 ANTHROPIC_API_KEY=your-anthropic-api-key
@@ -226,13 +218,10 @@ Run each component in a separate terminal window:
 # 1. Laravel Web Application
 php artisan serve
 
-# 2. WebSocket Server (Reverb)
-php artisan reverb:start
-
-# 3. Frontend Asset Bundler
+# 2. Frontend Asset Bundler
 npm run dev
 
-# 4. Background Scheduled Tasks (auto-close expired live labs & conclude classes)
+# 3. Background Scheduled Tasks (auto-close expired live labs & conclude classes)
 php artisan schedule:work
 ```
 
@@ -243,7 +232,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.8.7**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.8.8**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force
@@ -284,18 +273,22 @@ php artisan test
 The repository includes a production-ready `vercel.json` configuration:
 * **Serverless PHP Runtime**: Routes web requests through `api/index.php`.
 * **Static Assets**: Automatically maps `/build/*` and `/downloads/*` (direct `.vsix` distribution).
-* **Automated Vercel Crons**: Configured to poll `/api/cron/tick` every minute:
+* **Automated Vercel Crons**: Configured to call `/api/cron/tick` once a day, at 16:00 UTC:
   ```json
   "crons": [
     {
       "path": "/api/cron/tick",
-      "schedule": "* * * * *"
+      "schedule": "0 16 * * *"
     }
   ]
   ```
   The `/api/cron/tick` endpoint executes:
   1. `certicode:close-expired-live-labs`
   2. `certicode:auto-conclude-expired-classes`
+  3. `model:prune` for old anomalies and telemetry
+  4. `certicode:expire-old-snapshots`
+
+  A live lab doesn't wait for this tick. An expired lab stops accepting work after a 60-second grace period, and it closes the next time a student or the monitoring panel loads it. A class past its end date concludes the first time anyone opens its page, or on the daily tick if nobody does. The schedule stays daily because the Vercel Hobby plan doesn't allow more frequent crons.
 
 ---
 

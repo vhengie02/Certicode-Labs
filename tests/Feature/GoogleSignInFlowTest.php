@@ -75,7 +75,7 @@ class GoogleSignInFlowTest extends TestCase
         $this->sendCode('brand.new@gmail.com')->assertRedirect('/auth/google/verify?needs_role=1');
         $this->assertSame(1, $this->mailsSent);
 
-        $this->post('/auth/google/callback', ['code' => session('google_auth_code'), 'role' => 'student', 'password' => 'long-enough-pass'])
+        $this->post('/auth/google/callback', ['code' => session('google_auth_code'), 'role' => 'student', 'password' => 'long-enough-pass', 'terms' => '1'])
             ->assertRedirect('/dashboard');
 
         $user = User::where('email', 'brand.new@gmail.com')->firstOrFail();
@@ -88,7 +88,7 @@ class GoogleSignInFlowTest extends TestCase
         $other = User::create(['name' => 'Other', 'email' => 'other@school.edu', 'gmail' => 'claimed@gmail.com', 'password' => bcrypt('x'), 'role' => 'student']);
 
         $this->sendCode('claimed@gmail.com')->assertRedirect('/auth/google/verify?needs_role=1');
-        $this->post('/auth/google/callback', ['code' => session('google_auth_code'), 'role' => 'student', 'password' => 'long-enough-pass'])
+        $this->post('/auth/google/callback', ['code' => session('google_auth_code'), 'role' => 'student', 'password' => 'long-enough-pass', 'terms' => '1'])
             ->assertRedirect('/dashboard');
 
         $this->assertNull($other->fresh()->gmail);
@@ -111,6 +111,7 @@ class GoogleSignInFlowTest extends TestCase
 
         $this->from('/register')->post('/register', [
             'name' => 'Vhengie', 'email' => 'vhengie@gmail.com', 'password' => 'Long-enough-1', 'password_confirmation' => 'Long-enough-1', 'role' => 'student',
+            'terms' => '1',
         ])->assertRedirect('/register')->assertSessionHasErrors(['email' => 'An account with this email already exists. Sign in instead, or use Continue with Google to get a sign-in code by email.']);
     }
 

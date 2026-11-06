@@ -54,6 +54,21 @@ class SandboxExecutionServiceTest extends TestCase
     }
 
     /**
+     * A program can print any bytes; the result must still fit in a JSON response.
+     */
+    public function test_program_output_that_is_not_valid_text_is_cleaned(): void
+    {
+        $code = '<?php fwrite(STDOUT, "ok\xFF\0"); fwrite(STDERR, "bad\xFF\0"); exit(1);';
+        $result = $this->sandbox->execute($code, 'php');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertNotFalse(json_encode($result));
+        $this->assertStringContainsString('ok', $result['output']);
+        $this->assertStringContainsString('bad', $result['errors']);
+        $this->assertStringNotContainsString("\0", $result['output'].$result['errors']);
+    }
+
+    /**
      * Test PHP code execution timeout limits.
      */
     public function test_execute_php_code_timeout(): void
@@ -163,6 +178,36 @@ JAVA;
         $this->assertNull($result['errors']);
         $this->assertStringContainsString('Hello from Java!', $result['output']);
         $this->assertGreaterThan(0, $result['execution_time_ms']);
+    }
+
+    /**
+     * A library-style lab has no main(): compiling is all there is to do.
+     */
+    public function test_java_class_without_main_compiles_and_succeeds(): void
+    {
+        $code = <<<'JAVA'
+public class Strings {
+    public static String reverse(String s) {
+        return new StringBuilder(s).reverse().toString();
+    }
+}
+JAVA;
+        $result = $this->sandbox->execute($code, 'java');
+
+        $this->assertEquals('success', $result['status']);
+        $this->assertNull($result['errors']);
+        $this->assertSame('', $result['output']);
+    }
+
+    /**
+     * A broken class without main() is still a compile error.
+     */
+    public function test_java_class_without_main_still_reports_compile_errors(): void
+    {
+        $result = $this->sandbox->execute('public class Strings { syntax error }', 'java');
+
+        $this->assertEquals('error', $result['status']);
+        $this->assertStringContainsString('Java Compilation Error', $result['errors']);
     }
 
     /**

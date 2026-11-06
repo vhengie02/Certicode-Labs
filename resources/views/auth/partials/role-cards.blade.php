@@ -8,7 +8,7 @@
         @foreach (['student' => ['Student', 'Take labs, earn certificates'], 'instructor' => ['Instructor', 'Run classes; an admin approves access']] as $value => [$label, $hint])
             <label class="group relative cursor-pointer">
                 <input type="radio" name="role" value="{{ $value }}" class="peer sr-only" required @checked(old('role', 'student') === $value)>
-                <span class="block h-full rounded-[10px] border border-[var(--cc-line-strong)] bg-white/[0.02] p-3.5 transition-all duration-200
+                <span class="block h-full rounded-[10px] border border-[var(--cc-line-strong)] bg-white/[0.02] p-3.5 transition-[border-color,background-color,box-shadow] duration-200
                              group-hover:border-white/25
                              peer-checked:border-[#3ecf8e] peer-checked:bg-[#3ecf8e]/[0.06] peer-checked:shadow-[0_0_0_4px_rgba(62,207,142,0.12)]
                              peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-[#3ecf8e] peer-focus-visible:outline-offset-2">

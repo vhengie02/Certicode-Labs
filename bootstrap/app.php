@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AuthorizeLabSession;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureLegalAccepted;
 use App\Http\Middleware\PreventAuthenticatedCaching;
 use App\Http\Middleware\RequireSupportedExtension;
 use App\Http\Middleware\ServerTiming;
@@ -31,6 +32,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
             'lab.session' => AuthorizeLabSession::class,
             'extension.supported' => RequireSupportedExtension::class,
             'admin' => EnsureAdmin::class,
+            'legal.accepted' => EnsureLegalAccepted::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

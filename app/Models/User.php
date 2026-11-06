@@ -115,7 +115,50 @@ class User extends Authenticatable
             'notify_email_channel' => 'boolean',
             'notify_grade' => 'boolean',
             'notify_integrity' => 'boolean',
+            'terms_accepted_at' => 'datetime',
+            'monitoring_consent_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether this user accepted the current Terms and Privacy Policy.
+     */
+    public function hasAcceptedTerms(): bool
+    {
+        return $this->terms_accepted_at !== null && $this->terms_version === config('legal.terms_version');
+    }
+
+    public function acceptTerms(): void
+    {
+        $this->forceFill([
+            'terms_accepted_at' => now(),
+            'terms_version' => config('legal.terms_version'),
+        ])->save();
+    }
+
+    /**
+     * Whether this user agreed to the current camera and activity monitoring notice.
+     */
+    public function hasMonitoringConsent(): bool
+    {
+        return $this->monitoring_consent_at !== null
+            && $this->monitoring_consent_version === config('legal.monitoring_version');
+    }
+
+    public function grantMonitoringConsent(): void
+    {
+        $this->forceFill([
+            'monitoring_consent_at' => now(),
+            'monitoring_consent_version' => config('legal.monitoring_version'),
+        ])->save();
+    }
+
+    public function withdrawMonitoringConsent(): void
+    {
+        $this->forceFill([
+            'monitoring_consent_at' => null,
+            'monitoring_consent_version' => null,
+        ])->save();
     }
 
     /**

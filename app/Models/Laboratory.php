@@ -25,6 +25,8 @@ class Laboratory extends Model
         'test_cases',
         'time_limit',
         'is_group_lab',
+        'team_size',
+        'team_formation',
         'module_id',
         'views_count',
         'starter_files',
@@ -43,6 +45,7 @@ class Laboratory extends Model
         'tasks_definition' => 'array',
         'test_cases' => 'array',
         'is_group_lab' => 'boolean',
+        'team_size' => 'integer',
         'starter_files' => 'array',
         'live_duration_minutes' => 'integer',
         'live_started_at' => 'datetime',
@@ -508,8 +511,8 @@ class Laboratory extends Model
     }
 
     /**
-     * The team the instructor put this student in, on a group lab. Null on solo labs and for
-     * students who have no team yet: they work alone.
+     * The team this student is in, on a group lab. Null on solo labs and for students who
+     * have no team yet: they work alone.
      */
     public function teamOf(User $user): ?Group
     {
@@ -518,5 +521,11 @@ class Laboratory extends Model
         }
 
         return $this->groups()->whereHas('members', fn ($q) => $q->where('users.id', $user->id))->first();
+    }
+
+    /** Whether students form this lab's teams themselves. */
+    public function studentsPickTeams(): bool
+    {
+        return $this->is_group_lab && $this->team_formation === 'students';
     }
 }

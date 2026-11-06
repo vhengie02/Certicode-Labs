@@ -349,7 +349,7 @@
                             <span class="relative shrink-0">
                                 <input type="checkbox" name="{{ $field }}" id="{{ $field }}" value="1" @checked($user->{$field}) class="sr-only peer">
                                 <span class="block h-6 w-11 rounded-full border border-[#2e2e2e] bg-[#232323] transition-colors peer-checked:border-[#3ecf8e] peer-checked:bg-[#3ecf8e] peer-focus-visible:ring-2 peer-focus-visible:ring-[#3ecf8e]/50"></span>
-                                <span class="absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-[#a3a3a3] transition-transform peer-checked:translate-x-5 peer-checked:bg-[#06150e]" aria-hidden="true"></span>
+                                <span class="absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-[#a3a3a3] motion-knob peer-checked:translate-x-5 peer-checked:bg-[#06150e]" aria-hidden="true"></span>
                             </span>
                         </label>
                     @endforeach
@@ -383,6 +383,30 @@
                     <p class="text-[13px] text-[#888888]">A JSON file of your data. Camera snapshots are listed but not included.</p>
                     <a href="{{ route('settings.export') }}" class="ui-btn ui-btn-secondary">Download my data</a>
                 </div>
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[#232323] px-6 py-4">
+                    <div>
+                        <p class="text-sm font-medium text-[#ededed]">Lab monitoring consent</p>
+                        <p class="mt-0.5 text-[13px] text-[#888888]">
+                            @if ($user->hasMonitoringConsent())
+                                You agreed on {{ $user->monitoring_consent_at->format('F j, Y') }}. Labs can't start if you withdraw it.
+                            @else
+                                Not given. You'll be asked before your next lab.
+                            @endif
+                        </p>
+                    </div>
+                    @if ($user->hasMonitoringConsent())
+                        <form action="{{ route('legal.monitoring.destroy') }}" method="POST">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="ui-btn ui-btn-secondary">Withdraw consent</button>
+                        </form>
+                    @endif
+                </div>
+                <p class="border-t border-[#232323] px-6 py-4 text-[13px] text-[#888888]">
+                    Read the <a href="{{ route('legal.privacy') }}" class="text-[#3ecf8e] hover:underline">Privacy Policy</a>,
+                    <a href="{{ route('legal.terms') }}" class="text-[#3ecf8e] hover:underline">Terms of Service</a> and
+                    <a href="{{ route('legal.cookies') }}" class="text-[#3ecf8e] hover:underline">Cookie Notice</a>.
+                </p>
             </section>
 
             {{-- Delete account --}}

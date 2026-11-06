@@ -1384,7 +1384,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 this.recordKeystroke(1);
             } else if (change.text.length > 1 && change.text.length < MIN_BLOCK_LENGTH) {
                 this.recordKeystroke(change.text.length);
-            } else if (change.text.length >= MIN_BLOCK_LENGTH && (change.text.includes('\n') || change.text.split(/\s+/).length > 3)) {
+            } else if (change.text.length >= MIN_BLOCK_LENGTH) {
                 // Bulk code insertion detected!
                 const trimmedPaste = change.text.trim();
 

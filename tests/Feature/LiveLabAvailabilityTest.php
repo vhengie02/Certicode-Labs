@@ -87,6 +87,7 @@ class LiveLabAvailabilityTest extends TestCase
 
         // Student can start session directly
         $response = $this->actingAs($this->student1)
+            ->withCameraCheck($lab->id)
             ->postJson("/api/v1/labs/{$lab->id}/start");
 
         $response->assertStatus(200);
@@ -235,6 +236,7 @@ class LiveLabAvailabilityTest extends TestCase
 
         // Student 1 starts now (15 minutes in)
         $response1 = $this->actingAs($this->student1)
+            ->withCameraCheck($lab->id)
             ->postJson("/api/v1/labs/{$lab->id}/start");
 
         $response1->assertStatus(200);

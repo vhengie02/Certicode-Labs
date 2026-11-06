@@ -87,7 +87,7 @@
                     <h2 id="certs-heading" class="text-sm font-semibold text-[#ededed]">Certificates</h2>
                     <span class="text-xs tabular-nums text-[#888888] shrink-0">{{ number_format($certificates->count()) }} earned</span>
                 </div>
-                <div class="mt-3 space-y-2">
+                <div class="motion-rows mt-3 space-y-2">
                     @forelse ($certificates as $cert)
                         <a href="{{ route('certificates.show', $cert->id) }}" class="flex items-center gap-3 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 hover:border-[#3ecf8e]/35 transition-colors">
                             <svg class="w-4 h-4 text-[#3ecf8e] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 3l2.4 1.8 3 .2.8 2.9 2.2 2-1 2.8 1 2.8-2.2 2-.8 2.9-3 .2L12 21l-2.4-1.8-3-.2-.8-2.9-2.2-2 1-2.8-1-2.8 2.2-2 .8-2.9 3-.2z"/></svg>
@@ -105,7 +105,7 @@
     @elseif ($role === 'instructor')
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div class="lg:col-span-2 space-y-4">
-                <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="submissions-heading">
+                <section class="motion-rows rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="submissions-heading">
                     <div class="px-5 pt-5 pb-2">
                         <h2 id="submissions-heading" class="text-sm font-semibold text-[#ededed]">Latest submissions</h2>
                     </div>
@@ -134,7 +134,7 @@
                     @endforelse
                 </section>
 
-                <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
+                <section class="motion-rows rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
                     <div class="flex items-baseline justify-between gap-3 px-5 pt-5 pb-2">
                         <h2 id="flags-heading" class="text-sm font-semibold text-[#ededed]">Recent integrity flags</h2>
                         <span class="flex items-baseline gap-3 shrink-0">
@@ -182,7 +182,7 @@
                         <a href="{{ route('classes.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
                     </span>
                 </div>
-                <div class="mt-3 space-y-2">
+                <div class="motion-rows mt-3 space-y-2">
                     @forelse ($classes as $class)
                         <a href="{{ route('classes.show', $class->id) }}" class="block rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 hover:border-[#3ecf8e]/35 transition-colors">
                             <span class="flex items-center justify-between gap-3">

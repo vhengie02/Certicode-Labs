@@ -250,6 +250,18 @@
                             </dt>
                             <dd class="tabular-nums text-[#ededed]">{{ $stats['pastes'] }}</dd>
                         </div>
+                        <div class="flex items-baseline justify-between gap-4 py-2">
+                            <dt class="flex items-center gap-1.5 text-[#888888]">Large inserts
+                                <x-info-tip align="left" label="About large inserts">Code that reached a file without being typed or pasted, such as from an AI tool. Generated code can also raise this. It doesn't change the grade.</x-info-tip>
+                            </dt>
+                            <dd class="tabular-nums text-[#ededed]">{{ $stats['large_inserts'] }}</dd>
+                        </div>
+                        <div class="flex items-baseline justify-between gap-4 py-2">
+                            <dt class="flex items-center gap-1.5 text-[#888888]">Low typing effort
+                                <x-info-tip align="left" label="About low typing effort">Flagged when much more code was submitted than was typed or pasted. It doesn't change the grade.</x-info-tip>
+                            </dt>
+                            <dd class="text-[#ededed]">{{ $stats['low_typing_effort'] ? 'Flagged' : 'No' }}</dd>
+                        </div>
                     @endif
                 </dl>
             </section>
@@ -348,7 +360,7 @@
                                     <div class="flex justify-end gap-1 px-3 pt-2">
                                         <a href="{{ route('instructor.sessions.files.download', [$session->id, $idx]) }}" class="ui-btn ui-btn-ghost ui-btn-sm">Download</a>
                                         <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm"
-                                                @click="navigator.clipboard.writeText($refs.code{{ $idx }}.textContent).then(() => { copied = {{ $idx }}; setTimeout(() => copied = null, 2000); })">
+                                                @click="navigator.clipboard.writeText($refs.code{{ $idx }}.textContent).then(() => { copied = {{ $idx }}; window.pulseSuccess($el); setTimeout(() => copied = null, 2000); })">
                                             <span x-text="copied === {{ $idx }} ? 'Copied' : 'Copy code'">Copy code</span>
                                         </button>
                                     </div>

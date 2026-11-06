@@ -219,6 +219,41 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertEquals(1, $this->session1->refresh()->paste_anomaly_count);
     }
 
+    private function postPaste(string $snippet, string $file): void
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'paste_anomaly',
+            'payload' => ['pasted_length' => strlen($snippet), 'snippet' => $snippet, 'file' => $file, 'wpm' => 0],
+        ])->assertStatus(200);
+    }
+
+    public function test_the_same_paste_flags_once_but_stays_on_the_timeline()
+    {
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+        $this->postPaste('public class Tree { void insert() { } }', 'Copy.java');
+
+        $this->assertEquals(1, $this->session1->refresh()->paste_anomaly_count);
+        $this->assertEquals(1, Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'paste_anomaly')->count());
+        $this->assertEquals(2, TelemetryLog::where('lab_session_id', $this->session1->id)->where('event_type', 'paste_anomaly')->count());
+    }
+
+    public function test_different_pastes_each_raise_a_flag()
+    {
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+        $this->postPaste('public class Tree { void remove() { } }', 'Tree.java');
+
+        $this->assertEquals(2, $this->session1->refresh()->paste_anomaly_count);
+    }
+
+    public function test_a_paste_repeated_after_its_flag_is_resolved_is_flagged_again()
+    {
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+        Anomaly::where('lab_session_id', $this->session1->id)->update(['resolved' => true]);
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+
+        $this->assertEquals(2, $this->session1->refresh()->paste_anomaly_count);
+    }
+
     public function test_a_long_paste_is_kept_whole_for_the_instructor()
     {
         $snippet = str_repeat("int value = 1;\n", 400);

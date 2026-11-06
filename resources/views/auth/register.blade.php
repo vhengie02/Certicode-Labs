@@ -59,7 +59,7 @@
             <ul id="password-rules" class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]" aria-live="polite">
                 @foreach (['length' => '8+ characters', 'upper' => 'An uppercase letter', 'lower' => 'A lowercase letter', 'numsym' => 'A number or symbol'] as $rule => $text)
                     <li data-rule="{{ $rule }}" class="flex items-center gap-2 text-[var(--cc-text-faint)] transition-colors duration-200">
-                        <span class="w-4 h-4 rounded-full border border-current flex items-center justify-center shrink-0 transition-all duration-200" aria-hidden="true">
+                        <span class="w-4 h-4 rounded-full border border-current flex items-center justify-center shrink-0 transition-colors duration-200" aria-hidden="true">
                             <svg class="w-2.5 h-2.5 opacity-0 transition-opacity duration-200" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                         </span>
                         <span>{{ $text }}</span>
@@ -76,6 +76,10 @@
                        class="cc-field !pr-11" placeholder="Type it again">
                 @include('auth.partials.password-toggle', ['target' => 'password_confirmation'])
             </div>
+        </div>
+
+        <div>
+            @include('auth.partials.terms-consent')
         </div>
 
         <button type="submit" class="cc-btn cc-btn-brand w-full">

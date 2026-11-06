@@ -224,6 +224,21 @@ test('an answer written in parts is reported once, with all of its text', async 
     assert.ok(flags[0].payload.snippet.includes('compute(11)'));
 });
 
+test('an answer made of one-line edits is reported, even with few spaces in each', async () => {
+    // An AI tool swaps single expressions, which have too few words to look like prose
+    const flags = await insertBlocks([
+        'new StringBuilder(s).reverse().toString()',
+        's.toLowerCase().replaceAll("\\\\s+","").equals(reverse(s.toLowerCase().replaceAll("\\\\s+","")))',
+    ]);
+
+    assert.strictEqual(flags.length, 1);
+    assert.ok(flags[0].payload.snippet.includes('new StringBuilder(s)'));
+});
+
+test('one long autocompleted name is too small to report as a large insert', async () => {
+    assert.strictEqual((await insertBlocks(['calculateMonthlyAccountBalance()'])).length, 0);
+});
+
 test('a snippet expansion is too small to report as a large insert', async () => {
     assert.strictEqual((await insertBlocks([SNIPPET])).length, 0);
 });
