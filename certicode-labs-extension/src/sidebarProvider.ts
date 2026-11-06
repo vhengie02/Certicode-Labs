@@ -2162,11 +2162,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         const detectedLang = this.detectSubmissionLanguage(primaryFileName);
         const collectedDiagnostics = this.collectDiagnostics(fileUris);
 
+        // The clock stops here, not when the grade comes back: grading isn't the student's time
+        this._view?.webview.postMessage({ type: 'submitting' });
         this._view?.webview.postMessage({ type: 'status', message: 'Running final submission & compilation...' });
 
-        await this.syncActivityBeforeSubmit();
-
         try {
+            await this.syncActivityBeforeSubmit();
+
             const prefix = API_PREFIX;
             const result = await this.makeRequest('POST', `${prefix}/sessions/${this._sessionId}/submit`, {
                 code: primaryCode,
@@ -3014,6 +3016,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         let timerVal = 0;
         let timerInterval = null;
         let isCountDown = true;
+        let clockIsLive = false;
+        // What the clock showed when a submit stopped it, until the submit is answered
+        let stoppedForSubmit = null;
         let isIntegrityValid = true;
         let taskFeedbackMap = {};
         let chatHasMessages = false;
@@ -3224,8 +3229,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     submitBtn.disabled = true;
                     break;
 
+                case 'submitting':
+                    stopClockForSubmit();
+                    break;
+
                 case 'error':
                     gradingInFlight = false;
+                    resumeClockAfterFailedSubmit();
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
                     submitBtn.disabled = !isIntegrityValid;
@@ -3351,6 +3361,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     setLiveAlert('danger', message.message || 'This live lab is closed to you right now.');
                     checkProgressBtn.disabled = true;
                     submitBtn.disabled = true;
+                    stoppedForSubmit = null;
                     if (timerInterval) {
                         clearInterval(timerInterval);
                         timerInterval = null;
@@ -3376,6 +3387,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 case 'disconnected':
                     if (timerInterval) clearInterval(timerInterval);
                     timerInterval = null;
+                    stoppedForSubmit = null;
                     connectionScreen.style.display = 'flex';
                     sessionScreen.style.display = 'none';
                     show(actionStatus, false);
@@ -3397,6 +3409,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
 
                     if (message.type === 'submitResult') {
+                        stoppedForSubmit = null;
                         if (timerInterval) {
                             clearInterval(timerInterval);
                             timerInterval = null;
@@ -3586,7 +3599,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 setActionsLocked(gradingInFlight || attemptClosed || extensionOutdated);
             }
 
-            // Timer
+            // Timer: syncs keep arriving while a submit is graded, and must not restart it
+            if (stoppedForSubmit) return;
+
             timerBox.className = 'timer';
             if (session.status === 'completed' || isLiveExpired) {
                 if (timerInterval) {
@@ -3636,7 +3651,38 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }
         }
 
+        function stopClockForSubmit() {
+            stoppedForSubmit = {
+                at: Date.now(),
+                label: timerLabel.textContent,
+                boxClass: timerBox.className,
+                wasRunning: !!timerInterval,
+            };
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            timerLabel.textContent = 'Submitting';
+            timerBox.className = 'timer timer-done';
+        }
+
+        // A failed submit leaves the attempt open, and the time spent trying still counts
+        function resumeClockAfterFailedSubmit() {
+            if (!stoppedForSubmit) return;
+
+            const { at, label, boxClass, wasRunning } = stoppedForSubmit;
+            stoppedForSubmit = null;
+            timerLabel.textContent = label;
+            timerBox.className = boxClass;
+            if (!wasRunning) return;
+
+            const waited = Math.round((Date.now() - at) / 1000);
+            timerVal = isCountDown ? Math.max(0, timerVal - waited) : timerVal + waited;
+            startLocalTimer(clockIsLive);
+        }
+
         function startLocalTimer(isLive = false) {
+            clockIsLive = isLive;
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;

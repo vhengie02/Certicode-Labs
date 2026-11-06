@@ -956,7 +956,8 @@ class LabSessionController extends Controller
 
     private function gradeSubmission(Request $request, LabSession $session)
     {
-        // Whole seconds, to compare with the stored ended_at
+        // When the attempt ends: grading time isn't the student's. Whole seconds, to compare
+        // with the stored ended_at
         $gradingStartedAt = now()->startOfSecond();
         // Vercel stops the function at 60 s; the grade must be saved well before that
         $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
@@ -998,7 +999,7 @@ class LabSessionController extends Controller
         $finalScore = (float) ($evaluation['correctness_score'] ?? 0.0);
         $completed = $this->updateIfInProgress($session, $gradingStartedAt, [
             'status' => 'completed',
-            'ended_at' => now(),
+            'ended_at' => $gradingStartedAt,
             'completed_tasks' => $completedTasks,
             'performance_score' => $finalScore,
             'ai_grade_summary' => $this->withStudentFeedback($evaluation, $session, $completedTasks),
