@@ -28,7 +28,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - **Trigger**: Student edits any file in the lab workspace.
 - **Baseline**: Instructor-provided starter file for the exercise.
 - **Solo Mode**: Track lines added/removed by the student only.
-- **Team Mode**: Track lines added/removed per teammate, attributed at the line level (`git blame` style).
+- **Team Mode**: Track lines added/removed per teammate and show each teammate's share. Lines are counted per teammate, not attributed one by one (`blame_blocks` is accepted by the API but unused).
 - **Transport**: WebSocket for both modes — solo-mode diff data rides the same WebSocket connection already open for the leaderboard (Feature 5), rather than separate REST polling.
 - **Output Destinations**: VS Code sidebar (live view), instructor analytics dashboard (aggregated + per-student view).
 - **Dependencies**: Requires authenticated student identity per edit (for team attribution).
@@ -121,7 +121,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - **Signal 2**: Paste event detected (block of code appears without incremental typing).
 - **Suppression Rule A (Internal Move/Restructure)**: IF pasted content matches text that already existed elsewhere in the same file → do NOT flag.
 - **Suppression Rule B (Permitted Collaboration)**: IF pasted content matches recent content from the team chat → do NOT flag.
-- **Flagging Rule**: IF paste is external AND fails both suppression checks → run AI comparison against exercise context to confirm it's not a false positive → THEN flag.
+- **Flagging Rule**: IF paste is external AND fails both suppression checks AND the inserted text is on the clipboard → flag. The rules are deterministic; no AI reviews a paste.
 - **Flag Visibility**: Instructor only. Never shown to student.
 - **Flag Scope**: Session-scoped. Does not persist or accumulate across sessions.
 
@@ -238,7 +238,7 @@ This document outlines the final feature specifications, implementation tasks, a
 ### Technical Requirements & Progress
 - [x] **Individual Lab Session Closure Handler**:
   - Endpoint `POST /instructor/sessions/{id}/end` to force auto-submission of pending student workspaces.
-  - Auto-assess code and persist scores into `student_competencies` table.
+  - Keep the attempt's last graded score and update `student_competencies`. Closing doesn't call the AI grader.
   - Broadcast termination event across session WebSocket channels and disconnect sockets.
   - Flush ephemeral chat data (`lab_session_chats`).
 - [x] **Lab Session Reopening Workflow**:
@@ -253,7 +253,7 @@ This document outlines the final feature specifications, implementation tasks, a
   - Aggregate competencies earned across all completed labs in the course against required competencies.
   - Calculate student course grade / competency attainment percentage against configured threshold.
 - [x] **Automated E-Certificate Generation**:
-  - Generate `Certificate` record with cryptographic verification code and QR code for qualifying students (>= threshold).
+  - Generate `Certificate` record with a random `CERT-` verification code (looked up in the database, not cryptographically signed) and QR code for qualifying students (>= threshold).
   - Hard lock: block submissions and modifications once course is ended.
 
 
@@ -380,7 +380,7 @@ When creating a lab exercise, the instructor selects one of two availability mod
     - `getLeaderboard()` includes shared live countdown for all participants.
     - Exposed authenticated API endpoints for `open-live`, `end-live`, and `reopen-live`.
 - [x] **Artisan Background Scheduled Worker ([`routes/console.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/routes/console.php))**:
-  - Command `certicode:close-expired-live-labs` scheduled to run `everyMinute()` to proactively close expired Live Labs and auto-submit student sessions.
+  - Command `certicode:close-expired-live-labs` closes expired Live Labs and auto-submits student sessions. `routes/console.php` schedules it `everyMinute()`, but that scheduler only runs locally: production calls it once a day through `/api/cron/tick` (`CronController`), and an expired lab also closes the next time it loads.
 - [x] **Instructor Web Dashboard & Student Views**:
   - [`create.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/create.blade.php) & [`edit.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/edit.blade.php): Interactive availability mode selector cards with configurable live duration input.
   - [`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php): Visual badges (Live Lab vs Open Lab, status pill), student locked/expired notices, and instructor lifecycle buttons (`Open Live Lab`, `End Live Lab`, `Reopen Live Lab`).
@@ -429,7 +429,7 @@ When creating a lab exercise, the instructor selects one of two availability mod
   - Added relationship `overriddenByUser()` to [`User`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Models/User.php).
   - Added helper accessors: `getEffectiveScoreAttribute()` and `isGradeOverridden()`.
 - [x] **Single-Call AI Prompt & Normalization ([`LlmEvaluationService.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Services/LlmEvaluationService.php))**:
-  - Structured OpenAI prompt to return competencies dictionary, test counts, code quality notes, and plain-language summary in the same execution.
+  - Structured Claude (Anthropic) prompt to return competencies dictionary, test counts, code quality notes, and plain-language summary in the same execution.
   - Upgraded fallback heuristic evaluator (`evaluateMock()`) and zero-state evaluator (`evaluateEmptySubmission()`) to produce the identical structured schema.
 - [x] **Student Data Privacy ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
   - Persisted `ai_grade_summary` in `submitSession()`.
@@ -543,7 +543,7 @@ flowchart TD
     subgraph Backend ["Laravel Backend & Services"]
         Pusher["Pusher Channels"]
         Controllers["Session & Telemetry Controllers"]
-        AIService["AI Engine (GPT Evaluation & Presence)"]
+        AIService["AI Engine (Claude Evaluation & Presence)"]
         DB[(Persistent SQL Database)]
         Ephemeral[(Ephemeral Session Cache / Chats)]
     end
@@ -570,6 +570,6 @@ flowchart TD
 
 ### Protocol Guidelines
 1. **Solo Labs**: Connect via WebSocket to handle the Live Leaderboard (Feature 5) and carry line-level diff updates (Feature 1).
-2. **Team Labs**: Ride the same WebSocket connection to also broadcast Team Chat (Feature 2) and line-level teammate attribution.
+2. **Team Labs**: Ride the same WebSocket connection to also broadcast Team Chat (Feature 2) and per-teammate line counts.
 3. **Ephemeral Lifecycle**: All WebSocket connections and chat records are scoped strictly to the active lab session and cleared upon session closure.
 4. **Course Persistence**: Lab session results and competencies accumulate permanently at the student level for course-wide certificate determination.
