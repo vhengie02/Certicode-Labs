@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-12
+
+- Students on a phone or tablet can read a lab but can't start, continue or retake it, since labs run in VS Code. The lab page shows "Open on a computer" in place of the start button, and the module page shows only View lab. The server also refuses a start sent from a phone or tablet, with the error `handheld_device`. An iPad asking for the desktop site looks like a Mac to the server, so the lab page also checks for a touch screen in the browser. Instructors' pages are unchanged.
+
 ## 2026-11-11
 
 - The "Multiple faces" flag is harder to dodge and raises fewer false alarms. A second person seen in two of the last three camera checks is now flagged. The two checks used to have to be in a row, so someone at the edge of the frame, caught every other check, was never flagged. A large shadow or poster the camera was unsure about could also be taken for the student, which made the real student count as a second person. The most certain face is now the student. While a second person stays, the flag repeats every 30 seconds, not every 40.

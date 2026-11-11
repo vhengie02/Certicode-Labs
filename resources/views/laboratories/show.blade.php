@@ -411,6 +411,10 @@
                         // Students only: retakes depend on the attempts the instructor allows
                         $outOfAttempts = !$activeSession && $attempts && !$attempts['canStart'];
                         $isRetake = !$activeSession && $attempts && $attempts['used'] > 0;
+                        // Labs run in VS Code, so a phone or tablet shows the lab without a start button
+                        $onHandheld = \App\Support\DeviceLabel::isHandheld(request()->userAgent());
+                        $startAction = $activeSession ? 'continue' : ($isRetake ? 'retake' : 'start');
+                        $handheldNotice = "Labs run in VS Code, so you can't {$startAction} this one on a phone or tablet. You can read it here, then open it on a computer.";
                     @endphp
                     <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : ($outOfAttempts ? 'No attempts left' : ($isRetake ? 'Retake the lab' : 'Start the lab')) }}</h2>
                     @if ($outOfAttempts)
@@ -425,13 +429,21 @@
                     @elseif ($isLive && $laboratory->isLiveClosed())
                         <p class="ui-card-subtitle">This live lab has ended, so it can't be started any more.</p>
                         <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Lab ended</button>
+                    @elseif ($onHandheld)
+                        <p class="ui-card-subtitle">{{ $handheldNotice }}</p>
+                        <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Open on a computer</button>
                     @else
-                        <ol class="mt-3 space-y-2 text-[13px] text-[#a3a3a3]" role="list">
+                        {{-- An iPad asking for the desktop site looks like a Mac to the server, so the browser checks too --}}
+                        <div x-show="touchTablet" x-cloak>
+                            <p class="ui-card-subtitle">{{ $handheldNotice }}</p>
+                            <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Open on a computer</button>
+                        </div>
+                        <ol x-show="!touchTablet" class="mt-3 space-y-2 text-[13px] text-[#a3a3a3]" role="list">
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span>A quick camera check confirms you're at your screen.</li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span>VS Code opens with the starter files.</li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span>Keep this tab open while you code.</li>
                         </ol>
-                        <form id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST" class="mt-5">
+                        <form x-show="!touchTablet" id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST" class="mt-5">
                             @csrf
                             <button type="button" @click="handleStartClick()" class="ui-btn ui-btn-primary w-full">
                                 {{ $activeSession ? 'Continue in VS Code' : ($isRetake ? 'Retake lab' : 'Start lab') }}
@@ -802,6 +814,7 @@ function preLabCameraGate(labId, initialSessionId) {
         labId: labId,
         activeSessionId: initialSessionId,
         showModal: false,
+        touchTablet: navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent),
         // The camera stays off until the student has agreed to monitoring
         monitoringConsent: @json(! config('legal.enforce') || (bool) auth()->user()?->hasMonitoringConsent()),
         consentSaving: false,
@@ -930,6 +943,7 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         handleStartClick() {
+            if (this.touchTablet) return;
             if (this.browserProctorActive && this.vscodeUrl) {
                 this.launchingVsCode = true;
                 window.location.href = this.vscodeUrl;

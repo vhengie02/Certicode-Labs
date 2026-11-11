@@ -53,6 +53,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
   * Individual per-student timer begins when the student initiates the lab.
   * An attempt ends when it is submitted, when the instructor ends it, or when the course concludes. It stops accepting work once the per-student time limit and a short grace period run out.
   * An optional due date shows students how long is left, then how late they are. Late work is still accepted.
+* **Phones and tablets**: Students can read any lab on a phone or tablet but can only start one from a computer, since labs run in VS Code. Both the lab page and the start route enforce this (`DeviceLabel::isHandheld`).
 
 ### 2. Real-Time Line Diff Tracking
 * Calculates line-level deltas (`+added`, `-deleted`, `~modified`) against the original starter file baseline in real time.

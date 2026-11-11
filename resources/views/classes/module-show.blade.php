@@ -56,6 +56,7 @@
                 @if ($labs->isEmpty())
                     <p class="px-5 py-10 text-center text-sm text-[#888888]">This module has no labs yet.</p>
                 @else
+                    @php $onHandheld = !$isStaff && \App\Support\DeviceLabel::isHandheld(request()->userAgent()); @endphp
                     <ul role="list">
                         @foreach ($labs as $lab)
                             @php
@@ -65,7 +66,8 @@
                                 $studentStatus = !$isStaff ? $lab->studentStatus($isDone) : null;
                                 // A live lab can only be started during its window
                                 $canStart = !$isStaff && !$isDone && (!$lab->isLiveLab() || $isLiveNow);
-                                $actionLabel = $isInProgress ? 'Continue lab' : ($canStart ? 'Start lab' : 'View lab');
+                                // Labs run in VS Code, so a phone or tablet can only read them
+                                $actionLabel = $onHandheld ? 'View lab' : ($isInProgress ? 'Continue lab' : ($canStart ? 'Start lab' : 'View lab'));
                             @endphp
                             <li class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 {{ $loop->first ? '' : 'border-t border-[#232323]' }}">
                                 <div class="flex min-w-0 gap-3">
