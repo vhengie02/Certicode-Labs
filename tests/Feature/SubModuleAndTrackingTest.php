@@ -222,8 +222,59 @@ class SubModuleAndTrackingTest extends TestCase
             ->get("/classes/{$this->class->id}/modules/{$module->id}");
 
         $response->assertStatus(200);
-        $response->assertSee('Start Lab');
+        $response->assertSee('Continue lab');
+        $response->assertDontSee('Start lab');
         $response->assertSee(route('laboratories.show', $lab->id));
+    }
+
+    /**
+     * Test the module page's lab button follows the student's progress.
+     */
+    public function test_module_lab_button_follows_student_progress(): void
+    {
+        $module = Module::create([
+            'class_id' => $this->class->id,
+            'title' => 'Web Exploitation',
+            'content' => 'SQLi basics',
+        ]);
+
+        $lab = Laboratory::create([
+            'title' => 'SQL Injection Lab',
+            'description' => 'Extract DB credentials',
+            'time_limit' => 30,
+            'module_id' => $module->id,
+            'is_group_lab' => false,
+        ]);
+
+        $page = "/classes/{$this->class->id}/modules/{$module->id}";
+
+        $this->actingAs($this->student)->get($page)
+            ->assertSee('Start lab')
+            ->assertDontSee('Continue lab');
+
+        // A session past its time limit is closed, so it can't be continued
+        $session = LabSession::create([
+            'lab_id' => $lab->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now()->subHours(2),
+            'performance_score' => 0.0,
+        ]);
+
+        $this->actingAs($this->student)->get($page)
+            ->assertSee('Start lab')
+            ->assertDontSee('Continue lab');
+        $this->assertSame('abandoned', $session->fresh()->status);
+
+        $session->update(['status' => 'completed']);
+
+        $this->actingAs($this->student)->get($page)
+            ->assertSee('View lab')
+            ->assertDontSee('Start lab');
+
+        $this->actingAs($this->instructor)->get($page)
+            ->assertSee('View lab')
+            ->assertDontSee('Start lab');
     }
 
     /**

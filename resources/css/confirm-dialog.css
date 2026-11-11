@@ -16,22 +16,39 @@
     color: var(--confirm-text);
     box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
     opacity: 0;
-    transform: translateY(0.25rem) scale(0.98);
-    transition: opacity 160ms ease, transform 160ms ease, overlay 160ms allow-discrete, display 160ms allow-discrete;
+    transform: scale(var(--motion-popover-scale));
+    /* Closing: 20% shorter than opening */
+    transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out), overlay 160ms allow-discrete, display 160ms allow-discrete;
 }
 
-.confirm-dialog[open] { opacity: 1; transform: none; }
+.confirm-dialog[open] {
+    opacity: 1;
+    transform: none;
+    transition-duration: 200ms;
+}
 
 .confirm-dialog::backdrop {
     background: rgba(0, 0, 0, 0);
-    transition: background-color 160ms ease, overlay 160ms allow-discrete, display 160ms allow-discrete;
+    transition: background-color 160ms var(--ease-out), overlay 160ms allow-discrete, display 160ms allow-discrete;
 }
 
-.confirm-dialog[open]::backdrop { background: rgba(0, 0, 0, 0.7); }
+.confirm-dialog[open]::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+    transition-duration: 200ms;
+}
+
+/* The icon, text and buttons settle in turn once the panel has nearly landed */
+.confirm-dialog[open] .confirm-dialog-panel > * {
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+    transition-delay: calc(60ms + var(--confirm-step, 0) * var(--motion-row-stagger));
+}
+.confirm-dialog[open] .confirm-dialog-panel > :nth-child(2) { --confirm-step: 1; }
+.confirm-dialog[open] .confirm-dialog-panel > :nth-child(3) { --confirm-step: 2; }
 
 @starting-style {
-    .confirm-dialog[open] { opacity: 0; transform: translateY(0.25rem) scale(0.98); }
+    .confirm-dialog[open] { opacity: 0; transform: scale(var(--motion-popover-scale)); }
     .confirm-dialog[open]::backdrop { background: rgba(0, 0, 0, 0); }
+    .confirm-dialog[open] .confirm-dialog-panel > * { opacity: 0; transform: translateY(4px); }
 }
 
 .confirm-dialog-panel {
@@ -65,5 +82,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .confirm-dialog, .confirm-dialog::backdrop { transition: none; }
+    .confirm-dialog, .confirm-dialog::backdrop, .confirm-dialog[open] .confirm-dialog-panel > * { transition: none; }
 }

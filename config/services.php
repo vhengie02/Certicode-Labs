@@ -76,7 +76,7 @@ return [
     // the web app depends on.
     'vscode_extension' => [
         // Older builds get a warning to update
-        'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.8.3'),
+        'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.8.8'),
         // Older builds are refused with 426 (RequireSupportedExtension); keep at or below min_version
         'required_version' => env('VSCODE_EXTENSION_REQUIRED_VERSION', '1.5.0'),
         'download_path' => 'downloads/certicode-labs.vsix',

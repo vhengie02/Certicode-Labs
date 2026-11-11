@@ -303,9 +303,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Fewer false "multiple faces" flags ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php))**:
   - `countFaces()` treats the largest face as the student. Another face counts only if it is confident (score ≥ 0.5), not a duplicate box of the student's face, and at least 20% of its size.
 - [x] **Server-side camera gate**:
-  - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. A low-light pass is logged as `low_light`, and the low-light option is hidden after a multiple-faces failure.
-- [x] **Low-light mode no longer skips the camera check**:
-  - "Continue in low-light mode" appeared after any failed check and passed without looking for a face. It now shows only on a dim frame and needs exactly one face on a brightened frame. If the face models failed to load there is nothing to detect with, so a picture that is not black or blank still passes.
+  - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. Every pass needs a detected face; a pass in a dim room is logged as `low_light`.
 - [x] **Three failed camera checks lock the lab**:
   - The lab page reports each failed check to `POST /v1/labs/{id}/verify-camera`, and the third locks that lab for 15 minutes (`LabAttemptController::CAMERA_BLOCK_MINUTES`), even for a check that then passes. The count lives in the login session, so a reload doesn't reset it but signing in again does.
   - With an attempt open, the lockout raises a high-severity flag with the last picture. With none, the instructor gets an in-app notification.
@@ -320,7 +318,8 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Outdated extensions on the monitoring page**:
   - The lab roster shows an "Old ext" badge next to in-progress students whose last extension ping came from a build below `min_version`.
 - [ ] **Follow-ups**:
-  - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
+  - Tune face-detection thresholds (0.10–0.20) against real webcams, especially with a real face in a dim room.
+  - The server trusts the browser's `face_count`, so a hand-made request can still pass the camera check.
   - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
@@ -540,7 +539,7 @@ flowchart TD
     end
 
     subgraph Backend ["Laravel Backend & Services"]
-        Reverb["Laravel Reverb WebSocket Server"]
+        Pusher["Pusher Channels"]
         Controllers["Session & Telemetry Controllers"]
         AIService["AI Engine (GPT Evaluation & Presence)"]
         DB[(Persistent SQL Database)]
@@ -558,12 +557,12 @@ flowchart TD
     PasteSensor --> WS
     Watcher --> Sidebar
     
-    WS <--> Reverb
+    WS <--> Pusher
     REST <--> Controllers
-    Reverb <--> Ephemeral
+    Pusher <--> Ephemeral
     Controllers <--> DB
     Controllers <--> AIService
-    Reverb --> Monitor
+    Pusher --> Monitor
     Controllers --> CourseSettings
 ```
 

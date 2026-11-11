@@ -165,6 +165,22 @@ class SchoolClass extends Model
     }
 
     /**
+     * Conclude the class if its end date has passed and nothing has concluded it yet. The Vercel
+     * cron only runs once a day, so the class page does this too. Safe to repeat: a student's
+     * certificate is only ever issued once.
+     */
+    public function concludeIfPastEndDate(): bool
+    {
+        if ($this->status === 'completed' || ! $this->scheduled_end_date || now()->lt($this->scheduled_end_date)) {
+            return false;
+        }
+
+        $this->concludeAndCertify();
+
+        return true;
+    }
+
+    /**
      * Every laboratory in the modules of this class.
      */
     private function allLaboratoryIds(): array

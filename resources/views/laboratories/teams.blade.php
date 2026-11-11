@@ -19,6 +19,45 @@
         </div>
     @endunless
 
+    @if ($laboratory->is_group_lab)
+        <div class="ui-card ui-card-body flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-[#ededed]">
+                    @if ($laboratory->team_size)
+                        Up to {{ $laboratory->team_size }} per team
+                    @else
+                        No team size set
+                    @endif
+                    &middot;
+                    {{ ['students' => 'Students pick their teammates', 'random' => 'Randomized'][$laboratory->team_formation] ?? 'You assign teams' }}
+                </p>
+                <p class="mt-0.5 text-[13px] text-[#888888]">
+                    @if ($laboratory->team_size)
+                        Randomize puts students without a team into open seats first, then into new teams.
+                    @else
+                        Set a team size in <a href="{{ route('laboratories.edit', $laboratory->id) }}" class="underline underline-offset-2">Edit lab</a> to randomize teams.
+                    @endif
+                </p>
+            </div>
+            @if ($laboratory->team_size)
+                <div class="flex items-center gap-2 shrink-0">
+                    @if ($canReshuffle)
+                        <form action="{{ route('laboratories.teams.randomize', $laboratory->id) }}" method="POST"
+                              data-confirm-title="Draw all teams again?" data-confirm="Every team is deleted and all enrolled students are drawn into new ones." data-confirm-action="Draw again">
+                            @csrf
+                            <input type="hidden" name="reshuffle" value="1">
+                            <button type="submit" class="ui-btn ui-btn-secondary ui-btn-sm">Draw all again</button>
+                        </form>
+                    @endif
+                    <form action="{{ route('laboratories.teams.randomize', $laboratory->id) }}" method="POST">
+                        @csrf
+                        <button type="submit" class="ui-btn ui-btn-primary ui-btn-sm" @disabled($unassigned->isEmpty())>Randomize {{ $unassigned->count() }} {{ \Illuminate\Support\Str::plural('student', $unassigned->count()) }}</button>
+                    </form>
+                </div>
+            @endif
+        </div>
+    @endif
+
     <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] items-start">
         {{-- New team --}}
         <form action="{{ route('laboratories.teams.store', $laboratory->id) }}" method="POST" class="ui-card">
@@ -59,7 +98,7 @@
                     <div class="ui-card-header flex items-start justify-between gap-4">
                         <div class="min-w-0">
                             <h2 class="ui-card-title truncate">{{ $team->name }}</h2>
-                            <p class="ui-card-subtitle">{{ $team->members->pluck('name')->join(', ') ?: 'No members' }}</p>
+                            <p class="ui-card-subtitle">{{ $team->members->count() }}{{ $laboratory->team_size ? ' of ' . $laboratory->team_size : '' }} &middot; {{ $team->members->pluck('name')->join(', ') ?: 'No members' }}</p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                             <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" @click="editing = !editing" x-text="editing ? 'Close' : 'Edit'">Edit</button>

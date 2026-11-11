@@ -1,4 +1,4 @@
-import { fakeSecrets, shown } from './vscodeStub';
+import { fakeSecrets, shown, stubState } from './vscodeStub';
 import { SidebarProvider } from '../sidebarProvider';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { test } = require('node:test');
@@ -78,4 +78,49 @@ test('a failed grading request frees the lock and shows the server message', asy
 
     assert.ok(shown.some(s => s.level === 'error' && s.message.includes('already ended')));
     assert.strictEqual(provider._gradingInFlight, false);
+});
+
+/** A provider ready to submit, keeping every message it sends the sidebar. */
+function submittingProvider(warningAnswer: string | undefined) {
+    const { provider, requests } = connectedProvider();
+    const posted: any[] = [];
+
+    provider._view = { webview: { postMessage: (m: any) => { posted.push(m); } } };
+    provider.syncActivityBeforeSubmit = async () => undefined;
+    stubState.warningAnswer = warningAnswer;
+
+    return { provider, requests, posted };
+}
+
+test('confirming a submit stops the clock before the grader answers', async () => {
+    const { provider, requests, posted } = submittingProvider('Yes, Submit');
+
+    const submit = provider.handleSubmit();
+    await new Promise(r => setImmediate(r));
+
+    assert.strictEqual(requests.length, 1);
+    assert.ok(posted.some(m => m.type === 'submitting'));
+    assert.ok(!posted.some(m => m.type === 'submitResult'));
+
+    requests[0].answer(200, { performance_score: 80 });
+    await submit;
+});
+
+test('cancelling the submit dialog leaves the clock running', async () => {
+    const { provider, requests, posted } = submittingProvider(undefined);
+
+    await provider.handleSubmit();
+
+    assert.strictEqual(requests.length, 0);
+    assert.ok(!posted.some(m => m.type === 'submitting'));
+});
+
+test('a failed sync before submitting reports an error, so the clock restarts', async () => {
+    const { provider, requests, posted } = submittingProvider('Yes, Submit');
+    provider.syncActivityBeforeSubmit = async () => { throw new Error('offline'); };
+
+    await provider.handleSubmit();
+
+    assert.strictEqual(requests.length, 0);
+    assert.ok(posted.some(m => m.type === 'error' && m.message.includes('offline')));
 });

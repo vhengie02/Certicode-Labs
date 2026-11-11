@@ -65,7 +65,7 @@ class LabAnswerKeyExposureTest extends TestCase
 
     public function test_start_session_response_has_no_answer_key(): void
     {
-        $response = $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->lab->id}/start");
+        $response = $this->actingAs($this->student)->withCameraCheck($this->lab->id)->postJson("/api/v1/labs/{$this->lab->id}/start");
 
         $response->assertOk()
             ->assertJsonPath('session.laboratory.title', 'Lab 1')

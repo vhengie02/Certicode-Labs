@@ -491,27 +491,29 @@
         .app-icon-btn {
             display: inline-flex; align-items: center; justify-content: center;
             width: 2.25rem; height: 2.25rem; border-radius: 0.5rem;
-            color: #888888; transition: color 150ms ease, background-color 150ms ease;
+            color: #888888; transition: color 150ms ease, background-color 150ms ease, transform var(--motion-press) var(--ease-out);
         }
         .app-icon-btn:hover { color: #ededed; background-color: #1c1c1c; }
         #theme-toggle-sun, #theme-toggle-moon { color: inherit; }
         .notif-item { transition: background-color 200ms ease, box-shadow 200ms ease; }
         .notif-item.is-unread { background-color: rgba(62, 207, 142, 0.05); box-shadow: inset 2px 0 0 #3ecf8e; }
         #notifications-dropdown { transform-origin: top right; }
-        #notifications-dropdown:not(.hidden) { animation: notif-panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1); }
-        #notifications-dropdown.is-closing { animation: notif-panel-out 120ms ease-in forwards; pointer-events: none; }
-        #notifications-dropdown.is-opening .notif-item, .notif-enter { animation: notif-row-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+        #notifications-dropdown:not(.hidden) { animation: notif-panel-in var(--motion-popover) var(--ease-out); }
+        /* The timer in closeNotifications() matches this duration */
+        #notifications-dropdown.is-closing { animation: notif-panel-out calc(var(--motion-popover) * var(--motion-exit)) var(--ease-out) forwards; pointer-events: none; }
+        #notifications-dropdown.is-opening .notif-item, .notif-enter { animation: notif-row-in 260ms var(--ease-out) backwards; }
         #notifications-dropdown.is-opening .notif-item:nth-child(2) { animation-delay: 30ms; }
         #notifications-dropdown.is-opening .notif-item:nth-child(3) { animation-delay: 60ms; }
         #notifications-dropdown.is-opening .notif-item:nth-child(4) { animation-delay: 90ms; }
         #notifications-dropdown.is-opening .notif-item:nth-child(5) { animation-delay: 120ms; }
-        .notif-dot-pop { animation: notif-dot-pop 280ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .notif-dot-pop { animation: notif-dot-pop 200ms var(--ease-out); }
         /* The dot's dark ring reads as a black outline on the light header */
         html:not(.dark) .notif-dot { box-shadow: none; }
-        @keyframes notif-panel-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
-        @keyframes notif-panel-out { to { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+        /* Out through the same point it came in: the bell above the panel's top right corner */
+        @keyframes notif-panel-in { from { opacity: 0; transform: translateY(-6px) scale(var(--motion-popover-scale)); } }
+        @keyframes notif-panel-out { to { opacity: 0; transform: translateY(-6px) scale(var(--motion-popover-scale)); } }
         @keyframes notif-row-in { from { opacity: 0; transform: translateY(6px); } }
-        @keyframes notif-dot-pop { from { transform: scale(0); } }
+        @keyframes notif-dot-pop { from { opacity: 0; transform: scale(0.5); } }
         /* Collapses to nothing while there are no read notifications to act on */
         .notif-actions { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms ease; }
         .notif-actions.is-open { grid-template-rows: 1fr; }
@@ -523,7 +525,7 @@
             transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
         }
         .notif-check:hover { border-color: #3ecf8e; }
-        .notif-check:active { transform: scale(0.88); }
+        .notif-check:active { transform: scale(0.97); }
         .notif-check:checked, .notif-check:indeterminate { background-color: #3ecf8e; border-color: #3ecf8e; }
         .notif-check:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%230f0f0f' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E"); }
         .notif-check:indeterminate { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%230f0f0f' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E"); }
@@ -540,23 +542,33 @@
         /* Search: press feedback on the bar, and an entrance when the palette is opened by click.
            Ctrl+K skips .is-animated on purpose: a keyboard shortcut should open instantly. */
         header .app-search-trigger {
-            transition: color 150ms ease, border-color 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+            transition: color 150ms ease, border-color 150ms ease, transform var(--motion-press) var(--ease-out);
         }
-        header .app-search-trigger:active { transform: scale(0.98); }
-        #search-modal.is-animated > div:first-child { animation: search-backdrop-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
-        #search-modal.is-animated > div:last-child { animation: search-panel-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+        /* openSearchModal() points transform-origin at whichever button opened the palette, so it
+           grows out of that button and shrinks back into it. */
+        #search-modal.is-animated > div:first-child { animation: search-backdrop-in 200ms var(--ease-out); }
+        #search-modal.is-animated > div:last-child { animation: search-panel-in 200ms var(--ease-out); }
+        /* The timer in closeSearchModal() matches this duration */
+        #search-modal.is-leaving > div:first-child { animation: search-backdrop-out 160ms var(--ease-out) forwards; }
+        #search-modal.is-leaving > div:last-child { animation: search-panel-out 160ms var(--ease-out) forwards; }
         @keyframes search-backdrop-in {
             from { opacity: 0; }
         }
+        @keyframes search-backdrop-out {
+            to { opacity: 0; }
+        }
         @keyframes search-panel-in {
-            from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+            from { opacity: 0; transform: scale(var(--motion-popover-scale)); }
+        }
+        @keyframes search-panel-out {
+            to { opacity: 0; transform: scale(var(--motion-popover-scale)); }
         }
         @keyframes search-panel-fade-in {
             from { opacity: 0; }
         }
         @media (prefers-reduced-motion: reduce) {
-            header .app-search-trigger:active { transform: none; }
             #search-modal.is-animated > div:last-child { animation-name: search-panel-fade-in; }
+            #search-modal.is-leaving > div:last-child { animation-name: search-backdrop-out; }
         }
 
         :focus-visible { outline: 2px solid #3ecf8e; outline-offset: 2px; }
@@ -586,7 +598,7 @@
             display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
             height: 2.5rem; padding: 0 1rem; border-radius: 0.6rem; font-size: 0.875rem; font-weight: 500;
             border: 1px solid transparent; white-space: nowrap;
-            transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+            transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform var(--motion-press) var(--ease-out);
         }
         .ui-btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.8125rem; border-radius: 0.5rem; }
         .ui-btn-primary { background: #3ecf8e; color: #06150e; font-weight: 600; }
@@ -627,7 +639,7 @@
 
         [x-cloak] { display: none !important; }
 
-        /* Underlined tab strips (admin users, monitoring drawer) */
+        /* Underlined tab strips linking between pages (admin users). In-page strips use x-tab-indicator. */
         .monitor-tab-active::after {
             content: ''; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px;
             height: 2px; border-radius: 2px 2px 0 0; background: #3ecf8e;
@@ -654,16 +666,17 @@
             font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
             font-size: 0.78rem; font-weight: 400; line-height: 1.45;
             letter-spacing: normal; text-transform: none; text-align: left; white-space: normal;
-            opacity: 0; visibility: hidden; transform: translateY(-3px);
-            transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+            opacity: 0; visibility: hidden; transform: scale(var(--motion-popover-scale));
+            transition: opacity 112ms var(--ease-out), transform 112ms var(--ease-out), visibility 0s linear 112ms;
             pointer-events: none;
         }
-        .info-tip-center .info-tip-bubble { left: 50%; translate: -50% 0; }
-        .info-tip-left .info-tip-bubble { left: -0.5rem; }
-        .info-tip-right .info-tip-bubble { right: -0.5rem; }
+        /* Each bubble scales from the (i) button above it */
+        .info-tip-center .info-tip-bubble { left: 50%; translate: -50% 0; transform-origin: top center; }
+        .info-tip-left .info-tip-bubble { left: -0.5rem; transform-origin: 1rem top; }
+        .info-tip-right .info-tip-bubble { right: -0.5rem; transform-origin: calc(100% - 1rem) top; }
         .info-tip:hover .info-tip-bubble, .info-tip:focus-within .info-tip-bubble {
-            opacity: 1; visibility: visible; transform: translateY(0);
-            transition: opacity 140ms ease, transform 140ms ease, visibility 0s;
+            opacity: 1; visibility: visible; transform: none;
+            transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out), visibility 0s;
         }
         @media (prefers-reduced-motion: reduce) { .info-tip-bubble { transition: none; transform: none; } }
         html:not(.dark) .info-tip-btn { color: #9ca3af; }
@@ -722,7 +735,7 @@
                 <div class="flex-1"></div>
 
                 <!-- Search trigger -->
-                <button type="button" id="global-search-bar-input" onclick="openSearchModal(true)" aria-label="Search (Ctrl+K)"
+                <button type="button" id="global-search-bar-input" onclick="openSearchModal(true, this)" aria-label="Search (Ctrl+K)"
                         class="app-search-trigger hidden lg:flex items-center gap-2.5 w-64 h-9 pl-3 pr-2 rounded-lg bg-[#171717] border border-[#2e2e2e] text-sm text-[#888888] hover:border-[#383838] hover:text-[#a3a3a3] transition-colors">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                     <span class="flex-1 text-left">Search…</span>
@@ -732,19 +745,21 @@
                 <!-- Right actions -->
                 <div class="flex items-center gap-1">
                     <div class="lg:hidden">
-                        <button type="button" onclick="openSearchModal(true)" aria-label="Search" class="app-icon-btn">
+                        <button type="button" onclick="openSearchModal(true, this)" aria-label="Search" class="app-icon-btn">
                             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                         </button>
                     </div>
 
                     <!-- Quick Theme Toggle Button -->
                     <button type="button" id="quick-theme-toggle" onclick="toggleQuickTheme()" title="Switch light / dark" aria-label="Switch light or dark theme" class="app-icon-btn">
-                        <svg id="theme-toggle-sun" class="w-[18px] h-[18px] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                        <svg id="theme-toggle-moon" class="w-[18px] h-[18px] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                        </svg>
+                        <span class="motion-icon-swap">
+                            <svg id="theme-toggle-sun" data-icon-off class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                            <svg id="theme-toggle-moon" data-icon-off class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                            </svg>
+                        </span>
                     </button>
 
                     <!-- Notification Bell and Dropdown -->
@@ -892,7 +907,7 @@
             notifCloseTimer = setTimeout(() => {
                 dropdown.classList.add('hidden');
                 dropdown.classList.remove('is-closing');
-            }, 120);
+            }, 144);
         }
 
         document.addEventListener('click', function(e) {
@@ -976,11 +991,11 @@
         function collapseNotifRow(row, index) {
             if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
             row.style.overflow = 'hidden';
-            const delay = index * 35;
+            const delay = index * 30;
             const animation = row.animate([
                 { height: row.offsetHeight + 'px', opacity: 1, transform: 'translateX(0)' },
                 { height: '0px', paddingTop: '0px', paddingBottom: '0px', opacity: 0, transform: 'translateX(24px)' },
-            ], { duration: 240, delay, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
+            ], { duration: 208, delay, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' });
             // A background tab renders no frames, so "finished" alone could hold the delete open
             return Promise.race([animation.finished, new Promise(resolve => setTimeout(resolve, delay + 300))]);
         }
@@ -1225,12 +1240,22 @@
             }
         }
 
-        function openSearchModal(animate = false) {
+        let searchCloseTimer = null;
+
+        function openSearchModal(animate = false, trigger = null) {
             const modal = document.getElementById('search-modal');
             const input = document.getElementById('search-modal-input');
             if (modal && input) {
+                clearTimeout(searchCloseTimer);
+                modal.classList.remove('is-leaving');
                 modal.classList.toggle('is-animated', animate);
                 modal.classList.remove('hidden');
+                if (trigger) {
+                    // offsetLeft and offsetTop ignore the entrance's scale, which a rect would include
+                    const panel = modal.lastElementChild;
+                    const from = trigger.getBoundingClientRect();
+                    panel.style.transformOrigin = `${from.left + from.width / 2 - panel.offsetLeft}px ${from.top + from.height / 2 - panel.offsetTop}px`;
+                }
                 input.value = '';
                 document.getElementById('search-quick-links').classList.remove('hidden');
                 document.getElementById('search-results').classList.add('hidden');
@@ -1243,11 +1268,22 @@
             }
         }
 
-        function closeSearchModal() {
+        // Only a palette opened by click leaves with an exit. Ctrl+K and Escape stay instant.
+        function closeSearchModal(animate = false) {
             const modal = document.getElementById('search-modal');
-            if (modal) {
+            if (!modal) return;
+            cancelSearch();
+            clearTimeout(searchCloseTimer);
+
+            const finish = () => {
                 modal.classList.add('hidden');
-                cancelSearch();
+                modal.classList.remove('is-leaving');
+            };
+            if (animate && modal.classList.contains('is-animated')) {
+                modal.classList.add('is-leaving');
+                searchCloseTimer = setTimeout(finish, 160);
+            } else {
+                finish();
             }
         }
 
@@ -1531,13 +1567,8 @@
                 const sunIcon = document.getElementById('theme-toggle-sun');
                 const moonIcon = document.getElementById('theme-toggle-moon');
                 if (sunIcon && moonIcon) {
-                    if (isDark) {
-                        sunIcon.classList.remove('hidden');
-                        moonIcon.classList.add('hidden');
-                    } else {
-                        sunIcon.classList.add('hidden');
-                        moonIcon.classList.remove('hidden');
-                    }
+                    sunIcon.toggleAttribute('data-icon-off', !isDark);
+                    moonIcon.toggleAttribute('data-icon-off', isDark);
                 }
                 
                 window.dispatchEvent(new CustomEvent('certicode:themechange', { detail: { theme, isDark } }));
@@ -1549,7 +1580,12 @@
         window.toggleQuickTheme = function() {
             const isDark = document.documentElement.classList.contains('dark');
             const newTheme = isDark ? 'light' : 'dark';
-            window.applyTheme(newTheme);
+            const apply = () => window.applyTheme(newTheme);
+            if (window.revealTheme) {
+                window.revealTheme(document.getElementById('quick-theme-toggle'), apply);
+            } else {
+                apply();
+            }
         };
 
         // Initialize theme UI state
@@ -1560,15 +1596,10 @@
             
             const sunIcon = document.getElementById('theme-toggle-sun');
             const moonIcon = document.getElementById('theme-toggle-moon');
-            if (sunIcon && moonIcon) {
-                if (isDark) {
-                    sunIcon.classList.remove('hidden');
-                    moonIcon.classList.add('hidden');
-                } else {
-                    sunIcon.classList.add('hidden');
-                    moonIcon.classList.remove('hidden');
+                if (sunIcon && moonIcon) {
+                    sunIcon.toggleAttribute('data-icon-off', !isDark);
+                    moonIcon.toggleAttribute('data-icon-off', isDark);
                 }
-            }
         })();
 
         // Listen for OS color scheme changes when system mode is selected
@@ -1583,7 +1614,7 @@
     <!-- Search Command Palette Modal -->
     <div id="search-modal" class="fixed inset-0 z-[70] hidden overflow-y-auto p-4 sm:p-6 md:pt-24" role="dialog" aria-modal="true" aria-label="Search">
         <!-- Backdrop -->
-        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSearchModal()"></div>
+        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSearchModal(true)"></div>
 
         <!-- Modal Box -->
         <div class="relative z-10 mx-auto max-w-xl overflow-hidden rounded-2xl border border-[#2e2e2e] bg-[#171717] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]">

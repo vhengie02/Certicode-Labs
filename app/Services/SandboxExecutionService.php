@@ -16,6 +16,26 @@ class SandboxExecutionService
      */
     public function execute(string $code, string $language, ?int $timeoutSeconds = null): array
     {
+        return $this->withCleanText($this->run($code, $language, $timeoutSeconds));
+    }
+
+    /**
+     * Output comes from the student's program and can hold any bytes. One that isn't valid UTF-8
+     * makes the JSON response fail, after the grade is saved; a NUL can't be stored in Postgres.
+     */
+    private function withCleanText(array $result): array
+    {
+        foreach (['output', 'errors'] as $key) {
+            if (is_string($result[$key] ?? null)) {
+                $result[$key] = str_replace("\0", '', mb_scrub($result[$key], 'UTF-8'));
+            }
+        }
+
+        return $result;
+    }
+
+    private function run(string $code, string $language, ?int $timeoutSeconds): array
+    {
         $language = strtolower(trim($language));
         $startTime = microtime(true);
 
@@ -55,6 +75,9 @@ class SandboxExecutionService
         'c' => 50,
         'cpp' => 54,
     ];
+
+    /** A main(String[] ...) declaration */
+    private const JAVA_MAIN_PATTERN = '/static\s+void\s+main\s*\(\s*(?:final\s+)?String\s*(?:\[\]\s*\w+|\.\.\.\s*\w+|\w+\s*\[\])\s*\)/';
 
     public function isRemoteExecutionConfigured(): bool
     {
@@ -151,7 +174,7 @@ class SandboxExecutionService
         // Find the top-level (unindented) class that declares main(String[] ...), if any
         $entryClass = null;
         if (preg_match_all('/^(?:final\s+|abstract\s+)*class\s+(\w+)/m', $code, $classes, PREG_OFFSET_CAPTURE)
-            && preg_match('/static\s+void\s+main\s*\(\s*(?:final\s+)?String\s*(?:\[\]\s*\w+|\.\.\.\s*\w+|\w+\s*\[\])\s*\)/', $code, $main, PREG_OFFSET_CAPTURE)) {
+            && preg_match(self::JAVA_MAIN_PATTERN, $code, $main, PREG_OFFSET_CAPTURE)) {
             foreach ($classes[1] as [$name, $offset]) {
                 if ($offset < $main[0][1]) {
                     $entryClass = $name;
@@ -563,6 +586,10 @@ class SandboxExecutionService
                     ];
                 }
 
+                if (! preg_match(self::JAVA_MAIN_PATTERN, $code)) {
+                    return $this->executionResult('', null, $startTime, 'success');
+                }
+
                 // Run in docker
                 $runProcess = new Process([
                     'docker', 'run', '--rm',
@@ -620,6 +647,12 @@ class SandboxExecutionService
                         'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
                         'status' => 'error',
                     ];
+                }
+
+                // A class with no main (a library-style lab) compiled, and there is nothing to
+                // run. Judge0 ends the same way, through the empty Main it adds.
+                if (! preg_match(self::JAVA_MAIN_PATTERN, $code)) {
+                    return $this->executionResult('', null, $startTime, 'success');
                 }
 
                 $runProcess = new Process([$java, $className], $tempDir);

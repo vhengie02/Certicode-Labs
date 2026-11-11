@@ -14,6 +14,7 @@ use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
 use App\Models\TelemetryLog;
+use App\Models\User;
 use App\Notifications\CameraFlagNotification;
 use App\Services\CodeSimilarityService;
 use App\Services\LlmEvaluationService;
@@ -70,6 +71,14 @@ class LabSessionController extends Controller
             }
         }
 
+        // The same pre-lab camera gate as the web start route
+        if ($user->role === 'student' && ! LabAttemptController::recentCameraCheck($lab->id)) {
+            return response()->json([
+                'error' => 'camera_not_verified',
+                'message' => 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.',
+            ], 403);
+        }
+
         // Resume the open attempt or start one (shared with the web start route)
         $session = $lab->findOrStartAttemptFor($user);
         if (! $session) {
@@ -114,7 +123,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $this->boundedPayload($logPayload, $eventType === 'paste_anomaly' ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
+            'payload' => $this->boundedPayload($logPayload, in_array($eventType, ['paste_anomaly', 'large_insert'], true) ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
         ]);
 
         // Smart anomaly checks
@@ -157,7 +166,9 @@ class LabSessionController extends Controller
             $session->recordIdleAnomaly($idleMinutes, $request->payload);
         }
 
-        if ($request->event_type === 'paste_anomaly' && ! $this->isStarterPaste($session, $request->payload ?? [])) {
+        if ($request->event_type === 'paste_anomaly'
+            && ! $this->isStarterPaste($session, $request->payload ?? [])
+            && ! $this->isAlreadyFlaggedPaste($session, $request->payload ?? [])) {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
             $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
@@ -198,17 +209,42 @@ class LabSessionController extends Controller
             ]);
         }
 
-        if ($request->event_type === 'camera_absence') {
-            // In low-light mode the check is a brightness comparison, not face detection,
-            // so a miss is less certain and the instructor should see why.
-            $lowLight = (bool) ($request->payload['low_light'] ?? false);
-            $this->recordCameraAnomaly($session, $request->payload, [
-                'type' => 'no_face',
-                'severity' => $lowLight ? 'medium' : 'high',
-                'description' => $lowLight
-                    ? 'Camera presence check failed during active lab session (low-light mode).'
-                    : 'Camera presence check failed during active lab session.',
+        // Medium at most: a generated method or a large snippet looks the same as an AI tool's edit
+        if ($eventType === 'large_insert' && $session->status === 'in_progress') {
+            $length = (int) ($request->payload['inserted_length'] ?? 0);
+            $file = (string) ($request->payload['file'] ?? 'a lab file');
+            $metadata = $request->payload;
+            $metadata['snippet'] = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'large_insert',
+                'severity' => 'medium',
+                'description' => Str::limit("{$length} characters appeared in {$file} without being typed or pasted, such as from an AI tool or generated code", 250),
+                'metadata' => $this->boundedPayload($metadata, self::MAX_PASTE_PAYLOAD_BYTES),
             ]);
+        }
+
+        if ($request->event_type === 'camera_absence') {
+            // Face detection is less reliable in a dim room, so a miss is less certain and the
+            // instructor should see why.
+            $lowLight = (bool) ($request->payload['low_light'] ?? false);
+            // Movement in a dark frame suggests someone the detector can't see. It can't prove
+            // who, so the flag stays, softer and with the picture for the instructor to judge.
+            if ($lowLight && ! empty($request->payload['movement_seen'])) {
+                $this->recordCameraAnomaly($session, $request->payload, [
+                    'type' => 'too_dark',
+                    'severity' => 'low',
+                    'description' => 'Too dark to confirm a face, but the camera saw movement.',
+                ]);
+            } else {
+                $this->recordCameraAnomaly($session, $request->payload, [
+                    'type' => 'no_face',
+                    'severity' => $lowLight ? 'medium' : 'high',
+                    'description' => $lowLight
+                        ? 'Camera presence check failed during active lab session (low-light mode).'
+                        : 'Camera presence check failed during active lab session.',
+                ]);
+            }
         }
 
         if ($request->event_type === 'prelab_verification_failed') {
@@ -301,9 +337,9 @@ class LabSessionController extends Controller
     /**
      * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
      * a flag without a picture (e.g. the camera was unplugged) is raised once per
-     * 5 minutes, and one with a picture at most every 20 seconds. The picture itself is
-     * stored at most once every SNAPSHOT_INTERVAL_SECONDS per type: a covered camera sends
-     * the same dark frame all lab long.
+     * 5 minutes, and one with a picture at most every 20 seconds. Each flag keeps its own
+     * picture, because the picture is the instructor's proof, up to MAX_SNAPSHOTS_PER_TYPE
+     * per attempt: a covered camera sends the same dark frame all lab long.
      */
     protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
     {
@@ -320,8 +356,7 @@ class LabSessionController extends Controller
             return null;
         }
 
-        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)
-            ->where('created_at', '>=', now()->subSeconds(self::SNAPSHOT_INTERVAL_SECONDS))->exists()) {
+        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)->count() >= self::MAX_SNAPSHOTS_PER_TYPE) {
             unset($attributes['metadata']['image_base64']);
             $attributes['image_path'] = null;
         }
@@ -332,7 +367,8 @@ class LabSessionController extends Controller
         return $anomaly;
     }
 
-    private const SNAPSHOT_INTERVAL_SECONDS = 120;
+    /** About 40 minutes of flags at the lab page's pace, so one attempt can't fill the database. */
+    public const MAX_SNAPSHOTS_PER_TYPE = 60;
 
     /** Lines changed outside the editor from which the flag is high severity. */
     private const LARGE_EXTERNAL_CHANGE_LINES = 20;
@@ -347,6 +383,11 @@ class LabSessionController extends Controller
      */
     private function notifyInstructorOfCameraFlag(LabSession $session, Anomaly $anomaly): void
     {
+        // Too soft a sign to interrupt anyone: it waits on the monitoring page
+        if ($anomaly->type === 'too_dark') {
+            return;
+        }
+
         try {
             $hadRecentFlag = Anomaly::whereIn('type', ['no_face', 'multiple_faces'])
                 ->whereKeyNot($anomaly->id)
@@ -439,6 +480,24 @@ class LabSessionController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Whether this attempt already has an open flag for the same pasted text. Pasting it again,
+     * even into another file, stays on the timeline but doesn't alert the instructor again.
+     * Once the instructor resolves the flag, the next paste raises a new one.
+     */
+    private function isAlreadyFlaggedPaste(LabSession $session, array $payload): bool
+    {
+        $pastedLength = (int) ($payload['pasted_length'] ?? 0);
+        $snippet = mb_substr((string) ($payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
+
+        return Anomaly::where('lab_session_id', $session->id)
+            ->where('type', 'paste_anomaly')
+            ->where('resolved', false)
+            ->get(['metadata'])
+            ->contains(fn (Anomaly $flag) => (int) ($flag->metadata['pasted_length'] ?? 0) === $pastedLength
+                && ($flag->metadata['snippet'] ?? '') === $snippet);
     }
 
     /**
@@ -926,7 +985,8 @@ class LabSessionController extends Controller
 
     private function gradeSubmission(Request $request, LabSession $session)
     {
-        // Whole seconds, to compare with the stored ended_at
+        // When the attempt ends: grading time isn't the student's. Whole seconds, to compare
+        // with the stored ended_at
         $gradingStartedAt = now()->startOfSecond();
         // Vercel stops the function at 60 s; the grade must be saved well before that
         $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
@@ -968,7 +1028,7 @@ class LabSessionController extends Controller
         $finalScore = (float) ($evaluation['correctness_score'] ?? 0.0);
         $completed = $this->updateIfInProgress($session, $gradingStartedAt, [
             'status' => 'completed',
-            'ended_at' => now(),
+            'ended_at' => $gradingStartedAt,
             'completed_tasks' => $completedTasks,
             'performance_score' => $finalScore,
             'ai_grade_summary' => $this->withStudentFeedback($evaluation, $session, $completedTasks),
@@ -998,6 +1058,8 @@ class LabSessionController extends Controller
                 'final_score' => $finalScore,
                 'completed_tasks_count' => count($completedTasks),
                 'execution_status' => $executionResult['status'] ?? 'unknown',
+                // Why the run failed, for the instructor's timeline
+                'execution_error' => Str::limit($executionResult['errors'] ?? '', self::MAX_LOGGED_RUN_ERROR_CHARS) ?: null,
             ],
         ]);
 
@@ -1015,6 +1077,7 @@ class LabSessionController extends Controller
                 .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : ''),
             type: 'grade',
         );
+        $session->notifyInstructorOfSubmission();
 
         $studentEvaluation = Arr::except($evaluation, [
             'ai_grade_summary',
@@ -1039,6 +1102,11 @@ class LabSessionController extends Controller
     private const SUBMIT_BUDGET_SECONDS = 50;
 
     private const MIN_EXECUTION_SECONDS = 5;
+
+    private const MAX_LOGGED_RUN_ERROR_CHARS = 500;
+
+    /** Files kept in a diff's per-file list. */
+    private const MAX_DIFF_FILES = 50;
 
     /**
      * The answer to grading or submitting an attempt that is no longer open.
@@ -1185,11 +1253,15 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with(['laboratory', 'user'])->findOrFail($sessionId);
 
-        $request->validate([
+        $validated = $request->validate([
             'lines_added' => 'required|integer|min:0',
             'lines_deleted' => 'required|integer|min:0',
             'lines_modified' => 'nullable|integer|min:0',
             'files' => 'nullable|array',
+            'files.*.name' => 'required|string|max:255',
+            'files.*.added' => 'nullable|integer|min:0',
+            'files.*.deleted' => 'nullable|integer|min:0',
+            'files.*.modified' => 'nullable|integer|min:0',
             'blame_blocks' => 'nullable|array',
         ]);
 
@@ -1206,7 +1278,8 @@ class LabSessionController extends Controller
             'lines_added' => (int) $request->lines_added,
             'lines_deleted' => (int) $request->lines_deleted,
             'lines_modified' => (int) ($request->lines_modified ?? 0),
-            'files' => $request->files ?? [],
+            // Capped, not rejected: the totals above still count, and this goes out in a broadcast
+            'files' => array_slice($validated['files'] ?? [], 0, self::MAX_DIFF_FILES),
             'updated_at' => now()->toIso8601String(),
         ];
 
@@ -1842,6 +1915,10 @@ class LabSessionController extends Controller
     {
         $session = LabSession::findOrFail($sessionId);
 
+        if ($refusal = $this->monitoringConsentRefusal($request->user() ?? $session->user)) {
+            return $refusal;
+        }
+
         $status = $request->input('status', 'granted'); // granted, denied, blocked
         $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
         $imageBase64 = $request->input('image_base64');
@@ -1896,13 +1973,13 @@ class LabSessionController extends Controller
             ], 422);
         }
 
+        if (! WebcamSnapshot::decode($imageBase64)) {
+            return $this->unreadableCameraFrameResponse();
+        }
+
         $blockMinutes = LabAttemptController::cameraBlockMinutesLeft($request, $session->lab_id);
         if ($blockMinutes > 0) {
             return $this->cameraBlockedResponse($blockMinutes);
-        }
-
-        if (! WebcamSnapshot::decode($imageBase64)) {
-            return $this->unreadableCameraFrameResponse();
         }
 
         // Successfully verified. The reference frame isn't kept: nothing reads it, and a
@@ -1934,6 +2011,10 @@ class LabSessionController extends Controller
     {
         $lab = Laboratory::findOrFail($labId);
         $this->authorizeLabViewer($lab);
+
+        if ($refusal = $this->monitoringConsentRefusal($request->user())) {
+            return $refusal;
+        }
 
         $status = $request->input('status', 'granted'); // granted, denied, blocked
         $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
@@ -1980,6 +2061,24 @@ class LabSessionController extends Controller
     }
 
     /** Count a failed pre-lab check, locking the student out when it was their last attempt. */
+    /**
+     * The refusal for a camera check from someone who hasn't agreed to monitoring, or null when
+     * it can go ahead. Every way into a lab needs a camera check, so this covers them all.
+     */
+    private function monitoringConsentRefusal(?User $user): ?JsonResponse
+    {
+        if (! config('legal.enforce') || ! $user || $user->hasMonitoringConsent()) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'monitoring_consent_required',
+            'message' => 'Agree to camera and activity monitoring before the camera check. Reload this page to see the notice.',
+        ], 403);
+    }
+
     private function failedCameraCheckResponse(Request $request, Laboratory $lab, string $error, string $message): JsonResponse
     {
         $failure = LabAttemptController::recordFailedCameraCheck($request, $lab->id);

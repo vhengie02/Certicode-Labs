@@ -7,8 +7,8 @@
             input.type = show ? 'text' : 'password';
             button.setAttribute('aria-pressed', String(show));
             button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-            button.querySelector('[data-eye="open"]').classList.toggle('hidden', show);
-            button.querySelector('[data-eye="closed"]').classList.toggle('hidden', !show);
+            button.querySelector('[data-eye="open"]').toggleAttribute('data-icon-off', show);
+            button.querySelector('[data-eye="closed"]').toggleAttribute('data-icon-off', !show);
         });
     });
 </script>

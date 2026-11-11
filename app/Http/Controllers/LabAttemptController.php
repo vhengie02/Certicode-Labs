@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\TelemetryLog;
@@ -69,18 +70,17 @@ class LabAttemptController extends Controller
             return back()->with('error', $message);
         }
 
-        // Attach prelab verification telemetry if verified. A low-light pass found its face on a
-        // brightened frame, so it is recorded as such for the instructor rather than as one face.
+        // Attach prelab verification telemetry if verified. low_light marks a check made in a
+        // dim room; it still found a face.
         if ($isCameraVerified && $session) {
-            $lowLight = (bool) ($cameraCheck['low_light'] ?? false);
             TelemetryLog::firstOrCreate([
                 'lab_session_id' => $session->id,
                 'event_type' => 'webcam_prelab_verification',
             ], [
                 'payload' => [
                     'status' => 'granted',
-                    'face_count' => $lowLight ? null : 1,
-                    'low_light' => $lowLight,
+                    'face_count' => 1,
+                    'low_light' => (bool) ($cameraCheck['low_light'] ?? false),
                     'verified_at' => $cameraCheck['verified_at'] ?? now()->toIso8601String(),
                 ],
             ]);
@@ -177,12 +177,24 @@ class LabAttemptController extends Controller
         return (int) ceil($secondsLeft / 60);
     }
 
+    /** Failed camera checks counted so far for this lab. An ended lockout starts them over. */
+    public static function cameraFailedAttempts(Request $request, int $labId): int
+    {
+        if (! $request->hasSession()) {
+            return 0;
+        }
+
+        self::cameraBlockMinutesLeft($request, $labId);
+
+        return (int) ($request->session()->get("camera_failures_lab_{$labId}")['attempts'] ?? 0);
+    }
+
     /**
      * The camera check this browser session passed for the lab in the last few minutes, if any.
      *
      * @return array{verified_at: string, low_light: bool}|null
      */
-    private static function recentCameraCheck(int $labId): ?array
+    public static function recentCameraCheck(int $labId): ?array
     {
         $check = session("camera_verified_lab_{$labId}");
         if (! is_array($check) || empty($check['verified_at'])) {
@@ -286,6 +298,12 @@ class LabAttemptController extends Controller
 
         $diff = is_array($session->diff_stats) ? $session->diff_stats : [];
 
+        // Flags an instructor has cleared no longer count against the attempt
+        $codeFlags = Anomaly::where('lab_session_id', $session->id)
+            ->whereIn('type', ['large_insert', 'low_typing_effort'])
+            ->where('resolved', false)
+            ->pluck('type');
+
         return [
             'session' => $session,
             'lab' => $lab,
@@ -318,6 +336,8 @@ class LabAttemptController extends Controller
                 'lines_deleted' => (int) ($diff['lines_deleted'] ?? $diff['linesDeleted'] ?? $diff['deleted'] ?? 0),
                 'focus_lost' => (int) ($session->focus_lost_count ?? 0),
                 'pastes' => (int) ($session->paste_anomaly_count ?? 0),
+                'large_inserts' => $codeFlags->filter(fn ($type) => $type === 'large_insert')->count(),
+                'low_typing_effort' => $codeFlags->contains('low_typing_effort'),
             ],
         ];
     }
@@ -365,6 +385,7 @@ class LabAttemptController extends Controller
             "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%.",
             type: 'grade',
         );
+        $session->notifyInstructorOfSubmission();
 
         return redirect()->route('sessions.show', $session->id)
             ->with('success', "Laboratory session completed successfully! Final Performance Score: {$session->performance_score}%.");
