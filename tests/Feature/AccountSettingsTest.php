@@ -253,11 +253,31 @@ class AccountSettingsTest extends TestCase
         }
     }
 
+    public function test_deleting_needs_the_account_password(): void
+    {
+        $user = $this->user();
+
+        $this->actingAs($user)->delete('/settings/account', ['confirm_email' => $user->email])
+            ->assertSessionHasErrors('password');
+        $this->delete('/settings/account', ['password' => 'not-my-password', 'confirm_email' => $user->email])
+            ->assertSessionHasErrors(['password' => 'Incorrect password. Please try again.']);
+
+        $this->assertAuthenticatedAs($user);
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'email' => $user->email]);
+    }
+
+    public function test_the_delete_form_asks_for_the_password_before_the_email(): void
+    {
+        $this->actingAs($this->user())->get(route('settings.show'))
+            ->assertOk()
+            ->assertSeeInOrder(['id="delete_password"', 'id="confirm_email"'], false);
+    }
+
     public function test_deleting_needs_the_right_email(): void
     {
         $user = $this->user();
 
-        $this->actingAs($user)->delete('/settings/account', ['confirm_email' => 'wrong@certicode.test'])
+        $this->actingAs($user)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => 'wrong@certicode.test'])
             ->assertSessionHasErrors('confirm_email');
 
         $this->assertDatabaseHas('users', ['id' => $user->id]);
@@ -269,7 +289,7 @@ class AccountSettingsTest extends TestCase
         $lab = $this->labFor($this->classFor($this->user('instructor')));
         $session = LabSession::create(['lab_id' => $lab->id, 'user_id' => $user->id, 'status' => 'completed']);
 
-        $this->actingAs($user)->delete('/settings/account', ['confirm_email' => strtoupper($user->email)])
+        $this->actingAs($user)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => strtoupper($user->email)])
             ->assertRedirect(route('login'));
 
         $this->assertGuest();
@@ -282,7 +302,7 @@ class AccountSettingsTest extends TestCase
         $user = $this->user();
         $user->forceFill(['remember_token' => 'keep-me-signed-in'])->save();
 
-        $this->actingAs($user)->delete('/settings/account', ['confirm_email' => $user->email])
+        $this->actingAs($user)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => $user->email])
             ->assertRedirect(route('login'));
 
         $this->assertDatabaseMissing('users', ['id' => $user->id]);
@@ -303,7 +323,7 @@ class AccountSettingsTest extends TestCase
         $flag = Anomaly::create(['lab_session_id' => $session->id, 'type' => 'no_face', 'severity' => 'high', 'description' => 'No face']);
         $certificate = Certificate::create(['user_id' => $user->id, 'class_id' => $class->id, 'verification_code' => 'KEEP-ME', 'issued_at' => now()]);
 
-        $this->actingAs($user)->delete('/settings/account', ['confirm_email' => $email])->assertRedirect(route('login'));
+        $this->actingAs($user)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => $email])->assertRedirect(route('login'));
 
         $user->refresh();
         $this->assertGuest();
@@ -345,7 +365,7 @@ class AccountSettingsTest extends TestCase
             'metadata' => ['image_base64' => 'face', 'reason' => 'kept'],
         ]);
 
-        $this->actingAs($user)->delete('/settings/account', ['confirm_email' => $user->email])->assertRedirect(route('login'));
+        $this->actingAs($user)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => $user->email])->assertRedirect(route('login'));
 
         $this->assertSame('class Ours {}', $session->refresh()->submitted_code);
         $flag->refresh();
@@ -357,12 +377,12 @@ class AccountSettingsTest extends TestCase
     {
         $instructor = $this->user('instructor');
         $this->classFor($instructor);
-        $this->actingAs($instructor)->delete('/settings/account', ['confirm_email' => $instructor->email])
+        $this->actingAs($instructor)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => $instructor->email])
             ->assertSessionHasErrors('confirm_email');
         $this->assertDatabaseHas('users', ['id' => $instructor->id, 'email' => $instructor->email]);
 
         $admin = $this->user('admin');
-        $this->actingAs($admin)->delete('/settings/account', ['confirm_email' => $admin->email])
+        $this->actingAs($admin)->delete('/settings/account', ['password' => 'password123', 'confirm_email' => $admin->email])
             ->assertSessionHasErrors('confirm_email');
         $this->assertDatabaseHas('users', ['id' => $admin->id, 'email' => $admin->email]);
     }

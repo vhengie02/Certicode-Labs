@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\BuildsBrandedMail;
 use App\Notifications\Concerns\ChecksEmailDelivery;
 use App\Support\InternalUrl;
 use Illuminate\Bus\Queueable;
@@ -10,7 +11,7 @@ use Illuminate\Notifications\Notification;
 
 class ClassActivityNotification extends Notification
 {
-    use ChecksEmailDelivery, Queueable;
+    use BuildsBrandedMail, ChecksEmailDelivery, Queueable;
 
     protected string $title;
 
@@ -64,13 +65,7 @@ class ClassActivityNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Certicode Alert: '.$this->title)
-            ->greeting('Hello '.$notifiable->name.',')
-            ->line($this->message)
-            ->action('View Details on Certicode', $this->url === '#' ? url('/') : url($this->url))
-            ->line('Thank you for participating in Certicode Labs!')
-            ->salutation('Best regards, Certicode Labs Team');
+        return $this->brandedMail($notifiable, $this->title, $this->message, 'View details', $this->url === '#' ? url('/') : url($this->url));
     }
 
     /**

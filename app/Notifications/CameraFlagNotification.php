@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\BuildsBrandedMail;
 use App\Notifications\Concerns\ChecksEmailDelivery;
 use App\Support\InternalUrl;
 use Illuminate\Bus\Queueable;
@@ -15,7 +16,7 @@ use Illuminate\Notifications\Notification;
  */
 class CameraFlagNotification extends Notification
 {
-    use ChecksEmailDelivery, Queueable;
+    use BuildsBrandedMail, ChecksEmailDelivery, Queueable;
 
     public function __construct(
         protected string $title,
@@ -35,12 +36,7 @@ class CameraFlagNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Certicode Alert: '.$this->title)
-            ->greeting('Hello '.$notifiable->name.',')
-            ->line($this->message)
-            ->action('Open monitoring', url($this->url))
-            ->salutation('Best regards, Certicode Labs Team');
+        return $this->brandedMail($notifiable, $this->title, $this->message, 'Open monitoring', url($this->url));
     }
 
     public function toArray(object $notifiable): array

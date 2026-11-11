@@ -15,8 +15,10 @@ const STARTER_OWNERS_KEY = 'certicode.starterFileOwners';
 // The connected session, so a window reload can pick it up again. The token lives in SecretStorage.
 const RESUME_SESSION_KEY = 'certicode.resumeSession';
 const RESUME_TOKEN_SECRET = 'certicode.resumeSessionToken';
-// A reload restarts the extension within seconds; the server waits 30 s before treating VS Code as closed.
-const RESUME_WINDOW_MS = 25000;
+// A reload restarts the extension within seconds; the server waits 12 s before treating VS Code as closed.
+// This must end first, leaving time for the first ping: once the lab page leaves, the camera is off, and
+// a resumed session would carry on without it. VsCodeResumeWindowTest checks the two values.
+const RESUME_WINDOW_MS = 8000;
 // Chat text shorter than this never excuses a paste (a one-letter message would match almost anything).
 const MIN_CHAT_SNIPPET_LENGTH = 20;
 // A chat message inside a paste excuses it only if the message is most of the pasted text.

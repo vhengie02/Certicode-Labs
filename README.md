@@ -232,7 +232,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.8.8**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.8.9**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force

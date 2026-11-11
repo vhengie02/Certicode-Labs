@@ -118,17 +118,18 @@ class LoginController extends Controller
 
         $mailError = null;
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Google Authentication Code',
-                'greeting' => 'Hello developer,',
+            // The wording never names Google: a code email that mentions another company's brand
+            // reads as phishing to spam filters.
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Your sign-in code',
                 'messageLines' => [
-                    'We received a request to access your Certicode Labs account using this Google-linked email address.',
-                    'Use the verification code below to complete your authentication process.',
+                    'Someone asked to sign in to Certicode Labs with this email address.',
+                    'Enter the code below to finish signing in.',
                 ],
                 'code' => $code,
             ], function ($message) use ($gmail) {
                 $message->to($gmail)
-                    ->subject('Certicode Labs: Google Authentication Code');
+                    ->subject('Your Certicode Labs sign-in code');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send Google verification email: '.$e->getMessage());
@@ -667,18 +668,20 @@ class LoginController extends Controller
         }
 
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Reset Password Link',
-                'greeting' => 'Hello developer,',
+            $name = User::findByEmail($email)?->name;
+
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Reset your password',
+                'greeting' => $name ? "Hello {$name}," : 'Hello,',
                 'messageLines' => [
-                    'You are receiving this email because we received a password reset request for your account.',
-                    'Please click the button below to reset your password. If you did not request this, no action is required.',
+                    'We received a request to reset the password for your Certicode Labs account.',
+                    'Use the button below to choose a new password.',
                 ],
                 'actionUrl' => $resetLink,
                 'actionText' => 'Reset Password',
             ], function ($message) use ($email) {
                 $message->to($email)
-                    ->subject('Certicode Labs: Reset Password Link');
+                    ->subject('Reset your Certicode Labs password');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send password reset email: '.$e->getMessage());
@@ -789,18 +792,18 @@ class LoginController extends Controller
         }
 
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Reset Password Link (Google)',
-                'greeting' => 'Hello developer,',
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Reset your password',
+                'greeting' => $user->name ? "Hello {$user->name}," : 'Hello,',
                 'messageLines' => [
-                    'You are receiving this email because we received a password reset request for your Google-linked account.',
-                    'Please click the button below to reset your password. If you did not request this, no action is required.',
+                    'We received a request to reset the password for your Certicode Labs account.',
+                    'Use the button below to choose a new password.',
                 ],
                 'actionUrl' => $resetLink,
                 'actionText' => 'Reset Password',
             ], function ($message) use ($gmail) {
                 $message->to($gmail)
-                    ->subject('Certicode Labs: Reset Password Link (Google)');
+                    ->subject('Reset your Certicode Labs password');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send Google password reset email: '.$e->getMessage());
