@@ -53,6 +53,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
   * Individual per-student timer begins when the student initiates the lab.
   * An attempt ends when it is submitted, when the instructor ends it, or when the course concludes. It stops accepting work once the per-student time limit and a short grace period run out.
   * An optional due date shows students how long is left, then how late they are. Late work is still accepted.
+* **Phones and tablets**: Students can read any lab on a phone or tablet but can only start one from a computer, since labs run in VS Code. Both the lab page and the start route enforce this (`DeviceLabel::isHandheld`).
 
 ### 2. Real-Time Line Diff Tracking
 * Calculates line-level deltas (`+added`, `-deleted`, `~modified`) against the original starter file baseline in real time.
@@ -232,7 +233,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.8.8**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.8.9**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force

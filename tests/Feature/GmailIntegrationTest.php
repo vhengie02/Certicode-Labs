@@ -153,6 +153,109 @@ class GmailIntegrationTest extends TestCase
     /**
      * Test Google Mock Login.
      */
+    public function test_settings_shows_code_slots_while_gmail_waits_for_its_code(): void
+    {
+        $this->requestGmailCode();
+
+        $this->actingAs($this->user)->get('/settings')
+            ->assertOk()
+            ->assertSee('x-data="codeSlots(', false)
+            ->assertSee('class="code-slots__slot"', false);
+    }
+
+    public function test_background_check_accepts_correct_code_as_json(): void
+    {
+        $correctCode = $this->requestGmailCode();
+
+        $this->actingAs($this->user)
+            ->postJson('/settings/gmail/verify', ['code' => $correctCode])
+            ->assertOk()
+            ->assertJson(['connected' => true])
+            ->assertSessionHas('success');
+
+        $this->assertNotNull($this->user->refresh()->gmail_verified_at);
+    }
+
+    public function test_background_check_rejects_wrong_code_as_json(): void
+    {
+        $correctCode = $this->requestGmailCode();
+        $wrongCode = $correctCode === '000000' ? '111111' : '000000';
+
+        $this->actingAs($this->user)
+            ->postJson('/settings/gmail/verify', ['code' => $wrongCode])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['code' => 'Incorrect verification code. Please try again.']);
+
+        $this->assertNull($this->user->refresh()->gmail_verified_at);
+    }
+
+    private function connectGmail(): void
+    {
+        $this->user->update(['gmail' => 'john.doe@gmail.com', 'gmail_verified_at' => now()]);
+    }
+
+    public function test_removing_connected_gmail_needs_password(): void
+    {
+        $this->connectGmail();
+
+        $this->actingAs($this->user)
+            ->post('/settings/gmail/disconnect')
+            ->assertSessionHasErrors('gmail_password');
+
+        $this->assertSame('john.doe@gmail.com', $this->user->refresh()->gmail);
+    }
+
+    public function test_removing_connected_gmail_rejects_wrong_password(): void
+    {
+        $this->connectGmail();
+
+        $this->actingAs($this->user)
+            ->post('/settings/gmail/disconnect', ['gmail_password' => 'not-my-password'])
+            ->assertSessionHasErrors(['gmail_password' => 'Incorrect password. Please try again.']);
+
+        $this->user->refresh();
+        $this->assertSame('john.doe@gmail.com', $this->user->gmail);
+        $this->assertNotNull($this->user->gmail_verified_at);
+    }
+
+    public function test_removing_connected_gmail_with_password_succeeds(): void
+    {
+        $this->connectGmail();
+
+        $this->actingAs($this->user)
+            ->post('/settings/gmail/disconnect', ['gmail_password' => 'password'])
+            ->assertRedirect('/settings')
+            ->assertSessionHas('success');
+
+        $this->user->refresh();
+        $this->assertNull($this->user->gmail);
+        $this->assertNull($this->user->gmail_verified_at);
+    }
+
+    public function test_dropping_unconfirmed_gmail_needs_no_password(): void
+    {
+        $this->requestGmailCode();
+
+        $this->actingAs($this->user)
+            ->post('/settings/gmail/disconnect')
+            ->assertRedirect('/settings')
+            ->assertSessionHasNoErrors();
+
+        $this->user->refresh();
+        $this->assertNull($this->user->gmail);
+        $this->assertNull($this->user->gmail_verification_code);
+    }
+
+    public function test_settings_asks_for_password_before_removing_gmail(): void
+    {
+        $this->connectGmail();
+
+        $this->actingAs($this->user)->get('/settings')
+            ->assertOk()
+            ->assertSee('Enter your password to remove this Gmail')
+            ->assertSee('name="gmail_password"', false);
+    }
+
     public function test_google_login_loads_mock_page(): void
     {
         $response = $this->get('/auth/google');

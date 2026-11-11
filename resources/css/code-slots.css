@@ -1,0 +1,279 @@
+/* Code Slots from React Bits, restyled for the dashboard. State lives in resources/js/code-slots.js. */
+.code-slots {
+  --cs-accent: #3ecf8e;
+  --cs-ink: #ededed;
+  --cs-slot: #232323;
+  --cs-edge: #2e2e2e;
+  --cs-digit: #06150e;
+  --cs-danger: #ef4444;
+  --cs-size: 44px;
+  --cs-height: 52px;
+  --cs-gap: 8px;
+  --cs-radius: 12px;
+  --cs-font: 22px;
+  --cs-settle: 300ms;
+  --cs-rise: 8px;
+  position: relative;
+  display: inline-block;
+}
+
+html:not(.dark) .code-slots {
+  --cs-accent: #059669;
+  --cs-ink: #111827;
+  --cs-slot: #f3f4f6;
+  --cs-edge: #e5e7eb;
+  --cs-digit: #ffffff;
+  --cs-danger: #dc2626;
+}
+
+@media (max-width: 480px) {
+  .code-slots {
+    --cs-size: 36px;
+    --cs-height: 44px;
+    --cs-gap: 6px;
+    --cs-radius: 10px;
+    --cs-font: 18px;
+  }
+}
+
+.code-slots__row {
+  position: relative;
+  display: inline-flex;
+  gap: var(--cs-gap);
+  transition: opacity 200ms ease;
+}
+
+/* Until the script runs, the row is a plain text field that posts the form */
+.code-slots:not([data-live]) .code-slots__slot,
+.code-slots:not([data-live]) .code-slots__wash,
+.code-slots:not([data-live]) .code-slots__caret {
+  display: none;
+}
+
+.code-slots:not([data-live]) .code-slots__input {
+  width: 10rem;
+  text-align: center;
+  letter-spacing: 0.4em;
+}
+
+.code-slots[data-live] .code-slots__row {
+  cursor: text;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.code-slots[data-live] .code-slots__row[data-disabled] {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.code-slots[data-live] .code-slots__input {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  opacity: 0;
+  cursor: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.code-slots__slot {
+  position: relative;
+  width: var(--cs-size);
+  height: var(--cs-height);
+  border-radius: var(--cs-radius);
+  overflow: hidden;
+  background: var(--cs-slot);
+  box-shadow: inset 0 0 0 1px var(--cs-edge);
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .code-slots__row[data-status='idle']:not([data-disabled]):hover .code-slots__slot:not([data-active]) {
+    background: color-mix(in srgb, var(--cs-ink) 4%, var(--cs-slot));
+  }
+}
+
+.code-slots__slot[data-active] {
+  background: color-mix(in srgb, var(--cs-ink) 8%, var(--cs-slot));
+  box-shadow: inset 0 0 0 1.5px var(--cs-accent);
+}
+
+.code-slots__row[data-status='error'] .code-slots__slot {
+  background: color-mix(in srgb, var(--cs-danger) 20%, var(--cs-slot));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cs-danger) 55%, var(--cs-slot));
+}
+
+.code-slots__row[data-status='error'] .code-slots__slot[data-active] {
+  box-shadow: inset 0 0 0 1.5px var(--cs-danger);
+}
+
+.code-slots__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--cs-accent);
+  transform: scale(0);
+  transform-origin: center;
+  transition:
+    transform var(--cs-settle) var(--ease-out) var(--cs-delay, 0ms),
+    background-color 200ms ease;
+}
+
+.code-slots__slot[data-filled] .code-slots__fill {
+  transform: scale(1);
+}
+
+.code-slots__row[data-status='error'] .code-slots__fill {
+  background: var(--cs-danger);
+}
+
+.code-slots__digit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  color: var(--cs-digit);
+  font-family: inherit;
+  font-size: var(--cs-font);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transform: translateY(var(--cs-rise));
+  transition:
+    transform var(--cs-settle) var(--ease-out) var(--cs-delay, 0ms),
+    opacity var(--cs-settle) var(--ease-out) var(--cs-delay, 0ms);
+}
+
+.code-slots__slot[data-filled] .code-slots__digit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* On success the digits sink out, first to last, as the wash closes over them */
+.code-slots__row[data-status='success'] .code-slots__digit {
+  opacity: 0;
+  transform: translateY(calc(var(--cs-height) / 2));
+  transition-delay: calc(60ms + var(--cs-index, 0) * 30ms);
+}
+
+.code-slots__wash {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border-radius: var(--cs-radius);
+  background: var(--cs-accent);
+  color: var(--cs-digit);
+  clip-path: inset(0 50% round var(--cs-radius));
+  pointer-events: none;
+  transition: clip-path 200ms var(--ease-out);
+}
+
+.code-slots__row[data-status='success'] .code-slots__wash {
+  clip-path: inset(0 0% round var(--cs-radius));
+  transition-duration: 300ms;
+}
+
+.code-slots__check {
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: translateY(8px) scale(0.85);
+  transition:
+    transform 350ms var(--ease-out),
+    opacity 350ms var(--ease-out);
+}
+
+.code-slots__check svg {
+  width: calc(var(--cs-size) * 0.6);
+  height: calc(var(--cs-size) * 0.6);
+}
+
+.code-slots__row[data-status='success'] .code-slots__check {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition-delay: 280ms;
+}
+
+.code-slots__caret {
+  position: absolute;
+  z-index: 3;
+  top: 25%;
+  left: calc(var(--cs-size) / 2 - 0.75px);
+  width: 1.5px;
+  height: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(var(--cs-active, 0) * (var(--cs-size) + var(--cs-gap))));
+  transition: transform 150ms var(--ease-out);
+}
+
+.code-slots__caret[data-show] {
+  opacity: 1;
+}
+
+.code-slots__caret-line {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--cs-ink);
+  animation: code-slots-blink 1s linear infinite;
+}
+
+@keyframes code-slots-blink {
+  0%,
+  49.9% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-slots__fill,
+  .code-slots__caret {
+    transition: none;
+  }
+
+  .code-slots__digit,
+  .code-slots__check {
+    transform: none !important;
+    transition: opacity 150ms ease;
+  }
+
+  .code-slots__caret-line {
+    animation: none;
+  }
+
+  .code-slots__wash {
+    clip-path: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .code-slots__row[data-status='success'] .code-slots__wash {
+    clip-path: none;
+    opacity: 1;
+  }
+}

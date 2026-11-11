@@ -8,6 +8,7 @@ use App\Models\LabSession;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Services\CodeSimilarityService;
+use App\Support\DeviceLabel;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -32,6 +33,16 @@ class LabAttemptController extends Controller
         $user = auth()->user();
 
         $laboratory->recordViewBy($user);
+
+        // Labs run in VS Code, so a student on a phone or tablet can read the lab but not start it
+        if ($user && $user->role === 'student' && DeviceLabel::isHandheld($request->userAgent())) {
+            $message = "Labs run in VS Code, so they can't be started on a phone or tablet. Open this lab on a computer.";
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['error' => 'handheld_device', 'message' => $message], 403);
+            }
+
+            return back()->with('error', $message);
+        }
 
         // Feature 9: Live Lab availability gating
         if ($laboratory->isLiveLab()) {

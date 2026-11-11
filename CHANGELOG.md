@@ -1,7 +1,24 @@
 # Changelog
 
+## 2026-11-12
+
+- Emails no longer arrive from "${APP_NAME}". Vercel does not fill in `${APP_NAME}` the way a `.env` file does, so the sender name went out as that text. The app now uses the app name when `MAIL_FROM_NAME` is empty or still holds a placeholder.
+- Students on a phone or tablet can read a lab but can't start, continue or retake it, since labs run in VS Code. The lab page shows "Open on a computer" in place of the start button, and the module page shows only View lab. The server also refuses a start sent from a phone or tablet, with the error `handheld_device`. An iPad asking for the desktop site looks like a Mac to the server, so the lab page also checks for a touch screen in the browser. Instructors' pages are unchanged.
+
+## 2026-11-11
+
+- The "Multiple faces" flag is harder to dodge and raises fewer false alarms. A second person seen in two of the last three camera checks is now flagged. The two checks used to have to be in a row, so someone at the edge of the frame, caught every other check, was never flagged. A large shadow or poster the camera was unsure about could also be taken for the student, which made the real student count as a second person. The most certain face is now the student. While a second person stays, the flag repeats every 30 seconds, not every 40.
+- The lab page's face counting now has tests. Run them with `npm test`.
+
+- Verification code, password reset and alert emails now match the look of the sign-in pages. Alert emails used Laravel's default theme. The logo was an inline SVG, which mail clients remove, so it showed as an empty box. It is now a PNG sent with the email. Reset emails also print the link under the button, for mail clients that block buttons.
+- The Gmail code in Settings is now typed into six slots. The code is checked as soon as the last digit lands, with no page reload. A wrong code drains out in red with the reason under it, and a right one closes into a tick. Pasting a code and one-time-code autofill both work.
+- Disconnecting a confirmed Gmail in Settings now asks for your password, and the route allows 5 tries a minute. It used to take one click, so anyone at an unlocked browser could move your alert emails. Dropping an address that is still waiting for its code needs no password.
+- Code, password reset and alert emails are less likely to land in spam. Code emails no longer mention Google or Gmail, which spam filters read as phishing from a sender that is neither. Subjects are now "Your Certicode Labs sign-in code", "Confirm your email for Certicode Labs" and "Reset your Certicode Labs password". Every email also carries a plain-text version, and reset emails greet you by name. Mail still goes out from an address with no domain of its own, so some can still be marked as spam until the app sends from its own domain.
+- Delete account in Settings now asks for your password, then your email. It used to need only the email, so anyone at an unlocked browser could delete the account.
+
 ## 2026-11-06
 
+- VS Code extension 1.8.9 closes a gap in reload recovery. A window that took 12 to 25 seconds to come back reconnected to the attempt after the lab page had already turned the camera off, so the student kept working with no camera and no flag. The extension now only reconnects within 8 seconds, before the lab page leaves. A slower reload sends the student back through the lab page, and the attempt stays open. Students on older builds now see the warning to update.
 - Continue with Google now opens Google's account chooser in a small window over the sign-in page, so people with several Gmail accounts can pick one. It used to sign in with the browser's active account without asking. If the browser blocks pop-ups, the chooser opens in the same tab.
 - Motion across the app now follows one set of rules, kept in `resources/css/motion.css`. Menus and pop-ups grow out of the button that opened them and shrink back into it, exits run 20% faster than entrances, and everyday UI no longer bounces. Buttons press in, switches stretch as they slide, tab underlines travel between tabs, list rows arrive in turn, and the theme switch spreads out from its button. On touch screens, toasts swipe away to the right.
 - Certicode now has a Privacy Policy, Terms of Service and Cookie Notice at `/privacy`, `/terms` and `/cookies`, linked from the home page, sign-in pages and Settings. They are written for the Philippine Data Privacy Act. The retention periods on the Privacy Policy come from the app's settings, so they can't drift from what the app does.

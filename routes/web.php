@@ -153,7 +153,7 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::delete('/settings/account', [SettingsController::class, 'destroyAccount'])->name('settings.account.destroy')->middleware('throttle:5,1');
     Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect')->middleware('throttle:auth-mail');
     Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify')->middleware('throttle:code-verify');
-    Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
+    Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect')->middleware('throttle:5,1');
     Route::post('/settings/github/disconnect', [SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
 
     // Certificates

@@ -411,6 +411,10 @@
                         // Students only: retakes depend on the attempts the instructor allows
                         $outOfAttempts = !$activeSession && $attempts && !$attempts['canStart'];
                         $isRetake = !$activeSession && $attempts && $attempts['used'] > 0;
+                        // Labs run in VS Code, so a phone or tablet shows the lab without a start button
+                        $onHandheld = \App\Support\DeviceLabel::isHandheld(request()->userAgent());
+                        $startAction = $activeSession ? 'continue' : ($isRetake ? 'retake' : 'start');
+                        $handheldNotice = "Labs run in VS Code, so you can't {$startAction} this one on a phone or tablet. You can read it here, then open it on a computer.";
                     @endphp
                     <h2 id="start-heading" class="ui-card-title">{{ $activeSession ? 'Continue the lab' : ($outOfAttempts ? 'No attempts left' : ($isRetake ? 'Retake the lab' : 'Start the lab')) }}</h2>
                     @if ($outOfAttempts)
@@ -425,13 +429,21 @@
                     @elseif ($isLive && $laboratory->isLiveClosed())
                         <p class="ui-card-subtitle">This live lab has ended, so it can't be started any more.</p>
                         <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Lab ended</button>
+                    @elseif ($onHandheld)
+                        <p class="ui-card-subtitle">{{ $handheldNotice }}</p>
+                        <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Open on a computer</button>
                     @else
-                        <ol class="mt-3 space-y-2 text-[13px] text-[#a3a3a3]" role="list">
+                        {{-- An iPad asking for the desktop site looks like a Mac to the server, so the browser checks too --}}
+                        <div x-show="touchTablet" x-cloak>
+                            <p class="ui-card-subtitle">{{ $handheldNotice }}</p>
+                            <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Open on a computer</button>
+                        </div>
+                        <ol x-show="!touchTablet" class="mt-3 space-y-2 text-[13px] text-[#a3a3a3]" role="list">
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span>A quick camera check confirms you're at your screen.</li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span>VS Code opens with the starter files.</li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span>Keep this tab open while you code.</li>
                         </ol>
-                        <form id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST" class="mt-5">
+                        <form x-show="!touchTablet" id="start-lab-form" action="{{ route('laboratories.start', $laboratory->id) }}" method="POST" class="mt-5">
                             @csrf
                             <button type="button" @click="handleStartClick()" class="ui-btn ui-btn-primary w-full">
                                 {{ $activeSession ? 'Continue in VS Code' : ($isRetake ? 'Retake lab' : 'Start lab') }}
@@ -802,6 +814,7 @@ function preLabCameraGate(labId, initialSessionId) {
         labId: labId,
         activeSessionId: initialSessionId,
         showModal: false,
+        touchTablet: navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent),
         // The camera stays off until the student has agreed to monitoring
         monitoringConsent: @json(! config('legal.enforce') || (bool) auth()->user()?->hasMonitoringConsent()),
         consentSaving: false,
@@ -870,7 +883,12 @@ function preLabCameraGate(labId, initialSessionId) {
         cameraDisconnectReported: false,
         lastAbsenceAlertAt: 0,
         lastMultiFaceAlertAt: 0,
-        multiFaceStreak: 0,
+        // Whether each of the last three checks saw more than one face
+        recentMultiFace: [],
+        // Under the 30 seconds between three checks, so a check that runs a little early still flags
+        multiFaceAlertGapMs: 25000,
+        // A face the detector is this sure of is a person, not a shadow or a poster
+        confidentFaceScore: 0.5,
         // The last check's luminance grid, and whether each of the last four checks saw movement
         previousGrid: null,
         recentMovement: [],
@@ -925,6 +943,7 @@ function preLabCameraGate(labId, initialSessionId) {
         },
 
         handleStartClick() {
+            if (this.touchTablet) return;
             if (this.browserProctorActive && this.vscodeUrl) {
                 this.launchingVsCode = true;
                 window.location.href = this.vscodeUrl;
@@ -1460,6 +1479,7 @@ function preLabCameraGate(labId, initialSessionId) {
             this.proctorStatus = 'normal';
             this.proctorStatusText = 'Face Present (Normal)';
             this.absenceCount = 0;
+            this.recentMultiFace = [];
 
             this.proctorInterval = setInterval(async () => {
                 await this.runProctorCycle();
@@ -1700,9 +1720,10 @@ function preLabCameraGate(labId, initialSessionId) {
 
         // How many people a set of detections represents. The thresholds above are low so a
         // dim or backlit student still counts as present, but that also picks up shadows,
-        // posters and people far in the background. The largest face is the student; another
-        // face only counts if it is confident, not a duplicate box of the student's face, and
-        // close enough to the camera to be someone sitting with them.
+        // posters and people far in the background. The largest confident face is the student,
+        // or the largest face of all when none is confident, as in a dim room. Another face
+        // only counts if it is confident, not a duplicate box of the student's face, and close
+        // enough to the camera to be someone sitting with them.
         countFaces(detections) {
             const faces = (detections || []).map((d) => {
                 const box = d.box || d.boundingBox || d.detection?.box || {};
@@ -1717,7 +1738,9 @@ function preLabCameraGate(labId, initialSessionId) {
             if (faces.length === 0) return (detections || []).length > 0 ? 1 : 0;
 
             faces.sort((a, b) => b.w * b.h - a.w * a.h);
-            const main = faces[0];
+            // A large unsure box, such as a shadow on the wall, must not push the real student
+            // into second place, where they would count as a second person
+            const main = faces.find((f) => f.score >= this.confidentFaceScore) ?? faces[0];
             if (main.w < main.frameWidth * this.minFaceWidthRatio) return 0;
 
             const overlap = (a, b) => {
@@ -1726,8 +1749,9 @@ function preLabCameraGate(labId, initialSessionId) {
                 return (ix * iy) / Math.min(a.w * a.h, b.w * b.h);
             };
 
-            const others = faces.slice(1).filter((f) =>
-                f.score >= 0.5
+            const others = faces.filter((f) =>
+                f !== main
+                && f.score >= this.confidentFaceScore
                 && f.w * f.h >= main.w * main.h * 0.2
                 && overlap(main, f) < 0.3
             );
@@ -1739,7 +1763,7 @@ function preLabCameraGate(labId, initialSessionId) {
             this.faceCount = detectedFaces;
             const nowTime = Date.now();
 
-            if (detectedFaces < 2) this.multiFaceStreak = 0;
+            this.recentMultiFace = [...this.recentMultiFace, detectedFaces > 1].slice(-3);
 
             if (detectedFaces === 1) {
                 this.absenceCount = 0;
@@ -1775,11 +1799,12 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.absenceCount = 0;
                 this.proctorStatus = 'multiple_faces';
                 this.proctorStatusText = `Multiple Faces Detected (${detectedFaces})`;
-                this.multiFaceStreak++;
 
-                // One frame can still catch a passer-by, so only flag a second person
-                // who stays in view for two checks in a row (about 20 seconds).
-                if (this.multiFaceStreak >= 2 && nowTime - this.lastMultiFaceAlertAt > 30000) {
+                // One frame can still catch a passer-by, so only flag a second person seen in
+                // two of the last three checks (about 30 seconds). The checks needn't be in a
+                // row: a face at the edge of the frame is missed every other check.
+                const seenTwice = this.recentMultiFace.filter(Boolean).length >= 2;
+                if (seenTwice && nowTime - this.lastMultiFaceAlertAt >= this.multiFaceAlertGapMs) {
                     this.lastMultiFaceAlertAt = nowTime;
                     const snapshot = this.captureSnapshot(video);
                     await this.logTelemetry('webcam_check', {

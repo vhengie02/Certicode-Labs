@@ -109,7 +109,7 @@ class LegalConsentTest extends TestCase
     {
         $this->actingAs($this->student)->get(route('settings.show'))->assertOk();
         $this->get(route('settings.export'))->assertOk();
-        $this->delete(route('settings.account.destroy'), ['confirm_email' => 'student@example.com'])->assertRedirect(route('login'));
+        $this->delete(route('settings.account.destroy'), ['password' => 'password', 'confirm_email' => 'student@example.com'])->assertRedirect(route('login'));
 
         $this->assertDatabaseMissing('users', ['email' => 'student@example.com']);
     }

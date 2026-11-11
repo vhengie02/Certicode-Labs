@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class SettingsController extends Controller
 {
@@ -169,14 +170,19 @@ class SettingsController extends Controller
     }
 
     /**
-     * Delete this account. Typing the email confirms it: Google and GitHub accounts have no
-     * password they know.
+     * Delete this account. The password proves it is the owner and not someone at an unlocked
+     * browser; typing the email confirms they mean it. Google sign-ups choose a password too.
      */
     public function destroyAccount(Request $request, AccountDeletion $deletion)
     {
         $user = $request->user();
 
-        $request->validate(['confirm_email' => 'required|string']);
+        $request->validate([
+            'password' => ['required', 'string', 'current_password'],
+            'confirm_email' => 'required|string',
+        ], [
+            'password.current_password' => 'Incorrect password. Please try again.',
+        ]);
 
         if (strcasecmp(trim($request->confirm_email), $user->email) !== 0) {
             return back()->withErrors(['confirm_email' => "That doesn't match your account email."]);
@@ -240,17 +246,19 @@ class SettingsController extends Controller
 
         $mailError = null;
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Gmail Connection Code',
-                'greeting' => 'Hello '.($user->name ?? 'developer').',',
+            // The wording never names Gmail or Google: a code email that mentions another company's
+            // brand reads as phishing to spam filters.
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Confirm your email address',
+                'greeting' => $user->name ? "Hello {$user->name}," : 'Hello,',
                 'messageLines' => [
-                    'You requested to connect your Gmail account ('.$request->gmail.') to your Certicode Labs profile.',
-                    'Please use the verification code below to verify your email ownership. It expires in '.self::CODE_TTL_MINUTES.' minutes.',
+                    'You asked to add this email address to your Certicode Labs profile.',
+                    'Enter the code below to confirm it is yours. It expires in '.self::CODE_TTL_MINUTES.' minutes.',
                 ],
                 'code' => $code,
             ], function ($message) use ($request) {
                 $message->to($request->gmail)
-                    ->subject('Certicode Labs: Gmail Connection Code');
+                    ->subject('Confirm your email for Certicode Labs');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send verification email: '.$e->getMessage());
@@ -289,7 +297,7 @@ class SettingsController extends Controller
                 $user->update(['gmail_verification_code' => null]);
             }
 
-            return redirect()->route('settings.show')->withErrors(['code' => 'This code has expired. Request a new one.']);
+            $this->rejectCode('This code has expired. Request a new one.');
         }
 
         // Count the attempt before checking it. The write only lands if nobody else changed the
@@ -300,7 +308,7 @@ class SettingsController extends Controller
             ->update(['gmail_verification_code' => $this->encodePendingCode($pending['expires_at'], $attempts, $pending['hash'])]);
 
         if ($claimed === 0) {
-            return redirect()->route('settings.show')->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+            $this->rejectCode('Incorrect verification code. Please try again.');
         }
 
         if (hash_equals($pending['hash'], $this->codeHash($request->code))) {
@@ -311,16 +319,33 @@ class SettingsController extends Controller
 
             session()->forget('gmail_code_debug');
 
+            // The settings page checks the code in the background and then reloads, so the
+            // message is flashed for that reload
+            if ($request->expectsJson()) {
+                session()->flash('success', 'Gmail account connected successfully!');
+
+                return response()->json(['connected' => true]);
+            }
+
             return redirect()->route('settings.show')->with('success', 'Gmail account connected successfully!');
         }
 
         if ($attempts >= self::CODE_MAX_ATTEMPTS) {
             $user->update(['gmail_verification_code' => null]);
 
-            return redirect()->route('settings.show')->withErrors(['code' => 'Too many incorrect codes. Request a new code to try again.']);
+            $this->rejectCode('Too many incorrect codes. Request a new code to try again.');
         }
 
-        return redirect()->route('settings.show')->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+        $this->rejectCode('Incorrect verification code. Please try again.');
+    }
+
+    /**
+     * Refuse a Gmail code. A form post goes back to settings with the error, and a background
+     * check gets it as JSON with a 422.
+     */
+    private function rejectCode(string $message): never
+    {
+        throw ValidationException::withMessages(['code' => $message])->redirectTo(route('settings.show'));
     }
 
     /**
@@ -351,11 +376,22 @@ class SettingsController extends Controller
     }
 
     /**
-     * Disconnect Gmail account.
+     * Disconnect Gmail account. Removing a confirmed Gmail moves this account's alert emails, so
+     * it needs the password, like deleting the account. An address still waiting for its code was
+     * never in use, so dropping it needs none.
      */
-    public function disconnectGmail()
+    public function disconnectGmail(Request $request)
     {
-        $user = auth()->user();
+        $user = $request->user();
+
+        if (! empty($user->gmail) && ! empty($user->gmail_verified_at)) {
+            $request->validate([
+                'gmail_password' => ['required', 'string', 'current_password'],
+            ], [
+                'gmail_password.required' => 'Enter your password to remove this Gmail.',
+                'gmail_password.current_password' => 'Incorrect password. Please try again.',
+            ]);
+        }
 
         $user->update([
             'gmail' => null,

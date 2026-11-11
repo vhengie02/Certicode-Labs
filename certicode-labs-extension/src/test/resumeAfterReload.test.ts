@@ -57,6 +57,32 @@ test('starting long after a shutdown does not reconnect, and forgets the session
     assert.strictEqual(await secrets.get('certicode.resumeSessionToken'), undefined);
 });
 
+test('a shutdown just inside the window reconnects', async () => {
+    const state = memento();
+    const secrets = fakeSecrets();
+    await shutDownWindow(state, secrets);
+    const saved = state.get('certicode.resumeSession');
+    await state.update('certicode.resumeSession', { ...saved, closedAt: Date.now() - 7000 });
+
+    const after = provider(state, secrets);
+    await after.resumeAfterReload();
+
+    assert.deepStrictEqual(after.connects, [[BACKEND, 7, 'tok']]);
+});
+
+test('a reload slower than the window does not reconnect, because the lab page may have left', async () => {
+    const state = memento();
+    const secrets = fakeSecrets();
+    await shutDownWindow(state, secrets);
+    const saved = state.get('certicode.resumeSession');
+    await state.update('certicode.resumeSession', { ...saved, closedAt: Date.now() - 13000 });
+
+    const after = provider(state, secrets);
+    await after.resumeAfterReload();
+
+    assert.deepStrictEqual(after.connects, []);
+});
+
 test('a window that never shut down with a session open does not reconnect', async () => {
     const state = memento();
     const secrets = fakeSecrets();

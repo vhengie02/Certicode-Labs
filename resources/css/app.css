@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './branched-menu.css';
 @import './class-patterns.css';
+@import './code-slots.css';
 @import './confirm-dialog.css';
 @import './line-sidebar.css';
 @import './motion.css';

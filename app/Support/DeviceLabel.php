@@ -27,6 +27,24 @@ class DeviceLabel
         'Linux' => 'Linux',
     ];
 
+    /** Phones and tablets can't run VS Code, so students can read a lab there but not start it. */
+    private const HANDHELDS = ['iPhone', 'iPad', 'iPod', 'Android', 'Mobile'];
+
+    /**
+     * True for a phone or tablet browser. An iPad asking for the desktop site sends a Mac user
+     * agent, so the lab page also checks for a touch screen in the browser.
+     */
+    public static function isHandheld(?string $userAgent): bool
+    {
+        foreach (self::HANDHELDS as $needle) {
+            if (str_contains((string) $userAgent, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static function from(?string $userAgent): string
     {
         $browser = self::firstMatch((string) $userAgent, self::BROWSERS);
