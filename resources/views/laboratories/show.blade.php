@@ -44,7 +44,7 @@
         <span class="ui-badge">{{ $laboratory->is_group_lab ? 'Group lab' : 'Individual' }}</span>
         @if ($isStudent && $laboratory->is_group_lab)
             @php $myTeam = $laboratory->teamOf($user)?->load('members:id,name'); @endphp
-            <span class="ui-badge" title="{{ $myTeam ? $myTeam->members->pluck('name')->join(', ') : 'Your instructor has not put you in a team yet, so you work alone.' }}">
+            <span class="ui-badge" title="{{ $myTeam ? $myTeam->members->pluck('name')->join(', ') : ($teamPicker ? 'Pick your teammates before you start, or you work alone.' : 'Your instructor has not put you in a team yet, so you work alone.') }}">
                 {{ $myTeam ? $myTeam->name . ' · ' . $myTeam->members->count() . ' ' . \Illuminate\Support\Str::plural('member', $myTeam->members->count()) : 'No team yet' }}
             </span>
         @endif
@@ -56,6 +56,10 @@
             <span class="ui-badge">{{ count($tasks) }} {{ \Illuminate\Support\Str::plural('task', count($tasks)) }}</span>
         @endif
     </div>
+
+    @if ($teamPicker)
+        @include('laboratories._team-picker')
+    @endif
 
     @if ($isStudent)
     <div class="space-y-6" x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">
@@ -194,7 +198,7 @@
                                 <div x-show="openFile === {{ $idx }}" x-collapse style="display: none;" class="border-t border-[#232323] bg-[#0f0f0f]">
                                     <div class="flex justify-end px-3 pt-2">
                                         <button type="button" x-data="{ copied: false }" class="ui-btn ui-btn-ghost ui-btn-sm"
-                                                @click="navigator.clipboard.writeText({{ \Illuminate\Support\Js::from($sfile['content'] ?? '') }}).then(() => { copied = true; setTimeout(() => copied = false, 2000); })">
+                                                @click="navigator.clipboard.writeText({{ \Illuminate\Support\Js::from($sfile['content'] ?? '') }}).then(() => { copied = true; window.pulseSuccess($el); setTimeout(() => copied = false, 2000); })">
                                             <span x-text="copied ? 'Copied' : 'Copy code'">Copy code</span>
                                         </button>
                                     </div>
@@ -293,15 +297,15 @@
                      }
                  }">
                 <div class="flex items-center justify-between mb-4">
-                    <div class="flex space-x-2 border-b border-[#2e2e2e]">
-                        <button type="button" @click="activeTab = 'chat'" 
-                            :class="activeTab === 'chat' ? 'border-[#3ecf8e] text-[#3ecf8e]' : 'border-transparent text-[#888888] hover:text-[#ededed]'"
-                            class="px-3 py-1.5 border-b-2 font-mono text-xs font-bold transition-colors">
+                    <div class="relative flex space-x-2 border-b border-[#2e2e2e]" role="tablist" aria-label="Team activity" x-tab-indicator>
+                        <button type="button" role="tab" @click="activeTab = 'chat'" :aria-selected="(activeTab === 'chat').toString()"
+                            :class="activeTab === 'chat' ? 'text-[#3ecf8e]' : 'text-[#888888] hover:text-[#ededed]'"
+                            class="px-3 py-1.5 border-b-2 border-transparent font-mono text-xs font-bold transition-colors">
                             Team Chat (Live)
                         </button>
-                        <button type="button" @click="activeTab = 'diff'" 
-                            :class="activeTab === 'diff' ? 'border-[#3ecf8e] text-[#3ecf8e]' : 'border-transparent text-[#888888] hover:text-[#ededed]'"
-                            class="px-3 py-1.5 border-b-2 font-mono text-xs font-bold transition-colors">
+                        <button type="button" role="tab" @click="activeTab = 'diff'" :aria-selected="(activeTab === 'diff').toString()"
+                            :class="activeTab === 'diff' ? 'text-[#3ecf8e]' : 'text-[#888888] hover:text-[#ededed]'"
+                            class="px-3 py-1.5 border-b-2 border-transparent font-mono text-xs font-bold transition-colors">
                             Code Contributions & Diff
                         </button>
                     </div>
@@ -384,7 +388,7 @@
                                     <span class="font-mono text-[#3ecf8e] font-bold" x-text="`${c.contribution_percent || 0}%`"></span>
                                 </div>
                                 <div class="w-full bg-[#101010] h-2 rounded-full overflow-hidden mb-2">
-                                    <div class="h-full rounded-full transition-all duration-500" 
+                                    <div class="h-full rounded-full transition-[width] duration-500 ease-out" 
                                          :style="`width: ${c.contribution_percent || 0}%; background-color: ${c.avatar_color}`"></div>
                                 </div>
                                 <div class="flex items-center justify-between text-[11px] font-mono text-[#888888]">
@@ -423,7 +427,7 @@
                         <button type="button" disabled class="ui-btn ui-btn-secondary w-full mt-5">Lab ended</button>
                     @else
                         <ol class="mt-3 space-y-2 text-[13px] text-[#a3a3a3]" role="list">
-                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span>A quick camera check confirms it's you.</li>
+                            <li class="flex gap-2.5"><span class="font-mono text-[#666666]">1</span>A quick camera check confirms you're at your screen.</li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span>VS Code opens with the starter files.</li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span>Keep this tab open while you code.</li>
                         </ol>
@@ -467,12 +471,26 @@
                                 <button type="button" @click="closeGate()" class="text-[#888888] hover:text-white text-lg font-mono">&times;</button>
                             </div>
 
-                            <p class="text-xs text-[#a3a3a3] leading-relaxed mb-4">
+                            <!-- Monitoring consent: asked before the camera turns on -->
+                            <div x-show="status === 'consent'" class="mb-4 space-y-3 text-xs text-[#a3a3a3] leading-relaxed">
+                                <p class="text-sm font-medium text-[#ededed]">Your consent to lab monitoring</p>
+                                <p>To keep labs fair, Certicode monitors you during a lab. If you agree:</p>
+                                <ul class="list-disc pl-4 space-y-1.5">
+                                    <li>Your camera checks that a face is present while the lab is open. This runs on your device, doesn't identify you, and no video or audio is recorded.</li>
+                                    <li>A snapshot is saved only when the camera raises a flag. It is kept for {{ config('app.snapshot_retention_days') }} days.</li>
+                                    <li>VS Code records your typing pace, focus changes, idle time and pasted code during the lab.</li>
+                                    <li>Your instructor can see this and your flags. Flags don't change your grade by themselves.</li>
+                                </ul>
+                                <p>You can withdraw consent in Settings, but labs can't start without it. If you can't use a camera, ask your instructor about another way to be assessed. <a href="{{ route('legal.privacy') }}#camera" target="_blank" rel="noopener" class="text-[#3ecf8e] underline underline-offset-2">Read the Privacy Policy</a></p>
+                                <p x-show="consentError" x-text="consentError" class="text-red-300"></p>
+                            </div>
+
+                            <p x-show="status !== 'consent'" class="text-xs text-[#a3a3a3] leading-relaxed mb-4">
                                 To ensure academic integrity, CertiCode Labs verifies facial camera presence before unlocking your workspace. Dim rooms get a stronger check, but your face must be visible.
                             </p>
 
                             <!-- Live Camera Viewport -->
-                            <div class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video mb-4 flex items-center justify-center">
+                            <div x-show="status !== 'consent'" class="relative rounded-lg overflow-hidden border border-[#2e2e2e] bg-[#0d0d0d] aspect-video mb-4 flex items-center justify-center">
                                 <video x-ref="videoEl" autoplay playsinline muted class="w-full h-full object-cover"></video>
                                 <canvas x-ref="canvasEl" class="hidden"></canvas>
 
@@ -529,9 +547,17 @@
                                 </button>
                                 
                                 <div class="flex items-center gap-2">
-                                    <button x-show="status === 'denied'" 
-                                            type="button" 
-                                            @click="requestCamera()" 
+                                    <button x-show="status === 'consent'"
+                                            type="button"
+                                            @click="agreeToMonitoring()"
+                                            :disabled="consentSaving"
+                                            class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition disabled:opacity-60">
+                                        I agree, turn on my camera
+                                    </button>
+
+                                    <button x-show="status === 'denied'"
+                                            type="button"
+                                            @click="requestCamera()"
                                             class="px-4 py-2 rounded-lg bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold hover:bg-[#00c573] transition">
                                         Grant Camera Permission
                                     </button>
@@ -776,6 +802,10 @@ function preLabCameraGate(labId, initialSessionId) {
         labId: labId,
         activeSessionId: initialSessionId,
         showModal: false,
+        // The camera stays off until the student has agreed to monitoring
+        monitoringConsent: @json(! config('legal.enforce') || (bool) auth()->user()?->hasMonitoringConsent()),
+        consentSaving: false,
+        consentError: '',
         stream: null,
         status: 'idle', // 'idle', 'requesting', 'loading_model', 'denied', 'analyzing', 'failed', 'hard_blocked', 'verified'
         errorMessage: '',
@@ -823,6 +853,10 @@ function preLabCameraGate(labId, initialSessionId) {
         isLowLightMode: false,
         // Brightening also lifts clutter: clothes in an empty dim room scored 0.12 on SSD
         boostedSsdMinConfidence: 0.2,
+        // On the brightened frame, most dark faces scored above 0.6 and clutter stayed under 0.1
+        brightenedSsdMinConfidence: 0.4,
+        // A data URI this long decodes to no more than the server keeps
+        maxSnapshotChars: {{ (int) (\App\Support\WebcamSnapshot::MAX_BYTES * 4 / 3) }},
         // Narrower than this is background clutter, not a student at their screen
         minFaceWidthRatio: 0.08,
 
@@ -837,6 +871,12 @@ function preLabCameraGate(labId, initialSessionId) {
         lastAbsenceAlertAt: 0,
         lastMultiFaceAlertAt: 0,
         multiFaceStreak: 0,
+        // The last check's luminance grid, and whether each of the last four checks saw movement
+        previousGrid: null,
+        recentMovement: [],
+        // A 2x2 block must change this much, on this share of the frame, to count as movement
+        movementMinChange: 5,
+        movementMinShare: 0.03,
         proctorInterval: null,
         pingInterval: null,
 
@@ -896,9 +936,32 @@ function preLabCameraGate(labId, initialSessionId) {
 
         async openGate() {
             this.showModal = true;
-            this.status = 'requesting';
             this.errorMessage = '';
+            if (!this.monitoringConsent) {
+                this.status = 'consent';
+                return;
+            }
+            this.status = 'requesting';
             await this.requestCamera();
+        },
+
+        async agreeToMonitoring() {
+            this.consentSaving = true;
+            this.consentError = '';
+            try {
+                const res = await fetch(@json(route('legal.monitoring.store')), {
+                    method: 'POST',
+                    headers: this.cameraCheckHeaders(),
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                this.monitoringConsent = true;
+                this.status = 'requesting';
+                await this.requestCamera();
+            } catch (e) {
+                this.consentError = 'Your consent could not be saved. Check your connection and try again.';
+            } finally {
+                this.consentSaving = false;
+            }
         },
 
         async ensureSsdModel() {
@@ -1084,7 +1147,7 @@ function preLabCameraGate(labId, initialSessionId) {
             } else if (this.isFrameBlocked(this.luminanceGrid(video))) {
                 await this.failCheck(this.blockedCameraMessage(), 0, imageBase64);
             } else if (this.lowLightingDetected) {
-                await this.failCheck('Your room is too dark to see your face. Turn on a light or raise your screen brightness, then retry.', 0, imageBase64);
+                await this.failCheck('Your room is too dark to see your face. Turn on a light or raise your screen brightness, then retry.', 0, this.sideBySideSnapshot(canvas) ?? imageBase64);
             } else {
                 await this.failCheck('No face detected. Please face the webcam directly with your face visible.', 0, imageBase64);
             }
@@ -1436,7 +1499,37 @@ function preLabCameraGate(labId, initialSessionId) {
                 detectedFaces = await this.detectFacesBoosted(video);
             }
 
+            // Noted every cycle so the first missed face already has a frame to compare with
+            this.recentMovement = [...this.recentMovement, this.frameMoved(this.previousGrid, grid)].slice(-4);
+            this.previousGrid = grid;
+
             await this.applyProctorResult(video, detectedFaces, lowLight, this.isFrameBlocked(grid));
+        },
+
+        // Whether two luminance grids differ by more than camera noise. Cells are averaged in
+        // 2x2 blocks to quiet the noise a dark picture has, and the frames are matched in
+        // overall brightness so the camera adjusting its exposure doesn't count as movement.
+        frameMoved(previous, grid) {
+            if (!previous || !grid) return false;
+
+            const blocks = (cells) => {
+                const out = [];
+                for (let y = 0; y < 30; y += 2) {
+                    for (let x = 0; x < 40; x += 2) {
+                        const i = y * 40 + x;
+                        out.push((cells[i] + cells[i + 1] + cells[i + 40] + cells[i + 41]) / 4);
+                    }
+                }
+                return out;
+            };
+            const before = blocks(previous);
+            const after = blocks(grid);
+            const sum = (cells) => cells.reduce((a, b) => a + b, 0);
+            if (sum(after) === 0) return false;
+
+            const gain = sum(before) / sum(after);
+            const changed = before.filter((lum, i) => Math.abs(lum - after[i] * gain) >= this.movementMinChange).length;
+            return changed >= before.length * this.movementMinShare;
         },
 
         async detectFacesNormal(video) {
@@ -1504,36 +1597,105 @@ function preLabCameraGate(labId, initialSessionId) {
             return detectedFaces;
         },
 
-        // Last pass for a dim room: raw detection mostly misses faces in the dark
+        // Last pass for a dim room: raw detection mostly misses faces in the dark. A brightness
+        // and contrast filter can't rescue them, because contrast pushes dark pixels back to
+        // black. Only SSD runs on this picture: evening out the contrast makes clutter look
+        // like a face to TinyFaceDetector.
         async detectFacesBoosted(video) {
-            if (window.faceapi && this.modelLoaded) {
+            if (window.faceapi && this.modelLoaded && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
                 try {
-                    const canvas = this.$refs.proctorCanvas || document.createElement('canvas');
-                    canvas.width = video.videoWidth || 640;
-                    canvas.height = video.videoHeight || 480;
-                    const ctx = canvas.getContext('2d');
-                    ctx.filter = 'brightness(2.4) contrast(1.6)';
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    ctx.filter = 'none';
-
-                    let detections = [];
-                    if (window.faceapi.nets.tinyFaceDetector?.isLoaded) {
-                        detections = await window.faceapi.detectAllFaces(
-                            canvas,
-                            new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.10 })
-                        );
-                    }
-                    if (detections.length === 0 && window.faceapi.nets.ssdMobilenetv1?.isLoaded) {
-                        detections = await window.faceapi.detectAllFaces(
-                            canvas,
-                            new window.faceapi.SsdMobilenetv1Options({ minConfidence: this.boostedSsdMinConfidence })
-                        );
-                    }
+                    const detections = await window.faceapi.detectAllFaces(
+                        this.brightenedFrame(video),
+                        new window.faceapi.SsdMobilenetv1Options({ minConfidence: this.brightenedSsdMinConfidence })
+                    );
                     if (detections.length > 0) return this.countFaces(detections);
                 } catch (e) {}
             }
 
             return 0;
+        },
+
+        // A greyscale copy of the frame with its shadows lifted, then its contrast evened out
+        // tile by tile (CLAHE), so a dark face beside a bright wall still shows its features.
+        brightenedFrame(video) {
+            const tiles = 8;
+            const clipLimit = 3;
+            const sourceWidth = video.videoWidth || video.width || 640;
+            const sourceHeight = video.videoHeight || video.height || 480;
+            const width = Math.min(sourceWidth, 640);
+            const height = Math.round(sourceHeight * width / sourceWidth);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, 0, 0, width, height);
+            const image = ctx.getImageData(0, 0, width, height);
+            const pixels = image.data;
+
+            const lifted = new Uint8Array(256);
+            for (let v = 0; v < 256; v++) lifted[v] = Math.round(255 * Math.sqrt(v / 255));
+
+            const lum = new Uint8Array(width * height);
+            for (let i = 0; i < lum.length; i++) {
+                lum[i] = lifted[Math.round(0.299 * pixels[i * 4] + 0.587 * pixels[i * 4 + 1] + 0.114 * pixels[i * 4 + 2])];
+            }
+
+            // One tone curve per tile. The clip limit stops flat areas turning into noise.
+            const tileWidth = width / tiles;
+            const tileHeight = height / tiles;
+            const curves = [];
+            for (let ty = 0; ty < tiles; ty++) {
+                for (let tx = 0; tx < tiles; tx++) {
+                    const histogram = new Float64Array(256);
+                    let count = 0;
+                    for (let y = Math.floor(ty * tileHeight); y < Math.floor((ty + 1) * tileHeight); y++) {
+                        for (let x = Math.floor(tx * tileWidth); x < Math.floor((tx + 1) * tileWidth); x++) {
+                            histogram[lum[y * width + x]]++;
+                            count++;
+                        }
+                    }
+
+                    const limit = clipLimit * count / 256;
+                    let excess = 0;
+                    for (let v = 0; v < 256; v++) {
+                        if (histogram[v] > limit) {
+                            excess += histogram[v] - limit;
+                            histogram[v] = limit;
+                        }
+                    }
+
+                    const curve = new Float64Array(256);
+                    let total = 0;
+                    for (let v = 0; v < 256; v++) {
+                        total += histogram[v] + excess / 256;
+                        curve[v] = 255 * total / count;
+                    }
+                    curves.push(curve);
+                }
+            }
+
+            // Blend the four nearest tiles' curves so no tile edges show in the picture
+            const position = (pixel, tileSize) => Math.min(tiles - 1.001, Math.max(0, pixel / tileSize - 0.5));
+            for (let y = 0; y < height; y++) {
+                const fy = position(y, tileHeight);
+                const top = Math.floor(fy);
+                const down = fy - top;
+                for (let x = 0; x < width; x++) {
+                    const fx = position(x, tileWidth);
+                    const left = Math.floor(fx);
+                    const across = fx - left;
+                    const v = lum[y * width + x];
+                    const upper = curves[top * tiles + left][v] * (1 - across) + curves[top * tiles + left + 1][v] * across;
+                    const lower = curves[(top + 1) * tiles + left][v] * (1 - across) + curves[(top + 1) * tiles + left + 1][v] * across;
+                    const out = upper * (1 - down) + lower * down;
+                    const i = (y * width + x) * 4;
+                    pixels[i] = pixels[i + 1] = pixels[i + 2] = out;
+                }
+            }
+
+            ctx.putImageData(image, 0, 0);
+            return canvas;
         },
 
         // How many people a set of detections represents. The thresholds above are low so a
@@ -1587,18 +1749,25 @@ function preLabCameraGate(labId, initialSessionId) {
                 this.absenceCount++;
                 this.proctorStatus = 'absence';
                 const warning = Math.min(this.absenceCount, 4);
-                this.proctorStatusText = blocked
-                    ? `Camera Blocked (${warning}/4 warning)`
-                    : `Face Searching (${warning}/4 warning)`;
+                if (blocked) {
+                    this.proctorStatusText = `Camera Blocked (${warning}/4 warning)`;
+                } else if (this.lowLightingDetected) {
+                    this.proctorStatusText = `Too Dark, Add Light (${warning}/4 warning)`;
+                } else {
+                    this.proctorStatusText = `Face Searching (${warning}/4 warning)`;
+                }
 
                 if (this.absenceCount >= 4 && (nowTime - this.lastAbsenceAlertAt > 35000)) {
                     this.lastAbsenceAlertAt = nowTime;
                     const snapshot = this.captureSnapshot(video);
+                    // Two moving checks, because one is only someone walking out of the frame
+                    const movementSeen = !blocked && this.lowLightingDetected && this.recentMovement.filter(Boolean).length >= 2;
                     await this.logTelemetry('camera_absence', {
                         image_base64: snapshot,
                         face_count: 0,
                         consecutive_absences: this.absenceCount,
                         low_light: lowLight,
+                        movement_seen: movementSeen,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -1630,6 +1799,8 @@ function preLabCameraGate(labId, initialSessionId) {
                 canvas.width = 40;
                 canvas.height = 30;
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                // Averages the pixels behind each cell. Otherwise a dark frame's noise looks like movement.
+                ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(video, 0, 0, 40, 30);
                 const data = ctx.getImageData(0, 0, 40, 30).data;
                 const grid = new Array(40 * 30);
@@ -1653,12 +1824,46 @@ function preLabCameraGate(labId, initialSessionId) {
 
         captureSnapshot(video) {
             try {
+                const sideBySide = this.lowLightingDetected ? this.sideBySideSnapshot(video) : null;
+                if (sideBySide) return sideBySide;
+
                 const canvas = this.$refs.proctorCanvas || this.$refs.canvasEl || document.createElement('canvas');
                 canvas.width = video.videoWidth || 640;
                 canvas.height = video.videoHeight || 480;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 return canvas.toDataURL('image/jpeg', 0.65);
+            } catch (e) {
+                return null;
+            }
+        },
+
+        // A raw frame from a dark room is close to black, which proves nothing to the instructor.
+        // This puts the camera's frame beside the brightened copy in one labelled picture, or
+        // returns null if it can't be made or won't fit the server's size limit.
+        sideBySideSnapshot(source) {
+            try {
+                const brightened = this.brightenedFrame(source);
+                const { width, height } = brightened;
+                const canvas = document.createElement('canvas');
+                canvas.width = width * 2;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(source, 0, 0, width, height);
+                ctx.drawImage(brightened, width, 0);
+
+                ctx.font = '600 14px sans-serif';
+                ctx.textBaseline = 'middle';
+                [['Camera', 0], ['Brightened', width]].forEach(([label, x]) => {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(x + 8, 8, ctx.measureText(label).width + 16, 24);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(label, x + 16, 20);
+                });
+
+                return [0.65, 0.4]
+                    .map((quality) => canvas.toDataURL('image/jpeg', quality))
+                    .find((picture) => picture.length <= this.maxSnapshotChars) ?? null;
             } catch (e) {
                 return null;
             }

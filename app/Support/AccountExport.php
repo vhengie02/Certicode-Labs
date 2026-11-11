@@ -20,6 +20,7 @@ class AccountExport
         'name', 'first_name', 'last_name', 'username', 'email', 'gmail', 'github_username', 'gender',
         'role', 'timezone', 'date_style', 'notify_email_channel', 'notify_class', 'notify_module',
         'notify_lab', 'notify_grade', 'notify_certificate', 'notify_integrity', 'created_at',
+        'terms_accepted_at', 'terms_version', 'monitoring_consent_at', 'monitoring_consent_version',
     ];
 
     private const SESSION_FIELDS = [

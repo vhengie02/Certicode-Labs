@@ -187,6 +187,34 @@ class InstructorTelemetryAndOAuthTest extends TestCase
     }
 
     /**
+     * Google must show its account chooser instead of silently reusing the active account.
+     */
+    public function test_google_redirect_asks_which_account_to_use(): void
+    {
+        config()->set('services.google.client_id', 'google-id');
+        config()->set('services.google.client_secret', 'google-secret');
+
+        $location = $this->get('/auth/google/redirect')->assertStatus(302)->headers->get('Location');
+
+        $this->assertStringStartsWith('https://accounts.google.com/', $location);
+        $this->assertStringContainsString('prompt=select_account', $location);
+    }
+
+    /**
+     * The account chooser is Google only, so GitHub's redirect must stay untouched.
+     */
+    public function test_github_redirect_has_no_account_prompt(): void
+    {
+        config()->set('services.github.client_id', 'github-id');
+        config()->set('services.github.client_secret', 'github-secret');
+
+        $location = $this->get('/auth/github/redirect')->assertStatus(302)->headers->get('Location');
+
+        $this->assertStringStartsWith('https://github.com/', $location);
+        $this->assertStringNotContainsString('prompt=', $location);
+    }
+
+    /**
      * Test Socialite Google authentication logs in existing user.
      */
     public function test_socialite_google_authenticates_existing_user(): void
@@ -277,6 +305,7 @@ class InstructorTelemetryAndOAuthTest extends TestCase
             'google_auth_name' => 'New Google User',
         ])->post('/auth/google/callback', [
             'role' => 'student',
+            'terms' => '1',
         ]);
 
         $response2->assertRedirect('/dashboard');

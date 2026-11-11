@@ -94,14 +94,14 @@
             display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
             border-radius: 10px; font-weight: 600; font-size: 0.9rem; line-height: 1;
             padding: 0.95rem 1.35rem; cursor: pointer;
-            transition: transform 220ms cubic-bezier(.2, .8, .2, 1), background-color 220ms ease, box-shadow 220ms ease, border-color 220ms ease, color 220ms ease;
+            transition: transform 160ms var(--ease-out), background-color 220ms ease, box-shadow 220ms ease, border-color 220ms ease, color 220ms ease;
         }
-        .btn:active { transform: translateY(1px) scale(0.985); }
         .btn-brand { background: var(--brand); color: #06150e; box-shadow: 0 10px 30px -10px rgba(62, 207, 142, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
         .btn-brand:hover { background: #52dba0; transform: translateY(-2px); box-shadow: 0 16px 40px -12px rgba(62, 207, 142, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
         .btn-quiet { color: var(--text); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.02); }
         .btn-quiet:hover { border-color: rgba(62, 207, 142, 0.45); background: rgba(62, 207, 142, 0.06); transform: translateY(-2px); }
-        .btn .arrow { transition: transform 220ms cubic-bezier(.2, .8, .2, 1); }
+        .btn:active { transform: scale(0.97); }
+        .btn .arrow { transition: transform 220ms var(--ease-out); }
         .btn:hover .arrow { transform: translateX(3px); }
 
         .link-underline { background-image: linear-gradient(currentColor, currentColor); background-size: 0% 1px; background-repeat: no-repeat; background-position: 0 100%; transition: background-size 250ms ease, color 200ms ease; }
@@ -111,10 +111,10 @@
 
         /* Staggered entrance */
         @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-        .rise { opacity: 0; animation: rise 800ms cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: calc(var(--d, 0) * 90ms); }
+        .rise { opacity: 0; animation: rise 800ms var(--ease-out) forwards; animation-delay: calc(var(--d, 0) * 90ms); }
 
         /* Scroll reveal (class added by the observer below) */
-        .reveal { opacity: 0; transform: translateY(24px); transition: opacity 900ms cubic-bezier(.2, .8, .2, 1), transform 900ms cubic-bezier(.2, .8, .2, 1); }
+        .reveal { opacity: 0; transform: translateY(24px); transition: opacity 900ms var(--ease-out), transform 900ms var(--ease-out); }
         .reveal.is-visible { opacity: 1; transform: none; }
 
         @media (prefers-reduced-motion: reduce) {
@@ -385,10 +385,13 @@
                 <x-logo-mark class="w-4 h-4 text-white" />
                 <span>&copy; {{ date('Y') }} Certicode Labs</span>
             </div>
-            <nav class="flex items-center gap-6" aria-label="Footer">
+            <nav class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2" aria-label="Footer">
                 <a href="#how-it-works" class="link-underline hover:text-white transition-colors">How it works</a>
                 <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="link-underline hover:text-white transition-colors">VS Code extension</a>
                 <a href="{{ route('login') }}" class="link-underline hover:text-white transition-colors">Sign in</a>
+                <a href="{{ route('legal.privacy') }}" class="link-underline hover:text-white transition-colors">Privacy</a>
+                <a href="{{ route('legal.terms') }}" class="link-underline hover:text-white transition-colors">Terms</a>
+                <a href="{{ route('legal.cookies') }}" class="link-underline hover:text-white transition-colors">Cookies</a>
             </nav>
         </div>
     </footer>

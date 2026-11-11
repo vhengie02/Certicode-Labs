@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Api\LabSessionController;
 use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
@@ -97,24 +98,52 @@ class TelemetryRetentionTest extends TestCase
         $this->assertSame(self::SNAPSHOT, $recent->fresh()->metadata['image_base64']);
     }
 
-    public function test_repeated_camera_flags_store_the_picture_at_most_every_two_minutes(): void
+    private function sendCameraAbsence(): void
     {
-        $send = fn () => $this->withHeaders(['X-Session-Token' => $this->session->issueExtensionToken()])
+        $this->withHeaders(['X-Session-Token' => $this->session->issueExtensionToken()])
             ->postJson("/api/v1/sessions/{$this->session->id}/telemetry", [
                 'event_type' => 'camera_absence',
                 'payload' => ['image_base64' => self::SNAPSHOT],
             ])->assertOk();
+    }
 
-        $send();
-        $this->travel(35)->seconds();
-        $send();
-        $this->travel(2)->minutes();
-        $send();
+    public function test_every_flag_in_a_run_of_camera_flags_keeps_its_own_picture(): void
+    {
+        $this->sendCameraAbsence();
+        $this->travel(40)->seconds();
+        $this->sendCameraAbsence();
+        $this->travel(40)->seconds();
+        $this->sendCameraAbsence();
 
         $flags = Anomaly::where('lab_session_id', $this->session->id)->orderBy('id')->get();
         $this->assertCount(3, $flags);
-        $this->assertSame([Anomaly::DB_SNAPSHOT, null, Anomaly::DB_SNAPSHOT], $flags->pluck('image_path')->all());
-        $this->assertArrayNotHasKey('image_base64', $flags[1]->metadata);
+        foreach ($flags as $flag) {
+            $this->assertSame(Anomaly::DB_SNAPSHOT, $flag->image_path);
+            $this->assertSame(self::SNAPSHOT, $flag->metadata['image_base64']);
+            $this->assertNotNull($flag->snapshot_url);
+        }
+    }
+
+    public function test_an_attempt_stops_keeping_pictures_of_a_flag_type_at_the_limit(): void
+    {
+        foreach (range(1, LabSessionController::MAX_SNAPSHOTS_PER_TYPE) as $i) {
+            Anomaly::create([
+                'lab_session_id' => $this->session->id,
+                'type' => 'no_face',
+                'severity' => 'medium',
+                'description' => 'No face',
+                'image_path' => Anomaly::DB_SNAPSHOT,
+                'metadata' => ['image_base64' => self::SNAPSHOT],
+            ]);
+        }
+
+        $this->travel(40)->seconds();
+        $this->sendCameraAbsence();
+
+        $flag = Anomaly::where('lab_session_id', $this->session->id)->latest('id')->first();
+        $this->assertSame(LabSessionController::MAX_SNAPSHOTS_PER_TYPE + 1, Anomaly::where('lab_session_id', $this->session->id)->count());
+        $this->assertNull($flag->image_path);
+        $this->assertArrayNotHasKey('image_base64', $flag->metadata);
     }
 
     public function test_oversized_telemetry_payload_is_cut_down(): void

@@ -539,7 +539,7 @@ flowchart TD
     end
 
     subgraph Backend ["Laravel Backend & Services"]
-        Reverb["Laravel Reverb WebSocket Server"]
+        Pusher["Pusher Channels"]
         Controllers["Session & Telemetry Controllers"]
         AIService["AI Engine (GPT Evaluation & Presence)"]
         DB[(Persistent SQL Database)]
@@ -557,12 +557,12 @@ flowchart TD
     PasteSensor --> WS
     Watcher --> Sidebar
     
-    WS <--> Reverb
+    WS <--> Pusher
     REST <--> Controllers
-    Reverb <--> Ephemeral
+    Pusher <--> Ephemeral
     Controllers <--> DB
     Controllers <--> AIService
-    Reverb --> Monitor
+    Pusher --> Monitor
     Controllers --> CourseSettings
 ```
 

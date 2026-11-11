@@ -235,6 +235,25 @@ class ClassBackgroundTest extends TestCase
             ->assertDontSee('class="class-pattern ', false);
     }
 
+    public function test_the_class_page_shows_the_same_pattern_as_the_card(): void
+    {
+        $class = $this->class(['card_pattern' => 'moons']);
+
+        $this->actingAs($this->instructor)->get(route('classes.show', $class->id))->assertOk()
+            ->assertSee('class="class-hero-backdrop"', false)
+            ->assertSee('class-pattern--moons', false);
+    }
+
+    public function test_the_class_page_shows_the_picture_instead_of_a_pattern(): void
+    {
+        $class = $this->class();
+        $this->update($class, ['card_image' => $this->picture()])->assertRedirect();
+
+        $this->actingAs($this->instructor)->get(route('classes.show', $class->id))->assertOk()
+            ->assertSee($class->refresh()->cardImageUrl(), false)
+            ->assertDontSee('class="class-pattern ', false);
+    }
+
     public function test_the_picture_reaches_enrolled_students_and_staff_only(): void
     {
         $class = $this->class();

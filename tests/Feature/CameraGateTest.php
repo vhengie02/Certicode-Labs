@@ -58,6 +58,32 @@ class CameraGateTest extends TestCase
         $this->assertSame(0, LabSession::count());
     }
 
+    public function test_the_api_start_route_needs_the_camera_check_too(): void
+    {
+        $this->actingAs($this->student)
+            ->postJson("/v1/labs/{$this->laboratory->id}/start")
+            ->assertStatus(403)
+            ->assertJson(['error' => 'camera_not_verified']);
+
+        $this->assertSame(0, LabSession::count());
+
+        $this->actingAs($this->student)
+            ->withCameraCheck($this->laboratory->id)
+            ->postJson("/v1/labs/{$this->laboratory->id}/start")
+            ->assertOk();
+
+        $this->assertSame(1, LabSession::count());
+    }
+
+    public function test_an_instructor_can_try_a_lab_through_the_api_without_the_camera_check(): void
+    {
+        $instructor = User::where('role', 'instructor')->first();
+
+        $this->actingAs($instructor)
+            ->postJson("/v1/labs/{$this->laboratory->id}/start")
+            ->assertOk();
+    }
+
     public function test_a_camera_check_recorded_by_the_server_opens_the_lab(): void
     {
         $this->actingAs($this->student)

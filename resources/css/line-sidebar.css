@@ -214,4 +214,33 @@
             --ls-shift: 0px;
         }
     }
+
+    /* The module page's outline: a narrow card, so markers shrink and titles wrap. */
+    .line-sidebar--compact {
+        --ls-marker: 16px;
+        --ls-module-gap: 6px;
+        --ls-shift: 6px;
+    }
+
+    .line-sidebar--compact .line-sidebar__branch > .line-sidebar__item {
+        --ls-marker: 12px;
+    }
+
+    .line-sidebar--compact .line-sidebar__text {
+        white-space: normal;
+    }
+
+    .line-sidebar--compact > .line-sidebar__item > .line-sidebar__row > .line-sidebar__link {
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    /* The page you're on stays lit wherever the cursor is. */
+    .line-sidebar__link[aria-current='page'] {
+        color: var(--ls-accent);
+    }
+
+    .line-sidebar__row:has(> .line-sidebar__link[aria-current='page']) > .line-sidebar__marker {
+        background-color: var(--ls-accent);
+    }
 }

@@ -18,6 +18,8 @@ use App\Http\Controllers\InstructorMonitoringController;
 use App\Http\Controllers\LabAttemptController;
 use App\Http\Controllers\LaboratoryController;
 use App\Http\Controllers\LabTeamController;
+use App\Http\Controllers\LabTeamPickController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\StudentProfileController;
@@ -91,6 +93,18 @@ Route::get('/', function () {
 // Public Certificate Verification
 Route::get('/verify-certificate/{code}', [CertificateController::class, 'verify'])->name('certificates.verify');
 
+// Legal pages
+Route::get('/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
+Route::get('/terms', [LegalController::class, 'terms'])->name('legal.terms');
+Route::get('/cookies', [LegalController::class, 'cookies'])->name('legal.cookies');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/legal/accept', [LegalController::class, 'showAcceptance'])->name('legal.accept.show');
+    Route::post('/legal/accept', [LegalController::class, 'accept'])->name('legal.accept.store');
+    Route::post('/legal/monitoring-consent', [LegalController::class, 'grantMonitoring'])->name('legal.monitoring.store');
+    Route::delete('/legal/monitoring-consent', [LegalController::class, 'withdrawMonitoring'])->name('legal.monitoring.destroy');
+});
+
 // Public Google Authentication Mock
 Route::get('/auth/google', [LoginController::class, 'redirectToGoogle'])->name('auth.google');
 Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email')->middleware('throttle:auth-mail');
@@ -124,7 +138,7 @@ Route::post('/login', [LoginController::class, 'store'])->name('login.store')->m
 Route::post('/logout', LogoutController::class)->name('logout')->middleware('auth');
 
 // Protected Routes
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'show'])->name('dashboard');
     Route::get('/dashboard/sections', [DashboardController::class, 'sections'])->name('dashboard.sections');
 
@@ -177,11 +191,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/sessions/{id}', [LabAttemptController::class, 'showWorkspace'])->name('sessions.show');
     Route::post('/sessions/{id}/complete', [LabAttemptController::class, 'completeSession'])->name('sessions.complete');
 
-    // Group lab teams, assigned by the instructor
+    // Group lab teams, formed by the instructor or at random
     Route::get('/laboratories/{id}/teams', [LabTeamController::class, 'index'])->name('laboratories.teams.index');
     Route::post('/laboratories/{id}/teams', [LabTeamController::class, 'store'])->name('laboratories.teams.store');
     Route::put('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'update'])->name('laboratories.teams.update');
     Route::delete('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'destroy'])->name('laboratories.teams.destroy');
+    Route::post('/laboratories/{id}/teams/randomize', [LabTeamController::class, 'randomize'])->name('laboratories.teams.randomize');
+
+    // Group lab teams, formed by the students
+    Route::post('/laboratories/{id}/my-team', [LabTeamPickController::class, 'store'])->name('laboratories.my-team.store');
+    Route::delete('/laboratories/{id}/my-team', [LabTeamPickController::class, 'destroy'])->name('laboratories.my-team.destroy');
 
     // Live Lab Lifecycle Controls (Feature 9)
     Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');
@@ -197,6 +216,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
     Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
+    Route::get('/instructor/sessions/{id}/files/download/{file?}', [InstructorMonitoringController::class, 'downloadSessionFiles'])->whereNumber('file')->name('instructor.sessions.files.download');
 
     // Student Profiles & Directory CRUD
     // The student directory became Admin > Users; keep the old address working

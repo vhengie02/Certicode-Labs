@@ -21,6 +21,7 @@ class RegistrationTest extends TestCase
             'password' => 'password123',
             'password_confirmation' => 'password123',
             'role' => 'student',
+            'terms' => '1',
         ]);
 
         $response->assertRedirect('/dashboard');
@@ -41,6 +42,7 @@ class RegistrationTest extends TestCase
             'password' => 'password123',
             'password_confirmation' => 'password123',
             'role' => 'instructor',
+            'terms' => '1',
         ]);
 
         // Instructor access needs an admin's approval: the account starts as a student with a request

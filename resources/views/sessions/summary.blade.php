@@ -250,6 +250,18 @@
                             </dt>
                             <dd class="tabular-nums text-[#ededed]">{{ $stats['pastes'] }}</dd>
                         </div>
+                        <div class="flex items-baseline justify-between gap-4 py-2">
+                            <dt class="flex items-center gap-1.5 text-[#888888]">Large inserts
+                                <x-info-tip align="left" label="About large inserts">Code that reached a file without being typed or pasted, such as from an AI tool. Generated code can also raise this. It doesn't change the grade.</x-info-tip>
+                            </dt>
+                            <dd class="tabular-nums text-[#ededed]">{{ $stats['large_inserts'] }}</dd>
+                        </div>
+                        <div class="flex items-baseline justify-between gap-4 py-2">
+                            <dt class="flex items-center gap-1.5 text-[#888888]">Low typing effort
+                                <x-info-tip align="left" label="About low typing effort">Flagged when much more code was submitted than was typed or pasted. It doesn't change the grade.</x-info-tip>
+                            </dt>
+                            <dd class="text-[#ededed]">{{ $stats['low_typing_effort'] ? 'Flagged' : 'No' }}</dd>
+                        </div>
                     @endif
                 </dl>
             </section>
@@ -311,12 +323,17 @@
     {{-- The student's code, for staff reviewing the grade --}}
     @if ($isStaff)
         <section id="submitted-files" class="ui-card scroll-mt-6" aria-labelledby="files-heading" x-data="{ openFile: 0, copied: null }">
-            <div class="px-5 pt-5 pb-3">
-                <h2 id="files-heading" class="ui-card-title">Submitted files</h2>
-                @if (! empty($submittedFiles))
-                    <p class="ui-card-subtitle">
-                        {{ $submitted ? 'The code that was graded.' : 'This attempt was not submitted. This is the last code saved, which may not be the final version.' }}
-                    </p>
+            <div class="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 pb-3">
+                <div class="min-w-0">
+                    <h2 id="files-heading" class="ui-card-title">Submitted files</h2>
+                    @if (! empty($submittedFiles))
+                        <p class="ui-card-subtitle">
+                            {{ $submitted ? 'The code that was graded.' : 'This attempt was not submitted. This is the last code saved, which may not be the final version.' }}
+                        </p>
+                    @endif
+                </div>
+                @if (count($submittedFiles) > 1)
+                    <a href="{{ route('instructor.sessions.files.download', $session->id) }}" class="ui-btn ui-btn-secondary ui-btn-sm shrink-0">Download all</a>
                 @endif
             </div>
             @if (empty($submittedFiles))
@@ -340,9 +357,10 @@
                                 @if ($file['content'] === '')
                                     <p class="px-5 py-6 text-sm text-[#888888]">This file is empty.</p>
                                 @else
-                                    <div class="flex justify-end px-3 pt-2">
+                                    <div class="flex justify-end gap-1 px-3 pt-2">
+                                        <a href="{{ route('instructor.sessions.files.download', [$session->id, $idx]) }}" class="ui-btn ui-btn-ghost ui-btn-sm">Download</a>
                                         <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm"
-                                                @click="navigator.clipboard.writeText($refs.code{{ $idx }}.textContent).then(() => { copied = {{ $idx }}; setTimeout(() => copied = null, 2000); })">
+                                                @click="navigator.clipboard.writeText($refs.code{{ $idx }}.textContent).then(() => { copied = {{ $idx }}; window.pulseSuccess($el); setTimeout(() => copied = null, 2000); })">
                                             <span x-text="copied === {{ $idx }} ? 'Copied' : 'Copy code'">Copy code</span>
                                         </button>
                                     </div>

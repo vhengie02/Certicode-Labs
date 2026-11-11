@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\TelemetryLog;
@@ -193,7 +194,7 @@ class LabAttemptController extends Controller
      *
      * @return array{verified_at: string, low_light: bool}|null
      */
-    private static function recentCameraCheck(int $labId): ?array
+    public static function recentCameraCheck(int $labId): ?array
     {
         $check = session("camera_verified_lab_{$labId}");
         if (! is_array($check) || empty($check['verified_at'])) {
@@ -297,6 +298,12 @@ class LabAttemptController extends Controller
 
         $diff = is_array($session->diff_stats) ? $session->diff_stats : [];
 
+        // Flags an instructor has cleared no longer count against the attempt
+        $codeFlags = Anomaly::where('lab_session_id', $session->id)
+            ->whereIn('type', ['large_insert', 'low_typing_effort'])
+            ->where('resolved', false)
+            ->pluck('type');
+
         return [
             'session' => $session,
             'lab' => $lab,
@@ -329,6 +336,8 @@ class LabAttemptController extends Controller
                 'lines_deleted' => (int) ($diff['lines_deleted'] ?? $diff['linesDeleted'] ?? $diff['deleted'] ?? 0),
                 'focus_lost' => (int) ($session->focus_lost_count ?? 0),
                 'pastes' => (int) ($session->paste_anomaly_count ?? 0),
+                'large_inserts' => $codeFlags->filter(fn ($type) => $type === 'large_insert')->count(),
+                'low_typing_effort' => $codeFlags->contains('low_typing_effort'),
             ],
         ];
     }
@@ -376,6 +385,7 @@ class LabAttemptController extends Controller
             "Your submission for '{$lab->title}' was received. Score: {$session->performance_score}%.",
             type: 'grade',
         );
+        $session->notifyInstructorOfSubmission();
 
         return redirect()->route('sessions.show', $session->id)
             ->with('success', "Laboratory session completed successfully! Final Performance Score: {$session->performance_score}%.");

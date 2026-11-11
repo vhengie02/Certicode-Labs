@@ -328,6 +328,7 @@ class GmailIntegrationTest extends TestCase
         ])->post('/auth/google/callback', [
             'code' => '123456',
             'role' => 'student',
+            'terms' => '1',
         ]);
 
         $response->assertRedirect('/dashboard');

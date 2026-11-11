@@ -1,5 +1,7 @@
 // Alpine state for <x-branched-menu>: folds its sections, follows the page section in view,
 // and keeps the rail marker beside the active section's header.
+import { stretch } from './motion';
+
 export default function branchedMenu({ active, open }) {
     return {
         active,
@@ -20,8 +22,10 @@ export default function branchedMenu({ active, open }) {
                 const section = link ? Number(link.closest('[data-section]').dataset.section) : -1;
                 const head = heads[section];
                 const on = Boolean(head) && this.isOpen(section);
+                const top = `${head?.offsetTop + (head?.offsetHeight - marker.offsetHeight) / 2}px`;
                 if (!glide) marker.style.transition = 'none';
-                if (on) marker.style.top = `${head.offsetTop + (head.offsetHeight - marker.offsetHeight) / 2}px`;
+                if (glide && on && marker.hasAttribute('data-on') && marker.style.top !== top) stretch(marker, 'y');
+                if (on) marker.style.top = top;
                 marker.toggleAttribute('data-on', on);
                 if (!glide) {
                     void marker.offsetHeight;

@@ -1,289 +1,176 @@
 @extends('layouts.app')
 
 @section('title', $module->title)
-@section('page_header')
-    {{ $class->name }} &gt; {{ $module->title }}
-@endsection
+
+@php
+    $user = auth()->user();
+    $isStaff = $user->canManageClass($class);
+    $lesson = $module->safeContent();
+    $labs = $module->laboratories;
+    $labsDone = $labs->filter(fn ($lab) => isset($completedLabIds[$lab->id]))->count();
+    $topModules = $class->modules->where('parent_id', null)->sortBy('order_index');
+
+    $allModules = $class->modules->sortBy('order_index')->values();
+    $currentIndex = $allModules->search(fn ($m) => $m->id === $module->id);
+    $prevModule = $currentIndex > 0 ? $allModules[$currentIndex - 1] : null;
+    $nextModule = $currentIndex < $allModules->count() - 1 ? $allModules[$currentIndex + 1] : null;
+@endphp
 
 @section('content')
-<div class="flex flex-col lg:flex-row gap-6 -mt-4">
-    
-    <!-- LEFT PANEL: NetAcad-Style Course outline & Resources tabs -->
-    <div class="w-full lg:w-80 flex flex-col bg-[#141414] rounded-xl border border-slate-800 shrink-0 lg:sticky lg:top-4 h-fit max-h-[calc(100vh-6rem)] overflow-hidden">
-        <!-- Tabs Header -->
-        <div class="flex border-b border-slate-800 bg-slate-950">
-            <button id="tab-outline-btn" onclick="switchTab('outline')" class="flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-[#3ecf8e] text-white transition-all">
-                Course Outline
-            </button>
-            <button id="tab-resources-btn" onclick="switchTab('resources')" class="flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-transparent text-slate-400 hover:text-white transition-all">
-                Resources ({{ $module->attachments->count() }})
-            </button>
-        </div>
+<div class="space-y-6">
+    <x-page-header :back="route('classes.show', $class->id)" :back-label="$class->name" :title="$module->title"
+                   :subtitle="$module->description ?: null">
+        @if ($isStaff)
+            <a href="{{ route('modules.edit', [$class->id, $module->id]) }}" class="ui-btn ui-btn-secondary">Edit module</a>
+        @endif
+    </x-page-header>
 
-        <!-- Tab 1: Course Outline with Search -->
-        <div id="tab-outline-content" class="flex-1 flex flex-col p-4 overflow-y-auto space-y-4">
-            <div class="relative">
-                <input type="text" id="search-outline" oninput="filterOutline()" placeholder="Search course outline..." 
-                       class="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-                <div class="absolute left-2.5 top-2.5 text-slate-500">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                </div>
-            </div>
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+        <div class="min-w-0 space-y-6">
+            {{-- Lesson --}}
+            <section class="ui-card p-5" aria-label="Lesson">
+                @if (trim($lesson) !== '')
+                    <div class="prose dark:prose-invert max-w-none break-words prose-a:text-[#059669] dark:prose-a:text-[#3ecf8e] prose-code:before:content-none prose-code:after:content-none">
+                        {!! $lesson !!}
+                    </div>
+                @else
+                    <p class="py-8 text-center text-sm text-[#888888]">This module has no lesson content yet.</p>
+                @endif
+            </section>
 
-            <div class="flex-1 overflow-y-auto space-y-3">
-                <div class="pb-2 border-b border-slate-850">
-                    <a href="{{ route('classes.show', $class->id) }}" class="text-xs font-semibold text-indigo-400 hover:underline flex items-center">
-                        &larr; Back to Class Main Page
-                    </a>
-                </div>
-
-                <div class="space-y-1" id="outline-list">
-                    @foreach($class->modules->where('parent_id', null)->sortBy('order_index') as $mod)
-                        <div class="outline-item space-y-1">
-                            <a href="{{ route('modules.show', [$class->id, $mod->id]) }}" 
-                               class="group flex items-center justify-between px-2 py-2 text-xs font-semibold rounded transition {{ $mod->id === $module->id ? 'bg-indigo-600/15 border-l-2 border-indigo-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/40' }}">
-                                <span class="flex items-center truncate">
-                                    <svg class="w-3.5 h-3.5 mr-2 shrink-0 {{ $mod->id === $module->id ? 'text-indigo-400' : 'text-slate-500 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
-                                    <span class="truncate">{{ $mod->title }}</span>
-                                </span>
-                                @if(auth()->user()->role === 'student')
-                                    @php
-                                        $progress = $mod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
-                                    @endphp
-                                    @if($progress)
-                                        <span class="px-1 py-0.2 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1">
-                                            {{ $progress['completed'] }}/{{ $progress['total'] }}
-                                        </span>
-                                    @endif
-                                @endif
-                            </a>
-
-                            <!-- Sub-modules -->
-                            @if($mod->children->isNotEmpty())
-                                <div class="pl-4 border-l border-slate-800 space-y-1 mt-1">
-                                    @foreach($mod->children->sortBy('order_index') as $subMod)
-                                        <a href="{{ route('modules.show', [$class->id, $subMod->id]) }}" 
-                                           class="group flex items-center justify-between px-2 py-1.5 text-xs font-medium rounded transition {{ $subMod->id === $module->id ? 'bg-indigo-600/15 border-l-2 border-indigo-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/40' }}">
-                                            <span class="flex items-center truncate">
-                                                <svg class="w-3 h-3 mr-1.5 shrink-0 {{ $subMod->id === $module->id ? 'text-indigo-400' : 'text-slate-500 group-hover:text-white' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                                                <span class="truncate">{{ $subMod->title }}</span>
-                                            </span>
-                                            @if(auth()->user()->role === 'student')
-                                                @php
-                                                    $subProgress = $subMod->getStudentProgress(auth()->user(), $completedLabIds ?? null);
-                                                @endphp
-                                                @if($subProgress)
-                                                    <span class="px-1 py-0.2 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono shrink-0 ml-1">
-                                                        {{ $subProgress['completed'] }}/{{ $subProgress['total'] }}
-                                                    </span>
-                                                @endif
-                                            @endif
-                                        </a>
-                                    @endforeach
-                                </div>
+            {{-- Labs --}}
+            <section class="ui-card" aria-labelledby="labs-heading">
+                <div class="px-5 pt-5 pb-3 border-b border-[#232323]">
+                    <h2 id="labs-heading" class="ui-card-title">Labs</h2>
+                    @if ($labs->isNotEmpty())
+                        <p class="ui-card-subtitle">
+                            @if ($isStaff)
+                                {{ $labs->count() }} {{ \Illuminate\Support\Str::plural('lab', $labs->count()) }} in this module
+                            @else
+                                {{ $labsDone }} of {{ $labs->count() }} done
                             @endif
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab 2: Resources Download Area -->
-        <div id="tab-resources-content" class="flex-1 p-4 overflow-y-auto space-y-4 hidden">
-            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Downloadable Files</span>
-            <div class="space-y-2">
-                @forelse($module->attachments as $attachment)
-                    <div class="p-3 bg-slate-900/50 border border-slate-800 rounded-lg flex flex-col space-y-2">
-                        <div class="flex items-start space-x-2">
-                            <svg class="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            <div class="overflow-hidden">
-                                <span class="block text-xs font-semibold text-white truncate" title="{{ $attachment->file_name }}">
-                                    {{ $attachment->file_name }}
-                                </span>
-                                <span class="block text-[10px] text-slate-500">
-                                    {{ number_format($attachment->file_size / (1024 * 1024), 2) }} MB
-                                </span>
-                            </div>
-                        </div>
-                        <a href="{{ route('attachments.download', $attachment->id) }}" class="w-full text-center py-1.5 bg-slate-800 hover:bg-slate-750 text-[10px] font-bold text-slate-200 rounded-md transition-colors block border border-slate-700">
-                            Download File
-                        </a>
-                    </div>
-                @empty
-                    <div class="p-4 text-center text-xs text-slate-500 border border-slate-800 rounded-lg">
-                        No downloadable resources uploaded for this module.
-                    </div>
-                @endforelse
-            </div>
-        </div>
-    </div>
-
-    <!-- MAIN CENTER CONTENT: Module Lesson Material & Sandbox challenges -->
-    <div class="flex-1 flex flex-col gap-6 focus:outline-none">
-        
-        <!-- Module Lesson Content Card -->
-        <div class="glass-panel p-8 rounded-xl border border-slate-800 space-y-6 relative overflow-hidden">
-            <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.03),transparent)] pointer-events-none"></div>
-            
-            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
-                <div>
-                    <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Theoretical Lesson</span>
-                    <h1 class="text-2xl font-extrabold text-white mt-1">{{ $module->title }}</h1>
-                    @if($module->description)
-                        <p class="text-xs text-slate-400 mt-1 italic">{{ $module->description }}</p>
+                        </p>
                     @endif
                 </div>
 
-                @if(auth()->user()->role === 'admin' || auth()->user()->role === 'instructor')
-                    <div class="shrink-0">
-                        <a href="{{ route('modules.edit', [$class->id, $module->id]) }}" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-bold text-slate-300 hover:text-white rounded-lg transition-colors">
-                            Edit Content
-                        </a>
-                    </div>
-                @endif
-            </div>
-
-            <!-- Reading Content (Renders Rich HTML and custom tags) -->
-            <div class="prose prose-invert max-w-none text-slate-200 text-sm leading-relaxed border-t border-transparent pt-2">
-                {!! $module->safeContent() !!}
-            </div>
-        </div>
-
-        <!-- Associated Coding Challenges / Laboratories -->
-        <div class="glass-panel p-6 rounded-xl border border-slate-800 space-y-4">
-            <div>
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Competency Tasks</span>
-                <h3 class="text-base font-bold text-white mt-0.5">Interactive Laboratory Coding Challenges</h3>
-                <p class="text-xs text-slate-500 mt-1">Complete these challenges in the interactive coding terminal environment to pass the module.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800/60 pt-4">
-                @forelse($module->laboratories as $lab)
-                    <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg flex flex-col justify-between hover:border-slate-750 transition-colors">
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <div class="flex items-center gap-1.5 flex-wrap">
-                                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold {{ $lab->is_group_lab ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20' }}">
-                                        {{ $lab->is_group_lab ? 'Group Lab' : 'Individual Lab' }}
+                @if ($labs->isEmpty())
+                    <p class="px-5 py-10 text-center text-sm text-[#888888]">This module has no labs yet.</p>
+                @else
+                    <ul role="list">
+                        @foreach ($labs as $lab)
+                            @php
+                                $isDone = !$isStaff && isset($completedLabIds[$lab->id]);
+                                $isInProgress = !$isStaff && isset($activeLabIds[$lab->id]);
+                                $isLiveNow = $lab->isLiveLab() && $lab->isLiveActive();
+                                $studentStatus = !$isStaff ? $lab->studentStatus($isDone) : null;
+                                // A live lab can only be started during its window
+                                $canStart = !$isStaff && !$isDone && (!$lab->isLiveLab() || $isLiveNow);
+                                $actionLabel = $isInProgress ? 'Continue lab' : ($canStart ? 'Start lab' : 'View lab');
+                            @endphp
+                            <li class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 {{ $loop->first ? '' : 'border-t border-[#232323]' }}">
+                                <div class="flex min-w-0 gap-3">
+                                    <span class="mt-0.5 shrink-0">
+                                        @if ($isStaff)
+                                            <svg class="w-4 h-4 text-[#3ecf8e]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                                        @elseif ($isDone)
+                                            <span class="flex h-4 w-4 items-center justify-center rounded-full bg-[#3ecf8e] text-[#06150e]" role="img" aria-label="Done">
+                                                <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                            </span>
+                                        @else
+                                            <span class="block h-4 w-4 rounded-full border border-[#444444]" role="img" aria-label="Not done yet"></span>
+                                        @endif
                                     </span>
-                                    @if($lab->isLiveLab())
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-red-500/10 text-red-400 border border-red-500/20 uppercase font-semibold flex items-center gap-1">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
-                                            Live
-                                        </span>
-                                    @else
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase font-semibold">
-                                            Open
-                                        </span>
-                                    @endif
+                                    <div class="min-w-0">
+                                        <h3 class="text-sm font-medium text-[#ededed]">{{ $lab->title }}</h3>
+                                        @if ($lab->description)
+                                            <p class="mt-1 text-sm leading-relaxed text-[#a3a3a3] line-clamp-2">{{ $lab->description }}</p>
+                                        @endif
+                                        <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-[#888888]">
+                                            <span>{{ $lab->is_group_lab ? 'Group lab' : 'Individual lab' }}</span>
+                                            @if ($lab->time_limit)
+                                                <span class="font-mono">{{ $lab->time_limit }} min</span>
+                                            @endif
+                                            @if ($studentStatus)
+                                                <span class="ui-badge {{ $studentStatus['class'] }} text-[11px]">
+                                                    @if ($isLiveNow)<span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e] animate-pulse" aria-hidden="true"></span>@endif
+                                                    {{ $studentStatus['label'] }}
+                                                </span>
+                                            @elseif ($isStaff && $lab->isLiveLab())
+                                                <span class="ui-badge {{ $isLiveNow ? 'ui-badge-brand' : '' }} text-[11px]">
+                                                    @if ($isLiveNow)<span class="h-1.5 w-1.5 rounded-full bg-[#3ecf8e] animate-pulse" aria-hidden="true"></span>@endif
+                                                    {{ $isLiveNow ? 'Live now' : 'Live lab' }}
+                                                </span>
+                                            @endif
+                                        </div>
+                                    </div>
                                 </div>
-                                <span class="text-slate-500 text-xs font-mono">{{ $lab->time_limit }} min</span>
-                            </div>
-                            <h4 class="font-bold text-white text-sm">{{ $lab->title }}</h4>
-                            <p class="text-xs text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">{{ $lab->description }}</p>
-                        </div>
+                                <a href="{{ route('laboratories.show', $lab->id) }}"
+                                   class="ui-btn ui-btn-sm {{ $actionLabel === 'View lab' ? 'ui-btn-secondary' : 'ui-btn-primary' }} shrink-0 self-start sm:self-center"
+                                   aria-label="{{ $actionLabel }}: {{ $lab->title }}">{{ $actionLabel }}</a>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </section>
 
-                        <div class="mt-4 pt-3 border-t border-slate-800/40 flex items-center justify-between">
-                            <a href="{{ route('laboratories.show', $lab->id) }}" class="text-xs font-bold text-blue-500 hover:text-blue-400 transition-colors">
-                                View Instructions &rarr;
-                            </a>
+            {{-- Previous and next module --}}
+            <nav class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" aria-label="Modules in this class">
+                @if ($prevModule)
+                    <a href="{{ route('modules.show', [$class->id, $prevModule->id]) }}" class="ui-btn ui-btn-secondary min-w-0 max-w-full sm:max-w-[48%]">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                        <span class="truncate">Previous: {{ $prevModule->title }}</span>
+                    </a>
+                @endif
 
-                            @if(auth()->user()->role === 'student')
-                                @php
-                                    $activeSession = $lab->labSessions()
-                                        ->where('user_id', auth()->id())
-                                        ->where('status', 'in_progress')
-                                        ->first();
-                                @endphp
+                @if ($nextModule)
+                    <a href="{{ route('modules.show', [$class->id, $nextModule->id]) }}" class="ui-btn ui-btn-secondary min-w-0 max-w-full sm:max-w-[48%] sm:ml-auto">
+                        <span class="truncate">Next: {{ $nextModule->title }}</span>
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    </a>
+                @else
+                    <a href="{{ route('classes.show', $class->id) }}" class="ui-btn ui-btn-secondary sm:ml-auto">Back to class</a>
+                @endif
+            </nav>
+        </div>
 
-                                <a href="{{ route('laboratories.show', $lab->id) }}" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
-                                    Start Lab &rarr;
+        {{-- Sidebar --}}
+        <aside class="min-w-0 space-y-6 lg:sticky lg:top-2 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+            <section class="ui-card" aria-labelledby="outline-heading" x-data="{ query: '' }">
+                <div class="px-5 pt-5">
+                    <h2 id="outline-heading" class="ui-card-title">Course outline</h2>
+                </div>
+                <div class="px-5 pt-3">
+                    <label for="outline-search" class="sr-only">Search the course outline</label>
+                    <input type="search" id="outline-search" x-model="query" placeholder="Search outline" autocomplete="off" class="ui-input">
+                </div>
+                <ul class="line-sidebar line-sidebar--compact px-5 pt-4 pb-5" role="list" x-data="lineSidebar">
+                    @foreach ($topModules as $item)
+                        @include('classes._module-outline-item', ['item' => $item, 'number' => str_pad($loop->iteration, 2, '0', STR_PAD_LEFT)])
+                    @endforeach
+                </ul>
+            </section>
+
+            @if ($module->attachments->isNotEmpty())
+                <section class="ui-card" aria-labelledby="resources-heading">
+                    <div class="px-5 pt-5">
+                        <h2 id="resources-heading" class="ui-card-title">Resources</h2>
+                    </div>
+                    <ul class="px-2 pt-2 pb-3" role="list">
+                        @foreach ($module->attachments as $attachment)
+                            <li class="flex items-center gap-3 rounded-lg px-3 py-2">
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm text-[#ededed]" title="{{ $attachment->file_name }}">{{ $attachment->file_name }}</span>
+                                    <span class="block text-xs text-[#888888]">{{ number_format($attachment->file_size / (1024 * 1024), 2) }} MB</span>
+                                </span>
+                                <a href="{{ route('attachments.download', $attachment->id) }}" class="ui-btn ui-btn-ghost ui-btn-sm !px-2 shrink-0" aria-label="Download {{ $attachment->file_name }}" title="Download">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14"/></svg>
                                 </a>
-                            @endif
-                        </div>
-                    </div>
-                @empty
-                    <div class="col-span-full py-6 text-center text-xs text-slate-500 font-mono">
-                        No coding challenges (laboratories) are currently assigned to this module.
-                    </div>
-                @endforelse
-            </div>
-        </div>
-
-        <!-- Next / Previous Lesson Navigation -->
-        @php
-            $allModules = $class->modules->sortBy('order_index')->values();
-            $currentIndex = $allModules->search(fn($m) => $m->id === $module->id);
-            $prevModule = $currentIndex > 0 ? $allModules[$currentIndex - 1] : null;
-            $nextModule = $currentIndex < $allModules->count() - 1 ? $allModules[$currentIndex + 1] : null;
-        @endphp
-        
-        <div class="flex items-center justify-between pt-4 border-t border-slate-800/80 mt-2 shrink-0">
-            @if($prevModule)
-                <a href="{{ route('modules.show', [$class->id, $prevModule->id]) }}" class="px-4 py-2 border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] text-xs font-mono font-medium rounded-[6px] text-[#ededed] transition">
-                    &larr; Previous: {{ $prevModule->title }}
-                </a>
-            @else
-                <div></div>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
             @endif
-
-            @if($nextModule)
-                <a href="{{ route('modules.show', [$class->id, $nextModule->id]) }}" class="px-4 py-2 border border-[#2e2e2e] bg-[#171717] hover:bg-[#222222] hover:border-[#383838] text-xs font-mono font-medium rounded-[6px] text-[#ededed] transition">
-                    Next: {{ $nextModule->title }} &rarr;
-                </a>
-            @else
-                <a href="{{ route('classes.show', $class->id) }}" class="px-5 py-2 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition shadow-none">
-                    Complete Course Syllabus &rarr;
-                </a>
-            @endif
-        </div>
-
+        </aside>
     </div>
 </div>
-@endsection
-
-@section('scripts')
-<script>
-    // Tab switcher logic
-    function switchTab(tab) {
-        const outlineBtn = document.getElementById('tab-outline-btn');
-        const resourcesBtn = document.getElementById('tab-resources-btn');
-        const outlineContent = document.getElementById('tab-outline-content');
-        const resourcesContent = document.getElementById('tab-resources-content');
-
-        if (tab === 'outline') {
-            outlineBtn.classList.add('border-indigo-500', 'text-white');
-            outlineBtn.classList.remove('border-transparent', 'text-slate-400');
-            resourcesBtn.classList.remove('border-indigo-500', 'text-white');
-            resourcesBtn.classList.add('border-transparent', 'text-slate-400');
-
-            outlineContent.classList.remove('hidden');
-            resourcesContent.classList.add('hidden');
-        } else {
-            resourcesBtn.classList.add('border-indigo-500', 'text-white');
-            resourcesBtn.classList.remove('border-transparent', 'text-slate-400');
-            outlineBtn.classList.remove('border-indigo-500', 'text-white');
-            outlineBtn.classList.add('border-transparent', 'text-slate-400');
-
-            resourcesContent.classList.remove('hidden');
-            outlineContent.classList.add('hidden');
-        }
-    }
-
-    // Client-side quick filter of outline links
-    function filterOutline() {
-        const searchInput = document.getElementById('search-outline');
-        const query = searchInput.value.toLowerCase().trim();
-        const items = document.querySelectorAll('#outline-list .outline-item');
-
-        items.forEach(item => {
-            const text = item.textContent.toLowerCase();
-            if (text.includes(query)) {
-                item.style.display = 'block';
-            } else {
-                item.style.display = 'none';
-            }
-        });
-    }
-</script>
 @endsection

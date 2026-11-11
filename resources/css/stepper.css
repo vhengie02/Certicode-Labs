@@ -221,6 +221,6 @@ html:not(.dark) .stepper {
 
 .stepper__button:active {
   filter: brightness(0.85);
-  transform: scale(0.96);
+  transform: scale(0.97);
   transition-duration: 0s;
 }

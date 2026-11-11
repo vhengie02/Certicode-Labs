@@ -194,14 +194,14 @@ class AdminPanelTest extends TestCase
         // Sign-ups closed
         auth()->logout();
         $this->get('/register')->assertOk()->assertSee('Sign-ups are')->assertDontSee('register-form');
-        $this->post('/register', ['name' => 'New Person', 'email' => 'new@example.com', 'password' => 'Str0ng!Pass', 'password_confirmation' => 'Str0ng!Pass', 'role' => 'student'])
+        $this->post('/register', ['name' => 'New Person', 'email' => 'new@example.com', 'password' => 'Str0ng!Pass', 'password_confirmation' => 'Str0ng!Pass', 'role' => 'student', 'terms' => '1'])
             ->assertRedirect(route('login'));
         $this->assertDatabaseMissing('users', ['email' => 'new@example.com']);
 
         // Sign-ups open again, instructor requests still closed: the Instructor choice is ignored
         SystemSetting::write(['registration_open' => true]);
         $this->get('/register')->assertDontSee('value="instructor"', false);
-        $this->post('/register', ['name' => 'New Person', 'email' => 'new@example.com', 'password' => 'Str0ng!Pass', 'password_confirmation' => 'Str0ng!Pass', 'role' => 'instructor'])
+        $this->post('/register', ['name' => 'New Person', 'email' => 'new@example.com', 'password' => 'Str0ng!Pass', 'password_confirmation' => 'Str0ng!Pass', 'role' => 'instructor', 'terms' => '1'])
             ->assertRedirect('/dashboard');
         $this->assertNull(User::where('email', 'new@example.com')->value('instructor_requested_at'));
     }
