@@ -2,6 +2,7 @@
 
 ## 2026-11-12
 
+- Emails no longer arrive from "${APP_NAME}". Vercel does not fill in `${APP_NAME}` the way a `.env` file does, so the sender name went out as that text. The app now uses the app name when `MAIL_FROM_NAME` is empty or still holds a placeholder.
 - Students on a phone or tablet can read a lab but can't start, continue or retake it, since labs run in VS Code. The lab page shows "Open on a computer" in place of the start button, and the module page shows only View lab. The server also refuses a start sent from a phone or tablet, with the error `handheld_device`. An iPad asking for the desktop site looks like a Mac to the server, so the lab page also checks for a touch screen in the browser. Instructors' pages are unchanged.
 
 ## 2026-11-11
