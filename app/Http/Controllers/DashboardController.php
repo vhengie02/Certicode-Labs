@@ -46,7 +46,7 @@ class DashboardController extends Controller
         /** @var User $user */
         $user = $request->user();
         $data = Cache::store('file')->remember(
-            "user_dashboard_sections_v3_{$user->id}_{$user->role}",
+            "user_dashboard_sections_v4_{$user->id}_{$user->role}",
             30,
             fn () => match ($user->role) {
                 'admin' => $this->adminData(),
@@ -109,6 +109,16 @@ class DashboardController extends Controller
             // Shown in the panel headers, next to the lists they count
             'activeClassCount' => SchoolClass::whereIn('id', $classIds)->whereNotIn('status', ['completed', 'closed'])->count(),
             'openFlagCount' => Anomaly::whereRaw('resolved = false')->whereHas('labSession', $ownSessions)->count(),
+            // Attempts with code to read; only the columns the panel shows, not the code itself
+            'latestSubmissions' => LabSession::whereIn('lab_id', (clone $ownLabs)->select('id'))
+                ->where('status', 'completed')
+                ->whereNotNull('ended_at')
+                ->whereNotNull('submitted_code')
+                ->where('submitted_code', '<>', '')
+                ->with('user:id,name', 'group:id,name', 'laboratory:id,title,module_id', 'laboratory.module:id,class_id', 'laboratory.module.schoolClass:id,name')
+                ->latest('ended_at')
+                ->take(6)
+                ->get(['id', 'lab_id', 'user_id', 'group_id', 'status', 'ended_at', 'performance_score', 'instructor_grade_override']),
             'recentAnomalies' => Anomaly::withoutSnapshotData()
                 ->whereHas('labSession', $ownSessions)
                 ->with('labSession:id,lab_id,user_id', 'labSession.user:id,name', 'labSession.laboratory:id,title')

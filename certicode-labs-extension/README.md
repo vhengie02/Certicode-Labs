@@ -59,7 +59,7 @@ See [TODO.md](../TODO.md) in the project root for full architectural details and
 1. **Diff Tracking**: Live line-level diff engine with team blame attribution, streaming via WebSocket.
 2. **Team Chat**: Private, ephemeral peer-to-peer team chat with syntax-highlighted code snippets.
 3. **Auto-Generated Starter Files**: Multi-file workspace provisioning with continuous `FileSystemWatcher` integrity validation.
-4. **Paste Anomaly Detection**: Keystroke/WPM baseline with starter-file, own-code and team-chat suppression rules and a clipboard check.
+4. **Paste Anomaly Detection**: Keystroke/WPM baseline with starter-file, own-code and team-chat suppression rules and a clipboard check. A large block of code that was neither typed nor pasted, such as from an AI tool, is reported as a large insert.
 5. **In-Lab Sidebar**: All live UI (Live Leaderboard, Task Checklist, Timer, and OS-level window focus tracking) centralized in the VS Code sidebar.
 6. **Instructor Live Monitoring Panel**: Real-time web dashboard displaying live WPM, task counters, anomaly image timeline, and team contribution drill-downs.
 7. **Session Closure vs. Course Completion & Certification**: Per-lab session auto-submissions and cleanup vs. course-wide competency accumulation with configurable passing thresholds and automated e-diploma issuance.

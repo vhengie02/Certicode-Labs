@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -265,6 +266,9 @@ class LoginController extends Controller
 
             $request->validate([
                 'password' => $passwordRules,
+                'terms' => 'accepted',
+            ], [
+                'terms.accepted' => 'Please confirm your age and agree to the Terms and Privacy Policy.',
             ]);
 
             $password = $request->password ?: Str::random(16);
@@ -286,6 +290,7 @@ class LoginController extends Controller
                 'role' => 'student', // instructor access needs an admin's approval
                 'github_username' => $githubUsername,
             ]);
+            $newUser->acceptTerms();
 
             if ($request->role === 'instructor') {
                 $newUser->requestInstructorAccess();
@@ -307,7 +312,7 @@ class LoginController extends Controller
     /**
      * Redirect the user to the OAuth provider authentication page.
      */
-    public function redirectToProvider($provider)
+    public function redirectToProvider(Request $request, $provider)
     {
         $provider = strtolower($provider);
         if (! in_array($provider, ['google', 'github'])) {
@@ -331,7 +336,23 @@ class LoginController extends Controller
             return redirect()->route('login')->withErrors(['email' => "{$provider} OAuth credentials not configured in system services."]);
         }
 
-        return Socialite::driver($provider)->redirect();
+        $driver = Socialite::driver($provider);
+
+        // Without this Google silently reuses the browser's active account, so people with several
+        // Gmail accounts could never pick one
+        if ($provider === 'google') {
+            $driver->with(['prompt' => 'select_account']);
+        }
+
+        // The sign-in buttons open Google in a small window. The callback reads this to hand the
+        // result back to the page that opened it. A full-page sign-in clears a stale flag.
+        if ($provider === 'google' && $request->boolean('popup')) {
+            $request->session()->put('oauth_popup', true);
+        } else {
+            $request->session()->forget('oauth_popup');
+        }
+
+        return $driver->redirect();
     }
 
     /**
@@ -431,9 +452,25 @@ class LoginController extends Controller
     }
 
     /**
-     * Handle the OAuth provider callback.
+     * Handle the OAuth provider callback. A sign-in that ran in the popup window ends on a small
+     * page that sends the opening page where to go and then closes itself.
      */
     public function handleProviderCallback(Request $request, $provider)
+    {
+        $response = $this->completeProviderCallback($request, $provider);
+
+        if ($request->session()->pull('oauth_popup') && $response instanceof RedirectResponse) {
+            // Flashed messages stay in the session for the opening page's next request
+            return response()->view('auth.oauth-popup-done', ['target' => $response->getTargetUrl()]);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Sign in, link or start a sign-up from the identity the OAuth provider returned.
+     */
+    private function completeProviderCallback(Request $request, $provider)
     {
         $provider = strtolower($provider);
         if (! in_array($provider, ['google', 'github'])) {

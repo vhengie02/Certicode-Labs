@@ -77,8 +77,8 @@ export default function staggeredMenu() {
             return run(
                 gsap.to(this.sheets(), {
                     xPercent: 100,
-                    duration: 0.32,
-                    ease: 'power3.in',
+                    duration: 0.4,
+                    ease: 'power3.out',
                     overwrite: 'auto',
                     onComplete: () => gsap.set(this.$refs.drawer, { visibility: 'hidden' }),
                 }),
@@ -90,7 +90,7 @@ export default function staggeredMenu() {
             spin = run(
                 gsap.to(this.$refs.icon, opening
                     ? { rotate: 225, duration: 0.8, ease: 'power4.out' }
-                    : { rotate: 0, duration: 0.35, ease: 'power3.inOut' }),
+                    : { rotate: 0, duration: 0.64, ease: 'power4.out' }),
             );
         },
 

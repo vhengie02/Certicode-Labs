@@ -146,7 +146,7 @@ class EndToEndLabLifecycleTest extends TestCase
             ->assertJsonPath('error', 'no_face_detected');
 
         // 3c. Success when 1 face is verified
-        $prelabPass = $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->laboratory->id}/verify-camera", [
+        $prelabPass = $this->actingAs($this->student)->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
             'image_base64' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',

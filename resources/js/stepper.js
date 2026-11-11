@@ -7,14 +7,11 @@
 // layouts, the light theme and the completed screen are left out because this page does not use
 // them.
 
-const SPRING =
-    'linear(0, 0.0603, 0.2033, 0.3821, 0.5633, 0.7258, 0.8584, 0.9574, 1.0242, 1.0634, 1.0809, 1.0828, 1.0747, 1.0613, 1.046, 1.0313, 1.0186, 1.0085, 1.0012, 0.9965, 0.994, 0.9931, 0.9933, 0.9941, 0.9953, 0.9966, 0.9978, 0.9988, 1)';
-const SETTLE = 'cubic-bezier(0.22, 1, 0.36, 1)';
-const SHIFT = 36;
+import { EASE_IN_OUT, EASE_OUT, MOVE_MS, reducedMotion, stretch } from './motion';
 
-const ease = () =>
-    CSS.supports?.('transition-timing-function', 'linear(0, 1)') ? SPRING : 'cubic-bezier(0.34, 1.4, 0.64, 1)';
-const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SHIFT = 36;
+const ENTER_MS = 260;
+const LEAVE_MS = 208;
 
 export default function stepper({ initial = 1, total }) {
     // Titles are hidden while the row is tight, so their widths are kept from the last full layout.
@@ -25,7 +22,6 @@ export default function stepper({ initial = 1, total }) {
         total,
 
         init() {
-            this.$root.style.setProperty('--stepper-spring', SPRING);
             this.measure();
             new ResizeObserver(() => this.measure()).observe(this.$refs.track);
         },
@@ -61,14 +57,15 @@ export default function stepper({ initial = 1, total }) {
             const { glider } = this.$refs;
             const segment = this.segments()[this.current - 1];
             if (!segment) return;
-            const spring = ease();
+            const move = `${MOVE_MS}ms ${EASE_IN_OUT}`;
             glider.style.transition = animate
-                ? `transform 560ms ${spring}, width 560ms ${spring}, height 560ms ${spring}, opacity 200ms ease`
+                ? `translate ${move}, width ${move}, height ${move}, opacity 200ms ease`
                 : 'opacity 200ms ease';
-            glider.style.transform = `translate3d(${segment.offsetLeft}px, ${segment.offsetTop}px, 0)`;
+            glider.style.translate = `${segment.offsetLeft}px ${segment.offsetTop}px`;
             glider.style.width = `${segment.offsetWidth}px`;
             glider.style.height = `${segment.offsetHeight}px`;
             glider.style.opacity = '1';
+            if (animate) stretch(glider);
         },
 
         go(target) {
@@ -103,34 +100,31 @@ export default function stepper({ initial = 1, total }) {
             });
 
             const to = viewport.offsetHeight;
-            const spring = ease();
             if (Math.abs(from - to) > 0.5) {
                 viewport.animate([{ height: `${from}px` }, { height: `${to}px` }], {
-                    duration: reduced ? 200 : 560,
-                    easing: reduced ? SETTLE : spring,
+                    duration: MOVE_MS,
+                    easing: EASE_IN_OUT,
                 });
             }
 
             const shift = reduced ? 0 : SHIFT;
             if (shift) {
                 entering.animate([{ transform: `translateX(${direction * shift}px)` }, { transform: 'none' }], {
-                    duration: 560,
-                    easing: spring,
+                    duration: ENTER_MS,
+                    easing: EASE_OUT,
                 });
             }
-            entering.animate([{ opacity: 0 }, { opacity: 0, offset: 0.25 }, { opacity: 1 }], {
-                duration: 420,
-                easing: 'ease-out',
-            });
 
+            // Both panes fade at once, so the old state is still leaving as the new one arrives.
+            entering.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ENTER_MS, easing: EASE_OUT });
             leaving.animate([{ opacity: 1 }, { opacity: 0 }], {
-                duration: 140,
-                easing: 'cubic-bezier(0.2, 0, 0.4, 1)',
+                duration: LEAVE_MS,
+                easing: EASE_OUT,
                 fill: 'forwards',
             });
             const exit = leaving.animate(
                 [{ transform: 'none' }, { transform: `translateX(${-direction * shift}px)` }],
-                { duration: 200, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
+                { duration: LEAVE_MS, easing: EASE_OUT, fill: 'forwards' },
             );
             exit.onfinish = () => {
                 leaving.hidden = true;

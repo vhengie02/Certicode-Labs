@@ -103,6 +103,21 @@ class SubmitTimeBudgetTest extends TestCase
         $this->assertEquals(100.0, $this->session->fresh()->performance_score);
     }
 
+    public function test_grading_time_does_not_count_as_time_spent(): void
+    {
+        $this->freezeSecond();
+        $submittedAt = now();
+
+        $this->grader(function () {
+            $this->travel(30)->seconds();
+        });
+
+        $this->actingAs($this->student)->postJson("/api/v1/sessions/{$this->session->id}/submit", self::CODE)
+            ->assertOk();
+
+        $this->assertTrue($this->session->fresh()->ended_at->eq($submittedAt));
+    }
+
     public function test_the_code_is_kept_when_grading_dies(): void
     {
         $this->grader(function () {

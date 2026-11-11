@@ -1,0 +1,121 @@
+/* Shared motion language. Curves and timings live here, and every component builds on them.
+ *
+ * Rules the app follows:
+ *  - Entrances use --ease-out, and on-screen moves use --ease-in-out. Everyday UI never bounces.
+ *  - Exits run 20% shorter than the matching entrance (--motion-exit) and leave the way they came.
+ *  - Popovers start at 0.95 and scale from their trigger.
+ *  - Anything the user is holding follows the pointer with no transition.
+ * resources/js/motion.js holds the behaviour that needs script. Keep its constants in step. */
+:root {
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --motion-press: 120ms;
+    --motion-popover: 180ms;
+    --motion-move: 240ms;
+    --motion-exit: 0.8;
+    --motion-popover-scale: 0.95;
+    --motion-row-stagger: 30ms;
+}
+
+/* Press feedback */
+@media (prefers-reduced-motion: no-preference) {
+    .btn-primary:active,
+    .btn-pill:active,
+    .btn-secondary:active,
+    .ui-btn:active:not(:disabled, [aria-disabled='true']),
+    .app-icon-btn:active,
+    header .app-search-trigger:active {
+        transform: scale(0.97);
+    }
+}
+
+/* Popovers driven by Alpine: pair with x-transition:enter, :enter-start, :leave and :leave-end, and
+   give the element an origin-* class that points at its trigger. */
+.motion-popover-enter {
+    transition:
+        opacity var(--motion-popover) var(--ease-out),
+        transform var(--motion-popover) var(--ease-out);
+}
+.motion-popover-leave {
+    transition:
+        opacity calc(var(--motion-popover) * var(--motion-exit)) var(--ease-out),
+        transform calc(var(--motion-popover) * var(--motion-exit)) var(--ease-out);
+}
+.motion-popover-from {
+    opacity: 0;
+    transform: scale(var(--motion-popover-scale));
+}
+
+/* List rows arrive one after another. Rows past the eighth share a delay, so long lists stay quick. */
+.motion-rows > * {
+    animation: motion-row-in 260ms var(--ease-out) backwards;
+    animation-delay: calc(var(--motion-row, 7) * var(--motion-row-stagger));
+}
+.motion-rows > :nth-child(1) { --motion-row: 0; }
+.motion-rows > :nth-child(2) { --motion-row: 1; }
+.motion-rows > :nth-child(3) { --motion-row: 2; }
+.motion-rows > :nth-child(4) { --motion-row: 3; }
+.motion-rows > :nth-child(5) { --motion-row: 4; }
+.motion-rows > :nth-child(6) { --motion-row: 5; }
+.motion-rows > :nth-child(7) { --motion-row: 6; }
+@keyframes motion-row-in {
+    from { opacity: 0; transform: translateY(6px); }
+}
+
+/* Two icons sharing one spot: both stay rendered, so the old one fades out as the new one fades in. */
+.motion-icon-swap {
+    display: inline-grid;
+    place-items: center;
+}
+.motion-icon-swap > * {
+    grid-area: 1 / 1;
+    transition:
+        opacity 200ms var(--ease-out),
+        filter 200ms var(--ease-out),
+        transform 200ms var(--ease-out);
+}
+.motion-icon-swap > [data-icon-off] {
+    opacity: 0;
+    filter: blur(2px);
+    transform: scale(0.7);
+}
+
+/* The switch knob slides on `translate`, leaving `scale` free for motion.js to stretch it. */
+.motion-knob {
+    transition:
+        translate var(--motion-move) var(--ease-in-out),
+        background-color 150ms ease;
+}
+
+/* The one underline a tab strip shares. It is 1px wide and scaled, so moving it never touches layout. */
+.motion-tab-indicator {
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 1px;
+    height: 2px;
+    background: var(--color-brand);
+    transform-origin: left center;
+    pointer-events: none;
+    transition:
+        translate var(--motion-move) var(--ease-in-out),
+        transform var(--motion-move) var(--ease-in-out),
+        opacity 150ms ease;
+}
+
+/* The theme switch reveals the new colours through a circle, drawn in resources/js/motion.js */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .motion-popover-from { transform: none; }
+    .motion-rows > * { animation-name: motion-row-fade; }
+    .motion-icon-swap > [data-icon-off] { filter: none; transform: none; }
+    .motion-knob, .motion-tab-indicator { transition: none; }
+}
+@keyframes motion-row-fade {
+    from { opacity: 0; }
+}

@@ -61,7 +61,7 @@
         background: var(--bm-accent);
         opacity: 0;
         transition:
-            top 220ms var(--bm-ease-out),
+            top var(--motion-move) var(--ease-in-out),
             opacity 150ms ease;
     }
 

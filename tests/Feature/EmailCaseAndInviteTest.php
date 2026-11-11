@@ -41,6 +41,7 @@ class EmailCaseAndInviteTest extends TestCase
             'password' => 'password123',
             'password_confirmation' => 'password123',
             'role' => 'student',
+            'terms' => '1',
         ])->assertSessionHasErrors('email');
 
         $this->assertSame(1, User::count());
@@ -54,6 +55,7 @@ class EmailCaseAndInviteTest extends TestCase
             'password' => 'password123',
             'password_confirmation' => 'password123',
             'role' => 'student',
+            'terms' => '1',
         ])->assertRedirect('/dashboard');
 
         $this->assertSame('ben.cruz@example.com', User::firstOrFail()->email);
