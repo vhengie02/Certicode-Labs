@@ -301,7 +301,9 @@ This document outlines the final feature specifications, implementation tasks, a
   - The extension sends `X-Extension-Version`; builds below `services.vscode_extension.min_version` (or sending none) get an update banner on the lab page and a warning in VS Code.
   - The VS Code sidebar shows the installed extension version on the connection and session screens.
 - [x] **Fewer false "multiple faces" flags ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php))**:
-  - `countFaces()` treats the largest face as the student. Another face counts only if it is confident (score ≥ 0.5), not a duplicate box of the student's face, and at least 20% of its size.
+  - `countFaces()` treats the largest confident face (score ≥ 0.5) as the student, or the largest face of all when none is confident. Another face counts only if it is confident, not a duplicate box of the student's face, and at least 20% of its size.
+  - A second person is flagged when two of the last three checks see them, then every 30 seconds while they stay.
+  - Covered by `tests/js/face-count.test.js` (`npm test`), which runs the functions straight out of the Blade view.
 - [x] **Server-side camera gate**:
   - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. Every pass needs a detected face; a pass in a dim room is logged as `low_light`.
 - [x] **Three failed camera checks lock the lab**:

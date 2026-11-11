@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+- The "Multiple faces" flag is harder to dodge and raises fewer false alarms. A second person seen in two of the last three camera checks is now flagged. The two checks used to have to be in a row, so someone at the edge of the frame, caught every other check, was never flagged. A large shadow or poster the camera was unsure about could also be taken for the student, which made the real student count as a second person. The most certain face is now the student. While a second person stays, the flag repeats every 30 seconds, not every 40.
+- The lab page's face counting now has tests. Run them with `npm test`.
+
 - Verification code, password reset and alert emails now match the look of the sign-in pages. Alert emails used Laravel's default theme. The logo was an inline SVG, which mail clients remove, so it showed as an empty box. It is now a PNG sent with the email. Reset emails also print the link under the button, for mail clients that block buttons.
 - The Gmail code in Settings is now typed into six slots. The code is checked as soon as the last digit lands, with no page reload. A wrong code drains out in red with the reason under it, and a right one closes into a tick. Pasting a code and one-time-code autofill both work.
 - Disconnecting a confirmed Gmail in Settings now asks for your password, and the route allows 5 tries a minute. It used to take one click, so anyone at an unlocked browser could move your alert emails. Dropping an address that is still waiting for its code needs no password.
