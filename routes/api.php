@@ -43,6 +43,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
         Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
         Route::post('/sessions/{sessionId}/leader', [LabSessionController::class, 'chooseLeader']);
+        // Shared typing on group labs: the team's channel and key, and its stored edits
+        Route::get('/sessions/{sessionId}/team-doc', [LabSessionController::class, 'teamDoc']);
+        Route::get('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'teamDocUpdates']);
+        Route::post('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'storeTeamDocUpdate']);
     });
 });
 

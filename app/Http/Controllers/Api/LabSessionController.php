@@ -14,6 +14,8 @@ use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
+use App\Models\TeamDoc;
+use App\Models\TeamDocUpdate;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Notifications\CameraFlagNotification;
@@ -22,6 +24,7 @@ use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use App\Support\Realtime;
+use App\Support\TeamSync;
 use App\Support\WebcamSnapshot;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -831,6 +834,8 @@ class LabSessionController extends Controller
                 'avatar_color' => $userColor,
             ],
             'is_group_lab' => (bool) $lab->is_group_lab,
+            // Whether teammates type in the same files (the extension then asks for /team-doc)
+            'team_sync' => ['enabled' => TeamSync::enabled() && $session->status === 'in_progress' && $session->group_id && $session->team_started_at],
             'team' => $teamPayload,
             'teammates' => $teammates,
             'laboratory' => $lab->studentPayload(),
@@ -1196,6 +1201,12 @@ class LabSessionController extends Controller
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
 
+        // The team's shared document is done with: the submitted files are the record now
+        if ($session->group_id && $session->team_started_at) {
+            TeamDoc::where('group_id', $session->group_id)->where('lab_id', $session->lab_id)
+                ->where('team_started_at', $session->team_started_at)->delete();
+        }
+
         // Compare the new submission with the cohort once, here, rather than on every view
         // of the monitoring page
         app(CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
@@ -1474,6 +1485,98 @@ class LabSessionController extends Controller
             'diff_stats' => $diffStats,
             'code_contributions' => $contributions,
         ]);
+    }
+
+    /**
+     * What a teammate's extension needs to type in the team's shared document: where the
+     * team's channel is and the key its edits are encrypted with.
+     */
+    public function teamDoc(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
+
+        $doc = TeamDoc::forSession($session);
+        if (! $doc) {
+            return response()->json(['enabled' => false]);
+        }
+
+        return response()->json([
+            'enabled' => true,
+            'topic' => $doc->topic,
+            'key' => $doc->key,
+            ...TeamSync::clientConfig(),
+            'last_update_id' => $doc->lastUpdateId(),
+        ]);
+    }
+
+    /**
+     * The edits stored for the team's document, oldest first, for a teammate who joins late
+     * or has nobody online to catch up from.
+     */
+    public function teamDocUpdates(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
+        if (! $doc = TeamDoc::forSession($session)) {
+            return $this->teamSyncOffResponse();
+        }
+
+        $updates = $doc->updates()->where('id', '>', (int) $request->query('after', 0))->orderBy('id')->get(['id', 'payload']);
+
+        return response()->json([
+            'updates' => $updates->map(fn (TeamDocUpdate $update) => ['id' => $update->id, 'payload' => $update->payload])->all(),
+            'last_update_id' => $updates->last()?->id ?? $doc->lastUpdateId(),
+        ]);
+    }
+
+    /**
+     * Keep a batch of edits to the team's document. The server stores it as it came and never
+     * reads it. "seed" is the starter files, kept only if nothing was stored yet, so two
+     * teammates opening the lab together don't both put them in. "replaces_through" is a
+     * teammate folding everything up to that update into this one.
+     */
+    public function storeTeamDocUpdate(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
+        if (! $doc = TeamDoc::forSession($session)) {
+            return $this->teamSyncOffResponse();
+        }
+
+        $data = $request->validate([
+            'payload' => ['required', 'string', 'max:'.TeamDocUpdate::MAX_PAYLOAD_CHARS, 'regex:/^[A-Za-z0-9+\/]+={0,2}$/'],
+            'seed' => 'nullable|boolean',
+            'replaces_through' => 'nullable|integer|min:1',
+        ]);
+        $author = ($request->user() ?? $session->user)?->id;
+
+        return app(LabTeams::class)->locked($session->laboratory, function () use ($doc, $data, $author) {
+            if (! empty($data['seed']) && $doc->updates()->exists()) {
+                return response()->json(['error' => 'already_seeded', 'last_update_id' => $doc->lastUpdateId()], 409);
+            }
+            if (empty($data['replaces_through']) && $doc->needsCompaction()) {
+                return response()->json(['error' => 'compaction_needed', 'last_update_id' => $doc->lastUpdateId()], 409);
+            }
+
+            $update = $doc->updates()->create(['user_id' => $author, 'payload' => $data['payload']]);
+            if (! empty($data['replaces_through'])) {
+                $doc->updates()->where('id', '<=', $data['replaces_through'])->whereKeyNot($update->id)->delete();
+            }
+
+            return response()->json(['id' => $update->id], 201);
+        });
+    }
+
+    private function teamSyncOffResponse(): JsonResponse
+    {
+        return response()->json(['error' => 'team_sync_off', 'message' => 'Shared typing is not on for this attempt.'], 409);
     }
 
     /**

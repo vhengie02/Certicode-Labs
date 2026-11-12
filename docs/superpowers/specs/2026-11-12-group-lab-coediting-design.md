@@ -122,15 +122,25 @@ files, cursors, undo, reconnects, and two real people.
 (`LabSession::isCodeFile`) inside the lab workspace are shared, with the existing size limits.
 Read-only starter files stay read-only. Creating, deleting and renaming a file is shared too.
 
-**Carrying edits.** Supabase Realtime Broadcast, one private channel per team attempt. The
-extension asks Laravel for a short-lived channel token; Laravel signs it with the Supabase JWT
-secret from an environment variable that has no default. A Realtime authorization policy lets a
-token join only its own team's channel. Each client merges its pending edits and sends at most
-one message every 250 ms.
+**Carrying edits.** Supabase Realtime Broadcast, one channel per team attempt. Decided by the
+owner on 2026-11-12, replacing the private-channel design first approved: Laravel gives each
+team attempt a random, unguessable channel name and a 256-bit key, and hands both only to that
+team's members. Every message is encrypted and authenticated with the key (AES-256-GCM) before
+it is sent, so someone who learned the channel name can neither read edits nor forge them; the
+most they can do is add noise, which is dropped. The extension joins with the project's
+publishable key, which is public by design. Nothing new is secret on Vercel, and the production
+database gains no access rules. Why not private channels: they need the project's JWT signing
+secret on Vercel, which can mint a token for any role including full admin, and a rule on a
+Supabase system table in production. They can be added later without changing the rest.
+
+Each client merges its pending edits and sends at most one message per send interval. The
+interval is a setting, 400 ms by default: the Free plan counts every send once for the sender
+and once per teammate who receives it, against 2 million messages a month.
 
 **Keeping the document.** Laravel stores opaque update blobs, it never decodes them:
 
-- `team_doc_updates(id, group_id, lab_id, user_id, payload, created_at)`.
+- `team_docs(id, group_id, lab_id, team_started_at, topic, key)`: one row per team attempt, holding its channel name and key (the key encrypted at rest). Created once, when the first teammate asks.
+- `team_doc_updates(id, team_doc_id, user_id, payload, created_at)`.
 - `POST /sessions/{id}/team-doc/updates` appends one. `GET` returns all since an id.
 - Any client may post a compacted snapshot that replaces everything up to an id it has applied.
 - A teammate who joins first loads the stored updates, then catches up live from peers. A document with no updates starts from the lab's starter files; the first client creates it, guarded by a server-side "create once" so two first joiners do not both seed it.
@@ -183,9 +193,10 @@ Production migrations are run by hand on Supabase, so each part lists its migrat
 
 ## Limits and risks
 
-- Supabase Realtime Free plan: 200 connections, 100 messages per second for the whole project, 256 KB per message (docs checked 2026-11-12). At one message per 250 ms, about 25 students typing at the same moment reach the limit. A full class in a group lab may need the Pro plan (500 per second). Which plan the project is on is not known.
-- Whether Supabase counts a broadcast once or once per receiver is not confirmed.
-- Realtime channel authorization with a Laravel-signed token is from the docs, not yet tried.
+- The project is on the Supabase Free plan (read from the organization record, 2026-11-12): 200 connections, 100 messages per second for the whole project, 256 KB per message, 2 million messages a month. A broadcast counts once for the sender and once per receiver (docs, 2026-11-12).
+- Estimate, not a measurement: a student typing for 10 of 45 minutes at one send per 400 ms, in a team of three, costs about 4,500 messages a lab; a class of 40 about 180,000. That is about 11 class-sized group labs a month on Free. Pro is 5 million a month, then $2.50 per million.
+- At the 100 per second limit, about 40 students can be sending in the same instant at 400 ms.
+- The extension needs a WebSocket. Newer VS Code provides one; the bundle carries a fallback for older builds.
 - Same character typed at the same spot in the same instant by two teammates: text stays right, one character may be credited to the wrong student.
 - Under non-stop machine-speed typing, teammates' edits wait until a pause. At human speed they landed live in the test. Two real people have not tried it.
 

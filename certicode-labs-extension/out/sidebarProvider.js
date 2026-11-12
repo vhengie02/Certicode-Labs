@@ -22,6 +22,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SidebarProvider = void 0;
 const vscode = __importStar(require("vscode"));
@@ -29,6 +32,11 @@ const http = __importStar(require("http"));
 const https = __importStar(require("https"));
 const url_1 = require("url");
 const crypto = __importStar(require("crypto"));
+const ws_1 = __importDefault(require("ws"));
+const supabaseTransport_1 = require("./teamSync/supabaseTransport");
+const teamDoc_1 = require("./teamSync/teamDoc");
+const vscodeHost_1 = require("./teamSync/vscodeHost");
+const workspaceSync_1 = require("./teamSync/workspaceSync");
 const API_PREFIX = '/api/v1';
 // Sent with every request so the server can tell students running an outdated build.
 const EXTENSION_VERSION = vscode.extensions.getExtension('certicode.certicode-labs')?.packageJSON?.version ?? '0.0.0';
@@ -213,6 +221,7 @@ class SidebarProvider {
         }
         this.disposeActivityListeners();
         this.disconnectWebSocket();
+        this.stopTeamSync();
     }
     /**
      * Ask before talking to a backend the student has not connected to before. Deep links can
@@ -300,6 +309,9 @@ class SidebarProvider {
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case 'webviewReady': {
+                    if (this._teamSyncState) {
+                        this._view?.webview.postMessage({ type: 'teamSync', ...this._teamSyncState });
+                    }
                     if (this._extensionRejected) {
                         this.postExtensionOutdated();
                     }
@@ -794,6 +806,7 @@ class SidebarProvider {
                     data: data,
                     isReconnecting: false
                 });
+                void this.updateTeamSync(data);
                 // Fetch chats if group lab
                 if (this.isGroupLab()) {
                     this.fetchChatMessages();
@@ -1218,11 +1231,46 @@ class SidebarProvider {
         }), this._fileWatcher.onDidChange(() => this.scheduleDiskCheck()), this._fileWatcher.onDidDelete(() => this.verifyWorkspaceFileIntegrity()), vscode.workspace.onDidOpenTextDocument(doc => this.rememberDocumentText(doc)), vscode.workspace.onDidCloseTextDocument(doc => this._documentTexts.delete(doc.uri.toString())), 
         // Watch document changes for live diff tracking, WPM baseline, and paste anomaly detection
         vscode.workspace.onDidChangeTextDocument(event => this.handleDocumentChange(event)), vscode.workspace.onDidChangeTextDocument(event => { void this.guardReadonlyFile(event); }), vscode.workspace.onDidSaveTextDocument(doc => {
+            const sharedName = this._teamSyncHost?.nameOf(doc.uri);
+            if (sharedName) {
+                this._teamSync?.noteSaved(sharedName);
+            }
             if (this._sessionId && this._lastSessionData && this.isStudentDocument(doc)) {
                 this.rememberSavedFile(doc);
                 this.computeAndSyncDiffs();
             }
-        }));
+        }), ...this.fileListeners());
+    }
+    /** Files the student creates or deletes in the lab folder reach the team when typing together. */
+    fileListeners() {
+        const workspace = vscode.workspace;
+        if (typeof workspace.onDidCreateFiles !== 'function' || typeof workspace.onDidDeleteFiles !== 'function') {
+            return [];
+        }
+        return [
+            vscode.workspace.onDidCreateFiles(async (event) => {
+                for (const uri of event.files) {
+                    const name = this._teamSyncHost?.nameOf(uri);
+                    if (!name || !this._teamSync) {
+                        continue;
+                    }
+                    try {
+                        this._teamSync.fileCreated(name, new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
+                    }
+                    catch {
+                        // A folder, or already gone
+                    }
+                }
+            }),
+            vscode.workspace.onDidDeleteFiles(event => {
+                for (const uri of event.files) {
+                    const name = this._teamSyncHost?.nameOf(uri);
+                    if (name) {
+                        this._teamSync?.fileDeleted(name);
+                    }
+                }
+            }),
+        ];
     }
     /**
      * The starter file a path on disk belongs to, if any.
@@ -1296,6 +1344,10 @@ class SidebarProvider {
     }
     handleDocumentChange(event) {
         const textBefore = this.trackDocumentText(event);
+        // A teammate's edit arriving through shared typing: not typing, a paste or a change of the student's
+        if (this.isTeammateEdit(event)) {
+            return;
+        }
         if (this._restoringReadonly) {
             return;
         }
@@ -1642,7 +1694,22 @@ class SidebarProvider {
         let totalDeleted = 0;
         let totalModified = 0;
         const filesSummary = [];
+        // Typing together, a file holds every teammate's lines: count only the ones this student wrote
+        const shared = this._teamSync ? new Map(this._teamSync.lineStats().map(stats => [stats.name, stats])) : undefined;
+        if (this._teamSync) {
+            totalDeleted += this._teamSync.linesDeletedElsewhere();
+            void this.rememberTeamSyncClients();
+        }
+        for (const [name, own] of shared ?? []) {
+            totalAdded += own.added;
+            totalDeleted += own.deleted;
+            totalModified += own.modified;
+            filesSummary.push({ name, added: own.added, deleted: own.deleted, modified: own.modified });
+        }
         for (const sfile of starterFiles) {
+            if (shared?.has(sfile.name)) {
+                continue;
+            }
             const initialContent = this._starterFileSnapshots.get(sfile.name) ?? (sfile.content || '');
             const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, sfile.name);
             if (!fileUri) {
@@ -2017,6 +2084,170 @@ class SidebarProvider {
             this._view?.webview.postMessage({ type: 'error', message: `Connection Error: ${err.message}` });
         }
     }
+    /**
+     * Start shared typing when the server says it is on for this team attempt, and stop it when
+     * the attempt ends, the team changes or the server turns it off.
+     */
+    async updateTeamSync(data) {
+        const sessionId = this._sessionId;
+        const wanted = sessionId && data?.team_sync?.enabled === true && data?.status === 'in_progress' && data?.team?.id
+            ? `${sessionId}:${data.team.id}`
+            : undefined;
+        if (wanted && wanted === this._teamSyncKey) {
+            return;
+        }
+        this.stopTeamSync();
+        if (!wanted) {
+            if (data?.is_group_lab && data?.status === 'in_progress') {
+                this.postTeamSyncState('off', data?.team ? 'your instructor has not set it up' : 'you are not in a team');
+            }
+            return;
+        }
+        this._teamSyncKey = wanted;
+        this.postTeamSyncState('connecting');
+        const stillWanted = () => this._teamSyncKey === wanted;
+        let sync;
+        try {
+            const result = await this.makeRequest('GET', `${API_PREFIX}/sessions/${sessionId}/team-doc`);
+            const config = result.status === 200 ? JSON.parse(result.body) : null;
+            if (!stillWanted()) {
+                return;
+            }
+            if (!config?.enabled) {
+                this.stopTeamSync('off', 'the server turned it off for this attempt');
+                return;
+            }
+            const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+            if (!root) {
+                this.stopTeamSync('off', 'open the lab folder in VS Code');
+                return;
+            }
+            const transport = new supabaseTransport_1.SupabaseTransport(config.supabase_url, config.publishable_key, config.topic, globalThis.WebSocket ?? ws_1.default);
+            transport.onStatus(status => {
+                if (stillWanted()) {
+                    this.postTeamSyncState(status === 'open' ? 'on' : 'connecting');
+                }
+            });
+            const doc = new teamDoc_1.TeamDoc({
+                key: Buffer.from(String(config.key), 'base64'),
+                transport,
+                store: this.teamDocStore(sessionId),
+                minSendIntervalMs: Number(config.min_send_interval_ms) || 400,
+                ownClientIds: this._globalState.get(this.teamSyncClientsKey(sessionId), []),
+            });
+            const host = new vscodeHost_1.VscodeSyncHost(root);
+            sync = new workspaceSync_1.WorkspaceSync(host, doc);
+            // Set before starting, so the edits that open the files are known as setup, not typing
+            this._teamSync = sync;
+            this._teamSyncHost = host;
+            const starter = (data.laboratory?.starter_files || [])
+                .filter((file) => !file.is_readonly && (0, workspaceSync_1.isShareableName)(file.name))
+                .map((file) => ({ name: file.name, content: file.content || '' }));
+            await sync.start(starter);
+            if (!stillWanted()) {
+                sync.stop();
+                return;
+            }
+            await this.rememberTeamSyncClients();
+        }
+        catch (err) {
+            if (stillWanted()) {
+                this.stopTeamSync('off', `couldn't reach your team (${err?.message || 'unknown error'})`);
+            }
+            else {
+                sync?.stop();
+            }
+        }
+    }
+    /** Stop shared typing. Teammates' edits stop arriving, so nothing is mistaken for the student's typing. */
+    stopTeamSync(state, reason) {
+        const sync = this._teamSync;
+        this._teamSync = undefined;
+        this._teamSyncHost = undefined;
+        this._teamSyncKey = undefined;
+        sync?.stop();
+        if (state) {
+            this.postTeamSyncState(state, reason);
+        }
+        else if (sync) {
+            this._teamSyncState = undefined;
+            this._view?.webview.postMessage({ type: 'teamSync', state: 'hidden' });
+        }
+    }
+    /** Whether a change event is a teammate's edit (or the setup of a shared file), routed through shared typing. */
+    isTeammateEdit(event) {
+        const name = this._teamSyncHost?.nameOf(event.document.uri);
+        if (!name || !this._teamSync || event.contentChanges.length === 0) {
+            return false;
+        }
+        return this._teamSync.handleChange(name, event.contentChanges.map(change => ({
+            offset: change.rangeOffset,
+            length: change.rangeLength,
+            text: change.text,
+        })));
+    }
+    /** Where the team's edits are kept for teammates who join later: the server. */
+    teamDocStore(sessionId) {
+        const path = `${API_PREFIX}/sessions/${sessionId}/team-doc/updates`;
+        return {
+            load: async (after) => {
+                const result = await this.makeRequest('GET', `${path}?after=${after}`);
+                if (result.status !== 200) {
+                    throw new Error(`the server answered ${result.status}`);
+                }
+                const data = JSON.parse(result.body);
+                return { updates: data.updates || [], lastUpdateId: Number(data.last_update_id) || 0 };
+            },
+            append: async (payload, options = {}) => {
+                const result = await this.makeRequest('POST', path, {
+                    payload,
+                    ...(options.seed ? { seed: true } : {}),
+                    ...(options.replacesThrough ? { replaces_through: options.replacesThrough } : {}),
+                });
+                if (result.status === 201) {
+                    return { id: Number(JSON.parse(result.body).id) };
+                }
+                let error = 'failed';
+                let lastUpdateId;
+                try {
+                    const body = JSON.parse(result.body);
+                    if (['already_seeded', 'compaction_needed', 'team_sync_off'].includes(body.error)) {
+                        error = body.error;
+                    }
+                    lastUpdateId = body.last_update_id;
+                }
+                catch {
+                    // Not JSON: treat as a failure to retry
+                }
+                return { error, lastUpdateId };
+            },
+        };
+    }
+    teamSyncClientsKey(sessionId) {
+        return `certicode.teamSyncClients.${sessionId}`;
+    }
+    /** Remember the editor ids this window typed with, so a reload still credits the student's lines. */
+    async rememberTeamSyncClients() {
+        const sessionId = this._sessionId;
+        const ids = this._teamSync?.clientIds();
+        if (!sessionId || !ids) {
+            return;
+        }
+        const key = this.teamSyncClientsKey(sessionId);
+        const known = this._globalState.get(key, []);
+        const merged = [...new Set([...known, ...ids])];
+        if (merged.length !== known.length) {
+            await this._globalState.update(key, merged);
+        }
+    }
+    postTeamSyncState(state, reason) {
+        // The session is read every few seconds; the sidebar only needs to hear about a change
+        if (this._teamSyncState?.state === state && this._teamSyncState?.reason === reason) {
+            return;
+        }
+        this._teamSyncState = { state, reason };
+        this._view?.webview.postMessage({ type: 'teamSync', state, reason });
+    }
     async handleSubmit() {
         // On a group lab the team hands in one piece of work, and only its leader hands it in.
         // The server enforces this too; checking here saves collecting and sending the files.
@@ -2081,6 +2312,11 @@ class SidebarProvider {
         if (this._missingFiles && this._missingFiles.length > 0) {
             vscode.window.showErrorMessage(`Submission blocked: Missing required file(s): ${this._missingFiles.join(', ')}. Please restore or recreate the file to submit.`);
             return;
+        }
+        // Typing together: teammates' last edits must be in the files that are sent
+        if (this._teamSync) {
+            this._view?.webview.postMessage({ type: 'status', message: "Bringing in your team's latest edits..." });
+            await this._teamSync.flush();
         }
         const { primaryCode, primaryFileName, filesPayload, fileUris } = await this.collectSubmissionFiles();
         if (!primaryCode && filesPayload.length === 0) {
@@ -2771,6 +3007,7 @@ class SidebarProvider {
             <div class="section" id="teammates-card" hidden>
                 <h2 class="section-title">Team</h2>
                 <p class="section-note">Only the team leader can submit the lab. Percentages are each teammate's share of the changed lines.</p>
+                <p class="section-note" id="team-sync-status" role="status" hidden></p>
                 <div class="list" id="teammates-breakdown"></div>
             </div>
         </section>
@@ -3367,6 +3604,22 @@ class SidebarProvider {
                 case 'update':
                     handleSessionUpdate(message.data);
                     break;
+
+                case 'teamSync': {
+                    // Plain text only: the reason comes from the extension, but is never put in as HTML
+                    const syncStatus = $('team-sync-status');
+                    if (message.state === 'hidden') {
+                        show(syncStatus, false);
+                        break;
+                    }
+                    syncStatus.textContent = message.state === 'on'
+                        ? 'Typing together: teammates see your edits as you type, and you see theirs.'
+                        : message.state === 'connecting'
+                            ? 'Connecting to your team...'
+                            : 'Shared typing is off' + (message.reason ? ': ' + message.reason + '.' : '.') + ' You work in your own copy.';
+                    show(syncStatus);
+                    break;
+                }
 
                 case 'leaderResult':
                     // Show the new leader and votes at once; the session refresh that follows

@@ -65,7 +65,8 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * Each team on a group lab has a leader, the only member who can submit. The AI grades that one submission, and every teammate who opened the lab gets the same score, tasks and feedback. A teammate who never opened it gets no grade and shows as "Did not take part" on the monitoring page.
 * **Who leads**: the student who starts the team, the teammate the instructor picks on the Teams page, or else the first teammate to open the lab. The leader can hand over. Teammates can vote: someone leads once more than half of the other teammates choose them. The instructor can change the leader at any time.
 * **One clock**: on timed labs the team's time starts when its first teammate opens the lab.
-* Teammates still code in their own copies. Typing in the same files together is planned, not built (see `docs/superpowers/specs/2026-11-12-group-lab-coediting-design.md`).
+* **Typing together**: teammates edit the same files at the same time, each in their own VS Code. Each code file is a Yjs document; edits travel over a Supabase Realtime Broadcast channel, sealed with AES-256-GCM using a per-attempt key the server gives only to the team's members (`GET /api/v1/sessions/{id}/team-doc`). The server keeps the sealed edits (`team_doc_updates`) for late joiners and never reads them. A teammate's edit is never counted as the student's typing or paste, and line counts credit each line to whoever wrote it.
+* Off unless `TEAM_SYNC_SUPABASE_URL` and `TEAM_SYNC_SUPABASE_KEY` (the publishable key, never a secret one) are set; then teammates work in their own copies. Each send costs Realtime quota once for the sender and once per teammate; `TEAM_SYNC_MIN_SEND_INTERVAL_MS` (default 400) sets the pace. Design: `docs/superpowers/specs/2026-11-12-group-lab-coediting-design.md`.
 
 ### 4. Collaborative Team Chat & Ephemeral Storage
 * Embedded in the VS Code sidebar and web platform exclusively during team exercises.
@@ -240,7 +241,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.9.0**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.10.0**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force

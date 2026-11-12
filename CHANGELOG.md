@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-13
+
+- Teammates on a group lab now type in the same files at the same time, each in their own VS Code. What one teammate types shows up in the others' editors as they type, files a teammate adds or deletes appear and go, and a teammate who joins later, or is alone, gets the team's latest files. The leader's submit takes the team's latest edits. A teammate's edit that lands in a file the student hasn't touched is saved for them a second later.
+- Each student is still checked only on what they did themselves. A teammate's edit arriving in the editor is not counted as the student's typing, paste or large insert, and the team's line counts credit each line to the student who wrote it, so contribution shares stay per student.
+- Edits travel over Supabase Realtime, encrypted with a key only the team's members get, on a channel name nobody can guess. The server stores the edits for late joiners without reading them, and deletes them when the leader submits or the attempt ends.
+- Shared typing is off until two settings are added: `TEAM_SYNC_SUPABASE_URL` (the Supabase project URL) and `TEAM_SYNC_SUPABASE_KEY` (its publishable key). Until then, and whenever it can't connect, teammates work in their own copies as before and the sidebar says why. `TEAM_SYNC_MIN_SEND_INTERVAL_MS` (default 400) sets how often a student's edits are sent: every send counts against the Supabase Realtime message quota, once for the sender and once per teammate.
+- VS Code extension 1.10.0 adds shared typing. It now ships its libraries inside one bundled file. `npm run sync-check` in the extension folder checks shared typing in a real VS Code window.
+
 ## 2026-11-12
 
 - Emails no longer arrive from "${APP_NAME}". Vercel does not fill in `${APP_NAME}` the way a `.env` file does, so the sender name went out as that text. The app now uses the app name when `MAIL_FROM_NAME` is empty or still holds a placeholder.
