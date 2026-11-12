@@ -4,6 +4,14 @@
 
 - Emails no longer arrive from "${APP_NAME}". Vercel does not fill in `${APP_NAME}` the way a `.env` file does, so the sender name went out as that text. The app now uses the app name when `MAIL_FROM_NAME` is empty or still holds a placeholder.
 - Students on a phone or tablet can read a lab but can't start, continue or retake it, since labs run in VS Code. The lab page shows "Open on a computer" in place of the start button, and the module page shows only View lab. The server also refuses a start sent from a phone or tablet, with the error `handheld_device`. An iPad asking for the desktop site looks like a Mac to the server, so the lab page also checks for a touch screen in the browser. Instructors' pages are unchanged.
+- Group labs now have a team leader, and the team hands in one piece of work. Only the leader can submit. The AI grades once, and every teammate who opened the lab gets the same score, tasks and feedback. Before, each teammate was graded on their own copy, so a team could get different scores and a teammate who never submitted had no grade. A student with no team still works and submits alone.
+- Who leads: the student who starts the team, or the teammate the instructor picks on the Teams page, or else the first teammate to open the lab. The leader can hand the lead to a teammate. If the leader is away, teammates vote: someone leads once more than half of the other teammates choose them. The instructor can change the leader at any time, including during the lab. The lab page and the extension show the leader and the votes.
+- A teammate who never opens the lab gets no grade. The monitoring page lists them under their team as "Did not take part". A teammate whose attempt was closed for inactivity while the team was still working does get the team's grade.
+- Changing a grade on a team attempt now changes it for the whole team. Untick "Apply to the whole team" to change one student only. Each student is told about their own attempt.
+- A team shares one clock on timed labs. It starts when the first teammate opens the lab, so joining late gives no extra time, and it doesn't move when a teammate's attempt closes. Once it runs out, the next teammate to open the lab starts a new team attempt. Earlier team attempts keep their own results. Labs with no time limit and live labs are unchanged.
+- A teammate can no longer have another teammate's attempt graded, and a team attempt can't be finished from the website: only the leader's submit in VS Code ends it.
+- Team chat now says when a teammate joins or leaves the lab, when someone votes, and when the leader changes.
+- VS Code extension 1.9.0 turns Submit off for teammates who don't lead, shows the leader and who is in the lab, and adds Make leader and Vote as leader. Older builds still work: the server refuses their submit and tells the student who leads.
 
 ## 2026-11-11
 

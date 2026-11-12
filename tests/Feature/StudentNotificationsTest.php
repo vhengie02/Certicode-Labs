@@ -280,9 +280,22 @@ class StudentNotificationsTest extends TestCase
             'group_id' => $group->id,
             'status' => 'completed',
             'started_at' => now()->subHour(),
-            'ended_at' => now(),
+            'ended_at' => now()->startOfSecond(),
             'performance_score' => 50,
         ]);
+        // The team's submit graded the teammate's attempt too; one who never opened the lab
+        // has no grade to be told about
+        LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $teammate->id,
+            'group_id' => $group->id,
+            'status' => 'completed',
+            'started_at' => now()->subHour(),
+            'ended_at' => $session->ended_at,
+            'performance_score' => 50,
+        ]);
+        $absent = User::create(['name' => 'Absent Teammate', 'email' => 'absent@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
+        $group->members()->attach($absent->id);
 
         $this->actingAs($this->instructor)
             ->postJson("/instructor/sessions/{$session->id}/override-grade", [
@@ -290,6 +303,8 @@ class StudentNotificationsTest extends TestCase
                 'override_reason' => 'Logic was right.',
             ])
             ->assertOk();
+
+        $this->assertCount(0, $absent->fresh()->notifications);
 
         foreach ([$this->student, $teammate] as $member) {
             $notification = $member->fresh()->notifications->first();

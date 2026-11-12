@@ -5,8 +5,10 @@ namespace App\Models;
 use App\Events\AnomalyDetected;
 use App\Notifications\ClassActivityNotification;
 use App\Services\TypingEffortCheck;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -23,6 +25,7 @@ class LabSession extends Model
         'lab_id',
         'user_id',
         'group_id',
+        'team_started_at',
         'github_repo_url',
         'started_at',
         'ended_at',
@@ -48,6 +51,7 @@ class LabSession extends Model
 
     protected $casts = [
         'started_at' => 'datetime',
+        'team_started_at' => 'datetime',
         'ended_at' => 'datetime',
         'closed_at' => 'datetime',
         'last_ping_at' => 'datetime',
@@ -196,6 +200,60 @@ class LabSession extends Model
     }
 
     /**
+     * The attempts the team's one submit is graded for: this one, and for each teammate their
+     * attempt in the same team attempt, whether still open or closed for inactivity (that
+     * teammate took part). Earlier team attempts are never included. A solo attempt is just
+     * itself.
+     *
+     * @return Collection<int, LabSession>
+     */
+    public function teamAttemptSessions(?CarbonInterface $closedSince = null): Collection
+    {
+        if (! $this->group_id) {
+            return new Collection([$this]);
+        }
+
+        // Sessions of one team attempt share team_started_at. Without it (attempts opened
+        // before the column existed) only attempts still open are known to belong together.
+        $mates = static::where('lab_id', $this->lab_id)
+            ->where('group_id', $this->group_id)
+            ->where('user_id', '!=', $this->user_id)
+            ->when(
+                $this->team_started_at,
+                fn ($q) => $q->where('team_started_at', $this->team_started_at),
+                fn ($q) => $q->whereNull('team_started_at'),
+            )
+            ->where(function ($q) use ($closedSince) {
+                $q->where('status', 'in_progress');
+                if ($this->team_started_at) {
+                    $q->orWhere('status', 'abandoned');
+                }
+                // Closed by something else (a live lab ending, say) while the submit was grading
+                if ($closedSince) {
+                    $q->orWhere(fn ($q) => $q->where('status', 'completed')->where('ended_at', '>=', $closedSince));
+                }
+            })
+            ->get();
+
+        // One attempt per teammate: the open one if they dropped out and came back
+        $rank = ['in_progress' => 0, 'completed' => 1, 'abandoned' => 2];
+        $onePerTeammate = $mates->groupBy('user_id')
+            ->map(fn ($theirs) => $theirs->sortBy(fn ($s) => [$rank[$s->status] ?? 3, -$s->id])->first());
+
+        return (new Collection([$this]))->merge($onePerTeammate->values())->sortBy('id')->values();
+    }
+
+    /**
+     * When this attempt's time limit started counting. A team shares one clock, which starts
+     * when its first teammate opens the lab, so nobody gains time by joining late. It is
+     * stored on each session, so it doesn't move when a teammate's session closes.
+     */
+    public function clockStartedAt(): ?CarbonInterface
+    {
+        return $this->group_id && $this->team_started_at ? $this->team_started_at : $this->started_at;
+    }
+
+    /**
      * Code contributions for the whole team, one entry per student with their share of the
      * team's lines. Each session keeps the entries it has seen; the newest entry per student wins.
      */
@@ -327,12 +385,14 @@ class LabSession extends Model
     /**
      * Send a lab notification to whoever owns this attempt: the student, plus every
      * member of the team on a group lab. It opens the attempt's results page unless
-     * another link is given. A failed send never breaks the caller.
+     * another link is given. A failed send never breaks the caller. With $wholeTeam off only
+     * this attempt's student is told: a team's grade is sent per graded attempt, so a
+     * teammate who never took part isn't told they were graded.
      */
-    public function notifyStudents(string $title, string $message, ?string $url = null, string $type = 'lab'): void
+    public function notifyStudents(string $title, string $message, ?string $url = null, string $type = 'lab', bool $wholeTeam = true): void
     {
         $recipients = collect([$this->user])
-            ->merge($this->group_id ? ($this->group?->members ?? collect()) : collect())
+            ->merge($wholeTeam && $this->group_id ? ($this->group?->members ?? collect()) : collect())
             ->filter()
             ->unique('id');
 
@@ -445,6 +505,19 @@ class LabSession extends Model
     public function gradingLock(): Lock
     {
         return Cache::store('database')->lock("lab_session_{$this->id}_grading", 90);
+    }
+
+    /**
+     * The lock held while a team's submit is graded, shared by the whole team: the submit
+     * closes every teammate's attempt, so two must never run at once (the leader can change
+     * mid-grade). A teammate's check-progress doesn't take it, so it can't hold a submit up.
+     * Null on a solo attempt, where gradingLock() already covers the submit.
+     */
+    public function submitLock(): ?Lock
+    {
+        return $this->group_id
+            ? Cache::store('database')->lock("lab_team_{$this->group_id}_{$this->lab_id}_submit", 90)
+            : null;
     }
 
     /**
@@ -616,8 +689,8 @@ class LabSession extends Model
             return true;
         }
 
-        if ($lab->time_limit > 0 && $this->started_at) {
-            return $this->started_at->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
+        if ($lab->time_limit > 0 && ($clockStart = $this->clockStartedAt())) {
+            return $clockStart->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
         }
 
         return true;
@@ -721,7 +794,9 @@ class LabSession extends Model
         foreach ($sessions as $session) {
             $lab = $session->laboratory;
             $timeLimitMinutes = $lab ? ($lab->time_limit ?: 60) : 60;
-            $startedAt = $session->started_at ?: $session->created_at;
+            // A team's shared clock applies to timed self-paced labs only
+            $timed = $lab && $lab->time_limit > 0 && ! $lab->isLiveLab();
+            $startedAt = ($timed ? $session->clockStartedAt() : $session->started_at) ?: $session->created_at;
 
             // 1. Exceeded the lab's official time limit (in minutes)
             $exceededTimeLimit = $startedAt && $startedAt->diffInMinutes(now(), true) >= $timeLimitMinutes;

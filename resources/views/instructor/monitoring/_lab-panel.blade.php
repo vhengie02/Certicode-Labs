@@ -307,6 +307,21 @@
             @endif
         </div>
 
+        {{-- Teams: who leads each, and members with no attempt (they never opened the lab) --}}
+        @if(! empty($teams))
+            <ul class="px-5 py-3 border-b border-[#2e2e2e] space-y-1.5 text-xs text-[#a3a3a3]" aria-label="Teams">
+                @foreach($teams as $team)
+                    <li class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                        <span class="font-medium text-[#3ecf8e]">{{ $team['name'] }}</span>
+                        <span>{{ $team['leader_name'] ? 'Leader: ' . $team['leader_name'] : 'No leader yet' }}</span>
+                        @if($team['absent'])
+                            <span class="text-amber-300">Did not take part: {{ collect($team['absent'])->pluck('name')->join(', ') }}</span>
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+
         @if($sessions->isEmpty())
             <div class="px-6 py-14 text-center">
                 <p class="text-sm font-medium text-[#ededed]">No one has started this lab yet</p>
@@ -925,6 +940,11 @@
                                                class="w-full h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e]/60 focus:ring-2 focus:ring-[#3ecf8e]/15">
                                     </label>
                                 </div>
+                                {{-- A team shares its grade, so the change reaches every teammate unless unticked --}}
+                                <label x-show="student.is_team" class="flex items-center gap-2 text-xs text-[#a3a3a3]">
+                                    <input type="checkbox" name="apply_to_team" x-model="overrideApplyToTeam" class="h-4 w-4 rounded border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
+                                    Apply to the whole team
+                                </label>
                                 <div class="flex items-center justify-between gap-3">
                                     <p class="text-xs min-w-0" :class="overrideFeedbackSuccess ? 'text-[#3ecf8e]' : 'text-red-300'" x-text="overrideFeedbackMessage" role="status"></p>
                                     <button type="submit" :disabled="isSavingOverride"
@@ -995,6 +1015,7 @@ function instructorMonitor() {
         // Grade override form inside the drawer
         overrideScoreInput: '',
         overrideReasonInput: '',
+        overrideApplyToTeam: true,
         isSavingOverride: false,
         overrideFeedbackMessage: '',
         overrideFeedbackSuccess: false,
@@ -1010,6 +1031,7 @@ function instructorMonitor() {
                 ? data.instructor_grade_override
                 : data.performance_score;
             this.overrideReasonInput = data.instructor_override_reason || '';
+            this.overrideApplyToTeam = true;
             this.overrideFeedbackMessage = '';
             this.drawerOpen = true;
             document.documentElement.classList.add('overflow-hidden');
@@ -1102,6 +1124,7 @@ function instructorMonitor() {
                 body: JSON.stringify({
                     override_score: parseFloat(this.overrideScoreInput),
                     override_reason: this.overrideReasonInput,
+                    apply_to_team: this.overrideApplyToTeam,
                 })
             })
             .then(res => {

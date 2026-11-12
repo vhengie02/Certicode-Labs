@@ -373,6 +373,12 @@ class LabAttemptController extends Controller
             return back()->with('error', 'This lab attempt has already ended, so it can no longer be completed.');
         }
 
+        // A team's attempt ends for everyone at once, with one grade, when its leader submits
+        // from VS Code. Finishing one teammate's alone would leave them with their own score.
+        if ($session->group_id) {
+            return back()->with('error', 'This is a team attempt. Your team leader submits it for the whole team from VS Code.');
+        }
+
         $session->update([
             'status' => 'completed',
             'ended_at' => now(),

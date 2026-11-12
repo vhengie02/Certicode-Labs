@@ -149,6 +149,7 @@ Table groups {
   id bigint [pk, increment]
   name varchar
   lab_id bigint [ref: > laboratories.id]
+  leader_id bigint [ref: > users.id, null, note: "the only member who can submit; null on delete"]
   created_at timestamp
   updated_at timestamp
 }
@@ -157,6 +158,7 @@ Table group_members {
   group_id bigint [ref: > groups.id]
   user_id bigint [ref: > users.id]
   contribution_score float [null]
+  leader_vote bigint [ref: > users.id, null, note: "the teammate this member wants as leader; null on delete"]
   created_at timestamp
   updated_at timestamp
   
@@ -170,6 +172,7 @@ Table lab_sessions {
   lab_id bigint [ref: > laboratories.id]
   user_id bigint [ref: > users.id]
   group_id bigint [ref: > groups.id, null]
+  team_started_at timestamp [null, note: "When the team attempt began; shared by every teammate's session in it. The team's clock, and what tells one team attempt from an earlier one"]
   github_repo_url varchar [null]
   started_at timestamp [null]
   ended_at timestamp [null]
@@ -203,6 +206,7 @@ Table lab_session_chats {
   avatar_color varchar [default: "#3ecf8e"]
   message text
   code_snippet text [null]
+  is_system boolean [default: false, note: "a notice written by the app: joined, left, leader changed"]
   created_at timestamp
   updated_at timestamp
 }
@@ -350,12 +354,14 @@ erDiagram
         bigint id PK
         string name
         bigint lab_id FK
+        bigint leader_id FK
     }
 
     group_members {
         bigint group_id PK,FK
         bigint user_id PK,FK
         float contribution_score
+        bigint leader_vote FK
     }
 
     lab_sessions {
@@ -377,6 +383,7 @@ erDiagram
         bigint user_id FK
         text message
         text code_snippet
+        boolean is_system
     }
 
     telemetry_logs {

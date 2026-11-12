@@ -60,6 +60,9 @@
     @if ($teamPicker)
         @include('laboratories._team-picker')
     @endif
+    @if ($isStudent && $laboratory->is_group_lab && $myTeam)
+        @include('laboratories._team-leader')
+    @endif
 
     @if ($isStudent)
     <div class="space-y-6" x-data="preLabCameraGate({{ $laboratory->id }}, {{ $activeSession ? $activeSession->id : 'null' }})">

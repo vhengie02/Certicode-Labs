@@ -329,6 +329,10 @@ class SidebarProvider {
                     this.handleExit(data.skipConfirm ? false : true);
                     break;
                 }
+                case 'chooseLeader': {
+                    this.handleChooseLeader(Number(data.candidateId));
+                    break;
+                }
                 case 'sendChat': {
                     if (this.isGroupLab()) {
                         this.handleSendChat(data.message, data.codeSnippet);
@@ -2014,7 +2018,36 @@ class SidebarProvider {
         }
     }
     async handleSubmit() {
+        // On a group lab the team hands in one piece of work, and only its leader hands it in.
+        // The server enforces this too; checking here saves collecting and sending the files.
+        const team = this._lastSessionData?.team;
+        if (team && !team.can_submit) {
+            vscode.window.showErrorMessage(`Only your team leader, ${team.leader_name || 'a teammate'}, can submit this lab.`);
+            return;
+        }
         return this.runGrading(() => this.submit());
+    }
+    /**
+     * Choose the team's leader: the leader hands over, anyone else casts a vote.
+     */
+    async handleChooseLeader(candidateId) {
+        if (!this._sessionId || !this._lastSessionData?.team) {
+            return;
+        }
+        try {
+            const result = await this.makeRequest('POST', `${API_PREFIX}/sessions/${this._sessionId}/leader`, { candidate_id: candidateId });
+            if (result.status !== 200) {
+                vscode.window.showErrorMessage(`CertiCode: ${this.failureReason(result.body, "Couldn't change the team leader.")}`);
+                return;
+            }
+            const data = JSON.parse(result.body);
+            this._view?.webview.postMessage({ type: 'leaderResult', changed: data.changed, leader_id: data.leader_id, votes: data.votes });
+            // Brings in who can submit now, and the notice in the team chat
+            this.syncSessionState();
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`CertiCode: Couldn't change the team leader. ${err.message}`);
+        }
     }
     /**
      * Bring the server up to date first: it compares the submission with these figures, and
@@ -2090,7 +2123,8 @@ class SidebarProvider {
                 const reason = this.failureReason(result.body, 'Submission failed.');
                 vscode.window.showErrorMessage(`Submission Failed: ${reason}`);
                 this._view?.webview.postMessage({ type: 'error', message: reason });
-                if (result.status === 409) {
+                // 409: the attempt closed. 403: the team's leader changed, so someone else submits.
+                if (result.status === 409 || result.status === 403) {
                     this.syncSessionState();
                 }
             }
@@ -2518,6 +2552,10 @@ class SidebarProvider {
         #tab-chat { gap: 8px; }
         .chat-feed { flex: 1; min-height: 200px; max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
         .chat-msg { display: flex; gap: 8px; }
+        .chat-notice { text-align: center; color: var(--muted); font-size: 0.9em; }
+        .team-tag { margin-left: 6px; font-size: 0.85em; color: var(--muted); }
+        .team-tag-leader { color: var(--ok); font-weight: 600; }
+        .team-choose { padding: 2px 8px; font-size: 0.9em; flex-shrink: 0; }
         .chat-body { flex: 1; min-width: 0; }
         .chat-header { display: flex; align-items: baseline; gap: 6px; font-size: 0.92em; }
         .chat-author { font-weight: 600; }
@@ -2731,7 +2769,8 @@ class SidebarProvider {
             </div>
 
             <div class="section" id="teammates-card" hidden>
-                <h2 class="section-title">Team contributions</h2>
+                <h2 class="section-title">Team</h2>
+                <p class="section-note">Only the team leader can submit the lab. Percentages are each teammate's share of the changed lines.</p>
                 <div class="list" id="teammates-breakdown"></div>
             </div>
         </section>
@@ -2913,8 +2952,64 @@ class SidebarProvider {
 
         function setActionsLocked(locked) {
             checkProgressBtn.disabled = locked;
-            submitBtn.disabled = locked || !isIntegrityValid;
+            submitBtn.disabled = locked || !isIntegrityValid || !canTeamSubmit;
         }
+
+        // On a group lab only the team's leader submits. Set at the top of each session update.
+        let canTeamSubmit = true;
+        let lastSession = null;
+
+        function applyTeam(session) {
+            const team = session.team || null;
+            submitBtn.title = canTeamSubmit
+                ? 'Submit your final work for grading'
+                : 'Only your team leader' + (team.leader_name ? ', ' + team.leader_name + ',' : '') + ' can submit';
+            renderTeam(session);
+        }
+
+        // The team card: who leads, who is in the lab, each share of the code, and the vote
+        function renderTeam(session) {
+            const team = session.team || null;
+            const mates = session.teammates || [];
+            if (!session.is_group_lab || mates.length === 0) {
+                show(teammatesCard, false);
+                return;
+            }
+
+            const myId = session.current_user ? session.current_user.id : null;
+            const votes = team ? (team.votes || []) : [];
+            const myVote = votes.find(v => v.voter_id === myId);
+            const closed = session.status !== 'in_progress';
+
+            teammatesBreakdown.innerHTML = '';
+            mates.forEach(tm => {
+                const votesFor = votes.filter(v => v.candidate_id === tm.id).length;
+                // The leader hands over to anyone else; others vote for anyone but the leader
+                const canChoose = team && !closed && !tm.is_leader && !(team.is_leader && tm.id === myId);
+                const voted = myVote && myVote.candidate_id === tm.id;
+                const row = document.createElement('div');
+                row.className = 'row';
+                row.innerHTML = \`
+                    <span class="avatar" style="background-color: \${safeColor(tm.avatar_color)};" aria-hidden="true">\${initial(tm.name)}</span>
+                    <span class="row-main">\${esc(tm.name)}\${tm.id === myId ? ' (you)' : ''}
+                        \${tm.is_leader ? '<span class="team-tag team-tag-leader">Leader</span>' : ''}
+                        \${team && !tm.in_lab ? '<span class="team-tag">Not in the lab</span>' : ''}
+                        \${votesFor && !tm.is_leader ? \`<span class="team-tag">\${esc(votesFor)} \${votesFor === 1 ? 'vote' : 'votes'}</span>\` : ''}
+                    </span>
+                    \${canChoose ? \`<button type="button" class="btn btn-ghost team-choose" data-candidate="\${esc(tm.id)}" \${voted ? 'disabled' : ''}>\${team.is_leader || !team.leader_id ? 'Make leader' : (voted ? 'Voted' : 'Vote as leader')}</button>\` : ''}
+                    <span class="num" title="Share of the team's changed lines">\${esc(tm.contribution_score || 0)}%</span>
+                \`;
+                teammatesBreakdown.appendChild(row);
+            });
+            show(teammatesCard);
+        }
+
+        teammatesBreakdown.addEventListener('click', event => {
+            const button = event.target.closest('.team-choose');
+            if (!button || button.disabled) return;
+            button.disabled = true;
+            vscode.postMessage({ type: 'chooseLeader', candidateId: Number(button.dataset.candidate) });
+        });
 
         function setStatus(state, text) {
             statusBanner.className = 'connection-status ' + (state === 'connected' ? 'status-connected' : 'status-reconnecting');
@@ -3036,6 +3131,12 @@ class SidebarProvider {
 
         function renderChatMessage(c) {
             const el = document.createElement('div');
+            // A notice from the app (a teammate joined or left, the leader changed)
+            if (c.is_system) {
+                el.className = 'chat-notice';
+                el.innerHTML = \`\${esc(c.message)} <span class="chat-time">\${esc(c.time)}</span>\`;
+                return el;
+            }
             el.className = 'chat-msg';
             el.innerHTML = \`
                 <span class="avatar" style="background-color: \${safeColor(c.avatar_color)};" aria-hidden="true">\${initial(c.user_name)}</span>
@@ -3101,7 +3202,7 @@ class SidebarProvider {
                     resumeClockAfterFailedSubmit();
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
-                    submitBtn.disabled = !isIntegrityValid;
+                    submitBtn.disabled = !isIntegrityValid || !canTeamSubmit;
                     if (connectionScreen.style.display !== 'none') {
                         connectErrorText.textContent = message.message;
                         show(connectError);
@@ -3122,7 +3223,7 @@ class SidebarProvider {
                     isIntegrityValid = message.valid;
                     if (message.valid) {
                         show(integrityAlert, false);
-                        submitBtn.disabled = false;
+                        submitBtn.disabled = !canTeamSubmit;
                     } else {
                         integrityText.innerHTML = \`<strong>Missing \${esc(message.missing.join(', '))}.</strong> You need this file to submit.\`;
                         show(integrityAlert);
@@ -3255,6 +3356,9 @@ class SidebarProvider {
                     sessionScreen.style.display = 'none';
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
+                    // The next lab may be a solo one
+                    canTeamSubmit = true;
+                    lastSession = null;
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit lab';
                     show(submissionBanner, false);
@@ -3264,12 +3368,23 @@ class SidebarProvider {
                     handleSessionUpdate(message.data);
                     break;
 
+                case 'leaderResult':
+                    // Show the new leader and votes at once; the session refresh that follows
+                    // brings in who can submit
+                    if (lastSession && lastSession.team) {
+                        lastSession.team.leader_id = message.leader_id;
+                        lastSession.team.votes = message.votes || [];
+                        (lastSession.teammates || []).forEach(tm => { tm.is_leader = tm.id === message.leader_id; });
+                        renderTeam(lastSession);
+                    }
+                    break;
+
                 case 'checkResult':
                 case 'submitResult': {
                     gradingInFlight = false;
                     show(actionStatus, false);
                     checkProgressBtn.disabled = message.type === 'submitResult';
-                    submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
+                    submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid || !canTeamSubmit;
 
                     if (message.type === 'submitResult') {
                         stoppedForSubmit = null;
@@ -3358,6 +3473,7 @@ class SidebarProvider {
             }
             show(connectError, false);
             const attemptClosed = session.status !== 'in_progress';
+            canTeamSubmit = !session.team || session.team.can_submit === true;
             setActionsLocked(gradingInFlight || attemptClosed || extensionOutdated);
 
             // Chat is for teammates, so solo labs have none
@@ -3405,23 +3521,9 @@ class SidebarProvider {
                 starterFilesList.appendChild(row);
             });
 
-            // Teammate breakdown for team labs
-            if (session.is_group_lab && session.teammates && session.teammates.length > 0) {
-                teammatesBreakdown.innerHTML = '';
-                session.teammates.forEach(tm => {
-                    const row = document.createElement('div');
-                    row.className = 'row';
-                    row.innerHTML = \`
-                        <span class="avatar" style="background-color: \${safeColor(tm.avatar_color)};" aria-hidden="true">\${initial(tm.name)}</span>
-                        <span class="row-main">\${esc(tm.name)}</span>
-                        <span class="num">\${esc(tm.contribution_score || 0)}%</span>
-                    \`;
-                    teammatesBreakdown.appendChild(row);
-                });
-                show(teammatesCard);
-            } else {
-                show(teammatesCard, false);
-            }
+            // The team: leader, who is in the lab, shares of the code
+            lastSession = session;
+            applyTeam(session);
 
             // Tasks
             tasksContainer.innerHTML = '';

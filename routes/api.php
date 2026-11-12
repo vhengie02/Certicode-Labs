@@ -42,6 +42,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/sessions/{sessionId}/broadcasting/auth', [LabSessionController::class, 'authorizeBroadcast']);
         Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
         Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+        Route::post('/sessions/{sessionId}/leader', [LabSessionController::class, 'chooseLeader']);
     });
 });
 

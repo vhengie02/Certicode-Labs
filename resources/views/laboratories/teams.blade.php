@@ -99,6 +99,7 @@
                         <div class="min-w-0">
                             <h2 class="ui-card-title truncate">{{ $team->name }}</h2>
                             <p class="ui-card-subtitle">{{ $team->members->count() }}{{ $laboratory->team_size ? ' of ' . $laboratory->team_size : '' }} &middot; {{ $team->members->pluck('name')->join(', ') ?: 'No members' }}</p>
+                            <p class="ui-card-subtitle">{{ $team->leader ? 'Leader: ' . $team->leader->name : 'No leader yet. The first teammate to open the lab leads.' }}</p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                             <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" @click="editing = !editing" x-text="editing ? 'Close' : 'Edit'">Edit</button>
@@ -133,6 +134,26 @@
                             <button type="submit" class="ui-btn ui-btn-primary">Save team</button>
                         </div>
                     </form>
+                    @if ($team->members->isNotEmpty())
+                        {{-- Only the leader can submit the lab, so this stays open while the lab runs --}}
+                        <form x-show="editing" x-cloak action="{{ route('laboratories.teams.leader', [$laboratory->id, $team->id]) }}" method="POST" class="ui-card-body flex flex-wrap items-end gap-3 border-t border-[#242424]">
+                            @csrf
+                            @method('PUT')
+                            <input type="hidden" name="form" value="{{ $form }}">
+                            <div class="min-w-0 flex-1">
+                                <label for="{{ $form }}-leader" class="ui-label">Team leader</label>
+                                <select id="{{ $form }}-leader" name="leader_id" class="ui-input" required>
+                                    @unless ($team->leader_id) <option value="" selected disabled>Pick a leader</option> @endunless
+                                    @foreach ($team->members as $member)
+                                        <option value="{{ $member->id }}" @selected($team->leader_id === $member->id)>{{ $member->name }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="ui-hint">Only the leader can submit the lab for the team. You can change the leader at any time.</p>
+                                @if ($failedForm === $form) @error('leader_id') <p class="ui-error">{{ $message }}</p> @enderror @endif
+                            </div>
+                            <button type="submit" class="ui-btn ui-btn-secondary">Set leader</button>
+                        </form>
+                    @endif
                 </div>
             @empty
                 <div class="ui-card ui-card-body text-sm text-[#888888]">
