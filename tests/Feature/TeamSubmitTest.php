@@ -11,10 +11,13 @@ use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
 use App\Models\TelemetryLog;
 use App\Models\User;
+use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -319,6 +322,16 @@ class TeamSubmitTest extends TestCase
 
     public function test_the_team_cannot_be_graded_by_two_submits_at_once()
     {
+        // On Postgres a taken lock aborts the surrounding transaction, here RefreshDatabase's.
+        // Production takes the lock outside any transaction, so locks get their own connection.
+        if (DB::getDriverName() === 'pgsql') {
+            config([
+                'database.connections.test_locks' => config('database.connections.'.config('database.default')),
+                'cache.stores.database.lock_connection' => 'test_locks',
+            ]);
+            Cache::forgetDriver('database');
+        }
+
         $alice = $this->open($this->alice);
         $bob = $this->open($this->bob);
         // The lock a submit by another teammate (the leader until a moment ago) would hold
@@ -467,7 +480,7 @@ class TeamSubmitTest extends TestCase
         $dave = User::create(['name' => 'Dave', 'email' => 'dave@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $solo = $this->open($dave, ['group_id' => null, 'team_started_at' => null, 'started_at' => now()->subMinutes(3)]);
 
-        app(\App\Services\LabTeams::class)->addMembers($this->laboratory, $this->team, [$dave->id]);
+        app(LabTeams::class)->addMembers($this->laboratory, $this->team, [$dave->id]);
 
         $this->assertSame($this->team->id, $solo->fresh()->group_id);
         $this->assertEquals($this->teamStart, $solo->fresh()->team_started_at);
