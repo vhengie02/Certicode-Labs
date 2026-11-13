@@ -2039,14 +2039,17 @@ class LabSessionController extends Controller
             ->where('event_type', 'vscode_ping')
             ->latest('id')
             ->first();
+        // Leaving the session stops the pings just like closing VS Code does
         $lastDisconnect = TelemetryLog::where('lab_session_id', $sessionId)
-            ->where('event_type', 'vscode_disconnected')
+            ->whereIn('event_type', ['vscode_disconnected', 'session_left'])
             ->latest('id')
-            ->first(['id', 'created_at']);
+            ->first(['id', 'event_type', 'created_at']);
 
         $disconnected = $lastDisconnect !== null && (! $lastPing || $lastDisconnect->id > $lastPing->id);
-        // A window reload shuts the extension down too, and it resumes within seconds
+        // A window reload shuts the extension down too, and it resumes within seconds.
+        // Leaving on purpose is not a reload, so nothing is coming back to wait for.
         $reconnecting = $disconnected
+            && $lastDisconnect->event_type === 'vscode_disconnected'
             && Carbon::parse($lastDisconnect->created_at)->diffInSeconds(now(), true) < self::VSCODE_RELOAD_GRACE_SECONDS;
 
         return [

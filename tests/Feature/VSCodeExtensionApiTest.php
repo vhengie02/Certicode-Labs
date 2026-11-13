@@ -132,6 +132,39 @@ class VSCodeExtensionApiTest extends TestCase
             ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
     }
 
+    public function test_leaving_the_session_in_vscode_closes_the_lab_page_right_away(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->postJson("/api/v1/sessions/{$session->id}/end")->assertOk();
+
+        // The attempt stays open, but no reload is coming, so the page doesn't wait
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson([
+                'status' => 'in_progress',
+                'vscode_connected' => false,
+                'vscode_closed' => true,
+                'vscode_reconnecting' => false,
+            ]);
+
+        // Coming back to the attempt connects again
+        $this->postJson("/api/v1/sessions/{$session->id}/ping", ['source' => 'vscode'])
+            ->assertOk();
+
+        $this->getJson("/v1/sessions/{$session->id}")
+            ->assertOk()
+            ->assertJson(['vscode_connected' => true, 'vscode_closed' => false]);
+    }
+
     public function test_a_window_reload_that_resumes_in_time_never_counts_as_closed(): void
     {
         $session = LabSession::create([
