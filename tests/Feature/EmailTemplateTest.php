@@ -100,7 +100,7 @@ class EmailTemplateTest extends TestCase
         $this->assertStringContainsString(e(url('/labs/4/monitor')), $html);
     }
 
-    public function test_sent_alert_carries_the_logo_as_an_attachment(): void
+    public function test_sent_alert_needs_no_image(): void
     {
         $user = new User(['name' => 'Diego Ramos', 'email' => 'diego@example.test']);
 
@@ -111,10 +111,15 @@ class EmailTemplateTest extends TestCase
 
         $email = $sent->first()->getOriginalMessage();
         $this->assertSame('Certicode Alert: Camera flags in Loops', $email->getSubject());
-        $this->assertStringContainsString('src="cid:', $email->getHtmlBody());
+        $this->assertStringNotContainsString('<img', $email->getHtmlBody());
+        $this->assertCount(0, $email->getAttachments());
     }
 
-    public function test_sent_email_carries_the_logo_as_an_attachment(): void
+    /**
+     * Gmail hides images on mail it distrusts, attached ones included, and the logo once showed
+     * as an empty box. The mark is drawn with borders so it never depends on an image loading.
+     */
+    public function test_sent_email_draws_the_logo_without_an_image(): void
     {
         Mail::send('emails.generic', ['title' => 'Gmail Connection Code', 'code' => '201589'], function ($message) {
             $message->to('student@example.test')->subject('Certicode Labs: Gmail Connection Code');
@@ -124,7 +129,10 @@ class EmailTemplateTest extends TestCase
         $this->assertCount(1, $sent);
 
         $email = $sent->first()->getOriginalMessage();
-        $this->assertStringContainsString('src="cid:', $email->getHtmlBody());
-        $this->assertCount(1, $email->getAttachments());
+        $html = $email->getHtmlBody();
+        $this->assertStringNotContainsString('<img', $html);
+        $this->assertStringNotContainsString('cid:', $html);
+        $this->assertCount(0, $email->getAttachments());
+        $this->assertStringContainsString('border-radius: 50%', $html);
     }
 }
