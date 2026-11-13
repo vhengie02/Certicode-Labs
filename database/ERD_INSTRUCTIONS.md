@@ -198,6 +198,25 @@ Table lab_sessions {
   updated_at timestamp
 }
 
+Table team_docs {
+  id bigint [pk, increment]
+  group_id bigint [ref: > groups.id, note: "cascade on delete"]
+  lab_id bigint [ref: > laboratories.id, note: "cascade on delete"]
+  team_started_at timestamp [note: "the team attempt this document belongs to; unique with group_id and lab_id"]
+  topic varchar(64) [unique, note: "random name of the team's realtime channel"]
+  key text [note: "256-bit key the team's edits are encrypted with; encrypted at rest"]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table team_doc_updates {
+  id bigint [pk, increment]
+  team_doc_id bigint [ref: > team_docs.id, note: "cascade on delete"]
+  user_id bigint [ref: > users.id, null, note: "null on delete"]
+  payload text [note: "a batch of edits as the extension sent it; the server never reads it"]
+  created_at timestamp
+}
+
 Table lab_session_chats {
   id bigint [pk, increment]
   lab_session_id bigint [ref: > lab_sessions.id, note: "cascade on delete"]
@@ -386,6 +405,22 @@ erDiagram
         boolean is_system
     }
 
+    team_docs {
+        bigint id PK
+        bigint group_id FK
+        bigint lab_id FK
+        timestamp team_started_at
+        string topic UK
+        text key
+    }
+
+    team_doc_updates {
+        bigint id PK
+        bigint team_doc_id FK
+        bigint user_id FK
+        text payload
+    }
+
     telemetry_logs {
         bigint id PK
         bigint lab_session_id FK
@@ -432,6 +467,8 @@ erDiagram
     users ||--o{ lab_sessions : "performs"
     laboratories ||--o{ lab_sessions : "configures"
     groups ||--o{ lab_sessions : "group_lab"
+    groups ||--o{ team_docs : "shared files"
+    team_docs ||--o{ team_doc_updates : "edits"
     
     lab_sessions ||--o{ telemetry_logs : "records"
     lab_sessions ||--o{ anomalies : "detects"

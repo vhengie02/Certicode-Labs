@@ -338,6 +338,9 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
         Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
         Route::post('/sessions/{sessionId}/leader', [LabSessionController::class, 'chooseLeader']);
+        Route::get('/sessions/{sessionId}/team-doc', [LabSessionController::class, 'teamDoc']);
+        Route::get('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'teamDocUpdates']);
+        Route::post('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'storeTeamDocUpdate']);
     });
 });
 

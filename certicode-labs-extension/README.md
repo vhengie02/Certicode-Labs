@@ -53,6 +53,16 @@ This creates a default student:
     -   **API Token**: Leave blank for public prototyping routes, or use your API token.
 7.  Open or create a Java file, start writing, and use the panel controls to check your progress!
 
+## Shared typing on group labs
+
+When the server has it set up, teammates type in the same files at the same time (`src/teamSync/`):
+
+- Each code file is a [Yjs](https://yjs.dev) document. `TextBinding` keeps one editor document and its shared file the same; `TeamDoc` sends and stores edits; `WorkspaceSync` ties them to the lab folder.
+- Edits travel over a Supabase Realtime Broadcast channel, sealed with AES-256-GCM (`seal.ts`) using the team attempt's key, and are stored on the server for teammates who join later.
+- A teammate's edit arriving in the editor is reported as such, so it is never counted as the student's typing or paste. Line counts credit each line to the student whose editor typed it.
+
+The extension is bundled with esbuild (`npm run bundle`, `dist/extension.js`) because it ships these libraries. `npm test` runs the unit tests; `npm run sync-check` runs shared typing in a real VS Code window (see `scripts/sync-check/README.md`).
+
 ## Roadmap & Planned Features
 
 See [TODO.md](../TODO.md) in the project root for full architectural details and progress tracking:

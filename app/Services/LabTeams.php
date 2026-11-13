@@ -7,6 +7,7 @@ use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
+use App\Models\TeamDoc;
 use App\Models\User;
 use App\Notifications\ClassActivityNotification;
 use Closure;
@@ -362,6 +363,8 @@ class LabTeams
         }
         if ($removedIds) {
             $open()->whereIn('user_id', $removedIds)->where('group_id', $team->id)->update(['group_id' => null, 'team_started_at' => null]);
+            // Whoever left still has the team's channel and key: replace them
+            TeamDoc::where('group_id', $team->id)->where('lab_id', $laboratory->id)->get()->each->rotate();
         }
     }
 }
