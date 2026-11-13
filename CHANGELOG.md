@@ -2,6 +2,9 @@
 
 ## 2026-11-13
 
+- A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.
+- Live labs run on their shared countdown alone. The heartbeat used to end an attempt on the lab's time per student even while the countdown still ran. When the countdown ends, the heartbeat and the inactivity sweep now close the lab, which submits the work, instead of marking it timed out.
+- An attempt is timed out only once the minute of grace after its limit has passed, the same minute in which a submit is still taken, and never while a submit is being graded. A lab with no time limit no longer times attempts out after 60 minutes.
 - The logo in emails now shows in Gmail. It was sent as an attached picture, which Gmail showed as an empty box. The mark is now drawn in the email itself, so it needs no picture and emails carry no attachment.
 - Confirming a Gmail address in Settings has no Confirm button any more. The code is checked as soon as all six digits are in, and Enter still sends it when JavaScript is off.
 - The student list on the monitoring page is readable again on screens 1024 to 1279 pixels wide, such as small laptops and split windows. The table's other columns took almost all the width there, so the student's name and email disappeared and the "Student" heading ran into "Status". At those widths each student is now shown as a card, as on tablets. Wider screens keep the table.

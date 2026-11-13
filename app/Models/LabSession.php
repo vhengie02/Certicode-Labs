@@ -247,10 +247,23 @@ class LabSession extends Model
      * When this attempt's time limit started counting. A team shares one clock, which starts
      * when its first teammate opens the lab, so nobody gains time by joining late. It is
      * stored on each session, so it doesn't move when a teammate's session closes.
+     *
+     * A teammate can only join while the team's time runs, so a session started after that
+     * time ran out was reopened by the instructor once the team's attempt was over. It goes
+     * on alone, on its own clock from the reopen.
      */
     public function clockStartedAt(): ?CarbonInterface
     {
-        return $this->group_id && $this->team_started_at ? $this->team_started_at : $this->started_at;
+        if (! $this->group_id || ! $this->team_started_at) {
+            return $this->started_at;
+        }
+
+        $limit = $this->timeLimitSeconds();
+        if ($limit !== null && $this->started_at && $this->started_at->gte($this->team_started_at->copy()->addSeconds($limit))) {
+            return $this->started_at;
+        }
+
+        return $this->team_started_at;
     }
 
     /**
@@ -689,11 +702,92 @@ class LabSession extends Model
             return true;
         }
 
-        if ($lab->time_limit > 0 && ($clockStart = $this->clockStartedAt())) {
-            return $clockStart->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
+        return ! $this->isPastTimeLimit();
+    }
+
+    /**
+     * The attempt's own time limit in seconds, counted from clockStartedAt(), or null when it
+     * has none. Only open labs have one. A live lab is timed by its shared countdown alone,
+     * which submits everyone's work when it ends (Laboratory::closeLive), so the lab's time
+     * per student doesn't apply there. A lab with no time limit set has none either.
+     */
+    public function timeLimitSeconds(): ?int
+    {
+        $lab = $this->laboratory;
+        if (! $lab || $lab->isLiveLab() || ! ($lab->time_limit > 0)) {
+            return null;
         }
 
-        return true;
+        return (int) $lab->time_limit * 60;
+    }
+
+    /**
+     * Whether the attempt's time limit ran out more than LATE_GRACE_SECONDS ago. That is when
+     * acceptsWork stops taking work, and so when the attempt may be ended as timed out.
+     */
+    public function isPastTimeLimit(): bool
+    {
+        $limit = $this->timeLimitSeconds();
+        $clockStart = $this->clockStartedAt() ?: $this->created_at;
+
+        return $limit !== null && $clockStart
+            && $clockStart->diffInSeconds(now(), true) >= $limit + self::LATE_GRACE_SECONDS;
+    }
+
+    /**
+     * End the attempt as abandoned (timed out or left), unless it is being graded: a submit
+     * sent in time can still be grading after the grace period, and its grade must land
+     * instead. The grading lock is held meanwhile, so no grading starts in between, and the
+     * row is read again under a row lock, so a grade that just landed isn't overwritten.
+     * Returns whether the attempt was abandoned.
+     */
+    public function abandonUnlessGrading(array $attributes = []): bool
+    {
+        $lock = $this->gradingLock();
+        if (! $lock->get()) {
+            return false;
+        }
+
+        try {
+            return DB::transaction(function () use ($attributes) {
+                $current = static::whereKey($this->id)->lockForUpdate()->first();
+                if (! $current || $current->status !== 'in_progress') {
+                    return false;
+                }
+
+                $current->setRelation('laboratory', $this->laboratory);
+                $current->update($attributes + [
+                    'status' => 'abandoned',
+                    'ended_at' => $current->ended_at ?: now(),
+                    'closed_at' => now(),
+                ]);
+                $this->setRawAttributes($current->getAttributes(), true);
+
+                return true;
+            });
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Reopen the attempt so the student can work on it and submit again. In an open lab its
+     * time limit then counts from the reopen: counted from the first start it has usually run
+     * out, and the attempt would time out again at once. Time spent and the leaderboard count
+     * from the reopen too; created_at keeps the first start. A team attempt reopened after the
+     * team's time ran out goes on alone on that new clock (clockStartedAt). A live lab's
+     * attempt keeps its start, since the shared countdown times it. The old heartbeat is
+     * cleared, or the inactivity sweep would take the reopened attempt for a dead one.
+     */
+    public function reopen(): void
+    {
+        $this->update([
+            'status' => 'in_progress',
+            'ended_at' => null,
+            'closed_at' => null,
+            'last_ping_at' => null,
+            ...($this->laboratory?->isLiveLab() ? [] : ['started_at' => now()]),
+        ]);
     }
 
     /**
@@ -777,6 +871,8 @@ class LabSession extends Model
 
     /**
      * Automatically sweep and expire abandoned or time-limit-exceeded in-progress sessions.
+     * An attempt that is being graded is left alone (abandonUnlessGrading). A live lab whose
+     * shared countdown ran out is closed instead, which submits its attempts.
      */
     public static function autoExpireStaleSessions(?int $labId = null, ?int $userId = null): int
     {
@@ -793,24 +889,19 @@ class LabSession extends Model
 
         foreach ($sessions as $session) {
             $lab = $session->laboratory;
-            $timeLimitMinutes = $lab ? ($lab->time_limit ?: 60) : 60;
-            // A team's shared clock applies to timed self-paced labs only
-            $timed = $lab && $lab->time_limit > 0 && ! $lab->isLiveLab();
-            $startedAt = ($timed ? $session->clockStartedAt() : $session->started_at) ?: $session->created_at;
+            if ($lab && $lab->isLiveLab() && $lab->checkAndAutoCloseLive()) {
+                continue;
+            }
+            $startedAt = $session->started_at ?: $session->created_at;
 
-            // 1. Exceeded the lab's official time limit (in minutes)
-            $exceededTimeLimit = $startedAt && $startedAt->diffInMinutes(now(), true) >= $timeLimitMinutes;
+            // 1. Exceeded an open lab's time limit (a team's shared clock), beyond the grace period
+            $exceededTimeLimit = $session->isPastTimeLimit();
 
             // 2. Dead/abandoned session: no ping or telemetry in over 30 minutes
             $lastActivity = $session->last_ping_at ?: $session->updated_at ?: $startedAt;
             $abandoned = $lastActivity && $lastActivity->diffInMinutes(now(), true) >= 30;
 
-            if ($exceededTimeLimit || $abandoned) {
-                $session->update([
-                    'status' => 'abandoned',
-                    'ended_at' => $session->ended_at ?: now(),
-                    'closed_at' => now(),
-                ]);
+            if (($exceededTimeLimit || $abandoned) && $session->abandonUnlessGrading()) {
                 $expiredCount++;
             }
         }
