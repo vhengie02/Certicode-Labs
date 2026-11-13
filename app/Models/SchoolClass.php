@@ -13,20 +13,71 @@ class SchoolClass extends Model
 
     protected $table = 'school_classes';
 
+    public const DEFAULT_LAB_PASS_SCORE = 75;
+
+    /** Patterns a class card can use, each with its name in the class form */
+    public const CARD_PATTERNS = [
+        'contour' => 'Contour',
+        'dots' => 'Dots',
+        'chevrons' => 'Chevrons',
+        'moons' => 'Moons',
+        'triangles' => 'Triangles',
+        'glyphs' => 'Glyphs',
+        'scallops' => 'Waves',
+        'harlequin' => 'Diamonds',
+    ];
+
+    public const CARD_IMAGE_DIRECTORY = 'class_backgrounds';
+
+    /** Largest picture, in kilobytes. The form shrinks pictures first, so this only stops an unshrunk one. */
+    public const CARD_IMAGE_MAX_KB = 2048;
+
     protected $fillable = [
         'name',
         'code',
         'instructor_id',
         'description',
         'passing_threshold',
+        'lab_pass_score',
         'scheduled_end_date',
         'status',
+        'card_pattern',
+        'card_image_path',
     ];
 
     protected $casts = [
         'passing_threshold' => 'integer',
+        'lab_pass_score' => 'integer',
         'scheduled_end_date' => 'datetime',
     ];
+
+    /**
+     * The pattern on this class's card: the instructor's choice, or one picked from the class
+     * id, so a class keeps its pattern and neighbouring cards differ.
+     */
+    public function cardPattern(): string
+    {
+        if (isset(self::CARD_PATTERNS[$this->card_pattern])) {
+            return $this->card_pattern;
+        }
+
+        $patterns = array_keys(self::CARD_PATTERNS);
+
+        return $patterns[$this->id % count($patterns)];
+    }
+
+    /**
+     * Where the card's picture loads from, or null without one. The URL changes with the
+     * picture, so a browser never shows a cached old one.
+     */
+    public function cardImageUrl(): ?string
+    {
+        if (! $this->card_image_path) {
+            return null;
+        }
+
+        return route('classes.card-image', ['class_id' => $this->id, 'v' => substr(md5($this->card_image_path), 0, 8)]);
+    }
 
     /**
      * Check if the class is concluded/ended.
@@ -114,16 +165,77 @@ class SchoolClass extends Model
     }
 
     /**
+     * Conclude the class if its end date has passed and nothing has concluded it yet. The Vercel
+     * cron only runs once a day, so the class page does this too. Safe to repeat: a student's
+     * certificate is only ever issued once.
+     */
+    public function concludeIfPastEndDate(): bool
+    {
+        if ($this->status === 'completed' || ! $this->scheduled_end_date || now()->lt($this->scheduled_end_date)) {
+            return false;
+        }
+
+        $this->concludeAndCertify();
+
+        return true;
+    }
+
+    /**
+     * Every laboratory in the modules of this class.
+     */
+    private function allLaboratoryIds(): array
+    {
+        $labIds = [];
+        foreach ($this->modules as $module) {
+            $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
+        }
+
+        return array_unique($labIds);
+    }
+
+    /**
+     * Where a student stands for the certificate. A lab counts once an attempt reaches the
+     * class's lab pass score. A grade still waiting for the instructor doesn't count yet:
+     * it comes from pattern checks, which can't tell working code from code that only names
+     * the right things. Not cached, because a grade change must show at once.
+     *
+     * @return array{passed: int, total: int, percent: int|float, under_review: int}
+     */
+    public function certificateProgress(User $student): array
+    {
+        $labIds = $this->allLaboratoryIds();
+        $attempts = LabSession::where('user_id', $student->id)
+            ->where('status', 'completed')
+            ->whereIn('lab_id', $labIds)
+            ->get(['id', 'lab_id', 'performance_score', 'instructor_grade_override', 'ai_grade_summary']);
+
+        $passScore = $this->lab_pass_score ?? self::DEFAULT_LAB_PASS_SCORE;
+        $passed = $attempts
+            ->filter(fn (LabSession $attempt) => ! $attempt->needsGradeReview() && $attempt->effective_score >= $passScore)
+            ->pluck('lab_id')
+            ->unique();
+        $underReview = $attempts
+            ->filter(fn (LabSession $attempt) => $attempt->needsGradeReview())
+            ->pluck('lab_id')
+            ->unique()
+            ->diff($passed);
+
+        $progress = LabSession::progressOver($labIds, $passed->flip()->all());
+
+        return [
+            'passed' => $progress['completed'],
+            'total' => $progress['total'],
+            'percent' => $progress['percent'],
+            'under_review' => $underReview->count(),
+        ];
+    }
+
+    /**
      * Calculate aggregate student progress for the class.
      */
     public function getStudentProgress(User $student, ?array $completedLabIds = null)
     {
-        $labIds = [];
-        // Gather all laboratory IDs associated with the modules of this class
-        foreach ($this->modules as $module) {
-            $labIds = array_merge($labIds, $module->getAllLaboratoryIds());
-        }
-        $labIds = array_unique($labIds);
+        $labIds = $this->allLaboratoryIds();
         $totalLabs = count($labIds);
 
         if ($totalLabs === 0) {

@@ -56,7 +56,7 @@
                                 </div>
                             </form>
                             <form id="delete-competency-{{ $c->id }}" method="POST" action="{{ route('admin.competencies.destroy', $c) }}" class="hidden"
-                                  onsubmit="return confirm('Delete “{{ addslashes($c->name) }}”? It is removed from {{ $c->laboratories_count }} lab(s) and from {{ $c->student_competencies_count }} student score(s).');">
+                                  data-confirm-title="Delete “{{ $c->name }}”?" data-confirm="It is removed from {{ $c->laboratories_count }} lab(s) and from {{ $c->student_competencies_count }} student score(s)." data-confirm-action="Delete competency">
                                 @csrf
                                 @method('DELETE')
                             </form>

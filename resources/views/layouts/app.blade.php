@@ -33,6 +33,15 @@
         })();
     </script>
 
+    <!-- Holds back data-confirm forms until confirm-dialog.js loads, so a quick click can't skip the question -->
+    <script>
+        document.addEventListener('submit', function (event) {
+            if (!window.confirmDialog && event.target.matches('[data-confirm]')) {
+                event.preventDefault();
+            }
+        }, true);
+    </script>
+
     <!-- Vite Compiled Assets -->
     @vite(['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js'])
     <!-- Brand fonts: Geist (UI), Geist Mono (code, labels), Instrument Serif (accents) -->
@@ -271,6 +280,7 @@
         html:not(.dark) input[type="email"],
         html:not(.dark) input[type="password"],
         html:not(.dark) input[type="number"],
+        html:not(.dark) .ui-input,
         html:not(.dark) select,
         html:not(.dark) textarea {
             background-color: #ffffff !important;
@@ -398,20 +408,16 @@
             border-color: #e5e7eb !important;
             color: #111827 !important;
         }
-        html:not(.dark) #notifications-dropdown,
-        html:not(.dark) #profile-dropdown {
+        html:not(.dark) #notifications-dropdown {
             background-color: #ffffff !important;
             border-color: #e5e7eb !important;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
         }
-        html:not(.dark) #notifications-dropdown .bg-slate-950,
-        html:not(.dark) #profile-dropdown .bg-slate-950\/40 {
+        html:not(.dark) #notifications-dropdown .bg-slate-950 {
             background-color: #f9fafb !important;
             border-color: #e5e7eb !important;
         }
-        html:not(.dark) #notifications-list a:hover,
-        html:not(.dark) #profile-dropdown a:hover,
-        html:not(.dark) #profile-dropdown button:hover {
+        html:not(.dark) #notifications-list a:hover {
             background-color: #f3f4f6 !important;
             color: #111827 !important;
         }
@@ -482,21 +488,89 @@
             background-color: #059669 !important;
         }
         /* App shell: header nav, icon buttons, menu states */
-        .app-nav-link.is-active::after {
-            content: ''; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px;
-            height: 2px; border-radius: 2px 2px 0 0; background: #3ecf8e;
-        }
         .app-icon-btn {
             display: inline-flex; align-items: center; justify-content: center;
             width: 2.25rem; height: 2.25rem; border-radius: 0.5rem;
-            color: #888888; transition: color 150ms ease, background-color 150ms ease;
+            color: #888888; transition: color 150ms ease, background-color 150ms ease, transform var(--motion-press) var(--ease-out);
         }
         .app-icon-btn:hover { color: #ededed; background-color: #1c1c1c; }
         #theme-toggle-sun, #theme-toggle-moon { color: inherit; }
+        .notif-item { transition: background-color 200ms ease, box-shadow 200ms ease; }
         .notif-item.is-unread { background-color: rgba(62, 207, 142, 0.05); box-shadow: inset 2px 0 0 #3ecf8e; }
+        #notifications-dropdown { transform-origin: top right; }
+        #notifications-dropdown:not(.hidden) { animation: notif-panel-in var(--motion-popover) var(--ease-out); }
+        /* The timer in closeNotifications() matches this duration */
+        #notifications-dropdown.is-closing { animation: notif-panel-out calc(var(--motion-popover) * var(--motion-exit)) var(--ease-out) forwards; pointer-events: none; }
+        #notifications-dropdown.is-opening .notif-item, .notif-enter { animation: notif-row-in 260ms var(--ease-out) backwards; }
+        #notifications-dropdown.is-opening .notif-item:nth-child(2) { animation-delay: 30ms; }
+        #notifications-dropdown.is-opening .notif-item:nth-child(3) { animation-delay: 60ms; }
+        #notifications-dropdown.is-opening .notif-item:nth-child(4) { animation-delay: 90ms; }
+        #notifications-dropdown.is-opening .notif-item:nth-child(5) { animation-delay: 120ms; }
+        .notif-dot-pop { animation: notif-dot-pop 200ms var(--ease-out); }
+        /* The dot's dark ring reads as a black outline on the light header */
+        html:not(.dark) .notif-dot { box-shadow: none; }
+        /* Out through the same point it came in: the bell above the panel's top right corner */
+        @keyframes notif-panel-in { from { opacity: 0; transform: translateY(-6px) scale(var(--motion-popover-scale)); } }
+        @keyframes notif-panel-out { to { opacity: 0; transform: translateY(-6px) scale(var(--motion-popover-scale)); } }
+        @keyframes notif-row-in { from { opacity: 0; transform: translateY(6px); } }
+        @keyframes notif-dot-pop { from { opacity: 0; transform: scale(0.5); } }
+        /* Collapses to nothing while there are no read notifications to act on */
+        .notif-actions { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms ease; }
+        .notif-actions.is-open { grid-template-rows: 1fr; }
+        .notif-actions > div { min-height: 0; overflow: hidden; visibility: hidden; transition: visibility 200ms; }
+        .notif-actions.is-open > div { visibility: visible; }
+        .notif-check {
+            appearance: none; flex-shrink: 0; width: 1rem; height: 1rem; margin: 0; cursor: pointer;
+            border: 1px solid #4a4a4a; border-radius: 0.25rem; background: transparent center / 0.75rem no-repeat;
+            transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+        }
+        .notif-check:hover { border-color: #3ecf8e; }
+        .notif-check:active { transform: scale(0.97); }
+        .notif-check:checked, .notif-check:indeterminate { background-color: #3ecf8e; border-color: #3ecf8e; }
+        .notif-check:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%230f0f0f' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E"); }
+        .notif-check:indeterminate { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%230f0f0f' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E"); }
+        .notif-delete { color: #f87171; transition: opacity 150ms ease; }
+        .notif-delete:not(:disabled):hover { text-decoration: underline; text-underline-offset: 2px; }
+        .notif-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+        @media (prefers-reduced-motion: reduce) {
+            #notifications-dropdown:not(.hidden), #notifications-dropdown.is-closing,
+            #notifications-dropdown.is-opening .notif-item, .notif-enter, .notif-dot-pop { animation: none; }
+            .notif-item, .notif-actions, .notif-check { transition: none; }
+        }
         #search-modal a.is-active { background-color: #1c1c1c; color: #ededed; }
-        .app-mobile-nav { scrollbar-width: none; }
-        .app-mobile-nav::-webkit-scrollbar { display: none; }
+
+        /* Search: press feedback on the bar, and an entrance when the palette is opened by click.
+           Ctrl+K skips .is-animated on purpose: a keyboard shortcut should open instantly. */
+        header .app-search-trigger {
+            transition: color 150ms ease, border-color 150ms ease, transform var(--motion-press) var(--ease-out);
+        }
+        /* openSearchModal() points transform-origin at whichever button opened the palette, so it
+           grows out of that button and shrinks back into it. */
+        #search-modal.is-animated > div:first-child { animation: search-backdrop-in 200ms var(--ease-out); }
+        #search-modal.is-animated > div:last-child { animation: search-panel-in 200ms var(--ease-out); }
+        /* The timer in closeSearchModal() matches this duration */
+        #search-modal.is-leaving > div:first-child { animation: search-backdrop-out 160ms var(--ease-out) forwards; }
+        #search-modal.is-leaving > div:last-child { animation: search-panel-out 160ms var(--ease-out) forwards; }
+        @keyframes search-backdrop-in {
+            from { opacity: 0; }
+        }
+        @keyframes search-backdrop-out {
+            to { opacity: 0; }
+        }
+        @keyframes search-panel-in {
+            from { opacity: 0; transform: scale(var(--motion-popover-scale)); }
+        }
+        @keyframes search-panel-out {
+            to { opacity: 0; transform: scale(var(--motion-popover-scale)); }
+        }
+        @keyframes search-panel-fade-in {
+            from { opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #search-modal.is-animated > div:last-child { animation-name: search-panel-fade-in; }
+            #search-modal.is-leaving > div:last-child { animation-name: search-backdrop-out; }
+        }
+
         :focus-visible { outline: 2px solid #3ecf8e; outline-offset: 2px; }
 
         /* App UI kit: shared form and card styles for redesigned pages */
@@ -524,7 +598,7 @@
             display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
             height: 2.5rem; padding: 0 1rem; border-radius: 0.6rem; font-size: 0.875rem; font-weight: 500;
             border: 1px solid transparent; white-space: nowrap;
-            transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+            transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform var(--motion-press) var(--ease-out);
         }
         .ui-btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.8125rem; border-radius: 0.5rem; }
         .ui-btn-primary { background: #3ecf8e; color: #06150e; font-weight: 600; }
@@ -565,7 +639,7 @@
 
         [x-cloak] { display: none !important; }
 
-        /* Underlined tab strips (admin users, monitoring drawer) */
+        /* Underlined tab strips linking between pages (admin users). In-page strips use x-tab-indicator. */
         .monitor-tab-active::after {
             content: ''; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px;
             height: 2px; border-radius: 2px 2px 0 0; background: #3ecf8e;
@@ -592,31 +666,36 @@
             font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
             font-size: 0.78rem; font-weight: 400; line-height: 1.45;
             letter-spacing: normal; text-transform: none; text-align: left; white-space: normal;
-            opacity: 0; visibility: hidden; transform: translateY(-3px);
-            transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+            opacity: 0; visibility: hidden; transform: scale(var(--motion-popover-scale));
+            transition: opacity 112ms var(--ease-out), transform 112ms var(--ease-out), visibility 0s linear 112ms;
             pointer-events: none;
         }
-        .info-tip-center .info-tip-bubble { left: 50%; translate: -50% 0; }
-        .info-tip-left .info-tip-bubble { left: -0.5rem; }
-        .info-tip-right .info-tip-bubble { right: -0.5rem; }
+        /* Each bubble scales from the (i) button above it */
+        .info-tip-center .info-tip-bubble { left: 50%; translate: -50% 0; transform-origin: top center; }
+        .info-tip-left .info-tip-bubble { left: -0.5rem; transform-origin: 1rem top; }
+        .info-tip-right .info-tip-bubble { right: -0.5rem; transform-origin: calc(100% - 1rem) top; }
         .info-tip:hover .info-tip-bubble, .info-tip:focus-within .info-tip-bubble {
-            opacity: 1; visibility: visible; transform: translateY(0);
-            transition: opacity 140ms ease, transform 140ms ease, visibility 0s;
+            opacity: 1; visibility: visible; transform: none;
+            transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out), visibility 0s;
         }
         @media (prefers-reduced-motion: reduce) { .info-tip-bubble { transition: none; transform: none; } }
         html:not(.dark) .info-tip-btn { color: #9ca3af; }
         html:not(.dark) .info-tip-btn:hover, html:not(.dark) .info-tip:focus-within .info-tip-btn { color: #059669; }
         html:not(.dark) .info-tip-bubble { background: #111827; border-color: #111827; color: #f9fafb; }
 
-        html:not(.dark) .app-nav-link.is-active::after { background: #059669; }
         html:not(.dark) .app-icon-btn { color: #6b7280; }
         html:not(.dark) .app-icon-btn:hover { color: #111827; background-color: #f3f4f6; }
         html:not(.dark) .notif-item.is-unread { background-color: #ecfdf5; box-shadow: inset 2px 0 0 #059669; }
-        html:not(.dark) .app-mobile-nav { background-color: #ffffff !important; }
+        html:not(.dark) .notif-check { border-color: #d1d5db; }
+        html:not(.dark) .notif-check:hover { border-color: #059669; }
+        html:not(.dark) .notif-check:checked, html:not(.dark) .notif-check:indeterminate { background-color: #059669; border-color: #059669; }
+        html:not(.dark) .notif-delete { color: #dc2626; }
         html:not(.dark) .app-search-trigger { background-color: #f8f9fa !important; }
-        html:not(.dark) .app-flash-success { color: #047857 !important; background-color: #ecfdf5 !important; border-color: #a7f3d0 !important; }
-        html:not(.dark) .app-flash-error { color: #b91c1c !important; background-color: #fef2f2 !important; border-color: #fecaca !important; }
-        html:not(.dark) .app-flash-warning { color: #92400e !important; background-color: #fffbeb !important; border-color: #fde68a !important; }
+        html:not(.dark) .toast { --toast-bg: #ffffff; --toast-border: #e5e7eb; --toast-text: #111827; --toast-muted: #6b7280; box-shadow: 0 12px 32px rgba(17, 24, 39, 0.14); }
+        html:not(.dark) .toast-success { --toast-accent: #059669; }
+        html:not(.dark) .toast-error { --toast-accent: #dc2626; }
+        html:not(.dark) .toast-warning { --toast-accent: #d97706; }
+        html:not(.dark) .confirm-dialog { --confirm-bg: #ffffff; --confirm-border: #e5e7eb; --confirm-text: #111827; --confirm-muted: #6b7280; --confirm-accent: #dc2626; --confirm-accent-bg: #fef2f2; box-shadow: 0 30px 80px -20px rgba(17, 24, 39, 0.35); }
         html:not(.dark) .app-flash-info { color: #075985 !important; background-color: #f0f9ff !important; border-color: #bae6fd !important; }
         html:not(.dark) :focus-visible { outline-color: #059669; }
     </style>
@@ -632,7 +711,7 @@
             : 0;
         $primaryNav = array_filter([
             ['label' => 'Dashboard', 'url' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
-            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'sessions.*', 'modules.*', 'instructor.*', 'certificates.*')],
+            ['label' => 'Classes', 'url' => route('classes.index'), 'active' => request()->routeIs('classes.*', 'laboratories.*', 'sessions.*', 'modules.*', 'instructor.*', 'certificates.*', 'anomalies.*')],
             $isAdmin ? ['label' => 'Users', 'url' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*', 'admin.instructor-requests.*', 'students.*', 'profiles.*'), 'badge' => $pendingInstructorRequests] : null,
             $isAdmin ? ['label' => 'Competencies', 'url' => route('admin.competencies.index'), 'active' => request()->routeIs('admin.competencies.*')] : null,
             $isAdmin ? ['label' => 'Reports', 'url' => route('admin.reports.index'), 'active' => request()->routeIs('admin.reports.*')] : null,
@@ -653,23 +732,10 @@
                     </span>
                 </a>
 
-                <!-- Primary navigation (desktop) -->
-                <nav class="hidden md:flex items-center gap-1 ml-4 h-full" aria-label="Primary">
-                    @foreach ($primaryNav as $item)
-                        <a href="{{ $item['url'] }}" @if($item['active']) aria-current="page" @endif
-                           class="app-nav-link relative h-full inline-flex items-center gap-2 px-3 text-sm font-medium transition-colors {{ $item['active'] ? 'text-[#ededed] is-active' : 'text-[#888888] hover:text-[#ededed]' }}">
-                            {{ $item['label'] }}
-                            @if (!empty($item['badge']))
-                                <span class="min-w-5 h-5 px-1.5 rounded-full bg-[#3ecf8e] text-[11px] font-bold text-[#06150e] inline-flex items-center justify-center" aria-label="{{ $item['badge'] }} pending">{{ $item['badge'] }}</span>
-                            @endif
-                        </a>
-                    @endforeach
-                </nav>
-
                 <div class="flex-1"></div>
 
                 <!-- Search trigger -->
-                <button type="button" id="global-search-bar-input" onclick="openSearchModal()" aria-label="Search (Ctrl+K)"
+                <button type="button" id="global-search-bar-input" onclick="openSearchModal(true, this)" aria-label="Search (Ctrl+K)"
                         class="app-search-trigger hidden lg:flex items-center gap-2.5 w-64 h-9 pl-3 pr-2 rounded-lg bg-[#171717] border border-[#2e2e2e] text-sm text-[#888888] hover:border-[#383838] hover:text-[#a3a3a3] transition-colors">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                     <span class="flex-1 text-left">Search…</span>
@@ -679,19 +745,21 @@
                 <!-- Right actions -->
                 <div class="flex items-center gap-1">
                     <div class="lg:hidden">
-                        <button type="button" onclick="openSearchModal()" aria-label="Search" class="app-icon-btn">
+                        <button type="button" onclick="openSearchModal(true, this)" aria-label="Search" class="app-icon-btn">
                             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></svg>
                         </button>
                     </div>
 
                     <!-- Quick Theme Toggle Button -->
                     <button type="button" id="quick-theme-toggle" onclick="toggleQuickTheme()" title="Switch light / dark" aria-label="Switch light or dark theme" class="app-icon-btn">
-                        <svg id="theme-toggle-sun" class="w-[18px] h-[18px] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                        <svg id="theme-toggle-moon" class="w-[18px] h-[18px] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                        </svg>
+                        <span class="motion-icon-swap">
+                            <svg id="theme-toggle-sun" data-icon-off class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                            <svg id="theme-toggle-moon" data-icon-off class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                            </svg>
+                        </span>
                     </button>
 
                     <!-- Notification Bell and Dropdown -->
@@ -703,10 +771,12 @@
                                 $u = auth()->user();
                                 return [
                                     'count' => $u ? $u->unreadNotifications()->count() : 0,
+                                    'readCount' => $u ? $u->readNotifications()->count() : 0,
                                     'items' => $u ? $u->notifications()->take(5)->get() : collect(),
                                 ];
                             });
                             $unreadCount = $cachedNotificationsData['count'] ?? 0;
+                            $readCount = $cachedNotificationsData['readCount'] ?? 0;
                             $notifications = $cachedNotificationsData['items'] ?? collect();
                         @endphp
                         <button type="button" onclick="toggleNotifications()" aria-label="Notifications" aria-haspopup="true" class="app-icon-btn relative">
@@ -724,89 +794,49 @@
                                     <button type="button" onclick="markAllAsRead()" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">Mark all read</button>
                                 @endif
                             </div>
-                            <div class="max-h-80 overflow-y-auto divide-y divide-[#232323]" id="notifications-list">
+                            <div class="max-h-[28rem] overflow-y-auto divide-y divide-[#232323]" id="notifications-list" data-unread-count="{{ $unreadCount }}" data-read-count="{{ $readCount }}">
                                 @forelse($notifications as $notif)
                                     @php $notifType = $notif->data['type'] ?? 'info'; @endphp
-                                    <a href="{{ \App\Support\InternalUrl::path($notif->data['url'] ?? null) }}" class="notif-item block px-4 py-3 hover:bg-[#1c1c1c] transition-colors {{ $notif->unread() ? 'is-unread' : '' }}">
-                                        <div class="flex items-start gap-3">
-                                            <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full {{ $notifType === 'certificate' ? 'bg-amber-400' : ($notifType === 'class' || $notifType === 'module' ? 'bg-sky-400' : 'bg-[#3ecf8e]') }}"></span>
-                                            <div class="min-w-0">
-                                                <p class="text-[13px] font-semibold text-[#ededed] truncate">{{ $notif->data['title'] }}</p>
-                                                <p class="text-xs text-[#a3a3a3] mt-0.5 leading-normal line-clamp-2">{{ $notif->data['message'] }}</p>
-                                                <span class="text-[11px] text-[#666666] font-mono block mt-1">{{ $notif->created_at->diffForHumans() }}</span>
-                                            </div>
-                                        </div>
-                                    </a>
+                                    <div class="notif-item relative flex items-start gap-3 px-4 py-3 hover:bg-[#1c1c1c] {{ $notif->unread() ? 'is-unread' : '' }}" data-notif-id="{{ $notif->id }}" data-unread="{{ $notif->unread() ? '1' : '0' }}">
+                                        <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full {{ $notifType === 'certificate' ? 'bg-amber-400' : ($notifType === 'class' || $notifType === 'module' ? 'bg-sky-400' : 'bg-[#3ecf8e]') }}"></span>
+                                        <a href="{{ \App\Support\InternalUrl::path($notif->data['url'] ?? null) }}" class="block min-w-0 flex-1 after:absolute after:inset-0">
+                                            <p class="text-[13px] font-semibold text-[#ededed] leading-snug break-words">{{ $notif->data['title'] }}</p>
+                                            <p class="text-xs text-[#a3a3a3] mt-0.5 leading-normal break-words">{{ $notif->data['message'] }}</p>
+                                            <span class="notif-time text-[11px] text-[#666666] font-mono block mt-1">{{ $notif->created_at->diffForHumans() }}</span>
+                                        </a>
+                                        @unless($notif->unread())
+                                            <label class="relative z-10 -m-1 flex shrink-0 cursor-pointer p-1">
+                                                <input type="checkbox" class="notif-check" value="{{ $notif->id }}" aria-label="Select notification: {{ $notif->data['title'] }}">
+                                            </label>
+                                        @endunless
+                                    </div>
                                 @empty
                                     <div class="px-4 py-8 text-center text-sm text-[#888888]">You're all caught up.</div>
                                 @endforelse
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Profile menu -->
-                    <div class="relative ml-1" id="profile-dropdown-container">
-                        <button type="button" onclick="toggleProfileDropdown()" aria-haspopup="true" aria-label="Account menu"
-                                class="flex items-center gap-2 h-9 pl-1 pr-2 rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors">
-                            <span class="h-7 w-7 rounded-full bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 flex items-center justify-center text-[#3ecf8e] font-semibold text-[11px]">
-                                {{ strtoupper(\Illuminate\Support\Str::substr($authUser->name, 0, 2)) }}
-                            </span>
-                            <span class="text-sm font-medium text-[#ededed] hidden xl:block max-w-[10rem] truncate">{{ $authUser->name }}</span>
-                            <svg class="w-3.5 h-3.5 text-[#888888] hidden sm:block" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-                        </button>
-
-                        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-60 bg-[#171717] border border-[#2e2e2e] rounded-xl overflow-hidden shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)] z-50 text-left">
-                            <div class="px-4 py-3 border-b border-[#2e2e2e]">
-                                <p class="text-sm font-semibold text-[#ededed] truncate">{{ $authUser->name }}</p>
-                                <p class="text-xs text-[#888888] truncate mt-0.5">{{ $authUser->email }}</p>
-                                <span class="inline-block mt-2 px-2 py-0.5 rounded-full border border-[#3ecf8e]/30 bg-[#3ecf8e]/10 font-mono text-[10px] uppercase tracking-[0.12em] text-[#3ecf8e]">{{ $authUser->role }}</span>
-                            </div>
-                            <div class="p-1.5">
-                                <a href="{{ route('settings.show') }}" class="block px-3 py-2 rounded-lg text-sm text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-[#ededed] transition-colors">Account settings</a>
-                            </div>
-                            <div class="border-t border-[#2e2e2e] p-1.5">
-                                <form method="POST" action="{{ route('logout') }}">
-                                    @csrf
-                                    <button type="submit" class="w-full text-left px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors">
-                                        Sign out
-                                    </button>
-                                </form>
+                            <div id="notifications-actions" class="notif-actions {{ $readCount > 0 ? 'is-open' : '' }}">
+                                <div>
+                                    <div class="px-4 py-2.5 border-t border-[#2e2e2e] flex items-center justify-between gap-3">
+                                        <label class="flex min-w-0 items-center gap-2 cursor-pointer text-xs text-[#a3a3a3]">
+                                            <input type="checkbox" id="notif-select-all" class="notif-check">
+                                            <span id="notif-select-all-label">Select all read ({{ $readCount }})</span>
+                                        </label>
+                                        <button type="button" id="notif-delete-btn" onclick="deleteSelectedNotifs()" disabled class="notif-delete shrink-0 text-xs font-medium">Delete</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- Site menu: page links, settings and sign out -->
+                    <x-staggered-menu :items="$primaryNav" :user="$authUser" />
                 </div>
             </div>
         </header>
 
-        <!-- Primary navigation (mobile) -->
-        <nav class="app-mobile-nav md:hidden flex items-center gap-1 overflow-x-auto px-4 h-11 border-b border-[#2e2e2e] bg-[#0f0f0f] flex-shrink-0" aria-label="Primary">
-            @foreach ($primaryNav as $item)
-                <a href="{{ $item['url'] }}" @if($item['active']) aria-current="page" @endif
-                   class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors {{ $item['active'] ? 'bg-[#1c1c1c] text-[#ededed]' : 'text-[#888888] hover:text-[#ededed]' }}">
-                    {{ $item['label'] }}
-                    @if (!empty($item['badge']))
-                        <span class="min-w-4 h-4 px-1 rounded-full bg-[#3ecf8e] text-[10px] font-bold text-[#06150e] inline-flex items-center justify-center">{{ $item['badge'] }}</span>
-                    @endif
-                </a>
-            @endforeach
-        </nav>
-
         <!-- Main Viewport -->
         <main id="main-content" tabindex="-1" class="flex-1 relative overflow-y-auto focus:outline-none">
             <div class="mx-auto max-w-[1440px] px-4 sm:px-6 py-6 sm:py-8">
-                @php
-                    $flashes = array_filter([
-                        $authUser->hasPendingInstructorRequest() ? ['warning', 'Your instructor access is waiting for an admin to approve it. Until then you can use Certicode as a student.'] : null,
-                        session('success') ? ['success', session('success')] : null,
-                        session('error') ? ['error', session('error')] : null,
-                        session('warning') ? ['warning', session('warning')] : null,
-                    ]);
-                    $flashStyles = [
-                        'success' => 'border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.06] text-[#3ecf8e]',
-                        'error' => 'border-red-500/30 bg-red-500/[0.06] text-red-400',
-                        'warning' => 'border-amber-400/30 bg-amber-400/[0.06] text-amber-300',
-                    ];
-                @endphp
                 @php $announcement = \App\Models\SystemSetting::read('announcement'); @endphp
                 @if ($announcement)
                     <div class="app-flash-info mb-6 flex items-start gap-3 rounded-xl border border-sky-500/30 bg-sky-500/[0.06] px-4 py-3 text-sky-300" role="status">
@@ -815,41 +845,69 @@
                     </div>
                 @endif
 
-                @foreach ($flashes as [$tone, $message])
-                    <div class="app-flash app-flash-{{ $tone }} mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 {{ $flashStyles[$tone] }}" role="{{ $tone === 'error' ? 'alert' : 'status' }}">
-                        @if ($tone === 'success')
-                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                        @elseif ($tone === 'error')
-                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                        @else
-                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
-                        @endif
-                        <p class="flex-1 text-sm font-medium">{{ $message }}</p>
-                        <button type="button" onclick="this.closest('.app-flash').remove()" aria-label="Dismiss" class="-mr-1 p-1 rounded-md opacity-60 hover:opacity-100 transition-opacity">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
-                    </div>
-                @endforeach
-
                 @yield('content')
             </div>
         </main>
     </div>
-    
+
+    @php
+        // The pending-approval reminder applies on every page, so pop it up once per session only.
+        $showPendingNotice = $authUser->hasPendingInstructorRequest() && ! session('pending_instructor_notice_shown');
+        if ($showPendingNotice) {
+            session(['pending_instructor_notice_shown' => true]);
+        }
+        $flashes = array_filter([
+            $showPendingNotice ? ['warning', 'Your instructor access is waiting for an admin to approve it. Until then you can use Certicode as a student.'] : null,
+            session('success') ? ['success', session('success')] : null,
+            session('error') ? ['error', session('error')] : null,
+            session('warning') ? ['warning', session('warning')] : null,
+        ]);
+    @endphp
+    <x-toast-region>
+        @foreach ($flashes as [$tone, $message])
+            <x-toast :tone="$tone"><p>{{ $message }}</p></x-toast>
+        @endforeach
+    </x-toast-region>
+    <x-confirm-dialog />
+
+
     @yield('scripts')
 
     <script>
+        let notifCloseTimer = null;
+        let notifOpenTimer = null;
+
         function toggleNotifications() {
             const dropdown = document.getElementById('notifications-dropdown');
-            dropdown.classList.toggle('hidden');
-            if (!dropdown.classList.contains('hidden')) {
-                pollNotifications(true);
+            if (dropdown.classList.contains('hidden') || dropdown.classList.contains('is-closing')) {
+                openNotifications();
+            } else {
+                closeNotifications();
             }
         }
 
-        function toggleProfileDropdown() {
-            const dropdown = document.getElementById('profile-dropdown');
-            dropdown.classList.toggle('hidden');
+        function openNotifications() {
+            const dropdown = document.getElementById('notifications-dropdown');
+            clearTimeout(notifCloseTimer);
+            clearTimeout(notifOpenTimer);
+            dropdown.classList.remove('hidden', 'is-closing');
+            dropdown.classList.add('is-opening');
+            // The stagger is for opening only: rows rendered later must not replay it
+            notifOpenTimer = setTimeout(() => dropdown.classList.remove('is-opening'), 420);
+            pollNotifications(true);
+        }
+
+        function closeNotifications() {
+            const dropdown = document.getElementById('notifications-dropdown');
+            if (!dropdown || dropdown.classList.contains('hidden') || dropdown.classList.contains('is-closing')) return;
+            clearNotifSelection();
+            clearTimeout(notifOpenTimer);
+            dropdown.classList.remove('is-opening');
+            dropdown.classList.add('is-closing');
+            notifCloseTimer = setTimeout(() => {
+                dropdown.classList.add('hidden');
+                dropdown.classList.remove('is-closing');
+            }, 144);
         }
 
         document.addEventListener('click', function(e) {
@@ -857,27 +915,146 @@
             const container = document.getElementById('notification-bell-container');
             const dropdown = document.getElementById('notifications-dropdown');
             if (container && !container.contains(e.target) && dropdown) {
-                dropdown.classList.add('hidden');
-            }
-
-            // Profile close
-            const profileContainer = document.getElementById('profile-dropdown-container');
-            const profileDropdown = document.getElementById('profile-dropdown');
-            if (profileContainer && !profileContainer.contains(e.target) && profileDropdown) {
-                profileDropdown.classList.add('hidden');
+                closeNotifications();
             }
         });
 
-        let lastNotifState = null;
-        let notifPollTimer = null;
+        function notifStateKey(unreadCount, readCount, notifs) {
+            return JSON.stringify({ count: unreadCount, read: readCount, ids: notifs.map(n => n.id + ':' + n.unread) });
+        }
 
-        function renderNotifications(data, force = false) {
+        const notifInitialRows = [...document.querySelectorAll('#notifications-list .notif-item')];
+        const notifInitialList = document.getElementById('notifications-list');
+        let notifPollTimer = null;
+        let notifDeleting = false;
+        let notifReadCount = Number(notifInitialList?.dataset.readCount ?? 0);
+        // "all" also covers read notifications older than the five the dropdown shows
+        const notifSelection = { all: false, ids: new Set() };
+        // Rows the user has already seen, so only real arrivals animate in
+        const seenNotifIds = new Set(notifInitialRows.map(row => row.dataset.notifId));
+        // Start from what the server rendered: opening the panel must not rebuild identical rows
+        let lastNotifState = notifInitialList ? notifStateKey(
+            Number(notifInitialList.dataset.unreadCount),
+            notifReadCount,
+            notifInitialRows.map(row => ({ id: row.dataset.notifId, unread: row.dataset.unread === '1' }))
+        ) : null;
+
+        function syncNotifActions() {
+            const actions = document.getElementById('notifications-actions');
+            const selectAll = document.getElementById('notif-select-all');
+            const deleteBtn = document.getElementById('notif-delete-btn');
+            if (!actions || !selectAll || !deleteBtn) return;
+
+            const boxes = [...document.querySelectorAll('#notifications-list .notif-check')];
+            // Polling may have removed a selected row (deleted or changed in another tab)
+            const shown = new Set(boxes.map(box => box.value));
+            notifSelection.ids.forEach(id => { if (!shown.has(id)) notifSelection.ids.delete(id); });
+
+            if (notifReadCount === 0) notifSelection.all = false;
+            else if (notifSelection.ids.size === notifReadCount) notifSelection.all = true;
+
+            const count = notifSelection.all ? notifReadCount : notifSelection.ids.size;
+            boxes.forEach(box => { box.checked = notifSelection.all || notifSelection.ids.has(box.value); });
+            selectAll.checked = notifSelection.all;
+            selectAll.indeterminate = !notifSelection.all && count > 0;
+            document.getElementById('notif-select-all-label').textContent = `Select all read (${notifReadCount})`;
+            deleteBtn.disabled = count === 0 || notifDeleting;
+            deleteBtn.textContent = count > 0 ? `Delete ${count}` : 'Delete';
+            actions.classList.toggle('is-open', notifReadCount > 0);
+        }
+
+        function clearNotifSelection() {
+            notifSelection.all = false;
+            notifSelection.ids.clear();
+            syncNotifActions();
+        }
+
+        document.getElementById('notifications-list')?.addEventListener('change', e => {
+            const box = e.target.closest('.notif-check');
+            if (!box) return;
+            if (notifSelection.all) {
+                // Leaving "all": keep what is visibly ticked, the hidden older ones drop out
+                notifSelection.all = false;
+                document.querySelectorAll('#notifications-list .notif-check').forEach(other => notifSelection.ids.add(other.value));
+            }
+            if (box.checked) notifSelection.ids.add(box.value);
+            else notifSelection.ids.delete(box.value);
+            syncNotifActions();
+        });
+
+        document.getElementById('notif-select-all')?.addEventListener('change', e => {
+            notifSelection.all = e.target.checked;
+            notifSelection.ids.clear();
+            syncNotifActions();
+        });
+
+        function collapseNotifRow(row, index) {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
+            row.style.overflow = 'hidden';
+            const delay = index * 30;
+            const animation = row.animate([
+                { height: row.offsetHeight + 'px', opacity: 1, transform: 'translateX(0)' },
+                { height: '0px', paddingTop: '0px', paddingBottom: '0px', opacity: 0, transform: 'translateX(24px)' },
+            ], { duration: 208, delay, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' });
+            // A background tab renders no frames, so "finished" alone could hold the delete open
+            return Promise.race([animation.finished, new Promise(resolve => setTimeout(resolve, delay + 300))]);
+        }
+
+        function deleteSelectedNotifs() {
+            const { all, ids } = notifSelection;
+            if (notifDeleting || (!all && ids.size === 0)) return;
+
+            const rows = [...document.querySelectorAll('#notifications-list .notif-item')]
+                .filter(row => all ? row.dataset.unread !== '1' : ids.has(row.dataset.notifId));
+            notifDeleting = true;
+            document.getElementById('notif-delete-btn').disabled = true;
+
+            const request = fetch("{{ route('notifications.delete-read') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify(all ? { all: true } : { ids: [...ids] })
+            })
+            .then(res => res.ok ? res.json() : null)
+            .catch(() => null);
+
+            Promise.all([request, ...rows.map(collapseNotifRow)]).then(([data]) => {
+                notifDeleting = false;
+                if (data) {
+                    notifSelection.all = false;
+                    notifSelection.ids.clear();
+                    lastNotifState = null;
+                    renderNotifications(data);
+                    return;
+                }
+                // Nothing was deleted: bring the rows back and keep the selection for a retry
+                rows.forEach(row => {
+                    row.getAnimations().forEach(animation => animation.cancel());
+                    row.style.overflow = '';
+                });
+                syncNotifActions();
+                window.showToast?.('Could not delete those notifications. Try again.', 'error');
+            });
+        }
+
+        function renderNotifications(data) {
             if (!data) return;
             const notifs = data.notifications || [];
             const unreadCount = data.unreadCount ?? 0;
-            const stateKey = JSON.stringify({ count: unreadCount, ids: notifs.map(n => n.id + ':' + n.unread) });
-            if (!force && stateKey === lastNotifState) return;
+            const stateKey = notifStateKey(unreadCount, data.readCount ?? 0, notifs);
+            if (stateKey === lastNotifState) {
+                // Same rows: refresh "2 minutes ago" in place so nothing replays or loses focus
+                notifs.forEach(notif => {
+                    const time = document.querySelector(`[data-notif-id="${CSS.escape(notif.id)}"] .notif-time`);
+                    if (time) time.textContent = notif.time;
+                });
+                return;
+            }
             lastNotifState = stateKey;
+            notifReadCount = data.readCount ?? 0;
 
             // Update unread dot on the bell icon
             const container = document.getElementById('notification-bell-container');
@@ -888,7 +1065,7 @@
                         const btn = container.querySelector('button');
                         if (btn) {
                             dot = document.createElement('span');
-                            dot.className = 'notif-dot absolute top-1.5 right-1.5 block h-2 w-2 rounded-full bg-[#3ecf8e] ring-2 ring-[#0f0f0f]';
+                            dot.className = 'notif-dot notif-dot-pop absolute top-1.5 right-1.5 block h-2 w-2 rounded-full bg-[#3ecf8e] ring-2 ring-[#0f0f0f]';
                             btn.appendChild(dot);
                         }
                     }
@@ -919,25 +1096,30 @@
             const list = document.getElementById('notifications-list');
             if (list) {
                 if (notifs.length === 0) {
-                    list.innerHTML = '<div class="px-4 py-8 text-center text-sm text-[#888888]">You\'re all caught up.</div>';
+                    list.innerHTML = '<div class="notif-enter px-4 py-8 text-center text-sm text-[#888888]">You\'re all caught up.</div>';
                 } else {
                     list.innerHTML = notifs.map(notif => {
                         const typeColor = notif.type === 'certificate' ? 'bg-amber-400' : ((notif.type === 'class' || notif.type === 'module') ? 'bg-sky-400' : 'bg-[#3ecf8e]');
+                        const checkbox = notif.unread ? '' : `
+                                <label class="relative z-10 -m-1 flex shrink-0 cursor-pointer p-1">
+                                    <input type="checkbox" class="notif-check" value="${escapeHtml(notif.id)}" aria-label="Select notification: ${escapeHtml(notif.title)}">
+                                </label>`;
                         return `
-                            <a href="${escapeHtml(safeUrl(notif.url))}" class="notif-item block px-4 py-3 hover:bg-[#1c1c1c] transition-colors ${notif.unread ? 'is-unread' : ''}">
-                                <div class="flex items-start gap-3">
-                                    <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
-                                    <div class="min-w-0">
-                                        <p class="text-[13px] font-semibold text-[#ededed] truncate">${escapeHtml(notif.title)}</p>
-                                        <p class="text-xs text-[#a3a3a3] mt-0.5 leading-normal line-clamp-2">${escapeHtml(notif.message)}</p>
-                                        <span class="text-[11px] text-[#666666] font-mono block mt-1">${escapeHtml(notif.time)}</span>
-                                    </div>
-                                </div>
-                            </a>
+                            <div class="notif-item relative flex items-start gap-3 px-4 py-3 hover:bg-[#1c1c1c] ${notif.unread ? 'is-unread' : ''} ${seenNotifIds.has(notif.id) ? '' : 'notif-enter'}" data-notif-id="${escapeHtml(notif.id)}" data-unread="${notif.unread ? '1' : '0'}">
+                                <span class="mt-1.5 flex h-1.5 w-1.5 shrink-0 rounded-full ${typeColor}"></span>
+                                <a href="${escapeHtml(safeUrl(notif.url))}" class="block min-w-0 flex-1 after:absolute after:inset-0">
+                                    <p class="text-[13px] font-semibold text-[#ededed] leading-snug break-words">${escapeHtml(notif.title)}</p>
+                                    <p class="text-xs text-[#a3a3a3] mt-0.5 leading-normal break-words">${escapeHtml(notif.message)}</p>
+                                    <span class="notif-time text-[11px] text-[#666666] font-mono block mt-1">${escapeHtml(notif.time)}</span>
+                                </a>${checkbox}
+                            </div>
                         `;
                     }).join('');
+                    notifs.forEach(notif => seenNotifIds.add(notif.id));
                 }
             }
+
+            syncNotifActions();
         }
 
         // Notification and search text comes from user-entered names; never insert it as HTML
@@ -963,7 +1145,7 @@
                 if (btn) btn.remove();
             }
 
-            document.querySelectorAll('#notifications-list a').forEach(item => item.classList.remove('is-unread'));
+            document.querySelectorAll('#notifications-list .notif-item').forEach(item => item.classList.remove('is-unread'));
 
             // Invalidate cache tracking state so re-render forces clean state
             lastNotifState = null;
@@ -980,7 +1162,7 @@
             .then(res => res.json())
             .then(data => {
                 if (data && data.notifications) {
-                    renderNotifications(data, true);
+                    renderNotifications(data);
                 } else {
                     pollNotifications(true);
                 }
@@ -996,7 +1178,8 @@
             fetch("{{ route('notifications.fetch') }}?t=" + Date.now(), { cache: 'no-store' })
                 .then(res => res.json())
                 .then(data => {
-                    renderNotifications(data, force);
+                    // A delete in progress re-renders when it finishes; rows must not pop back mid-collapse
+                    if (!notifDeleting) renderNotifications(data);
                 })
                 .catch(() => {});
         }
@@ -1012,12 +1195,67 @@
         // --- Global Search Command Palette Logic ---
         let searchTimeout = null;
         let searchAbortController = null;
+        let searchRun = 0;
+        let searchAnimationStops = [];
 
-        function openSearchModal() {
+        // The scramble plays for at least this long after the last keystroke, even on a fast response
+        const SEARCH_MIN_LOADING_MS = 700;
+
+        function stopSearchAnimations() {
+            searchAnimationStops.splice(0).forEach(stop => stop());
+            document.getElementById('search-loading').classList.add('hidden');
+            document.getElementById('search-results').removeAttribute('aria-busy');
+        }
+
+        function cancelSearch() {
+            clearTimeout(searchTimeout);
+            if (searchAbortController) {
+                searchAbortController.abort();
+            }
+            searchRun++;
+            stopSearchAnimations();
+        }
+
+        function showSearchLoading(query) {
+            const results = document.getElementById('search-results');
+            const loadingText = document.getElementById('search-loading-text');
+            const label = `Searching “${query}”`;
+
+            document.getElementById('search-quick-links').classList.add('hidden');
+            results.classList.remove('hidden');
+            results.setAttribute('aria-busy', 'true');
+
+            // Old links go too, so the arrow keys cannot land on rows that are no longer shown
+            results.querySelectorAll('.search-items-container').forEach(container => {
+                container.innerHTML = '';
+                container.parentElement.classList.add('hidden');
+            });
+            document.getElementById('search-no-results').classList.add('hidden');
+            document.getElementById('search-error').classList.add('hidden');
+
+            document.getElementById('search-loading').classList.remove('hidden');
+            loadingText.textContent = label;
+            if (window.scrambleText) {
+                searchAnimationStops.push(window.scrambleText.loop(loadingText, label));
+            }
+        }
+
+        let searchCloseTimer = null;
+
+        function openSearchModal(animate = false, trigger = null) {
             const modal = document.getElementById('search-modal');
             const input = document.getElementById('search-modal-input');
             if (modal && input) {
+                clearTimeout(searchCloseTimer);
+                modal.classList.remove('is-leaving');
+                modal.classList.toggle('is-animated', animate);
                 modal.classList.remove('hidden');
+                if (trigger) {
+                    // offsetLeft and offsetTop ignore the entrance's scale, which a rect would include
+                    const panel = modal.lastElementChild;
+                    const from = trigger.getBoundingClientRect();
+                    panel.style.transformOrigin = `${from.left + from.width / 2 - panel.offsetLeft}px ${from.top + from.height / 2 - panel.offsetTop}px`;
+                }
                 input.value = '';
                 document.getElementById('search-quick-links').classList.remove('hidden');
                 document.getElementById('search-results').classList.add('hidden');
@@ -1030,19 +1268,29 @@
             }
         }
 
-        function closeSearchModal() {
+        // Only a palette opened by click leaves with an exit. Ctrl+K and Escape stay instant.
+        function closeSearchModal(animate = false) {
             const modal = document.getElementById('search-modal');
-            if (modal) {
+            if (!modal) return;
+            cancelSearch();
+            clearTimeout(searchCloseTimer);
+
+            const finish = () => {
                 modal.classList.add('hidden');
+                modal.classList.remove('is-leaving');
+            };
+            if (animate && modal.classList.contains('is-animated')) {
+                modal.classList.add('is-leaving');
+                searchCloseTimer = setTimeout(finish, 160);
+            } else {
+                finish();
             }
         }
 
         function performSearch(query) {
-            clearTimeout(searchTimeout);
-            if (searchAbortController) {
-                searchAbortController.abort();
-            }
-            
+            cancelSearch();
+            const run = searchRun;
+
             const quickLinks = document.getElementById('search-quick-links');
             const results = document.getElementById('search-results');
             
@@ -1077,13 +1325,24 @@
                        link.keywords.some(kw => kw.includes(queryLower));
             });
 
+            showSearchLoading(query.trim());
+
+            const minLoading = new Promise(resolve => {
+                setTimeout(resolve, window.scrambleText?.enabled() ? SEARCH_MIN_LOADING_MS : 0);
+            });
+
             searchTimeout = setTimeout(() => {
                 searchAbortController = new AbortController();
                 fetch(`/search?q=${encodeURIComponent(query)}`, { signal: searchAbortController.signal })
-                    .then(res => res.json())
+                    .then(res => {
+                        if (!res.ok) throw new Error(`Search returned ${res.status}`);
+                        return res.json();
+                    })
+                    .then(data => minLoading.then(() => data))
                     .then(data => {
-                        quickLinks.classList.add('hidden');
-                        results.classList.remove('hidden');
+                        // A newer search, or closing the palette, replaced this one during the wait
+                        if (run !== searchRun) return;
+                        stopSearchAnimations();
 
                         data.navigation = matchingNavs;
 
@@ -1095,6 +1354,7 @@
                         };
 
                         let hasAnyResults = false;
+                        let row = 0;
 
                         for (const [key, section] of Object.entries(sections)) {
                             if (!section) continue;
@@ -1115,7 +1375,12 @@
                                         </svg>
                                         <span class="truncate">${escapeHtml(item.label)}</span>
                                     `;
+                                    a.setAttribute('aria-label', item.label);
                                     container.appendChild(a);
+                                    if (window.scrambleText) {
+                                        searchAnimationStops.push(window.scrambleText.decode(a.querySelector('span'), String(item.label ?? ''), row * 0.05));
+                                    }
+                                    row++;
                                 });
                             } else {
                                 section.classList.add('hidden');
@@ -1130,9 +1395,11 @@
                         }
                     })
                     .catch(err => {
-                        if (err.name !== 'AbortError') {
-                            console.error('Search failed:', err);
-                        }
+                        if (err.name === 'AbortError') return;
+                        console.error('Search failed:', err);
+                        if (run !== searchRun) return;
+                        stopSearchAnimations();
+                        document.getElementById('search-error').classList.remove('hidden');
                     });
             }, 250);
         }
@@ -1300,13 +1567,8 @@
                 const sunIcon = document.getElementById('theme-toggle-sun');
                 const moonIcon = document.getElementById('theme-toggle-moon');
                 if (sunIcon && moonIcon) {
-                    if (isDark) {
-                        sunIcon.classList.remove('hidden');
-                        moonIcon.classList.add('hidden');
-                    } else {
-                        sunIcon.classList.add('hidden');
-                        moonIcon.classList.remove('hidden');
-                    }
+                    sunIcon.toggleAttribute('data-icon-off', !isDark);
+                    moonIcon.toggleAttribute('data-icon-off', isDark);
                 }
                 
                 window.dispatchEvent(new CustomEvent('certicode:themechange', { detail: { theme, isDark } }));
@@ -1318,7 +1580,12 @@
         window.toggleQuickTheme = function() {
             const isDark = document.documentElement.classList.contains('dark');
             const newTheme = isDark ? 'light' : 'dark';
-            window.applyTheme(newTheme);
+            const apply = () => window.applyTheme(newTheme);
+            if (window.revealTheme) {
+                window.revealTheme(document.getElementById('quick-theme-toggle'), apply);
+            } else {
+                apply();
+            }
         };
 
         // Initialize theme UI state
@@ -1329,15 +1596,10 @@
             
             const sunIcon = document.getElementById('theme-toggle-sun');
             const moonIcon = document.getElementById('theme-toggle-moon');
-            if (sunIcon && moonIcon) {
-                if (isDark) {
-                    sunIcon.classList.remove('hidden');
-                    moonIcon.classList.add('hidden');
-                } else {
-                    sunIcon.classList.add('hidden');
-                    moonIcon.classList.remove('hidden');
+                if (sunIcon && moonIcon) {
+                    sunIcon.toggleAttribute('data-icon-off', !isDark);
+                    moonIcon.toggleAttribute('data-icon-off', isDark);
                 }
-            }
         })();
 
         // Listen for OS color scheme changes when system mode is selected
@@ -1352,7 +1614,7 @@
     <!-- Search Command Palette Modal -->
     <div id="search-modal" class="fixed inset-0 z-[70] hidden overflow-y-auto p-4 sm:p-6 md:pt-24" role="dialog" aria-modal="true" aria-label="Search">
         <!-- Backdrop -->
-        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSearchModal()"></div>
+        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSearchModal(true)"></div>
 
         <!-- Modal Box -->
         <div class="relative z-10 mx-auto max-w-xl overflow-hidden rounded-2xl border border-[#2e2e2e] bg-[#171717] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]">
@@ -1378,6 +1640,10 @@
 
             <!-- Search Results -->
             <div id="search-results" class="hidden max-h-96 overflow-y-auto p-2 space-y-3">
+                <div id="search-loading" class="hidden px-3 py-8 text-center" role="status">
+                    <span class="sr-only">Searching…</span>
+                    <span id="search-loading-text" class="block truncate font-mono text-sm text-[#888888]" aria-hidden="true"></span>
+                </div>
                 @foreach (['navigation' => 'Pages', 'classes' => 'Classes', 'modules' => 'Modules', 'laboratories' => 'Labs'] as $section => $heading)
                     <div id="search-section-{{ $section }}" class="hidden">
                         <span class="block px-3 pt-2 pb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#888888]">{{ $heading }}</span>
@@ -1386,6 +1652,9 @@
                 @endforeach
                 <div id="search-no-results" class="hidden text-center py-8 text-sm text-[#888888]">
                     Nothing matches that. Try another word.
+                </div>
+                <div id="search-error" class="hidden text-center py-8 text-sm text-[#888888]">
+                    Search didn't load. Try again.
                 </div>
             </div>
         </div>

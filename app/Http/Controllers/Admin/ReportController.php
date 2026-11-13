@@ -75,9 +75,9 @@ class ReportController extends Controller
                 ]),
             ],
             'classes' => [
-                ['ID', 'Class', 'Join code', 'Instructor', 'Status', 'Students', 'Labs', 'Submissions', 'Average grade', 'Certificates'],
+                ['ID', 'Class', 'Instructor', 'Status', 'Students', 'Labs', 'Submissions', 'Average grade', 'Certificates'],
                 collect($this->classRows($since))->map(fn ($c) => [
-                    $c['id'], $c['name'], $c['code'], $c['instructor'], $c['status'], $c['students'], $c['labs'], $c['submissions'], $c['avg_grade'], $c['certificates'],
+                    $c['id'], $c['name'], $c['instructor'], $c['status'], $c['students'], $c['labs'], $c['submissions'], $c['avg_grade'], $c['certificates'],
                 ]),
             ],
             'sessions' => [
@@ -204,7 +204,6 @@ class ReportController extends Controller
         return $classes->map(fn ($c) => [
             'id' => $c->id,
             'name' => $c->name,
-            'code' => $c->code,
             'instructor' => $c->instructor->name ?? 'Unassigned',
             'status' => $c->isEnded() ? 'ended' : 'active',
             'students' => (int) $c->enrolled_count,

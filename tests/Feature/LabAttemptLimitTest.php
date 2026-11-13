@@ -110,7 +110,7 @@ class LabAttemptLimitTest extends TestCase
         $lab = $this->lab();
         $this->finishedAttempt($lab);
 
-        $this->actingAs($this->student)->postJson("/api/v1/labs/{$lab->id}/start")
+        $this->actingAs($this->student)->withCameraCheck($lab->id)->postJson("/api/v1/labs/{$lab->id}/start")
             ->assertForbidden()
             ->assertJson(['error' => 'attempts_exhausted']);
     }

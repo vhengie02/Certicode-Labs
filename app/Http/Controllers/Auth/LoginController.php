@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -117,17 +118,18 @@ class LoginController extends Controller
 
         $mailError = null;
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Google Authentication Code',
-                'greeting' => 'Hello developer,',
+            // The wording never names Google: a code email that mentions another company's brand
+            // reads as phishing to spam filters.
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Your sign-in code',
                 'messageLines' => [
-                    'We received a request to access your Certicode Labs account using this Google-linked email address.',
-                    'Use the verification code below to complete your authentication process.',
+                    'Someone asked to sign in to Certicode Labs with this email address.',
+                    'Enter the code below to finish signing in.',
                 ],
                 'code' => $code,
             ], function ($message) use ($gmail) {
                 $message->to($gmail)
-                    ->subject('Certicode Labs: Google Authentication Code');
+                    ->subject('Your Certicode Labs sign-in code');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send Google verification email: '.$e->getMessage());
@@ -265,6 +267,9 @@ class LoginController extends Controller
 
             $request->validate([
                 'password' => $passwordRules,
+                'terms' => 'accepted',
+            ], [
+                'terms.accepted' => 'Please confirm your age and agree to the Terms and Privacy Policy.',
             ]);
 
             $password = $request->password ?: Str::random(16);
@@ -286,6 +291,7 @@ class LoginController extends Controller
                 'role' => 'student', // instructor access needs an admin's approval
                 'github_username' => $githubUsername,
             ]);
+            $newUser->acceptTerms();
 
             if ($request->role === 'instructor') {
                 $newUser->requestInstructorAccess();
@@ -307,7 +313,7 @@ class LoginController extends Controller
     /**
      * Redirect the user to the OAuth provider authentication page.
      */
-    public function redirectToProvider($provider)
+    public function redirectToProvider(Request $request, $provider)
     {
         $provider = strtolower($provider);
         if (! in_array($provider, ['google', 'github'])) {
@@ -331,7 +337,23 @@ class LoginController extends Controller
             return redirect()->route('login')->withErrors(['email' => "{$provider} OAuth credentials not configured in system services."]);
         }
 
-        return Socialite::driver($provider)->redirect();
+        $driver = Socialite::driver($provider);
+
+        // Without this Google silently reuses the browser's active account, so people with several
+        // Gmail accounts could never pick one
+        if ($provider === 'google') {
+            $driver->with(['prompt' => 'select_account']);
+        }
+
+        // The sign-in buttons open Google in a small window. The callback reads this to hand the
+        // result back to the page that opened it. A full-page sign-in clears a stale flag.
+        if ($provider === 'google' && $request->boolean('popup')) {
+            $request->session()->put('oauth_popup', true);
+        } else {
+            $request->session()->forget('oauth_popup');
+        }
+
+        return $driver->redirect();
     }
 
     /**
@@ -431,9 +453,25 @@ class LoginController extends Controller
     }
 
     /**
-     * Handle the OAuth provider callback.
+     * Handle the OAuth provider callback. A sign-in that ran in the popup window ends on a small
+     * page that sends the opening page where to go and then closes itself.
      */
     public function handleProviderCallback(Request $request, $provider)
+    {
+        $response = $this->completeProviderCallback($request, $provider);
+
+        if ($request->session()->pull('oauth_popup') && $response instanceof RedirectResponse) {
+            // Flashed messages stay in the session for the opening page's next request
+            return response()->view('auth.oauth-popup-done', ['target' => $response->getTargetUrl()]);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Sign in, link or start a sign-up from the identity the OAuth provider returned.
+     */
+    private function completeProviderCallback(Request $request, $provider)
     {
         $provider = strtolower($provider);
         if (! in_array($provider, ['google', 'github'])) {
@@ -630,18 +668,20 @@ class LoginController extends Controller
         }
 
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Reset Password Link',
-                'greeting' => 'Hello developer,',
+            $name = User::findByEmail($email)?->name;
+
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Reset your password',
+                'greeting' => $name ? "Hello {$name}," : 'Hello,',
                 'messageLines' => [
-                    'You are receiving this email because we received a password reset request for your account.',
-                    'Please click the button below to reset your password. If you did not request this, no action is required.',
+                    'We received a request to reset the password for your Certicode Labs account.',
+                    'Use the button below to choose a new password.',
                 ],
                 'actionUrl' => $resetLink,
                 'actionText' => 'Reset Password',
             ], function ($message) use ($email) {
                 $message->to($email)
-                    ->subject('Certicode Labs: Reset Password Link');
+                    ->subject('Reset your Certicode Labs password');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send password reset email: '.$e->getMessage());
@@ -752,18 +792,18 @@ class LoginController extends Controller
         }
 
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Reset Password Link (Google)',
-                'greeting' => 'Hello developer,',
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Reset your password',
+                'greeting' => $user->name ? "Hello {$user->name}," : 'Hello,',
                 'messageLines' => [
-                    'You are receiving this email because we received a password reset request for your Google-linked account.',
-                    'Please click the button below to reset your password. If you did not request this, no action is required.',
+                    'We received a request to reset the password for your Certicode Labs account.',
+                    'Use the button below to choose a new password.',
                 ],
                 'actionUrl' => $resetLink,
                 'actionText' => 'Reset Password',
             ], function ($message) use ($gmail) {
                 $message->to($gmail)
-                    ->subject('Certicode Labs: Reset Password Link (Google)');
+                    ->subject('Reset your Certicode Labs password');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send Google password reset email: '.$e->getMessage());

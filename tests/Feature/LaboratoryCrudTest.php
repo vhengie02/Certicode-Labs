@@ -165,4 +165,72 @@ class LaboratoryCrudTest extends TestCase
         $this->assertTrue($lab->starter_files[0]['is_primary']);
         $this->assertTrue($lab->starter_files[2]['is_readonly']);
     }
+
+    /**
+     * The rubric the instructor types is what the AI grader receives, so it has to survive
+     * creating and editing the lab.
+     */
+    public function test_instructor_can_set_change_and_clear_a_lab_rubric(): void
+    {
+        $module = $this->moduleForInstructor();
+        $fields = [
+            'title' => 'Rubric Lab',
+            'description' => 'Handle a custom exception.',
+            'time_limit' => 45,
+            'module_id' => $module->id,
+            'tasks' => [['task' => 'Throw the exception', 'command' => '']],
+        ];
+
+        $this->actingAs($this->instructor)
+            ->post(route('laboratories.store'), $fields + ['rubric' => 'Exception handling is half the grade.'])
+            ->assertRedirect(route('classes.show', $module->class_id));
+
+        $lab = Laboratory::where('title', 'Rubric Lab')->firstOrFail();
+        $this->assertSame('Exception handling is half the grade.', $lab->rubric);
+
+        $this->actingAs($this->instructor)
+            ->get(route('laboratories.edit', $lab))
+            ->assertOk()
+            ->assertSee('Exception handling is half the grade.');
+
+        $this->actingAs($this->instructor)
+            ->put(route('laboratories.update', $lab), $fields + ['rubric' => 'Clarity is half the grade.']);
+        $this->assertSame('Clarity is half the grade.', $lab->fresh()->rubric);
+
+        // A request that doesn't carry the field leaves the rubric alone
+        $this->actingAs($this->instructor)->put(route('laboratories.update', $lab), $fields);
+        $this->assertSame('Clarity is half the grade.', $lab->fresh()->rubric);
+
+        // The form sends an empty box to clear it
+        $this->actingAs($this->instructor)->put(route('laboratories.update', $lab), $fields + ['rubric' => '']);
+        $this->assertNull($lab->fresh()->rubric);
+    }
+
+    public function test_lab_rubric_has_a_length_limit(): void
+    {
+        $module = $this->moduleForInstructor();
+
+        $this->actingAs($this->instructor)
+            ->post(route('laboratories.store'), [
+                'title' => 'Long Rubric Lab',
+                'description' => 'Handle a custom exception.',
+                'time_limit' => 45,
+                'module_id' => $module->id,
+                'rubric' => str_repeat('a', 10001),
+            ])
+            ->assertSessionHasErrors('rubric');
+
+        $this->assertDatabaseMissing('laboratories', ['title' => 'Long Rubric Lab']);
+    }
+
+    private function moduleForInstructor(): Module
+    {
+        $class = SchoolClass::create([
+            'name' => 'CS 102',
+            'code' => 'CS102-01',
+            'instructor_id' => $this->instructor->id,
+        ]);
+
+        return Module::create(['title' => 'Exceptions', 'class_id' => $class->id, 'order' => 1]);
+    }
 }

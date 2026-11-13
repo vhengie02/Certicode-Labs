@@ -27,7 +27,7 @@
         $selectedModuleId = $selectedLab ? (string) $selectedLab->module->id : null;
         $initialModule = $selectedModuleId ?? ($pickerModules->count() === 1 ? $pickerModules->first()['id'] : null);
         $needsLabSearch = $pickerModules->contains(fn ($module) => $module['labs']->count() > 6);
-        $menuClass = 'absolute left-0 z-40 mt-2 w-[28rem] max-w-[calc(100vw-2rem)] rounded-xl border border-[#2e2e2e] bg-[#171717] shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)] overflow-hidden';
+        $menuClass = 'absolute left-0 z-40 mt-2 origin-top-left w-[28rem] max-w-[calc(100vw-2rem)] rounded-xl border border-[#2e2e2e] bg-[#171717] shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)] overflow-hidden';
         $pickerClass = 'w-full sm:w-auto sm:max-w-[22rem] inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-sm font-medium transition-colors';
     @endphp
     <nav class="relative z-30 flex flex-wrap items-center gap-2 border-b border-[#2e2e2e] pb-3" aria-label="Choose what to monitor"
@@ -64,7 +64,7 @@
                     <span class="truncate" x-text="mod ? modules[mod] : 'Choose a module'">{{ $initialModule ? $pickerModules->firstWhere('id', $initialModule)['title'] : 'Choose a module' }}</span>
                     <svg class="ml-auto w-4 h-4 shrink-0 transition-transform" :class="menu === 'module' && 'rotate-180'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                 </button>
-                <div x-show="menu === 'module'" x-cloak x-transition.opacity.duration.100ms class="{{ $menuClass }}">
+                <div x-show="menu === 'module'" x-cloak x-transition:enter="motion-popover-enter" x-transition:enter-start="motion-popover-from" x-transition:leave="motion-popover-leave" x-transition:leave-end="motion-popover-from" class="{{ $menuClass }}">
                     <ul class="max-h-80 overflow-y-auto py-1" role="listbox" aria-label="Modules">
                         @foreach ($pickerModules as $module)
                             @php $moduleKey = \Illuminate\Support\Js::from($module['id']); @endphp
@@ -102,7 +102,7 @@
                           x-text="mod && mod === {{ \Illuminate\Support\Js::from($selectedModuleId) }} ? {{ \Illuminate\Support\Js::from($selectedLab?->title) }} : (mod ? 'Choose a lab' : 'Choose a module first')">{{ $selectedLab ? $selectedLab->title : ($initialModule ? 'Choose a lab' : 'Choose a module first') }}</span>
                     <svg class="ml-auto w-4 h-4 shrink-0 transition-transform" :class="menu === 'lab' && 'rotate-180'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                 </button>
-                <div x-show="menu === 'lab'" x-cloak x-transition.opacity.duration.100ms class="{{ $menuClass }}">
+                <div x-show="menu === 'lab'" x-cloak x-transition:enter="motion-popover-enter" x-transition:enter-start="motion-popover-from" x-transition:leave="motion-popover-leave" x-transition:leave-end="motion-popover-from" class="{{ $menuClass }}">
                     @if ($needsLabSearch)
                         <div class="p-2 border-b border-[#2e2e2e]">
                             <input x-ref="search" x-model="q" type="search" placeholder="Search labs in this module" aria-label="Search labs" class="ui-input h-9 w-full">
@@ -343,7 +343,7 @@
                                         <span class="text-xs text-[#888888]">Not submitted</span>
                                     @endif
                                 </td>
-                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \Carbon\Carbon::parse($sess->started_at)->format('M j, H:i') : 'Not started' }}</td>
+                                <td class="px-5 py-3 whitespace-nowrap text-xs text-[#888888]">{{ $sess->started_at ? \App\Support\DisplayTime::in($sess->started_at)->format('M j, H:i') : 'Not started' }}</td>
                                 <td class="px-5 py-3 whitespace-nowrap text-right">
                                     <a href="{{ route('sessions.telemetry-timeline', $sess->id) }}" class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors">Timeline</a>
                                 </td>

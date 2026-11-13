@@ -17,29 +17,10 @@
     <form class="mt-8 space-y-5 cc-rise" style="--d:1" method="POST" action="{{ route('login.store') }}">
         @csrf
 
-        @if (session('status'))
-            <div class="cc-notice cc-notice-success" role="status">
-                <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                <p>{{ session('status') }}</p>
-            </div>
-        @endif
-
-        @if ($errors->any())
-            <div class="cc-notice cc-notice-error" role="alert">
-                <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                <div>
-                    <p class="font-medium">We couldn't sign you in.</p>
-                    <ul class="mt-1 space-y-0.5 text-[#fca5a5]">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                    @if ($errors->has('email'))
-                        <p class="mt-2 text-[var(--cc-text-dim)]">Enrolled in a course? Use your school email, or ask your instructor to check the class roster.</p>
-                    @endif
-                </div>
-            </div>
-        @endif
+        @include('auth.partials.notices', [
+            'errorTitle' => "We couldn't sign you in.",
+            'errorHint' => $errors->has('email') ? 'Enrolled in a course? Use your school email, or ask your instructor to check the class roster.' : null,
+        ])
 
         <div>
             <label for="email" class="cc-label">Email</label>
@@ -76,7 +57,7 @@
     </div>
 
     <div class="grid grid-cols-2 gap-3 cc-rise" style="--d:3">
-        <a href="{{ route('auth.provider.redirect', 'google') }}" class="cc-btn cc-btn-quiet">
+        <a href="{{ route('auth.provider.redirect', 'google') }}" class="cc-btn cc-btn-quiet" data-oauth-popup>
             <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -100,4 +81,5 @@
 
 @push('scripts')
     @include('auth.partials.password-toggle-script')
+    @include('auth.partials.google-popup-script')
 @endpush

@@ -23,6 +23,7 @@ class InstructorApprovalTest extends TestCase
             'password' => 'Str0ng!Pass',
             'password_confirmation' => 'Str0ng!Pass',
             'role' => $role,
+            'terms' => '1',
         ])->assertRedirect('/dashboard');
 
         return User::where('email', 'marta@example.com')->firstOrFail();

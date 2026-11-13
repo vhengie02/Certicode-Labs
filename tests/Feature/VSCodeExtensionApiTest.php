@@ -119,7 +119,7 @@ class VSCodeExtensionApiTest extends TestCase
             ->assertOk()
             ->assertJson(['vscode_connected' => false, 'vscode_closed' => false, 'vscode_reconnecting' => true]);
 
-        $this->travel(31)->seconds();
+        $this->travel(13)->seconds();
         $this->getJson("/v1/sessions/{$session->id}")
             ->assertOk()
             ->assertJson(['vscode_connected' => false, 'vscode_closed' => true, 'vscode_reconnecting' => false]);
@@ -614,7 +614,28 @@ JAVA;
 
         $fresh = $session->fresh();
         $this->assertEquals(42, $fresh->diff_stats['lines_added']);
+        $this->assertSame([['name' => 'TaskManager.java', 'added' => 42, 'deleted' => 10]], $fresh->diff_stats['files']);
         $this->assertNotEmpty($fresh->code_contributions);
+    }
+
+    public function test_a_diff_keeps_a_bounded_list_of_files(): void
+    {
+        $session = LabSession::create([
+            'lab_id' => $this->laboratory->id,
+            'user_id' => $this->student->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $files = array_map(fn (int $i) => ['name' => "File{$i}.java", 'added' => 1, 'deleted' => 0, 'modified' => 0, 'extra' => 'dropped'], range(1, 60));
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$session->id}/diff", ['lines_added' => 60, 'lines_deleted' => 0, 'files' => $files])
+            ->assertOk();
+
+        $stored = $session->fresh()->diff_stats['files'];
+        $this->assertCount(50, $stored);
+        $this->assertArrayNotHasKey('extra', $stored[0]);
     }
 
     /**

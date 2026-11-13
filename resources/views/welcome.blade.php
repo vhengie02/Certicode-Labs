@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-[#0b0c0b] text-[#ececea] scroll-smooth">
+<html lang="en" class="h-full bg-black text-white scroll-smooth">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,26 +10,26 @@
     <title>Certicode Labs | See how your students actually code</title>
     <meta name="description" content="Students write Java in VS Code while Certicode watches the process: camera presence, focus, pasted code. Work is graded against your rubric and earns a verifiable certificate.">
     <meta property="og:title" content="Certicode Labs | See how your students actually code">
-    <meta property="og:description" content="Live coding labs with integrity signals, rubric-based AI grading, and verifiable certificates.">
+    <meta property="og:description" content="Live and self-paced coding labs with integrity signals, rubric-based AI grading, and verifiable certificates.">
     <meta property="og:type" content="website">
-    <meta name="theme-color" content="#0b0c0b">
+    <meta name="theme-color" content="#000000">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @vite(['resources/css/app.css', 'resources/js/app.js', 'resources/js/landing-background.js'])
 
     <style>
         :root {
-            --ink: #0b0c0b;
-            --ink-raised: #121412;
-            --ink-card: #151815;
-            --line: rgba(236, 236, 234, 0.08);
-            --line-strong: rgba(236, 236, 234, 0.14);
-            --text: #ececea;
-            --text-dim: #a6a9a4;
-            --text-faint: #6f736d;
+            --ink: #000000;
+            --ink-raised: #070a08;
+            --ink-card: #0a0e0b;
+            --line: rgba(62, 207, 142, 0.14);
+            --line-strong: rgba(62, 207, 142, 0.26);
+            --text: #ffffff;
+            --text-dim: #a9efcb;
+            --text-faint: #6fcf9f;
             --brand: #3ecf8e;
             --brand-deep: #1f8a5c;
             --brand-glow: rgba(62, 207, 142, 0.16);
@@ -55,6 +55,12 @@
             position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0.06; mix-blend-mode: overlay;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
         }
+
+
+        /* Hero headline painted by tech-text.js: the h1 text stays in the DOM for layout and screen
+           readers. The canvas overhangs the h1 so frames, specks and dragged letters have room. */
+        .tech-text-canvas { position: absolute; top: -128px; left: -128px; width: calc(100% + 256px); height: calc(100% + 256px); pointer-events: none; }
+        .tech-text-live { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-text-fill-color: transparent; }
 
         /* Hero atmosphere: offset emerald light */
         .hero-atmosphere {
@@ -88,14 +94,14 @@
             display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
             border-radius: 10px; font-weight: 600; font-size: 0.9rem; line-height: 1;
             padding: 0.95rem 1.35rem; cursor: pointer;
-            transition: transform 220ms cubic-bezier(.2, .8, .2, 1), background-color 220ms ease, box-shadow 220ms ease, border-color 220ms ease, color 220ms ease;
+            transition: transform 160ms var(--ease-out), background-color 220ms ease, box-shadow 220ms ease, border-color 220ms ease, color 220ms ease;
         }
-        .btn:active { transform: translateY(1px) scale(0.985); }
         .btn-brand { background: var(--brand); color: #06150e; box-shadow: 0 10px 30px -10px rgba(62, 207, 142, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
         .btn-brand:hover { background: #52dba0; transform: translateY(-2px); box-shadow: 0 16px 40px -12px rgba(62, 207, 142, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
         .btn-quiet { color: var(--text); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.02); }
         .btn-quiet:hover { border-color: rgba(62, 207, 142, 0.45); background: rgba(62, 207, 142, 0.06); transform: translateY(-2px); }
-        .btn .arrow { transition: transform 220ms cubic-bezier(.2, .8, .2, 1); }
+        .btn:active { transform: scale(0.97); }
+        .btn .arrow { transition: transform 220ms var(--ease-out); }
         .btn:hover .arrow { transform: translateX(3px); }
 
         .link-underline { background-image: linear-gradient(currentColor, currentColor); background-size: 0% 1px; background-repeat: no-repeat; background-position: 0 100%; transition: background-size 250ms ease, color 200ms ease; }
@@ -105,10 +111,10 @@
 
         /* Staggered entrance */
         @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-        .rise { opacity: 0; animation: rise 800ms cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: calc(var(--d, 0) * 90ms); }
+        .rise { opacity: 0; animation: rise 800ms var(--ease-out) forwards; animation-delay: calc(var(--d, 0) * 90ms); }
 
         /* Scroll reveal (class added by the observer below) */
-        .reveal { opacity: 0; transform: translateY(24px); transition: opacity 900ms cubic-bezier(.2, .8, .2, 1), transform 900ms cubic-bezier(.2, .8, .2, 1); }
+        .reveal { opacity: 0; transform: translateY(24px); transition: opacity 900ms var(--ease-out), transform 900ms var(--ease-out); }
         .reveal.is-visible { opacity: 1; transform: none; }
 
         @media (prefers-reduced-motion: reduce) {
@@ -122,12 +128,13 @@
 <body class="min-h-full flex flex-col selection:bg-[#3ecf8e]/25 selection:text-white">
     <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#3ecf8e] focus:text-[#06150e] focus:font-semibold">Skip to content</a>
     <div class="grain" aria-hidden="true"></div>
+    <div id="ascii-background" class="ascii-bg" aria-hidden="true"></div>
 
     <!-- Navigation -->
-    <header class="sticky top-0 z-40 border-b border-[var(--line)] bg-[#0b0c0b]/75 backdrop-blur-xl">
+    <header class="sticky top-0 z-40 border-b border-[var(--line)] bg-black/75 backdrop-blur-xl">
         <div class="max-w-[1240px] mx-auto px-6 h-16 flex items-center justify-between">
             <a href="/" class="flex items-center gap-2.5 group" aria-label="Certicode Labs home">
-                <x-logo-mark class="w-7 h-7 text-[#ececea] transition-transform duration-300 group-hover:-translate-y-px" />
+                <x-logo-mark class="w-7 h-7 text-white transition-transform duration-300 group-hover:-translate-y-px" />
                 <span class="font-display text-[17px] font-semibold whitespace-nowrap">Certicode <span class="text-[var(--text-dim)] font-medium">Labs</span></span>
             </a>
 
@@ -147,7 +154,7 @@
         </div>
     </header>
 
-    <main id="main" class="flex-1">
+    <main id="main" class="relative z-10 flex-1">
 
         <!-- Hero: the pitch, then the real instructor monitoring screen it describes -->
         <section class="relative overflow-hidden">
@@ -155,9 +162,9 @@
 
             <div class="relative max-w-[1240px] mx-auto px-6 pt-16 lg:pt-24">
                 <div class="max-w-[940px]">
-                    <p class="rise text-[13px] font-medium text-[#3ecf8e]" style="--d:0">Live coding labs for Java courses</p>
+                    <p class="rise text-[13px] font-medium text-[#3ecf8e]" style="--d:0">Live and self-paced coding labs for Java courses</p>
 
-                    <h1 class="rise font-display mt-5 pb-2 text-[44px] leading-[1.06] sm:text-6xl lg:text-[76px] lg:leading-[1.02] font-bold balance" style="--d:1">
+                    <h1 id="hero-title" class="rise relative font-display mt-5 pb-2 text-[44px] leading-[1.06] sm:text-6xl lg:text-[76px] lg:leading-[1.02] font-bold balance" style="--d:1">
                         See how your students <span class="font-serif-accent text-[#3ecf8e] font-normal text-[1.12em]">actually</span> code.
                     </h1>
 
@@ -212,7 +219,7 @@
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:0ms">
                         <span class="font-code text-sm text-[#3ecf8e]">01</span>
                         <h3 class="mt-6 text-xl font-semibold">Start with a camera check</h3>
-                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">The student confirms they&rsquo;re present on camera, then the lab opens straight into VS Code with the starter files in place.</p>
+                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">A camera check looks for the student&rsquo;s face, and a pass in a dim room is noted for you. Then the lab opens straight into VS Code with the starter files in place.</p>
                     </li>
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:120ms">
                         <span class="font-code text-sm text-[#3ecf8e]">02</span>
@@ -222,7 +229,7 @@
                     <li class="reveal bg-[var(--ink)] p-8 lg:p-10" style="transition-delay:240ms">
                         <span class="font-code text-sm text-[#3ecf8e]">03</span>
                         <h3 class="mt-6 text-xl font-semibold">Graded, then certified</h3>
-                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">The AI scores the submission against your rubric. You can override any grade. Pass the threshold and the certificate is issued.</p>
+                        <p class="mt-3 text-[15px] text-[var(--text-dim)] leading-relaxed pretty">The AI scores the submission against your rubric. You can override any grade. Pass enough of the class&rsquo;s labs and the certificate is issued when the student claims it or the class ends.</p>
                     </li>
                 </ol>
             </div>
@@ -234,39 +241,39 @@
                 <div class="reveal max-w-[720px]">
                     <h2 class="font-display text-4xl sm:text-5xl font-bold leading-[1.05] balance">The whole lab lives inside VS Code.</h2>
                     <p class="mt-5 text-[var(--text-dim)] text-lg leading-relaxed max-w-[56ch] pretty">
-                        The extension adds one sidebar with the tasks, the shared timer, live standings, their own changes and team chat.
+                        The extension adds one sidebar with the tasks, the timer, live standings, their own changes and team chat.
                     </p>
                     <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="mt-7 inline-flex text-sm font-medium text-[#3ecf8e] link-underline">Download the extension (.vsix)</a>
                 </div>
 
-                <div class="mt-14 -mx-6 px-6 flex gap-5 overflow-x-auto snap-x snap-mandatory pb-4 md:mx-0 md:px-0 md:grid md:grid-cols-4 md:gap-6 md:overflow-visible md:pb-0 items-start">
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:0ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-tasks.jpg') }}" width="760" height="1016" loading="lazy" decoding="async" alt="The Tasks tab: a progress bar at 75% and four lab tasks, three done and one to do." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                <div class="mt-14 -mx-6 px-6 flex gap-5 overflow-x-auto snap-x snap-mandatory scroll-px-6 pb-4 md:mx-0 md:px-0 md:grid md:grid-cols-4 md:gap-6 md:overflow-visible md:pb-0 items-start">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:0ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Tasks</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Marked off each time the grader checks their code.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-tasks.jpg') }}" width="760" height="1016" loading="lazy" decoding="async" alt="The Tasks tab: a progress bar at 75% and four lab tasks, three done and one to do." class="block w-full h-auto rounded-lg"></div>
                     </figure>
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:90ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-leaderboard.jpg') }}" width="760" height="1406" loading="lazy" decoding="async" alt="The Standings tab during a live lab: seven students ranked by tasks done, with the shared clock." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:90ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Standings</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Ranked by tasks done, then by time taken.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-leaderboard.jpg') }}" width="760" height="1406" loading="lazy" decoding="async" alt="The Standings tab during a live lab: seven students ranked by tasks done, with the shared clock." class="block w-full h-auto rounded-lg"></div>
                     </figure>
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:180ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-diff.jpg') }}" width="760" height="1130" loading="lazy" decoding="async" alt="The Changes tab: 24 lines added, 5 deleted and 7 modified, broken down across three Java files, with each teammate's share of the work." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:180ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Changes</span>
                             <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">Every line added and removed, file by file.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-diff.jpg') }}" width="760" height="1130" loading="lazy" decoding="async" alt="The Changes tab: 24 lines added, 5 deleted and 7 modified, broken down across three Java files, with each teammate's share of the work." class="block w-full h-auto rounded-lg"></div>
                     </figure>
-                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start" style="transition-delay:270ms">
-                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1096" loading="lazy" decoding="async" alt="The Chat tab in a pair lab: two students split the work, one sharing the Java age check as a snippet." class="block w-full h-auto rounded-lg"></div>
-                        <figcaption class="mt-4">
+                    <figure class="reveal shrink-0 w-[72%] sm:w-[44%] md:w-auto snap-start md:row-span-2 md:grid md:grid-rows-subgrid md:gap-y-4 md:items-start" style="transition-delay:270ms">
+                        <figcaption class="mb-4 md:mb-0">
                             <span class="block font-semibold">Chat</span>
-                            <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">For pair labs, with code snippets inline.</span>
+                            <span class="block mt-1 text-sm text-[var(--text-dim)] leading-relaxed">For team labs, with code snippets inline.</span>
                         </figcaption>
+                        <div class="panel rounded-xl overflow-hidden p-1"><img src="{{ asset('images/landing/extension-chat.jpg') }}" width="760" height="1096" loading="lazy" decoding="async" alt="The Chat tab in a pair lab: two students split the work, one sharing the Java age check as a snippet." class="block w-full h-auto rounded-lg"></div>
                     </figure>
                 </div>
             </div>
@@ -281,7 +288,7 @@
                 <div class="mt-14 grid grid-cols-1 lg:grid-cols-5 gap-6 [&>*]:min-w-0">
                     <article class="reveal panel rounded-2xl p-6 sm:p-8 lg:col-span-3">
                         <h3 class="text-xl font-semibold">Every flag, with the moment it happened.</h3>
-                        <p class="mt-2 text-[15px] text-[var(--text-dim)] leading-relaxed max-w-[56ch] pretty">Pastes that match nothing in the file or team chat, time away from VS Code, and missing faces on camera.</p>
+                        <p class="mt-2 text-[15px] text-[var(--text-dim)] leading-relaxed max-w-[56ch] pretty">Pastes that match nothing in the lab files or team chat, time away from VS Code, and missing faces on camera.</p>
                         <div class="mt-6 rounded-xl overflow-hidden border border-[var(--line)]"><img src="{{ asset('images/landing/integrity-trail.jpg') }}" width="1100" height="563" loading="lazy" decoding="async" alt="A student's integrity trail: a high-severity paste of 14 lines that matches nothing in the file or chat, and a low-severity 41 seconds away from VS Code." class="block w-full h-auto"></div>
                     </article>
 
@@ -324,7 +331,7 @@
                     <h2 class="font-display text-4xl sm:text-5xl font-bold leading-[1.05] balance">A certificate anyone can <span class="font-serif-accent font-normal text-[#3ecf8e]">check.</span></h2>
                     <p class="mt-5 text-[var(--text-dim)] text-lg leading-relaxed pretty">Students who pass get a certificate with their lab record. Scanning its QR code opens a public page that confirms it&rsquo;s genuine.</p>
                 </div>
-                <div class="reveal panel rounded-2xl overflow-hidden p-1.5" style="transition-delay:120ms"><img src="{{ asset('images/landing/certificate-verified.jpg') }}" width="1300" height="835" loading="lazy" decoding="async" alt="The public verification page: a confirmation that the certificate is genuine, above the certificate itself with the student's name, course, average grade of 90.3% and 3 of 3 labs completed." class="block w-full h-auto rounded-xl"></div>
+                <div class="reveal panel rounded-2xl overflow-hidden p-1.5" style="transition-delay:120ms"><img src="{{ asset('images/landing/certificate-verified.jpg') }}" width="1300" height="1130" loading="lazy" decoding="async" alt="The public verification page: a confirmation that the certificate is genuine, above the full certificate with the student's name, course, average grade of 90.3%, 3 of 3 labs completed, signature line and QR code." class="block w-full h-auto rounded-xl"></div>
             </div>
         </section>
 
@@ -342,7 +349,7 @@
                     </div>
                     <div class="reveal py-8 sm:px-8" style="transition-delay:160ms">
                         <h3 class="font-semibold">Team labs</h3>
-                        <p class="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">Pairs share a chat, and each person&rsquo;s lines are counted toward the team.</p>
+                        <p class="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">Teammates share a chat, and each person&rsquo;s lines are counted toward the team.</p>
                     </div>
                     <div class="reveal py-8 sm:px-8" style="transition-delay:240ms">
                         <h3 class="font-semibold">Competency tracking</h3>
@@ -359,7 +366,7 @@
                 <h2 class="font-display text-4xl sm:text-6xl font-bold leading-[1.02] balance max-w-3xl mx-auto">
                     Grade the <span class="font-serif-accent font-normal text-[#3ecf8e]">process,</span> not just the output.
                 </h2>
-                <p class="mt-6 text-lg text-[var(--text-dim)] max-w-[46ch] mx-auto pretty">Set up a class, add a lab, and send students the join code.</p>
+                <p class="mt-6 text-lg text-[var(--text-dim)] max-w-[46ch] mx-auto pretty">Once an admin approves your instructor access, set up a class, add a lab, and send students the join code.</p>
                 <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
                     @auth
                         <a href="{{ route('dashboard') }}" class="btn btn-brand">Open dashboard <span class="arrow" aria-hidden="true">&rarr;</span></a>
@@ -372,16 +379,19 @@
         </section>
     </main>
 
-    <footer class="border-t border-[var(--line)]">
+    <footer class="relative z-10 border-t border-[var(--line)]">
         <div class="max-w-[1240px] mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--text-faint)]">
             <div class="flex items-center gap-2.5">
-                <x-logo-mark class="w-4 h-4 text-[#ececea]" />
+                <x-logo-mark class="w-4 h-4 text-white" />
                 <span>&copy; {{ date('Y') }} Certicode Labs</span>
             </div>
-            <nav class="flex items-center gap-6" aria-label="Footer">
+            <nav class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2" aria-label="Footer">
                 <a href="#how-it-works" class="link-underline hover:text-white transition-colors">How it works</a>
                 <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="link-underline hover:text-white transition-colors">VS Code extension</a>
                 <a href="{{ route('login') }}" class="link-underline hover:text-white transition-colors">Sign in</a>
+                <a href="{{ route('legal.privacy') }}" class="link-underline hover:text-white transition-colors">Privacy</a>
+                <a href="{{ route('legal.terms') }}" class="link-underline hover:text-white transition-colors">Terms</a>
+                <a href="{{ route('legal.cookies') }}" class="link-underline hover:text-white transition-colors">Cookies</a>
             </nav>
         </div>
     </footer>

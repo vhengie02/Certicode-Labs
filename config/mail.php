@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\MailFromName;
+
 return [
 
     /*
@@ -112,7 +114,7 @@ return [
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'name' => MailFromName::resolve(env('MAIL_FROM_NAME'), env('APP_NAME', 'Certicode Labs')),
     ],
 
 ];

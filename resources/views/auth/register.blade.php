@@ -33,24 +33,7 @@
     <form id="register-form" class="mt-8 space-y-5 cc-rise" style="--d:1" method="POST" action="{{ route('register.store') }}">
         @csrf
 
-        <div id="client-error" class="cc-notice cc-notice-error hidden" role="alert" tabindex="-1">
-            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-            <p id="client-error-message"></p>
-        </div>
-
-        @if ($errors->any())
-            <div class="cc-notice cc-notice-error" role="alert">
-                <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                <div>
-                    <p class="font-medium">Please fix the following:</p>
-                    <ul class="mt-1 space-y-0.5 text-[#fca5a5]">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            </div>
-        @endif
+        @include('auth.partials.notices', ['errorTitle' => 'Please fix the following:'])
 
         @include('auth.partials.role-cards')
 
@@ -76,7 +59,7 @@
             <ul id="password-rules" class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]" aria-live="polite">
                 @foreach (['length' => '8+ characters', 'upper' => 'An uppercase letter', 'lower' => 'A lowercase letter', 'numsym' => 'A number or symbol'] as $rule => $text)
                     <li data-rule="{{ $rule }}" class="flex items-center gap-2 text-[var(--cc-text-faint)] transition-colors duration-200">
-                        <span class="w-4 h-4 rounded-full border border-current flex items-center justify-center shrink-0 transition-all duration-200" aria-hidden="true">
+                        <span class="w-4 h-4 rounded-full border border-current flex items-center justify-center shrink-0 transition-colors duration-200" aria-hidden="true">
                             <svg class="w-2.5 h-2.5 opacity-0 transition-opacity duration-200" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                         </span>
                         <span>{{ $text }}</span>
@@ -95,6 +78,10 @@
             </div>
         </div>
 
+        <div>
+            @include('auth.partials.terms-consent')
+        </div>
+
         <button type="submit" class="cc-btn cc-btn-brand w-full">
             Create account <span class="cc-arrow" aria-hidden="true">&rarr;</span>
         </button>
@@ -107,7 +94,7 @@
     </div>
 
     <div class="grid grid-cols-2 gap-3 cc-rise" style="--d:3">
-        <a href="{{ route('auth.provider.redirect', 'google') }}" class="cc-btn cc-btn-quiet">
+        <a href="{{ route('auth.provider.redirect', 'google') }}" class="cc-btn cc-btn-quiet" data-oauth-popup>
             <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -133,6 +120,7 @@
 @push('scripts')
     @if (\App\Models\SystemSetting::read('registration_open'))
     @include('auth.partials.password-toggle-script')
+    @include('auth.partials.google-popup-script')
     <script>
         // Live password checklist (mirrors Password::defaults() on the server)
         const passwordInput = document.getElementById('password');
@@ -160,8 +148,6 @@
         passwordInput.addEventListener('input', renderRules);
 
         document.getElementById('register-form').addEventListener('submit', (event) => {
-            const error = document.getElementById('client-error');
-            const message = document.getElementById('client-error-message');
             const confirmation = document.getElementById('password_confirmation').value;
 
             let problem = null;
@@ -173,9 +159,8 @@
 
             if (problem) {
                 event.preventDefault();
-                message.textContent = problem;
-                error.classList.remove('hidden');
-                error.focus();
+                window.showToast(problem, 'error');
+                passwordInput.focus();
             }
         });
     </script>

@@ -4,6 +4,7 @@ use App\Models\Anomaly;
 use App\Models\Laboratory;
 use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
+use App\Models\TeamDoc;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use Illuminate\Foundation\Inspiring;
@@ -104,6 +105,12 @@ Artisan::command('certicode:expire-old-snapshots', function () {
     $this->info("Removed the webcam snapshot from {$count} flag(s) older than ".config('app.snapshot_retention_days').' days.');
 })->purpose('Remove webcam snapshots from old integrity flags, keeping the flags');
 
+Artisan::command('certicode:prune-team-docs', function () {
+    $count = TeamDoc::pruneEnded();
+    $this->info("Removed the shared document of {$count} team attempt(s) that ended.");
+})->purpose('Remove the shared documents of team attempts nobody has open any more');
+
+Schedule::command('certicode:prune-team-docs')->hourly();
 Schedule::command('certicode:close-expired-live-labs')->everyMinute();
 Schedule::command('certicode:auto-conclude-expired-classes')->everyMinute();
 Schedule::command('model:prune', ['--model' => [Anomaly::class, TelemetryLog::class]])->daily();

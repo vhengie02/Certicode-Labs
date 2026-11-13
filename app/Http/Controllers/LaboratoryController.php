@@ -8,8 +8,11 @@ use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\StudentCompetency;
 use App\Notifications\ClassActivityNotification;
+use App\Services\LabTeams;
+use App\Support\DisplayTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class LaboratoryController extends Controller
 {
@@ -54,12 +57,15 @@ class LaboratoryController extends Controller
             'time_limit' => 'required|integer|min:5|max:300',
             'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
+            ...$this->teamRules(),
             'availability_mode' => 'nullable|in:open,live',
+            'due_at' => 'nullable|date',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
             'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'rubric' => 'nullable|string|max:10000',
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
@@ -114,12 +120,16 @@ class LaboratoryController extends Controller
             'github_repo_template' => $validated['github_repo_template'] ?? null,
             'time_limit' => $validated['time_limit'],
             'max_attempts' => $validated['max_attempts'] ?? 1,
+            // Live labs run on a shared countdown, so only open labs have a due date
+            'due_at' => $availabilityMode === 'open' ? DisplayTime::fromInput($validated['due_at'] ?? null) : null,
             'is_group_lab' => $request->has('is_group_lab'),
+            ...$this->teamSettings($validated),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'live_status' => $availabilityMode === 'live' ? 'not_started' : 'active',
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            'rubric' => $validated['rubric'] ?? null,
             'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ]);
 
@@ -141,7 +151,7 @@ class LaboratoryController extends Controller
             }
         }
 
-        return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory created successfully.');
+        return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory created successfully.'.$this->drawTeams($lab));
     }
 
     /**
@@ -181,7 +191,11 @@ class LaboratoryController extends Controller
                 ->orderBy('id')->pluck('id')->flip()->map(fn ($index) => $index + 1);
         }
 
-        return view('laboratories.show', compact('laboratory', 'activeSession', 'attempts', 'results', 'attemptNumbers'));
+        $teamPicker = $user->role === 'student' && $laboratory->studentsPickTeams()
+            ? app(LabTeams::class)->pickerFor($laboratory, $user)
+            : null;
+
+        return view('laboratories.show', compact('laboratory', 'activeSession', 'attempts', 'results', 'attemptNumbers', 'teamPicker'));
     }
 
     /**
@@ -213,12 +227,15 @@ class LaboratoryController extends Controller
             'time_limit' => 'required|integer|min:5|max:300',
             'max_attempts' => 'nullable|integer|min:0|max:10',
             'is_group_lab' => 'boolean',
+            ...$this->teamRules(),
             'availability_mode' => 'nullable|in:open,live',
+            'due_at' => 'nullable|date',
             'live_duration_minutes' => 'nullable|integer|min:1|max:600',
             'module_id' => 'required|exists:modules,id',
             'tasks' => 'nullable|array',
             'tasks.*.task' => 'required|string|max:255',
             'tasks.*.command' => 'nullable|string|max:255',
+            'rubric' => 'nullable|string|max:10000',
             'starter_files' => 'nullable|array',
             'starter_files.*.name' => 'nullable|string|max:255',
             'starter_files.*.content' => 'nullable|string',
@@ -266,6 +283,7 @@ class LaboratoryController extends Controller
 
         $availabilityMode = $validated['availability_mode'] ?? $laboratory->availability_mode ?? 'open';
         $liveDuration = $validated['live_duration_minutes'] ?? $laboratory->live_duration_minutes ?? $validated['time_limit'];
+        $dueAt = array_key_exists('due_at', $validated) ? DisplayTime::fromInput($validated['due_at']) : $laboratory->due_at;
 
         $updateData = [
             'title' => $validated['title'],
@@ -274,11 +292,15 @@ class LaboratoryController extends Controller
             'github_repo_template' => $validated['github_repo_template'] ?? $laboratory->github_repo_template,
             'time_limit' => $validated['time_limit'],
             'max_attempts' => $validated['max_attempts'] ?? $laboratory->max_attempts ?? 1,
+            'due_at' => $availabilityMode === 'open' ? $dueAt : null,
             'is_group_lab' => $request->has('is_group_lab'),
+            ...$this->teamSettings($validated),
             'availability_mode' => $availabilityMode,
             'live_duration_minutes' => $availabilityMode === 'live' ? $liveDuration : null,
             'module_id' => $validated['module_id'],
             'tasks_definition' => $tasksDefinition,
+            // A request without the field keeps the saved rubric; the form sends it empty to clear it
+            'rubric' => array_key_exists('rubric', $validated) ? $validated['rubric'] : $laboratory->rubric,
             'starter_files' => ! empty($starterFiles) ? $starterFiles : null,
         ];
 
@@ -291,7 +313,43 @@ class LaboratoryController extends Controller
         // Students who already finished the lab gain or lose credit for the changed competencies
         StudentCompetency::refreshForLabCompetencies($laboratory, array_merge($synced['attached'], $synced['detached']));
 
-        return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.');
+        return redirect()->route('classes.show', $module->class_id)->with('success', 'Laboratory updated successfully.'.$this->drawTeams($laboratory));
+    }
+
+    /**
+     * Only group labs have team settings, so a solo lab's hidden fields are ignored.
+     */
+    private function teamRules(): array
+    {
+        return [
+            'team_size' => 'exclude_without:is_group_lab|required|integer|min:2|max:50',
+            'team_formation' => 'exclude_without:is_group_lab|required|in:students,random,instructor',
+        ];
+    }
+
+    private function teamSettings(array $validated): array
+    {
+        return [
+            'team_size' => $validated['team_size'] ?? null,
+            'team_formation' => $validated['team_formation'] ?? 'instructor',
+        ];
+    }
+
+    /**
+     * A lab set to random teams draws them when saved. Teams that already exist stay, and the
+     * Teams page draws them again on request.
+     *
+     * @return string What to add to the success message
+     */
+    private function drawTeams(Laboratory $laboratory): string
+    {
+        if (! $laboratory->is_group_lab || $laboratory->team_formation !== 'random' || $laboratory->groups()->exists()) {
+            return '';
+        }
+
+        $placed = app(LabTeams::class)->placeUnassigned($laboratory);
+
+        return $placed ? " {$placed} ".Str::plural('student', $placed).' drawn into teams.' : '';
     }
 
     /**

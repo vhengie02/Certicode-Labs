@@ -1,4 +1,14 @@
 @import 'tailwindcss';
+@import './branched-menu.css';
+@import './class-patterns.css';
+@import './code-slots.css';
+@import './confirm-dialog.css';
+@import './line-sidebar.css';
+@import './motion.css';
+@import './staggered-menu.css';
+@import './stepper.css';
+@import './toast.css';
+@import './wake-bar.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -21,6 +31,10 @@
     --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
     --font-brick: 'Brick Sans', sans-serif;
+
+    /* Tailwind's ease-out and ease-in-out classes share the curves in motion.css */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
     /* Supabase Canvas & Surface */
     --color-canvas: #0f0f0f;
@@ -177,7 +191,7 @@ body {
     font-weight: 600;
     font-size: 0.875rem;
     padding: 0.5rem 1.25rem;
-    transition: background-color 150ms ease, transform 150ms ease;
+    transition: background-color 150ms ease, transform var(--motion-press) var(--ease-out);
 }
 .dark .btn-primary {
     color: #0f0f0f;
@@ -196,7 +210,7 @@ body {
     font-weight: 600;
     font-size: 0.8125rem;
     padding: 0.5rem 1.25rem;
-    transition: background-color 150ms ease;
+    transition: background-color 150ms ease, transform var(--motion-press) var(--ease-out);
 }
 .btn-pill:hover {
     background-color: #00c573;
@@ -214,7 +228,7 @@ body {
     font-weight: 500;
     font-size: 0.875rem;
     padding: 0.5rem 1rem;
-    transition: background-color 150ms ease, border-color 150ms ease;
+    transition: background-color 150ms ease, border-color 150ms ease, transform var(--motion-press) var(--ease-out);
 }
 .btn-secondary:hover {
     background-color: var(--color-surface-hover);
@@ -265,4 +279,17 @@ body {
 @keyframes skeleton-pulse-anim {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+}
+
+/* ASCII light behind a whole page: page content stacks above it with z-index, and 100lvh stops it
+   resizing as mobile browser bars show and hide */
+.ascii-bg { position: fixed; inset: 0 0 auto; z-index: 0; height: 100vh; height: 100lvh; overflow: hidden; pointer-events: none; }
+
+/* Hides a count-up number until count-up.js takes over, so the final value doesn't flash before
+   the count starts. The hold ends by itself, so the number still shows if the script fails. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+    [data-count-up=""] { animation: count-up-hold 1.5s; }
+}
+@keyframes count-up-hold {
+    from, to { visibility: hidden; }
 }

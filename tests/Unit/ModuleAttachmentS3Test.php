@@ -47,7 +47,8 @@ class ModuleAttachmentS3Test extends TestCase
 
         $this->assertSame('abc123.storage.supabase.co', $url['host']);
         $this->assertSame('/storage/v1/s3/attachments/module_attachments/abc.pdf', $url['path']);
-        $this->assertSame('300', $query['X-Amz-Expires']);
+        // The SDK works out the lifetime from its own clock, which can tick over after the expiry is set
+        $this->assertContains((int) $query['X-Amz-Expires'], [299, 300]);
         $this->assertNotEmpty($query['X-Amz-Signature']);
         $this->assertStringStartsWith('attachment;', $query['response-content-disposition']);
         $this->assertStringContainsString('Week 1 slides.pdf', $query['response-content-disposition']);

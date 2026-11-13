@@ -16,11 +16,20 @@ export const stubState: { warningAnswer: string | undefined; clipboard: string }
 };
 
 class Uri {
-    readonly scheme = 'file';
-    constructor(public readonly fsPath: string) {}
+    constructor(public readonly fsPath: string, public readonly scheme = 'file') {}
     static file(p: string) { return new Uri(p); }
+    static from(parts: { scheme: string; path: string }) { return new Uri(parts.path, parts.scheme); }
     static joinPath(base: Uri, ...parts: string[]) { return new Uri(path.posix.join(base.fsPath, ...parts)); }
-    toString() { return `file://${this.fsPath}`; }
+    toString() { return `${this.scheme}://${this.fsPath}`; }
+}
+
+class Position {
+    constructor(public readonly line: number, public readonly character: number) {}
+}
+
+class WorkspaceEdit {
+    readonly inserts: { uri: Uri; text: string }[] = [];
+    insert(uri: Uri, _position: Position, text: string) { this.inserts.push({ uri, text }); }
 }
 
 const record = (level: string) => async (message: string) => {
@@ -31,8 +40,18 @@ const record = (level: string) => async (message: string) => {
 /** The fake disk: path -> content. */
 export const files = new Map<string, string>();
 
+/** Created and modified times by path. A file not listed here is dated 0. */
+export const fileTimes = new Map<string, { ctime: number; mtime: number }>();
+
+class RelativePattern {
+    constructor(public readonly base: unknown, public readonly pattern: string) {}
+}
+
 export const vscodeStub: any = {
     Uri,
+    Position,
+    WorkspaceEdit,
+    RelativePattern,
     TextDocumentChangeReason: { Undo: 1, Redo: 2 },
     ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
     extensions: { getExtension: () => undefined },
@@ -46,17 +65,28 @@ export const vscodeStub: any = {
     },
     workspace: {
         workspaceFolders: [{ uri: Uri.file('/workspace') }],
-        textDocuments: [],
+        textDocuments: [] as any[],
+        onDidOpenTextDocument: () => ({ dispose: () => undefined }),
+        onDidCloseTextDocument: () => ({ dispose: () => undefined }),
         getConfiguration: () => ({ get: () => undefined, update: async () => undefined }),
         getWorkspaceFolder: () => ({ uri: Uri.file('/workspace') }),
         asRelativePath: (uri: Uri) => uri.fsPath.replace(/^\/workspace\//, ''),
         openTextDocument: async () => ({}),
+        applyEdit: async () => true,
+        // Matches the extensions in a "**/*.{a,b}" pattern; the exclude pattern isn't applied here
+        findFiles: async (include: RelativePattern, _exclude: string, maxResults: number) => {
+            const extensions = (/\{(.+)\}$/.exec(include.pattern)?.[1] ?? '').split(',');
+            return [...files.keys()]
+                .filter(p => extensions.includes(p.split('.').pop() ?? ''))
+                .slice(0, maxResults)
+                .map(p => Uri.file(p));
+        },
         fs: {
             stat: async (uri: Uri) => {
                 if (!files.has(uri.fsPath)) {
                     throw new Error('FileNotFound');
                 }
-                return {};
+                return fileTimes.get(uri.fsPath) ?? { ctime: 0, mtime: 0 };
             },
             readFile: async (uri: Uri) => Buffer.from(files.get(uri.fsPath) ?? ''),
             writeFile: async (uri: Uri, content: Uint8Array) => {

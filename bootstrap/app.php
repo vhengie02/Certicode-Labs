@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AuthorizeLabSession;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureLegalAccepted;
 use App\Http\Middleware\PreventAuthenticatedCaching;
 use App\Http\Middleware\RequireSupportedExtension;
 use App\Http\Middleware\ServerTiming;
@@ -20,6 +21,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        // Pasted code is evidence for the instructor: keep its indentation and exact length
+        $middleware->trimStrings(except: ['payload.snippet']);
         // First, so its numbers include session start and auth lookups
         $middleware->prepend(ServerTiming::class);
         $middleware->appendToGroup('web', PreventAuthenticatedCaching::class);
@@ -29,6 +32,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
             'lab.session' => AuthorizeLabSession::class,
             'extension.supported' => RequireSupportedExtension::class,
             'admin' => EnsureAdmin::class,
+            'legal.accepted' => EnsureLegalAccepted::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

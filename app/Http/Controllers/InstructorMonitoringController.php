@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\CodeSimilarityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class InstructorMonitoringController extends Controller
 {
@@ -76,8 +77,10 @@ class InstructorMonitoringController extends Controller
 
         $outdatedExtensions = $this->outdatedExtensions($sessions);
         $extensionMinVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
+        $teams = $this->teamsOverview($laboratory, $sessions);
 
         return compact(
+            'teams',
             'laboratory',
             'schoolClass',
             'sessions',
@@ -91,6 +94,31 @@ class InstructorMonitoringController extends Controller
             'outdatedExtensions',
             'extensionMinVersion'
         );
+    }
+
+    /**
+     * A group lab's teams: who leads each, and which members never opened the lab. Those
+     * members have no attempt, so they would otherwise not show on the roster at all.
+     *
+     * @return array<int, array{id: int, name: string, leader_id: ?int, leader_name: ?string, absent: array<int, array{id: int, name: string}>}>
+     */
+    protected function teamsOverview(Laboratory $laboratory, $sessions): array
+    {
+        if (! $laboratory->is_group_lab) {
+            return [];
+        }
+
+        $tookPart = $sessions->pluck('user_id')->filter()->unique();
+
+        return $laboratory->groups()->with(['leader:id,name', 'members:id,name'])->orderBy('name')->get()
+            ->map(fn ($team) => [
+                'id' => $team->id,
+                'name' => $team->name,
+                'leader_id' => $team->leader_id,
+                'leader_name' => $team->leader?->name,
+                'absent' => $team->members->whereNotIn('id', $tookPart)->sortBy('name')
+                    ->map(fn ($member) => ['id' => $member->id, 'name' => $member->name])->values()->all(),
+            ])->all();
     }
 
     /**
@@ -147,6 +175,85 @@ class InstructorMonitoringController extends Controller
     }
 
     /**
+     * One attempt's full code, for the compare view. It is fetched on demand because the stored
+     * similarity report keeps only a short preview of each student's code.
+     */
+    public function sessionFiles(int $id)
+    {
+        $this->authorizeInstructor();
+
+        $session = LabSession::findOrFail($id);
+        $this->authorizeSessionManager($session);
+
+        return response()->json(['files' => $session->submittedFileList()]);
+    }
+
+    /**
+     * Download one of an attempt's files, or all of them as a zip when no file is given.
+     */
+    public function downloadSessionFiles(int $id, ?int $file = null)
+    {
+        $this->authorizeInstructor();
+
+        $session = LabSession::with(['user', 'group', 'laboratory'])->findOrFail($id);
+        $this->authorizeSessionManager($session);
+
+        $files = $session->submittedFileList();
+        abort_if($files === [], 404);
+
+        if ($file !== null) {
+            abort_unless(isset($files[$file]), 404);
+            $content = $files[$file]['content'];
+
+            return response()->streamDownload(function () use ($content) {
+                echo $content;
+            }, basename($this->downloadPath($files[$file]['name'])), [
+                'Content-Type' => 'application/octet-stream',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        }
+
+        $owner = $session->group?->name ?? $session->user?->name ?? 'student';
+        $zipName = Str::slug("{$session->laboratory->title} {$owner}").'-files.zip';
+        $tempPath = tempnam(sys_get_temp_dir(), 'certicode_zip_');
+        $zip = new \ZipArchive;
+
+        if ($zip->open($tempPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return back()->with('error', 'The files could not be packed into a zip. Try again.');
+        }
+
+        $used = [];
+        foreach ($files as $entry) {
+            $path = $this->downloadPath($entry['name']);
+            $copy = $used[strtolower($path)] = ($used[strtolower($path)] ?? 0) + 1;
+            // Two files can share a name once cleaned; a zip entry would overwrite the first
+            $zip->addFromString($copy > 1 ? preg_replace('/(\.[^.\/]+)?$/', " ({$copy})$1", $path, 1) : $path, $entry['content']);
+        }
+        $zip->close();
+
+        return response()->download($tempPath, $zipName)->deleteFileAfterSend(true);
+    }
+
+    /**
+     * A file's relative path, safe to save. The name comes from the student's computer, so a
+     * name like ../../run.sh must not unpack outside the folder the instructor chose.
+     */
+    private function downloadPath(string $name): string
+    {
+        // Stand-in names from LabSession, for code that came without a file name
+        if (in_array($name, ['Submitted code', 'Untitled file'], true)) {
+            return Str::slug($name).'.txt';
+        }
+
+        $path = collect(explode('/', str_replace('\\', '/', $name)))
+            ->map(fn ($part) => rtrim(preg_replace('/[\x00-\x1F\x7F<>:"|?*]/', '_', $part), ' .'))
+            ->filter(fn ($part) => $part !== '')
+            ->implode('/');
+
+        return $path !== '' ? $path : 'file.txt';
+    }
+
+    /**
      * Stream live telemetry JSON data for AJAX polling or dashboard update.
      */
     public function streamData(int $labId)
@@ -182,6 +289,7 @@ class InstructorMonitoringController extends Controller
 
                 return [
                     'id' => $s->id,
+                    'user_id' => $s->user_id,
                     'user_name' => $s->user->name ?? 'Student',
                     'email' => $s->user->email ?? '',
                     'group_name' => $s->group->name ?? null,
@@ -229,6 +337,7 @@ class InstructorMonitoringController extends Controller
             'active_workspaces_count' => $sessions->where('is_connected', true)->count(),
             'total_students_count' => $sessions->count(),
             'sessions' => $sessions,
+            'teams' => $this->teamsOverview($laboratory, $sessions->map(fn ($s) => (object) ['user_id' => $s['user_id']])),
         ]);
     }
 
@@ -245,10 +354,61 @@ class InstructorMonitoringController extends Controller
         $request->validate([
             'override_score' => 'required|numeric|min:0|max:100',
             'override_reason' => 'nullable|string|max:1000',
+            'apply_to_team' => 'nullable|boolean',
         ]);
 
         $overrideScore = round((float) $request->input('override_score'), 2);
         $reason = $request->input('override_reason');
+
+        // A team shares its grade: the teammates graded by the same submit get the change
+        // too, unless the instructor is singling this student out
+        $teammates = $session->group_id && $request->boolean('apply_to_team', true)
+            ? LabSession::with(['user', 'laboratory'])
+                ->where('group_id', $session->group_id)
+                ->where('lab_id', $session->lab_id)
+                ->where('status', $session->status)
+                // The same team attempt. Attempts from before team_started_at existed are
+                // matched by the moment the one submit closed them all.
+                ->when(
+                    $session->team_started_at,
+                    fn ($q) => $q->where('team_started_at', $session->team_started_at),
+                    fn ($q) => $q->whereNull('team_started_at')->where('ended_at', $session->ended_at),
+                )
+                ->whereKeyNot($session->id)
+                ->get()
+            : collect();
+
+        foreach ($teammates as $teammate) {
+            $this->applyOverride($teammate, $overrideScore, $reason);
+        }
+        $this->applyOverride($session, $overrideScore, $reason);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Grade successfully overridden.',
+                'team_sessions_changed' => $teammates->count() + 1,
+                'session' => [
+                    'id' => $session->id,
+                    'performance_score' => $session->performance_score,
+                    'instructor_grade_override' => $session->instructor_grade_override,
+                    'effective_score' => $session->effective_score,
+                    'is_overridden' => $session->isGradeOverridden(),
+                    'override_reason' => $session->instructor_override_reason,
+                    'overridden_at' => $session->instructor_overridden_at ? $session->instructor_overridden_at->diffForHumans() : null,
+                    'overridden_by_name' => Auth::user()->name ?? 'Instructor',
+                ],
+            ]);
+        }
+
+        return back()->with('success', 'Grade successfully overridden.');
+    }
+
+    /**
+     * Save the instructor's grade on one attempt, record it and tell that student.
+     */
+    private function applyOverride(LabSession $session, float $overrideScore, ?string $reason): void
+    {
         $previousScore = $session->effective_score;
 
         $session->update([
@@ -285,27 +445,11 @@ class InstructorMonitoringController extends Controller
         $session->notifyStudents(
             "Lab reviewed: {$labTitle}",
             "{$instructorName} reviewed your work on '{$labTitle}' and {$outcome}"
-                .($reason ? " Reason: {$reason}" : '')
+                .($reason ? " Reason: {$reason}" : ''),
+            type: 'grade',
+            // Each teammate is told about their own attempt
+            wholeTeam: false,
         );
-
-        if ($request->expectsJson() || $request->ajax()) {
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Grade successfully overridden.',
-                'session' => [
-                    'id' => $session->id,
-                    'performance_score' => $session->performance_score,
-                    'instructor_grade_override' => $session->instructor_grade_override,
-                    'effective_score' => $session->effective_score,
-                    'is_overridden' => $session->isGradeOverridden(),
-                    'override_reason' => $session->instructor_override_reason,
-                    'overridden_at' => $session->instructor_overridden_at ? $session->instructor_overridden_at->diffForHumans() : null,
-                    'overridden_by_name' => Auth::user()->name ?? 'Instructor',
-                ],
-            ]);
-        }
-
-        return back()->with('success', 'Grade successfully overridden.');
     }
 
     /**

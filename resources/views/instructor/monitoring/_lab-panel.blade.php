@@ -38,7 +38,7 @@
                         <span class="text-xs text-[#888888]">left</span>
                         <x-info-tip align="right">Every student shares this one timer. Students who join late only get the time that's left, and every open workspace is submitted automatically when it reaches zero.</x-info-tip>
                     </div>
-                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" onsubmit="return confirm('End this live lab now? Every open student workspace will be submitted and graded.');">
+                    <form action="{{ route('laboratories.end-live', $laboratory->id) }}" method="POST" data-confirm-title="End this live lab now?" data-confirm="Every open student workspace will be submitted and graded." data-confirm-action="End lab">
                         @csrf
                         <button type="submit" class="inline-flex items-center gap-2 h-10 px-3.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-300 hover:bg-red-500/20 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -98,6 +98,7 @@
     <!-- Live WebSocket Telemetry Alert Banner -->
     <div x-show="hasLiveUpdate" x-cloak role="status"
          x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-out duration-160" x-transition:leave-end="opacity-0 -translate-y-1"
          class="flex items-center justify-between gap-3 p-3 pl-4 rounded-xl border text-sm"
          :class="liveAlertAnomaly ? 'border-amber-400/30 bg-amber-400/[0.06] text-amber-100' : 'border-[#2e2e2e] bg-[#171717] text-[#ededed]'">
         <div class="flex items-center gap-3 min-w-0">
@@ -113,7 +114,7 @@
             <span class="min-w-0" x-text="liveUpdateMessage"></span>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-            <button type="button" @click="refreshData()" class="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/10 text-xs font-medium transition-colors active:scale-[0.98]">
+            <button type="button" @click="refreshData()" class="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/10 text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97]">
                 Load changes
             </button>
             <button type="button" @click="hasLiveUpdate = false; liveAlertAnomaly = null" class="h-8 w-8 inline-flex items-center justify-center rounded-lg text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors" aria-label="Dismiss">
@@ -176,7 +177,7 @@
         <div class="p-4 sm:p-5">
             <dt class="flex items-center gap-1.5 text-sm text-[#888888]">
                 Similar code
-                <x-info-tip>Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
+                <x-info-tip>Pairs of students whose submitted code is at least 50% alike (75%+ is high risk). Comments are stripped and variable names, strings and numbers are ignored, so renaming things doesn't hide copying. Every submitted code file counts; notes and data files like .md, .txt and .json don't. Matching starter code can raise the score, so check the side-by-side view before acting.</x-info-tip>
             </dt>
             <dd class="mt-2 flex items-baseline gap-1.5">
                 <span class="cc-display text-3xl font-bold tabular-nums tracking-tight {{ $flaggedPairs > 0 ? 'text-red-400' : 'text-[#ededed]' }}" x-text="plagiarism.flagged_pairs_count ?? {{ (int) $flaggedPairs }}">{{ $flaggedPairs }}</span>
@@ -231,7 +232,7 @@
                 'state_label' => $stateLabels[$state] ?? ucfirst($state),
                 'status' => $s->status,
                 'last_seen' => $s->last_ping_at?->diffForHumans() ?? $s->started_at?->diffForHumans(),
-                'started_at' => $s->started_at?->format('M j, H:i'),
+                'started_at' => \App\Support\DisplayTime::in($s->started_at)?->format('M j, H:i'),
                 'tasks_done' => is_array($s->completed_tasks) ? count($s->completed_tasks) : 0,
                 'task_total' => $taskTotal,
                 'wpm' => (int) ($s->wpm ?? 0),
@@ -296,7 +297,7 @@
                     @foreach($filters as $key => $label)
                         <button type="button" role="tab" @click="statusFilter = '{{ $key }}'" :aria-selected="statusFilter === '{{ $key }}'"
                                 x-show="'{{ $key }}' === 'all' || filterCount('{{ $key }}') > 0"
-                                class="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-colors active:scale-[0.98]"
+                                class="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97]"
                                 :class="statusFilter === '{{ $key }}' ? 'border-[#3ecf8e]/50 bg-[#3ecf8e]/10 text-[#ededed]' : 'border-[#2e2e2e] text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e]'">
                             {{ $label }}
                             <span class="tabular-nums {{ $key === 'attention' ? 'text-amber-300' : 'text-[#888888]' }}" x-text="filterCount('{{ $key }}')"></span>
@@ -306,6 +307,21 @@
             @endif
         </div>
 
+        {{-- Teams: who leads each, and members with no attempt (they never opened the lab) --}}
+        @if(! empty($teams))
+            <ul class="px-5 py-3 border-b border-[#2e2e2e] space-y-1.5 text-xs text-[#a3a3a3]" aria-label="Teams">
+                @foreach($teams as $team)
+                    <li class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                        <span class="font-medium text-[#3ecf8e]">{{ $team['name'] }}</span>
+                        <span>{{ $team['leader_name'] ? 'Leader: ' . $team['leader_name'] : 'No leader yet' }}</span>
+                        @if($team['absent'])
+                            <span class="text-amber-300">Did not take part: {{ collect($team['absent'])->pluck('name')->join(', ') }}</span>
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+
         @if($sessions->isEmpty())
             <div class="px-6 py-14 text-center">
                 <p class="text-sm font-medium text-[#ededed]">No one has started this lab yet</p>
@@ -313,7 +329,7 @@
             </div>
         @else
             {{-- Column headings (desktop) --}}
-            <div class="hidden lg:grid lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_6rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
+            <div class="hidden xl:grid xl:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
                 <span>Student</span>
                 <span>Status</span>
                 <span>Tasks</span>
@@ -351,9 +367,9 @@
                     @endphp
                     <div class="roster-row group/row px-4 sm:px-5 py-3.5 transition-colors hover:bg-white/[0.02] {{ $openFlags > 0 ? 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.7)]' : '' }}"
                          x-show="showRow({{ $session->id }})" :style="{ order: rowOrder({{ $session->id }}) }">
-                        <div class="grid grid-cols-3 lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_6rem] items-center gap-x-4 gap-y-3">
+                        <div class="grid grid-cols-3 xl:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-x-4 gap-y-3">
                             {{-- Student --}}
-                            <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 lg:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
+                            <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 xl:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
                                 <span class="w-9 h-9 rounded-lg bg-[#232323] border border-[#2e2e2e] flex items-center justify-center text-xs font-semibold text-[#a3a3a3] shrink-0 transition-colors group-hover/row:border-[#3e3e3e]" aria-hidden="true">{{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}</span>
                                 <div class="min-w-0">
                                     <p class="text-sm font-medium text-[#ededed] truncate group-hover/row:underline underline-offset-2 decoration-[#3e3e3e]">{{ $user->name ?? 'Unknown Student' }}</p>
@@ -367,7 +383,7 @@
                             </button>
 
                             {{-- Status --}}
-                            <div class="flex items-center justify-end lg:justify-start gap-2 text-sm {{ $stateStyles['text'] }}" title="{{ ['active' => 'Heartbeat in the last 75 seconds', 'idle' => 'No heartbeat for over a minute', 'offline' => 'No heartbeat for over 5 minutes', 'completed' => 'Finished and graded', 'abandoned' => 'Ran out of time without submitting'][$state] ?? '' }}">
+                            <div class="flex items-center justify-end xl:justify-start gap-2 text-sm {{ $stateStyles['text'] }}" title="{{ ['active' => 'Heartbeat in the last 75 seconds', 'idle' => 'No heartbeat for over a minute', 'offline' => 'No heartbeat for over 5 minutes', 'completed' => 'Finished and graded', 'abandoned' => 'Ran out of time without submitting'][$state] ?? '' }}">
                                 <span class="w-2 h-2 rounded-full shrink-0 {{ $stateStyles['dot'] }} {{ $state === 'active' ? 'animate-pulse motion-reduce:animate-none' : '' }}" aria-hidden="true"></span>
                                 {{ $stateLabels[$state] ?? ucfirst($state) }}
                                 @if(isset($outdatedExtensions[$session->id]))
@@ -377,9 +393,9 @@
                             </div>
 
                             {{-- Tasks --}}
-                            <div class="col-span-3 lg:col-span-1 min-w-0">
+                            <div class="col-span-3 xl:col-span-1 min-w-0">
                                 <div class="flex items-baseline justify-between gap-2 text-sm">
-                                    <span class="lg:hidden text-xs text-[#888888]">Tasks</span>
+                                    <span class="xl:hidden text-xs text-[#888888]">Tasks</span>
                                     <span class="tabular-nums text-[#ededed]">{{ $tasksCount }}<span class="text-[#666666]">/{{ $taskTotal }}</span></span>
                                     @if($linesAdded || $linesDeleted)
                                         <span class="font-mono text-[11px] text-[#666666]" title="Lines added and removed since the starter code"><span class="text-[#3ecf8e]/80">+{{ $linesAdded }}</span> <span class="text-red-400/70">&minus;{{ $linesDeleted }}</span></span>
@@ -391,23 +407,23 @@
                             </div>
 
                             {{-- Typing / focus / pastes --}}
-                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
-                                <span class="lg:hidden text-xs text-[#888888]">Typing</span>
+                            <div class="flex flex-col gap-0.5 xl:block text-sm xl:text-right tabular-nums">
+                                <span class="xl:hidden text-xs text-[#888888]">Typing</span>
                                 <span class="{{ $wpm > 0 ? 'text-[#ededed]' : 'text-[#666666]' }}">{{ $wpm }}<span class="text-xs text-[#666666] ml-0.5">wpm</span></span>
                             </div>
-                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
-                                <span class="lg:hidden text-xs text-[#888888]">Focus lost</span>
+                            <div class="flex flex-col gap-0.5 xl:block text-sm xl:text-right tabular-nums">
+                                <span class="xl:hidden text-xs text-[#888888]">Focus lost</span>
                                 <span class="{{ $focusLost > 2 ? 'text-amber-300 font-medium' : ($focusLost > 0 ? 'text-[#ededed]' : 'text-[#666666]') }}">{{ $focusLost }}</span>
                             </div>
-                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
-                                <span class="lg:hidden text-xs text-[#888888]">Pastes</span>
+                            <div class="flex flex-col gap-0.5 xl:block text-sm xl:text-right tabular-nums">
+                                <span class="xl:hidden text-xs text-[#888888]">Pastes</span>
                                 <span class="{{ $pastes > 0 ? 'text-red-300 font-medium' : 'text-[#666666]' }}">{{ $pastes }}</span>
                             </div>
 
                             {{-- Flags --}}
                             <div>
                                 <button type="button" @click="openStudent({{ $session->id }}, 'flags')"
-                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors active:scale-[0.98] {{ $openFlags > 0 ? 'bg-amber-400/10 text-amber-200 border border-amber-400/30 hover:bg-amber-400/15' : 'text-[#888888] border border-transparent hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
+                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97] {{ $openFlags > 0 ? 'bg-amber-400/10 text-amber-200 border border-amber-400/30 hover:bg-amber-400/15' : 'text-[#888888] border border-transparent hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
                                         title="Review this student's flags">
                                     @if($openFlags > 0)
                                         {{ $openFlags }} open
@@ -422,7 +438,7 @@
                             {{-- Grade --}}
                             <div>
                                 <button type="button" @click="openStudent({{ $session->id }}, 'grade')"
-                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors active:scale-[0.98] border {{ $isGraded ? 'border-[#2e2e2e] text-[#ededed] hover:border-[#3e3e3e]' : 'border-transparent text-[#888888] hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
+                                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-[color,background-color,border-color,scale] active:scale-[0.97] border {{ $isGraded ? 'border-[#2e2e2e] text-[#ededed] hover:border-[#3e3e3e]' : 'border-transparent text-[#888888] hover:border-[#2e2e2e] hover:text-[#ededed]' }}"
                                         title="See how the AI graded this and change the grade">
                                     @if($isGraded)
                                         <span class="tabular-nums">{{ rtrim(rtrim(number_format($session->effective_score, 1), '0'), '.') }}%</span>
@@ -435,17 +451,21 @@
                                 </button>
                             </div>
 
-                            {{-- End / reopen --}}
-                            <div class="flex justify-end">
+                            {{-- Code / end / reopen --}}
+                            <div class="flex items-center justify-end gap-1">
+                                @if($session->status !== 'in_progress' && filled($session->submitted_code))
+                                    <a href="{{ route('sessions.show', $session->id) }}#submitted-files" title="Read the submitted files"
+                                       class="inline-flex items-center h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-[color,background-color,border-color,scale] active:scale-[0.97]">Code</a>
+                                @endif
                                 @if($session->status === 'in_progress')
-                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" onsubmit="return confirm('End this student\'s session? Their code is submitted and graded now.');">
+                                    <form action="{{ route('instructor.sessions.end', $session->id) }}" method="POST" data-confirm-title="End this student's session?" data-confirm="Their code is submitted and graded now." data-confirm-action="End session">
                                         @csrf
-                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-colors active:scale-[0.98]">End session</button>
+                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-red-300 hover:bg-red-500/10 transition-[color,background-color,border-color,scale] active:scale-[0.97]">End session</button>
                                     </form>
                                 @else
                                     <form action="{{ route('instructor.sessions.reopen', $session->id) }}" method="POST">
                                         @csrf
-                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-colors active:scale-[0.98]">Reopen</button>
+                                        <button type="submit" class="h-8 px-2.5 rounded-lg text-xs font-medium text-[#888888] hover:text-[#ededed] hover:bg-white/5 transition-[color,background-color,border-color,scale] active:scale-[0.97]">Reopen</button>
                                     </form>
                                 @endif
                             </div>
@@ -453,7 +473,7 @@
 
                         {{-- Team contribution (group labs) --}}
                         @if($laboratory->is_group_lab && $session->code_contributions && count($session->code_contributions) > 0)
-                            <div class="mt-3 flex flex-wrap gap-2 text-xs lg:pl-12">
+                            <div class="mt-3 flex flex-wrap gap-2 text-xs xl:pl-12">
                                 @foreach($session->code_contributions as $contrib)
                                     <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0f0f0f] border border-[#2e2e2e]">
                                         <span class="w-2 h-2 rounded-full" style="background-color: {{ preg_match('/^#[0-9a-fA-F]{3,8}$/', $contrib['avatar_color'] ?? '') ? $contrib['avatar_color'] : '#3ecf8e' }}"></span>
@@ -488,12 +508,12 @@
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <button type="button" @click="showSimilarityMatrix = !showSimilarityMatrix" :aria-expanded="showSimilarityMatrix.toString()"
-                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e] transition-colors active:scale-[0.98]">
+                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] hover:border-[#3e3e3e] transition-[color,background-color,border-color,scale] active:scale-[0.97]">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
                     <span x-text="showSimilarityMatrix ? 'Hide grid' : 'Show every pair'"></span>
                 </button>
                 <button type="button" @click="runPlagiarismScan()" :disabled="isScanningPlagiarism"
-                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50">
+                        class="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#0f0f0f] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-[color,background-color,border-color,scale] active:scale-[0.97] disabled:opacity-50">
                     <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': isScanningPlagiarism }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     <span x-text="isScanningPlagiarism ? 'Comparing…' : 'Compare again'"></span>
                 </button>
@@ -545,7 +565,7 @@
                             <p class="col-span-2 md:col-span-1 order-5 md:order-none text-xs text-[#888888] line-clamp-2" :title="pair.reason" x-text="pair.reason"></p>
                             <div class="order-2 md:order-none flex justify-end">
                                 <button type="button" @click="openCompareModal(pair)"
-                                        class="h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3e3e3e] hover:bg-white/[0.03] transition-colors active:scale-[0.98]">
+                                        class="h-8 px-3 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3e3e3e] hover:bg-white/[0.03] transition-[color,background-color,border-color,scale] active:scale-[0.97]">
                                     Compare
                                 </button>
                             </div>
@@ -556,7 +576,7 @@
         </template>
 
         {{-- Every pair, as a grid --}}
-        <div x-show="showSimilarityMatrix" x-cloak x-transition.opacity class="p-4 sm:p-5 border-t border-[#2e2e2e] space-y-3">
+        <div x-show="showSimilarityMatrix" x-cloak x-transition:enter.opacity.duration.200ms x-transition:leave.opacity.duration.160ms class="p-4 sm:p-5 border-t border-[#2e2e2e] space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888888]">
                 <span class="text-sm text-[#a3a3a3]">% alike, every pair</span>
                 <span class="flex items-center gap-3">
@@ -601,10 +621,10 @@
     {{-- Side-by-side code comparison --}}
     <div x-show="isCompareModalOpen" x-cloak @keydown.escape.window="isCompareModalOpen = false"
          class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="compare-title">
-        <div x-show="isCompareModalOpen" x-transition.opacity class="absolute inset-0 bg-black/70 backdrop-blur-[2px]" @click="isCompareModalOpen = false" aria-hidden="true"></div>
+        <div x-show="isCompareModalOpen" x-transition:enter.opacity.duration.200ms x-transition:leave.opacity.duration.160ms class="absolute inset-0 bg-black/70 backdrop-blur-[2px]" @click="isCompareModalOpen = false" aria-hidden="true"></div>
         <div x-show="isCompareModalOpen"
-             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-[0.98]" x-transition:enter-end="opacity-100 scale-100"
-             x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-[0.95]" x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-out duration-160" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0 scale-[0.95]"
              class="relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl border border-[#2e2e2e] bg-[#171717] shadow-2xl shadow-black/50">
             <template x-if="selectedPair">
                 <div class="flex flex-col min-h-0">
@@ -629,7 +649,23 @@
                                     <span class="font-medium text-[#ededed] truncate" x-text="side.name"></span>
                                     <span class="font-mono text-[#666666] shrink-0" x-text="(side.token_count || 0) + ' tokens · ' + (side.code_length || 0) + ' bytes'"></span>
                                 </div>
-                                <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-x-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="side.code_preview"></pre>
+                                <template x-if="compareFiles[side.session_id]">
+                                    <div class="divide-y divide-[#232323]">
+                                        <template x-for="(file, fileIdx) in compareFiles[side.session_id]" :key="fileIdx">
+                                            <div>
+                                                <p class="px-4 pt-3 font-mono text-xs text-[#888888] break-all" x-text="file.name"></p>
+                                                <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="file.content"></pre>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                                <template x-if="!compareFiles[side.session_id]">
+                                    <div>
+                                        <p class="px-4 pt-3 text-xs" :class="compareFiles[side.session_id] === false ? 'text-amber-300/90' : 'text-[#888888]'"
+                                           x-text="compareFiles[side.session_id] === false ? 'Full code unavailable. Showing the first 250 characters.' : 'Loading the full code…'"></p>
+                                        <pre class="p-4 text-xs font-mono text-[#d4d4d4] overflow-x-auto max-h-[60vh] leading-relaxed whitespace-pre" x-text="side.code_preview"></pre>
+                                    </div>
+                                </template>
                             </div>
                         </template>
                     </div>
@@ -640,10 +676,10 @@
 
     {{-- Student drawer: overview, flags and grade for one student --}}
     <div x-show="drawerOpen" x-cloak @keydown.escape.window="closeStudent()" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-        <div x-show="drawerOpen" x-transition.opacity.duration.200ms class="absolute inset-0 bg-black/60" @click="closeStudent()" aria-hidden="true"></div>
+        <div x-show="drawerOpen" x-transition:enter.opacity.duration.300ms x-transition:leave.opacity.duration.240ms class="absolute inset-0 bg-black/60" @click="closeStudent()" aria-hidden="true"></div>
         <aside x-show="drawerOpen" x-ref="drawer" tabindex="-1"
                x-transition:enter="transition ease-out duration-300" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
-               x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+               x-transition:leave="transition ease-out duration-240" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
                class="absolute inset-y-0 right-0 w-full max-w-xl flex flex-col bg-[#171717] border-l border-[#2e2e2e] shadow-2xl shadow-black/60 focus:outline-none">
             <template x-if="student">
                 <div class="flex flex-col h-full min-h-0">
@@ -675,11 +711,11 @@
                         </div>
 
                         {{-- Tabs --}}
-                        <div class="mt-5 flex gap-1 border-b border-[#2e2e2e] -mx-5 px-5" role="tablist" aria-label="Student details">
+                        <div class="relative mt-5 flex gap-1 border-b border-[#2e2e2e] -mx-5 px-5" role="tablist" x-tab-indicator aria-label="Student details">
                             <template x-for="t in [['overview', 'Overview'], ['flags', 'Flags'], ['grade', 'Grade']]" :key="t[0]">
                                 <button type="button" role="tab" @click="drawerTab = t[0]" :aria-selected="(drawerTab === t[0]).toString()"
                                         class="relative inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors"
-                                        :class="drawerTab === t[0] ? 'text-[#ededed] monitor-tab-active' : 'text-[#888888] hover:text-[#ededed]'">
+                                        :class="drawerTab === t[0] ? 'text-[#ededed]' : 'text-[#888888] hover:text-[#ededed]'">
                                     <span x-text="t[1]"></span>
                                     <span x-show="t[0] === 'flags' && openFlagCount(student) > 0" class="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-400/15 text-amber-300 text-[11px] tabular-nums inline-flex items-center justify-center" x-text="openFlagCount(student)"></span>
                                 </button>
@@ -773,7 +809,7 @@
                                         </template>
                                         <template x-if="!item.resolved">
                                             <button type="button" @click="resolveFlag(item)" :disabled="!!item._resolving"
-                                                    class="h-8 px-3 shrink-0 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-colors active:scale-[0.98] disabled:opacity-50"
+                                                    class="h-8 px-3 shrink-0 rounded-lg border border-[#2e2e2e] text-xs font-medium text-[#ededed] hover:border-[#3ecf8e]/40 transition-[color,background-color,border-color,scale] active:scale-[0.97] disabled:opacity-50"
                                                     x-text="item._resolving ? 'Resolving…' : 'Resolve'"></button>
                                         </template>
                                     </div>
@@ -781,7 +817,7 @@
 
                                     <template x-if="item.metadata && item.metadata.snippet">
                                         <div class="rounded-lg border border-[#2e2e2e] bg-[#0f0f0f]"
-                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5 }">
+                                             x-data="{ open: false, long: item.metadata.snippet.length > 200 || item.metadata.snippet.split('\n').length > 5, cutOff: (item.metadata.pasted_length || 0) > item.metadata.snippet.length }">
                                             <span class="block px-3 pt-2 text-xs text-[#888888]">Pasted text</span>
                                             <pre class="px-3 pb-2.5 pt-1 text-xs font-mono text-amber-200/90 whitespace-pre-wrap break-words"
                                                  :class="long && !open ? 'max-h-24 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]' : 'max-h-96 overflow-y-auto'"
@@ -789,14 +825,18 @@
                                             <template x-if="long">
                                                 <button type="button" @click="open = !open"
                                                         class="block w-full px-3 py-1.5 border-t border-[#2e2e2e] text-left text-xs font-medium text-[#a3a3a3] hover:text-[#ededed] transition-colors"
-                                                        x-text="open ? 'Show less' : 'Show more'"></button>
+                                                        x-text="open ? 'Show less' : 'See all'"></button>
+                                            </template>
+                                            <template x-if="cutOff">
+                                                <p class="px-3 py-1.5 border-t border-[#2e2e2e] text-xs text-amber-300/90"
+                                                   x-text="'Only the first ' + item.metadata.snippet.length + ' of ' + item.metadata.pasted_length + ' characters were saved.'"></p>
                                             </template>
                                         </div>
                                     </template>
 
                                     <template x-if="item.snapshot_url">
                                         <a :href="item.snapshot_url" target="_blank" rel="noopener" class="block w-fit" title="Open full size">
-                                            <img :src="item.snapshot_url" loading="lazy" class="w-56 h-auto rounded-lg border border-[#2e2e2e] hover:border-[#3e3e3e] transition-colors" alt="Webcam snapshot taken when this flag was raised">
+                                            <img :src="item.snapshot_url" loading="lazy" class="h-40 w-auto max-w-full rounded-lg border border-[#2e2e2e] hover:border-[#3e3e3e] transition-colors" alt="Webcam snapshot taken when this flag was raised">
                                         </a>
                                     </template>
 
@@ -820,6 +860,7 @@
 
                             <template x-if="student.status === 'completed'">
                                 <div class="space-y-5">
+                                    <a :href="`/sessions/${student.id}#submitted-files`" class="inline-flex text-sm font-medium text-[#3ecf8e] hover:underline underline-offset-2">Read the submitted files</a>
                                     <div class="grid grid-cols-3 gap-px rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#2e2e2e]">
                                         <div class="bg-[#0f0f0f] p-3.5">
                                             <p class="text-xs text-[#888888]">Final grade</p>
@@ -899,10 +940,15 @@
                                                class="w-full h-9 px-3 rounded-lg border border-[#2e2e2e] bg-[#171717] text-sm text-[#ededed] placeholder-[#666666] focus:outline-none focus:border-[#3ecf8e]/60 focus:ring-2 focus:ring-[#3ecf8e]/15">
                                     </label>
                                 </div>
+                                {{-- A team shares its grade, so the change reaches every teammate unless unticked --}}
+                                <label x-show="student.is_team" class="flex items-center gap-2 text-xs text-[#a3a3a3]">
+                                    <input type="checkbox" name="apply_to_team" x-model="overrideApplyToTeam" class="h-4 w-4 rounded border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
+                                    Apply to the whole team
+                                </label>
                                 <div class="flex items-center justify-between gap-3">
                                     <p class="text-xs min-w-0" :class="overrideFeedbackSuccess ? 'text-[#3ecf8e]' : 'text-red-300'" x-text="overrideFeedbackMessage" role="status"></p>
                                     <button type="submit" :disabled="isSavingOverride"
-                                            class="h-9 px-4 shrink-0 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-colors active:scale-[0.98] disabled:opacity-50"
+                                            class="h-9 px-4 shrink-0 rounded-lg bg-[#3ecf8e] text-sm font-semibold text-[#06150e] hover:bg-[#00c573] transition-[color,background-color,border-color,scale] active:scale-[0.97] disabled:opacity-50"
                                             x-text="isSavingOverride ? 'Saving…' : 'Save grade'"></button>
                                 </div>
                             </form>
@@ -969,6 +1015,7 @@ function instructorMonitor() {
         // Grade override form inside the drawer
         overrideScoreInput: '',
         overrideReasonInput: '',
+        overrideApplyToTeam: true,
         isSavingOverride: false,
         overrideFeedbackMessage: '',
         overrideFeedbackSuccess: false,
@@ -984,6 +1031,7 @@ function instructorMonitor() {
                 ? data.instructor_grade_override
                 : data.performance_score;
             this.overrideReasonInput = data.instructor_override_reason || '';
+            this.overrideApplyToTeam = true;
             this.overrideFeedbackMessage = '';
             this.drawerOpen = true;
             document.documentElement.classList.add('overflow-hidden');
@@ -1076,6 +1124,7 @@ function instructorMonitor() {
                 body: JSON.stringify({
                     override_score: parseFloat(this.overrideScoreInput),
                     override_reason: this.overrideReasonInput,
+                    apply_to_team: this.overrideApplyToTeam,
                 })
             })
             .then(res => {
@@ -1112,6 +1161,7 @@ function instructorMonitor() {
         isScanningPlagiarism: false,
         isCompareModalOpen: false,
         selectedPair: null,
+        compareFiles: {}, // session id => its files, or false when they couldn't be loaded
         plagiarism: @json($plagiarismAnalysis),
 
         // null: a pair that isn't compared (teammates)
@@ -1132,6 +1182,19 @@ function instructorMonitor() {
         openCompareModal(pair) {
             this.selectedPair = pair;
             this.isCompareModalOpen = true;
+            this.loadCompareFiles(pair.student_a.session_id);
+            this.loadCompareFiles(pair.student_b.session_id);
+        },
+
+        // Fetched on every open: a reopened attempt can be submitted again
+        loadCompareFiles(sessionId) {
+            fetch(`/instructor/sessions/${sessionId}/files`, { headers: { Accept: 'application/json' } })
+                .then(res => {
+                    if (!res.ok) throw new Error('Could not load the files');
+                    return res.json();
+                })
+                .then(data => { this.compareFiles[sessionId] = data.files; })
+                .catch(() => { this.compareFiles[sessionId] = false; });
         },
 
         runPlagiarismScan() {

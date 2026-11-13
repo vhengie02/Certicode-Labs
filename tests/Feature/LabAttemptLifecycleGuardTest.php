@@ -77,7 +77,7 @@ class LabAttemptLifecycleGuardTest extends TestCase
         {
             public function __construct(private $duringGrading) {}
 
-            public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = []): array
+            public function evaluate(LabSession $session, string $code, string $language, array $diagnostics = [], array $otherFiles = []): array
             {
                 ($this->duringGrading)($session);
 
@@ -191,7 +191,7 @@ class LabAttemptLifecycleGuardTest extends TestCase
         $this->assertDatabaseHas('telemetry_logs', ['lab_session_id' => $session->id, 'event_type' => 'session_left']);
 
         // Starting again resumes the same attempt instead of hitting attempts_exhausted
-        $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->laboratory->id}/start")
+        $this->actingAs($this->student)->withCameraCheck($this->laboratory->id)->postJson("/api/v1/labs/{$this->laboratory->id}/start")
             ->assertOk()
             ->assertJsonPath('session.id', $session->id);
 

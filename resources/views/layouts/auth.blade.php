@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-[#0b0c0b]">
+<html lang="en" class="h-full bg-black">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,23 +7,24 @@
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     <link rel="alternate icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
-    <meta name="theme-color" content="#0b0c0b">
+    <meta name="theme-color" content="#000000">
     <title>@yield('title') — Certicode Labs</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 
-    @vite(['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js'])
+    @vite(['resources/css/app.css', 'resources/css/brand.css', 'resources/js/app.js', 'resources/js/ascii-background.js'])
     @stack('head')
 </head>
-<body class="cc-page min-h-full flex selection:bg-[#3ecf8e]/25 selection:text-white">
+<body class="cc-page !bg-black min-h-full flex selection:bg-[#3ecf8e]/25 selection:text-white">
     <a href="#auth-main" class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#3ecf8e] focus:text-[#06150e] focus:font-semibold">Skip to form</a>
     <div class="cc-grain" aria-hidden="true"></div>
 
     {{-- Brand side: hidden on small screens --}}
     <aside class="relative hidden lg:flex lg:w-[52%] xl:w-[55%] flex-col justify-between overflow-hidden border-r border-[var(--cc-line)] p-12 xl:p-16">
         <div class="absolute inset-0 cc-atmosphere" aria-hidden="true"></div>
+        <div id="ascii-background" class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true"></div>
         <div class="absolute inset-0 cc-grid" aria-hidden="true"></div>
 
         <a href="/" class="relative z-10 inline-flex items-center gap-2.5 self-start group" aria-label="Certicode Labs home">
@@ -39,7 +40,7 @@
                     See how your students <span class="cc-serif text-[#3ecf8e] font-normal text-[1.1em]">actually</span> code.
                 </h1>
                 <p class="cc-rise mt-6 text-lg text-[var(--cc-text-dim)] leading-relaxed max-w-[44ch] cc-pretty" style="--d:1">
-                    Live Java labs in VS Code, graded against your rubric and certified when students clear the bar.
+                    Live and self-paced Java labs in VS Code, graded against your rubric and certified when students clear the bar.
                 </p>
             @endif
 
@@ -67,12 +68,14 @@
             </div>
         </div>
 
-        <p class="relative z-10 text-sm text-[var(--cc-text-faint)]">&copy; {{ date('Y') }} Certicode Labs</p>
+        <div class="relative z-10 flex items-center justify-between gap-4 text-sm text-[var(--cc-text-faint)]">
+            <p>&copy; {{ date('Y') }} Certicode Labs</p>
+            <x-legal-links />
+        </div>
     </aside>
 
     {{-- Form side --}}
     <main id="auth-main" class="relative flex-1 flex flex-col min-h-screen">
-        <div class="absolute inset-0 lg:hidden cc-atmosphere opacity-60" aria-hidden="true"></div>
 
         <div class="relative flex items-center justify-between px-6 sm:px-10 pt-8">
             <a href="/" class="inline-flex items-center gap-2.5 whitespace-nowrap lg:invisible" aria-label="Certicode Labs home">
@@ -89,7 +92,12 @@
                 @yield('content')
             </div>
         </div>
+
+        {{-- The brand side holds these links on large screens --}}
+        <x-legal-links class="lg:hidden justify-center px-6 pb-8 text-[13px] text-[var(--cc-text-faint)]" />
     </main>
+
+    <x-toast-region />
 
     @stack('scripts')
 </body>

@@ -28,7 +28,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - **Trigger**: Student edits any file in the lab workspace.
 - **Baseline**: Instructor-provided starter file for the exercise.
 - **Solo Mode**: Track lines added/removed by the student only.
-- **Team Mode**: Track lines added/removed per teammate, attributed at the line level (`git blame` style).
+- **Team Mode**: Track lines added/removed per teammate and show each teammate's share. Lines are counted per teammate, not attributed one by one (`blame_blocks` is accepted by the API but unused).
 - **Transport**: WebSocket for both modes — solo-mode diff data rides the same WebSocket connection already open for the leaderboard (Feature 5), rather than separate REST polling.
 - **Output Destinations**: VS Code sidebar (live view), instructor analytics dashboard (aggregated + per-student view).
 - **Dependencies**: Requires authenticated student identity per edit (for team attribution).
@@ -121,7 +121,7 @@ This document outlines the final feature specifications, implementation tasks, a
 - **Signal 2**: Paste event detected (block of code appears without incremental typing).
 - **Suppression Rule A (Internal Move/Restructure)**: IF pasted content matches text that already existed elsewhere in the same file → do NOT flag.
 - **Suppression Rule B (Permitted Collaboration)**: IF pasted content matches recent content from the team chat → do NOT flag.
-- **Flagging Rule**: IF paste is external AND fails both suppression checks → run AI comparison against exercise context to confirm it's not a false positive → THEN flag.
+- **Flagging Rule**: IF paste is external AND fails both suppression checks AND the inserted text is on the clipboard → flag. The rules are deterministic; no AI reviews a paste.
 - **Flag Visibility**: Instructor only. Never shown to student.
 - **Flag Scope**: Session-scoped. Does not persist or accumulate across sessions.
 
@@ -238,7 +238,7 @@ This document outlines the final feature specifications, implementation tasks, a
 ### Technical Requirements & Progress
 - [x] **Individual Lab Session Closure Handler**:
   - Endpoint `POST /instructor/sessions/{id}/end` to force auto-submission of pending student workspaces.
-  - Auto-assess code and persist scores into `student_competencies` table.
+  - Keep the attempt's last graded score and update `student_competencies`. Closing doesn't call the AI grader.
   - Broadcast termination event across session WebSocket channels and disconnect sockets.
   - Flush ephemeral chat data (`lab_session_chats`).
 - [x] **Lab Session Reopening Workflow**:
@@ -253,7 +253,7 @@ This document outlines the final feature specifications, implementation tasks, a
   - Aggregate competencies earned across all completed labs in the course against required competencies.
   - Calculate student course grade / competency attainment percentage against configured threshold.
 - [x] **Automated E-Certificate Generation**:
-  - Generate `Certificate` record with cryptographic verification code and QR code for qualifying students (>= threshold).
+  - Generate `Certificate` record with a random `CERT-` verification code (looked up in the database, not cryptographically signed) and QR code for qualifying students (>= threshold).
   - Hard lock: block submissions and modifications once course is ended.
 
 
@@ -301,9 +301,14 @@ This document outlines the final feature specifications, implementation tasks, a
   - The extension sends `X-Extension-Version`; builds below `services.vscode_extension.min_version` (or sending none) get an update banner on the lab page and a warning in VS Code.
   - The VS Code sidebar shows the installed extension version on the connection and session screens.
 - [x] **Fewer false "multiple faces" flags ([`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php))**:
-  - `countFaces()` treats the largest face as the student. Another face counts only if it is confident (score ≥ 0.5), not a duplicate box of the student's face, and at least 20% of its size.
+  - `countFaces()` treats the largest confident face (score ≥ 0.5) as the student, or the largest face of all when none is confident. Another face counts only if it is confident, not a duplicate box of the student's face, and at least 20% of its size.
+  - A second person is flagged when two of the last three checks see them, then every 30 seconds while they stay.
+  - Covered by `tests/js/face-count.test.js` (`npm test`), which runs the functions straight out of the Blade view.
 - [x] **Server-side camera gate**:
-  - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. A low-light pass is logged as `low_light`, and the low-light option is hidden after a multiple-faces failure.
+  - Starting a lab needs the server's own record of the camera check (kept 10 minutes); a `camera_verified` flag from the browser no longer skips it. Every pass needs a detected face; a pass in a dim room is logged as `low_light`.
+- [x] **Three failed camera checks lock the lab**:
+  - The lab page reports each failed check to `POST /v1/labs/{id}/verify-camera`, and the third locks that lab for 15 minutes (`LabAttemptController::CAMERA_BLOCK_MINUTES`), even for a check that then passes. The count lives in the login session, so a reload doesn't reset it but signing in again does.
+  - With an attempt open, the lockout raises a high-severity flag with the last picture. With none, the instructor gets an in-app notification.
 - [x] **Face models actually load on Vercel**:
   - `public/models` and `public/fonts` are routed as static files; before, they 404ed and in-lab detection silently fell back to the brightness check.
 - [x] **No tab-switch flags for normal work**:
@@ -315,7 +320,8 @@ This document outlines the final feature specifications, implementation tasks, a
 - [x] **Outdated extensions on the monitoring page**:
   - The lab roster shows an "Old ext" badge next to in-progress students whose last extension ping came from a build below `min_version`.
 - [ ] **Follow-ups**:
-  - Tune face-detection thresholds (0.10–0.15) and the low-light heuristic against real webcams.
+  - Tune face-detection thresholds (0.10–0.20) against real webcams, especially with a real face in a dim room.
+  - The server trusts the browser's `face_count`, so a hand-made request can still pass the camera check.
   - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
@@ -374,7 +380,7 @@ When creating a lab exercise, the instructor selects one of two availability mod
     - `getLeaderboard()` includes shared live countdown for all participants.
     - Exposed authenticated API endpoints for `open-live`, `end-live`, and `reopen-live`.
 - [x] **Artisan Background Scheduled Worker ([`routes/console.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/routes/console.php))**:
-  - Command `certicode:close-expired-live-labs` scheduled to run `everyMinute()` to proactively close expired Live Labs and auto-submit student sessions.
+  - Command `certicode:close-expired-live-labs` closes expired Live Labs and auto-submits student sessions. `routes/console.php` schedules it `everyMinute()`, but that scheduler only runs locally: production calls it once a day through `/api/cron/tick` (`CronController`), and an expired lab also closes the next time it loads.
 - [x] **Instructor Web Dashboard & Student Views**:
   - [`create.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/create.blade.php) & [`edit.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/edit.blade.php): Interactive availability mode selector cards with configurable live duration input.
   - [`show.blade.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/resources/views/laboratories/show.blade.php): Visual badges (Live Lab vs Open Lab, status pill), student locked/expired notices, and instructor lifecycle buttons (`Open Live Lab`, `End Live Lab`, `Reopen Live Lab`).
@@ -423,7 +429,7 @@ When creating a lab exercise, the instructor selects one of two availability mod
   - Added relationship `overriddenByUser()` to [`User`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Models/User.php).
   - Added helper accessors: `getEffectiveScoreAttribute()` and `isGradeOverridden()`.
 - [x] **Single-Call AI Prompt & Normalization ([`LlmEvaluationService.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Services/LlmEvaluationService.php))**:
-  - Structured OpenAI prompt to return competencies dictionary, test counts, code quality notes, and plain-language summary in the same execution.
+  - Structured Claude (Anthropic) prompt to return competencies dictionary, test counts, code quality notes, and plain-language summary in the same execution.
   - Upgraded fallback heuristic evaluator (`evaluateMock()`) and zero-state evaluator (`evaluateEmptySubmission()`) to produce the identical structured schema.
 - [x] **Student Data Privacy ([`LabSessionController.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Http/Controllers/Api/LabSessionController.php))**:
   - Persisted `ai_grade_summary` in `submitSession()`.
@@ -535,9 +541,9 @@ flowchart TD
     end
 
     subgraph Backend ["Laravel Backend & Services"]
-        Reverb["Laravel Reverb WebSocket Server"]
+        Pusher["Pusher Channels"]
         Controllers["Session & Telemetry Controllers"]
-        AIService["AI Engine (GPT Evaluation & Presence)"]
+        AIService["AI Engine (Claude Evaluation & Presence)"]
         DB[(Persistent SQL Database)]
         Ephemeral[(Ephemeral Session Cache / Chats)]
     end
@@ -553,17 +559,17 @@ flowchart TD
     PasteSensor --> WS
     Watcher --> Sidebar
     
-    WS <--> Reverb
+    WS <--> Pusher
     REST <--> Controllers
-    Reverb <--> Ephemeral
+    Pusher <--> Ephemeral
     Controllers <--> DB
     Controllers <--> AIService
-    Reverb --> Monitor
+    Pusher --> Monitor
     Controllers --> CourseSettings
 ```
 
 ### Protocol Guidelines
 1. **Solo Labs**: Connect via WebSocket to handle the Live Leaderboard (Feature 5) and carry line-level diff updates (Feature 1).
-2. **Team Labs**: Ride the same WebSocket connection to also broadcast Team Chat (Feature 2) and line-level teammate attribution.
+2. **Team Labs**: Ride the same WebSocket connection to also broadcast Team Chat (Feature 2) and per-teammate line counts.
 3. **Ephemeral Lifecycle**: All WebSocket connections and chat records are scoped strictly to the active lab session and cleared upon session closure.
 4. **Course Persistence**: Lab session results and competencies accumulate permanently at the student level for course-wide certificate determination.

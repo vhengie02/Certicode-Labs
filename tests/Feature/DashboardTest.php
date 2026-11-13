@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
+use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\Module;
@@ -92,7 +93,10 @@ class DashboardTest extends TestCase
         $class->students()->attach($student->id, ['status' => 'enrolled']);
         Cache::store('file')->flush();
 
-        $this->sections($student)->assertSee('1 of 3 done')->assertSee('Download the extension');
+        $this->sections($student)
+            ->assertSee('1 of 3 done')
+            ->assertSee('Download the extension')
+            ->assertSee('stepper({ initial: 2, total: 3 })', false); // opens on the first step not done
         $this->sections($instructor)
             ->assertSee('Set up your first class')
             ->assertSee('2 of 5 done') // class created, student enrolled
@@ -135,6 +139,82 @@ class DashboardTest extends TestCase
             ->assertDontSee('other class flag')
             ->assertSee('Class CLASS-MINE')
             ->assertDontSee('Class CLASS-OTHER');
+    }
+
+    public function test_instructor_counts_sit_on_the_panels_they_describe()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'some_flag');
+
+        $this->sections($instructor)
+            ->assertOk()
+            ->assertSee('1 open')
+            ->assertSee('1 active')
+            ->assertSee('href="'.route('anomalies.index').'"', false)
+            ->assertDontSee('Active classes')
+            ->assertDontSee('Open flags')
+            ->assertDontSee('Live now')
+            ->assertDontSee('across your classes');
+    }
+
+    public function test_student_counts_sit_on_the_panels_they_describe()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $student = $this->user('kid@example.com', 'student');
+        foreach (['JAVA-1', 'JAVA-2'] as $code) {
+            SchoolClass::create(['name' => "Class {$code}", 'code' => $code, 'instructor_id' => $instructor->id])
+                ->students()->attach($student->id, ['status' => 'enrolled']);
+        }
+
+        $this->sections($student)
+            ->assertOk()
+            ->assertSee('2 classes')
+            ->assertSee('0 earned')
+            ->assertSee('href="'.route('classes.index').'"', false)
+            ->assertDontSee('Labs completed')
+            ->assertDontSee('open sessions');
+    }
+
+    public function test_only_admins_keep_the_stat_cards()
+    {
+        $this->sections($this->user('admin@example.com', 'admin'))->assertSee('Lab sessions');
+    }
+
+    public function test_flags_page_lists_only_the_instructors_own_classes()
+    {
+        $mine = $this->user('mine@example.com', 'instructor');
+        $other = $this->user('other@example.com', 'instructor');
+        $this->flaggedSessionIn($mine, 'CLASS-MINE', 'own_class_flag');
+        $this->flaggedSessionIn($mine, 'CLASS-MINE-2', 'second_class_flag');
+        $this->flaggedSessionIn($other, 'CLASS-OTHER', 'other_class_flag');
+
+        $this->actingAs($mine)->get(route('anomalies.index'))
+            ->assertOk()
+            ->assertSee('Own class flag')
+            ->assertSee('Second class flag')
+            ->assertSee('Class CLASS-MINE-2')
+            ->assertDontSee('Other class flag');
+    }
+
+    public function test_flags_page_filters_by_status()
+    {
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $this->flaggedSessionIn($instructor, 'CLASS-A', 'still_open_flag');
+        $this->flaggedSessionIn($instructor, 'CLASS-B', 'reviewed_flag');
+        Anomaly::where('type', 'reviewed_flag')->first()->update(['resolved' => true]);
+
+        $this->actingAs($instructor)->get(route('anomalies.index'))
+            ->assertSee('All 2')->assertSee('Open 1')->assertSee('Resolved 1')
+            ->assertSee('Still open flag')->assertSee('Reviewed flag');
+        $this->get(route('anomalies.index', ['status' => 'open']))
+            ->assertSee('Still open flag')->assertDontSee('Reviewed flag');
+        $this->get(route('anomalies.index', ['status' => 'resolved']))
+            ->assertSee('Reviewed flag')->assertDontSee('Still open flag');
+    }
+
+    public function test_students_cannot_open_the_flags_page()
+    {
+        $this->actingAs($this->user('kid@example.com', 'student'))->get(route('anomalies.index'))->assertForbidden();
     }
 
     public function test_admin_sees_requests_instead_of_flags()
@@ -196,6 +276,94 @@ class DashboardTest extends TestCase
         foreach ($adminLinks as $link) {
             $instructorPage->assertDontSee('href="'.$link.'"', false);
         }
+    }
+
+    /** Creates a lab in a new class owned by $instructor. */
+    private function labIn(User $instructor, string $code, string $title): Laboratory
+    {
+        $class = SchoolClass::create(['name' => "Class {$code}", 'code' => $code, 'instructor_id' => $instructor->id]);
+        $module = Module::create(['class_id' => $class->id, 'title' => 'Module', 'content' => 'Content']);
+
+        return Laboratory::create(['title' => $title, 'description' => 'Lab', 'time_limit' => 60, 'module_id' => $module->id, 'tasks_definition' => []]);
+    }
+
+    private function submission(Laboratory $lab, string $name, int $minutesAgo, array $attributes = []): LabSession
+    {
+        $student = User::create(['name' => $name, 'email' => str_replace(' ', '.', strtolower($name)).'@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
+
+        return LabSession::create(array_merge([
+            'lab_id' => $lab->id,
+            'user_id' => $student->id,
+            'status' => 'completed',
+            'started_at' => now()->subHours(2),
+            'ended_at' => now()->subMinutes($minutesAgo),
+            'performance_score' => 80,
+            'submitted_code' => 'class Main {}',
+        ], $attributes));
+    }
+
+    public function test_instructor_sees_their_latest_submissions_newest_first_linking_to_the_code()
+    {
+        Cache::store('file')->flush();
+        $mine = $this->user('mine@example.com', 'instructor');
+        $other = $this->user('other@example.com', 'instructor');
+        $lab = $this->labIn($mine, 'CLASS-MINE', 'Sorting Lab');
+        $older = $this->submission($lab, 'Older Student', 30);
+        $newer = $this->submission($lab, 'Newer Student', 5, ['performance_score' => 70, 'instructor_grade_override' => 92.5]);
+        $this->submission($this->labIn($other, 'CLASS-OTHER', 'Their Lab'), 'Foreign Student', 1);
+
+        $this->sections($mine)
+            ->assertOk()
+            ->assertSee('Latest submissions')
+            ->assertSeeInOrder(['Newer Student', 'Sorting Lab', 'Class CLASS-MINE', '92.5%', 'Older Student', '80%'])
+            ->assertSee(route('sessions.show', $newer->id).'#submitted-files', false)
+            ->assertSee(route('sessions.show', $older->id).'#submitted-files', false)
+            ->assertDontSee('Foreign Student');
+    }
+
+    public function test_latest_submissions_leave_out_attempts_with_no_code_to_read()
+    {
+        Cache::store('file')->flush();
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $lab = $this->labIn($instructor, 'CLASS-A', 'Sorting Lab');
+        $this->submission($lab, 'Still Working', 5, ['status' => 'in_progress', 'ended_at' => null]);
+        $this->submission($lab, 'Timed Out', 5, ['status' => 'abandoned']);
+        $this->submission($lab, 'No Code', 5, ['submitted_code' => null]);
+        $this->submission($lab, 'Blank Code', 5, ['submitted_code' => '']);
+
+        $this->sections($instructor)
+            ->assertOk()
+            ->assertSee('No submissions yet.')
+            ->assertDontSee('Still Working')
+            ->assertDontSee('Timed Out')
+            ->assertDontSee('No Code')
+            ->assertDontSee('Blank Code');
+    }
+
+    public function test_latest_submissions_show_six_at_most()
+    {
+        Cache::store('file')->flush();
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $lab = $this->labIn($instructor, 'CLASS-A', 'Sorting Lab');
+        foreach (range(1, 7) as $minutesAgo) {
+            $this->submission($lab, "Student {$minutesAgo}", $minutesAgo);
+        }
+
+        $this->sections($instructor)
+            ->assertOk()
+            ->assertSee('Student 6')
+            ->assertDontSee('Student 7');
+    }
+
+    public function test_a_team_submission_shows_the_team_name()
+    {
+        Cache::store('file')->flush();
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $lab = $this->labIn($instructor, 'CLASS-A', 'Sorting Lab');
+        $group = Group::create(['name' => 'The Pair', 'lab_id' => $lab->id]);
+        $this->submission($lab, 'Team Lead', 5, ['group_id' => $group->id]);
+
+        $this->sections($instructor)->assertSee('The Pair')->assertDontSee('Team Lead');
     }
 
     public function test_activity_graph_is_gone()

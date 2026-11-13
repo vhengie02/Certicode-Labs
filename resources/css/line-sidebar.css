@@ -1,0 +1,246 @@
+/* .line-sidebar: a port of React Bits' LineSidebar styles, extended to a nested list. Each branch
+ * hangs off a rail under its parent's marker, so depth reads from the lines as well as the indent.
+ * --effect (0..1) is set per row by resources/js/line-sidebar.js. */
+@layer components {
+    .line-sidebar {
+        --ls-ink: #ededed;
+        --ls-text: #d4d4d4;
+        --ls-muted: #888888;
+        --ls-accent: #3ecf8e;
+        --ls-line: #3f3f46;
+        --ls-row: 36px;
+        --ls-marker: 40px;
+        --ls-label-gap: 8px;
+        --ls-gap: 4px;
+        --ls-module-gap: 14px;
+        --ls-tick-scale: 0.5;
+        --ls-shift: 12px;
+
+        container-type: inline-size;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ls-module-gap);
+    }
+
+    html:not(.dark) .line-sidebar {
+        --ls-ink: #111827;
+        --ls-text: #374151;
+        --ls-muted: #4b5563;
+        --ls-accent: #059669;
+        --ls-line: #d1d5db;
+    }
+
+    .line-sidebar__item {
+        --ls-tick-gap: var(--ls-module-gap);
+
+        position: relative;
+    }
+
+    /* Nested rows carry a shorter marker, and each branch starts halfway along its parent's. */
+    .line-sidebar__branch {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ls-gap);
+        margin-top: var(--ls-gap);
+        padding-left: calc(var(--ls-marker) / 2);
+    }
+
+    .line-sidebar__branch > .line-sidebar__item {
+        --ls-marker: 28px;
+        --ls-tick-gap: var(--ls-gap);
+    }
+
+    /* The rail: every branch row draws its own stretch, and the last one stops at its marker. */
+    .line-sidebar__branch > .line-sidebar__item::before {
+        content: '';
+        position: absolute;
+        top: calc(-1 * var(--ls-gap));
+        bottom: 0;
+        left: 0;
+        width: 1px;
+        background: var(--ls-line);
+    }
+
+    .line-sidebar__branch > .line-sidebar__item:last-child::before {
+        bottom: auto;
+        height: calc(var(--ls-gap) + var(--ls-row) / 2);
+    }
+
+    .line-sidebar__row {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 12px;
+        padding-left: calc(var(--ls-marker) + var(--ls-label-gap));
+    }
+
+    .line-sidebar__marker {
+        position: absolute;
+        top: calc(var(--ls-row) / 2);
+        left: 0;
+        width: var(--ls-marker);
+        height: 1px;
+        background-color: color-mix(in srgb, var(--ls-accent) calc(var(--effect, 0) * 100%), var(--ls-line));
+        transform-origin: left center;
+        transform: translateY(-50%) scaleX(calc(0.7 + var(--effect, 0) * 0.5));
+    }
+
+    /* Short tick in the gap above each row, growing with the row's proximity. */
+    .line-sidebar__row::before {
+        content: '';
+        position: absolute;
+        top: calc(var(--ls-tick-gap) / -2);
+        left: 0;
+        width: calc(var(--ls-marker) * var(--ls-tick-scale));
+        height: 1px;
+        background-color: var(--ls-line);
+        opacity: 0.5;
+        transform-origin: left center;
+        transform: translateY(-50%) scaleX(calc(0.7 + var(--effect, 0) * 0.6));
+    }
+
+    .line-sidebar > .line-sidebar__item:first-child > .line-sidebar__row::before {
+        display: none;
+    }
+
+    /* The link stays untransformed so its ::after can stretch over the whole row. */
+    .line-sidebar__link {
+        display: flex;
+        flex: 1 1 0;
+        align-items: center;
+        min-width: 0;
+        min-height: var(--ls-row);
+        padding-right: var(--ls-shift);
+        color: var(--ls-text);
+        font-size: 14px;
+    }
+
+    .line-sidebar__link::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 6px;
+    }
+
+    .line-sidebar__link:focus-visible {
+        outline: none;
+    }
+
+    .line-sidebar__link:focus-visible::after {
+        outline: 2px solid var(--ls-accent);
+        outline-offset: 1px;
+    }
+
+    .line-sidebar__link--module {
+        color: var(--ls-ink);
+        font-weight: 500;
+    }
+
+    .line-sidebar > .line-sidebar__item > .line-sidebar__row > .line-sidebar__link {
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .line-sidebar__label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        line-height: 1.2;
+        color: color-mix(in srgb, var(--ls-accent) calc(var(--effect, 0) * 100%), currentColor);
+        transform: translateX(calc(var(--effect, 0) * var(--ls-shift)));
+    }
+
+    .line-sidebar__index {
+        flex: none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.8em;
+        font-weight: 400;
+        font-variant-numeric: tabular-nums;
+        opacity: calc(0.55 + var(--effect, 0) * 0.45);
+    }
+
+    .line-sidebar__text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .line-sidebar__meta {
+        order: 1;
+        display: flex;
+        flex-basis: 100%;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        padding-bottom: 6px;
+        color: var(--ls-muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Sits above the stretched link, so these stay clickable. */
+    .line-sidebar__actions {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 4px;
+    }
+
+    /* Sized off the card, not the viewport: the class page's sidebar narrows it on laptops. */
+    @container (min-width: 640px) {
+        .line-sidebar__meta {
+            order: 0;
+            flex: none;
+            padding-bottom: 0;
+        }
+    }
+
+    @media (max-width: 639px) {
+        .line-sidebar {
+            --ls-marker: 24px;
+        }
+
+        .line-sidebar__branch > .line-sidebar__item {
+            --ls-marker: 16px;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .line-sidebar {
+            --ls-shift: 0px;
+        }
+    }
+
+    /* The module page's outline: a narrow card, so markers shrink and titles wrap. */
+    .line-sidebar--compact {
+        --ls-marker: 16px;
+        --ls-module-gap: 6px;
+        --ls-shift: 6px;
+    }
+
+    .line-sidebar--compact .line-sidebar__branch > .line-sidebar__item {
+        --ls-marker: 12px;
+    }
+
+    .line-sidebar--compact .line-sidebar__text {
+        white-space: normal;
+    }
+
+    .line-sidebar--compact > .line-sidebar__item > .line-sidebar__row > .line-sidebar__link {
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    /* The page you're on stays lit wherever the cursor is. */
+    .line-sidebar__link[aria-current='page'] {
+        color: var(--ls-accent);
+    }
+
+    .line-sidebar__row:has(> .line-sidebar__link[aria-current='page']) > .line-sidebar__marker {
+        background-color: var(--ls-accent);
+    }
+}

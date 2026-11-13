@@ -1,0 +1,53 @@
+/* The bars of WakeSlider from React Bits, as a read-only progress bar. See resources/js/wake-bar.js. */
+.wake-bar {
+    --wake-bar-fill: #3ecf8e;
+    --wake-bar-track: #2e2e2e;
+    --wake-bar-height: 28px;
+    --wake-bar-rest: 0.36;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: var(--wake-bar-height);
+}
+
+.wake-bar--muted {
+    --wake-bar-fill: rgba(237, 237, 237, 0.6);
+}
+
+html:not(.dark) .wake-bar {
+    --wake-bar-track: #e5e7eb;
+}
+
+html:not(.dark) .wake-bar--muted {
+    --wake-bar-fill: rgba(55, 65, 81, 0.6);
+}
+
+.wake-bar__bar {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    border-radius: 9999px;
+    background: var(--wake-bar-track);
+    transform: scaleY(var(--wake-bar-rest));
+    transition: background-color 120ms ease;
+}
+
+.wake-bar__bar[data-on='true'] {
+    background: var(--wake-bar-fill);
+}
+
+/* Shows the bars unlit until wake-bar.js takes over, so the final fill doesn't flash before the
+   climb. The hold ends by itself, so the fill still shows if the script fails. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+    .wake-bar[data-wake-bar=''] .wake-bar__bar[data-on='true'] {
+        animation: wake-bar-hold 1.5s;
+    }
+}
+
+@keyframes wake-bar-hold {
+    from,
+    to {
+        background: var(--wake-bar-track);
+    }
+}

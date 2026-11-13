@@ -28,44 +28,21 @@
                             x-on:click="hide()">Hide</button>
                 </div>
             </div>
-            <div class="mt-4 h-1.5 rounded-full bg-[#232323] overflow-hidden" role="progressbar" aria-label="Getting started progress" aria-valuemin="0" aria-valuemax="{{ count($setup) }}" aria-valuenow="{{ $setupDone }}">
-                <div class="h-full rounded-full bg-[#3ecf8e]" style="width: {{ round($setupDone / count($setup) * 100) }}%"></div>
-            </div>
-            <ol class="mt-5 grid gap-3 sm:grid-cols-2 {{ ['lg:grid-cols-3', 'lg:grid-cols-4', 'lg:grid-cols-5'][min(max(count($setup), 3), 5) - 3] }}">
-                @foreach ($setup as $i => $step)
-                    @php $isNext = $i === $nextStep; @endphp
-                    <li class="flex flex-col rounded-lg border p-4 {{ $isNext ? 'border-[#3ecf8e]/40 bg-[#3ecf8e]/[0.05]' : 'border-[#2e2e2e] bg-[#141414]' }}">
-                        <span class="flex items-center gap-2.5">
-                            @if ($step['done'])
-                                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3ecf8e] text-[#06150e]">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                    <span class="sr-only">Done:</span>
-                                </span>
-                            @else
-                                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] {{ $isNext ? 'border-[#3ecf8e] text-[#3ecf8e]' : 'border-[#3a3a3a] text-[#888888]' }}">{{ $i + 1 }}</span>
-                            @endif
-                            <span class="text-sm font-semibold {{ $step['done'] ? 'text-[#888888] line-through decoration-[#555555]' : 'text-[#ededed]' }}">{{ $step['title'] }}</span>
-                        </span>
-                        <span class="mt-2 text-xs leading-relaxed text-[#a3a3a3]">{{ $step['body'] }}</span>
-                        @if ($isNext)
-                            <a href="{{ $step['href'] }}" @if (!empty($step['download'])) download @endif
-                               class="mt-auto pt-3 text-sm font-semibold text-[#3ecf8e] hover:underline underline-offset-2">{{ $step['action'] }} &rarr;</a>
-                        @endif
-                    </li>
-                @endforeach
-            </ol>
+            <x-stepper class="mt-5" :steps="$setup" :initial="$nextStep + 1" />
         </section>
     @endif
 
-    <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        @foreach ($stats as $stat)
-            <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
-                <dt class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">{{ $stat['label'] }}</dt>
-                <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ number_format($stat['value']) }}</dd>
-                <dd class="mt-1 text-xs text-[#888888]">{{ $stat['hint'] }}</dd>
-            </div>
-        @endforeach
-    </dl>
+    @if ($role === 'admin')
+        <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            @foreach ($stats as $stat)
+                <div class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5">
+                    <dt class="font-mono text-[11px] uppercase tracking-[0.14em] text-[#888888]">{{ $stat['label'] }}</dt>
+                    <dd class="cc-display mt-2 text-3xl font-bold tabular-nums text-[#ededed]">{{ number_format($stat['value']) }}</dd>
+                    <dd class="mt-1 text-xs text-[#888888]">{{ $stat['hint'] }}</dd>
+                </div>
+            @endforeach
+        </dl>
+    @endif
 
     @if ($role === 'student')
         @if ($invitations > 0)
@@ -77,7 +54,13 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <section class="lg:col-span-2 rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="continue-heading">
-                <h2 id="continue-heading" class="px-5 pt-5 pb-2 text-sm font-semibold text-[#ededed]">Continue where you left off</h2>
+                <div class="flex items-baseline justify-between gap-3 px-5 pt-5 pb-2">
+                    <h2 id="continue-heading" class="text-sm font-semibold text-[#ededed]">Continue where you left off</h2>
+                    <span class="flex items-baseline gap-3 shrink-0">
+                        <span class="text-xs tabular-nums text-[#888888]">{{ number_format($classCount) }} {{ \Illuminate\Support\Str::plural('class', $classCount) }}</span>
+                        <a href="{{ route('classes.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
+                    </span>
+                </div>
                 @forelse ($inProgress as $session)
                     @php
                         $lab = $session->laboratory;
@@ -95,16 +78,16 @@
                         <span class="text-xs font-semibold text-[#3ecf8e] shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">Resume &rarr;</span>
                     </a>
                 @empty
-                    <div class="px-5 pb-6 pt-1">
-                        <p class="text-sm text-[#888888]">No labs in progress. Open a class to start one.</p>
-                        <a href="{{ route('classes.index') }}" class="inline-block mt-3 text-sm font-semibold text-[#3ecf8e] hover:underline underline-offset-2">Browse your classes &rarr;</a>
-                    </div>
+                    <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No labs in progress. Open a class to start one.</p>
                 @endforelse
             </section>
 
             <section class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5" aria-labelledby="certs-heading">
-                <h2 id="certs-heading" class="text-sm font-semibold text-[#ededed]">Certificates</h2>
-                <div class="mt-3 space-y-2">
+                <div class="flex items-baseline justify-between gap-3">
+                    <h2 id="certs-heading" class="text-sm font-semibold text-[#ededed]">Certificates</h2>
+                    <span class="text-xs tabular-nums text-[#888888] shrink-0">{{ number_format($certificates->count()) }} earned</span>
+                </div>
+                <div class="motion-rows mt-3 space-y-2">
                     @forelse ($certificates as $cert)
                         <a href="{{ route('certificates.show', $cert->id) }}" class="flex items-center gap-3 rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 hover:border-[#3ecf8e]/35 transition-colors">
                             <svg class="w-4 h-4 text-[#3ecf8e] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 3l2.4 1.8 3 .2.8 2.9 2.2 2-1 2.8 1 2.8-2.2 2-.8 2.9-3 .2L12 21l-2.4-1.8-3-.2-.8-2.9-2.2-2 1-2.8-1-2.8 2.2-2 .8-2.9 3-.2z"/></svg>
@@ -121,48 +104,85 @@
         </div>
     @elseif ($role === 'instructor')
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <section class="lg:col-span-2 rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
-                <div class="flex items-baseline justify-between px-5 pt-5 pb-2">
-                    <h2 id="flags-heading" class="text-sm font-semibold text-[#ededed]">Recent integrity flags</h2>
-                    <span class="text-xs text-[#888888]">your classes only</span>
-                </div>
-                @forelse ($recentAnomalies as $anomaly)
-                    @php
-                        $flagSession = $anomaly->labSession;
-                        $severityStyle = [
-                            'high' => 'bg-red-500/10 text-red-400 border-red-500/20',
-                            'medium' => 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-                        ][$anomaly->severity] ?? 'bg-sky-500/10 text-sky-400 border-sky-500/20';
-                    @endphp
-                    <a href="{{ $flagSession ? route('instructor.monitoring.show', $flagSession->lab_id) : '#' }}" class="flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
-                        <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
-                            {{ strtoupper(\Illuminate\Support\Str::substr($flagSession?->user?->name ?? '?', 0, 2)) }}
-                        </span>
-                        <span class="flex-1 min-w-0">
-                            <span class="block text-sm font-medium text-[#ededed] truncate">
-                                {{ $flagSession?->user?->name ?? 'Unknown student' }}
-                                <span class="font-normal text-[#888888]">&middot; {{ $flagSession?->laboratory?->title ?? 'Lab' }}</span>
+            <div class="lg:col-span-2 space-y-4">
+                <section class="motion-rows rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="submissions-heading">
+                    <div class="px-5 pt-5 pb-2">
+                        <h2 id="submissions-heading" class="text-sm font-semibold text-[#ededed]">Latest submissions</h2>
+                    </div>
+                    @forelse ($latestSubmissions as $submission)
+                        @php
+                            $submitter = $submission->group?->name ?? $submission->user?->name ?? 'Unknown student';
+                        @endphp
+                        <a href="{{ route('sessions.show', $submission->id) }}#submitted-files" class="group flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
+                            <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
+                                {{ strtoupper(\Illuminate\Support\Str::substr($submitter, 0, 2)) }}
                             </span>
-                            <span class="block font-mono text-xs text-[#888888] truncate mt-0.5">{{ str_replace('_', ' ', $anomaly->type) }} &middot; {{ $anomaly->created_at?->diffForHumans() }}</span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm font-medium text-[#ededed] truncate">
+                                    {{ $submitter }}
+                                    <span class="font-normal text-[#888888]">&middot; {{ $submission->laboratory?->title ?? 'Lab' }}</span>
+                                </span>
+                                <span class="block text-xs text-[#888888] truncate mt-0.5">
+                                    {{ $submission->laboratory?->module?->schoolClass?->name ?? 'Class' }} &middot; {{ $submission->ended_at->diffForHumans() }}
+                                </span>
+                            </span>
+                            <span class="text-sm font-medium tabular-nums text-[#ededed] shrink-0">{{ round($submission->effective_score, 1) }}%</span>
+                            <span class="text-xs font-semibold text-[#3ecf8e] shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">Code &rarr;</span>
+                        </a>
+                    @empty
+                        <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No submissions yet. When a student submits a lab, it shows up here.</p>
+                    @endforelse
+                </section>
+
+                <section class="motion-rows rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="flags-heading">
+                    <div class="flex items-baseline justify-between gap-3 px-5 pt-5 pb-2">
+                        <h2 id="flags-heading" class="text-sm font-semibold text-[#ededed]">Recent integrity flags</h2>
+                        <span class="flex items-baseline gap-3 shrink-0">
+                            <span class="text-xs tabular-nums {{ $openFlagCount > 0 ? 'text-amber-400' : 'text-[#888888]' }}">{{ number_format($openFlagCount) }} open</span>
+                            <a href="{{ route('anomalies.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
                         </span>
-                        <span class="hidden sm:inline-flex items-center gap-1.5 shrink-0">
-                            <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] uppercase tracking-wider {{ $severityStyle }}">{{ $anomaly->severity }}</span>
-                            @if ($anomaly->resolved)
-                                <span class="text-xs text-[#888888]">resolved</span>
-                            @endif
-                        </span>
-                    </a>
-                @empty
-                    <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No flags. When a student's session trips a proctoring rule, it shows up here.</p>
-                @endforelse
-            </section>
+                    </div>
+                    @forelse ($recentAnomalies as $anomaly)
+                        @php
+                            $flagSession = $anomaly->labSession;
+                            $severityStyle = [
+                                'high' => 'bg-red-500/10 text-red-400 border-red-500/20',
+                                'medium' => 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+                            ][$anomaly->severity] ?? 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+                        @endphp
+                        <a href="{{ $flagSession ? route('instructor.monitoring.show', $flagSession->lab_id) : '#' }}" class="flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
+                            <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
+                                {{ strtoupper(\Illuminate\Support\Str::substr($flagSession?->user?->name ?? '?', 0, 2)) }}
+                            </span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm font-medium text-[#ededed] truncate">
+                                    {{ $flagSession?->user?->name ?? 'Unknown student' }}
+                                    <span class="font-normal text-[#888888]">&middot; {{ $flagSession?->laboratory?->title ?? 'Lab' }}</span>
+                                </span>
+                                <span class="block font-mono text-xs text-[#888888] truncate mt-0.5">{{ str_replace('_', ' ', $anomaly->type) }} &middot; {{ $anomaly->created_at?->diffForHumans() }}</span>
+                            </span>
+                            <span class="hidden sm:inline-flex items-center gap-1.5 shrink-0">
+                                <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] uppercase tracking-wider {{ $severityStyle }}">{{ $anomaly->severity }}</span>
+                                @if ($anomaly->resolved)
+                                    <span class="text-xs text-[#888888]">resolved</span>
+                                @endif
+                            </span>
+                        </a>
+                    @empty
+                        <p class="px-5 pb-6 pt-1 text-sm text-[#888888]">No flags. When a student's session trips a proctoring rule, it shows up here.</p>
+                    @endforelse
+                </section>
+            </div>
 
             <section class="rounded-xl border border-[#2e2e2e] bg-[#171717] p-5" aria-labelledby="classes-heading">
-                <div class="flex items-baseline justify-between">
+                <div class="flex items-baseline justify-between gap-3">
                     <h2 id="classes-heading" class="text-sm font-semibold text-[#ededed]">Your classes</h2>
-                    <a href="{{ route('classes.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
+                    <span class="flex items-baseline gap-3 shrink-0">
+                        <span class="text-xs tabular-nums text-[#888888]">{{ number_format($activeClassCount) }} active</span>
+                        <a href="{{ route('classes.index') }}" class="text-xs font-medium text-[#3ecf8e] hover:underline underline-offset-2">View all</a>
+                    </span>
                 </div>
-                <div class="mt-3 space-y-2">
+                <div class="motion-rows mt-3 space-y-2">
                     @forelse ($classes as $class)
                         <a href="{{ route('classes.show', $class->id) }}" class="block rounded-lg border border-[#2e2e2e] bg-[#141414] px-3.5 py-3 hover:border-[#3ecf8e]/35 transition-colors">
                             <span class="flex items-center justify-between gap-3">
@@ -172,7 +192,7 @@
                                 @endif
                             </span>
                             <span class="block text-xs text-[#888888] mt-0.5">
-                                {{ $class->students_count }} {{ \Illuminate\Support\Str::plural('student', $class->students_count) }} &middot; <span class="font-mono">{{ $class->code }}</span>
+                                {{ $class->students_count }} {{ \Illuminate\Support\Str::plural('student', $class->students_count) }}
                             </span>
                         </a>
                     @empty

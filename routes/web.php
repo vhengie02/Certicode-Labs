@@ -18,14 +18,17 @@ use App\Http\Controllers\InstructorMonitoringController;
 use App\Http\Controllers\LabAttemptController;
 use App\Http\Controllers\LaboratoryController;
 use App\Http\Controllers\LabTeamController;
+use App\Http\Controllers\LabTeamPickController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\StudentProfileController;
 use App\Models\User;
-use App\Support\InternalUrl;
+use App\Support\NotificationFeed;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -90,6 +93,18 @@ Route::get('/', function () {
 // Public Certificate Verification
 Route::get('/verify-certificate/{code}', [CertificateController::class, 'verify'])->name('certificates.verify');
 
+// Legal pages
+Route::get('/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
+Route::get('/terms', [LegalController::class, 'terms'])->name('legal.terms');
+Route::get('/cookies', [LegalController::class, 'cookies'])->name('legal.cookies');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/legal/accept', [LegalController::class, 'showAcceptance'])->name('legal.accept.show');
+    Route::post('/legal/accept', [LegalController::class, 'accept'])->name('legal.accept.store');
+    Route::post('/legal/monitoring-consent', [LegalController::class, 'grantMonitoring'])->name('legal.monitoring.store');
+    Route::delete('/legal/monitoring-consent', [LegalController::class, 'withdrawMonitoring'])->name('legal.monitoring.destroy');
+});
+
 // Public Google Authentication Mock
 Route::get('/auth/google', [LoginController::class, 'redirectToGoogle'])->name('auth.google');
 Route::post('/auth/google/email', [LoginController::class, 'submitGoogleEmail'])->name('auth.google.email')->middleware('throttle:auth-mail');
@@ -123,7 +138,7 @@ Route::post('/login', [LoginController::class, 'store'])->name('login.store')->m
 Route::post('/logout', LogoutController::class)->name('logout')->middleware('auth');
 
 // Protected Routes
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'show'])->name('dashboard');
     Route::get('/dashboard/sections', [DashboardController::class, 'sections'])->name('dashboard.sections');
 
@@ -132,9 +147,13 @@ Route::middleware('auth')->group(function () {
     Route::put('/settings/profile', [SettingsController::class, 'updateProfile'])->name('settings.profile.update');
     Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password.update');
     Route::post('/settings/notifications', [SettingsController::class, 'updateNotifications'])->name('settings.notifications.update');
+    Route::put('/settings/date-time', [SettingsController::class, 'updateDateTime'])->name('settings.datetime.update');
+    Route::post('/settings/sessions/sign-out-others', [SettingsController::class, 'signOutOtherSessions'])->name('settings.sessions.signout')->middleware('throttle:10,1');
+    Route::get('/settings/export', [SettingsController::class, 'exportData'])->name('settings.export')->middleware('throttle:3,10');
+    Route::delete('/settings/account', [SettingsController::class, 'destroyAccount'])->name('settings.account.destroy')->middleware('throttle:5,1');
     Route::post('/settings/gmail/connect', [SettingsController::class, 'sendGmailCode'])->name('settings.gmail.connect')->middleware('throttle:auth-mail');
     Route::post('/settings/gmail/verify', [SettingsController::class, 'verifyGmailCode'])->name('settings.gmail.verify')->middleware('throttle:code-verify');
-    Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect');
+    Route::post('/settings/gmail/disconnect', [SettingsController::class, 'disconnectGmail'])->name('settings.gmail.disconnect')->middleware('throttle:5,1');
     Route::post('/settings/github/disconnect', [SettingsController::class, 'disconnectGithub'])->name('settings.github.disconnect');
 
     // Certificates
@@ -143,8 +162,10 @@ Route::middleware('auth')->group(function () {
 
     // Classes & Module management (NetAcad inspired)
     Route::resource('classes', ClassController::class);
+    Route::get('/classes/{class_id}/card-image', [ClassController::class, 'cardImage'])->name('classes.card-image');
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
+    Route::get('/integrity-flags', [ClassController::class, 'integrityFlags'])->name('anomalies.index');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
@@ -170,11 +191,19 @@ Route::middleware('auth')->group(function () {
     Route::get('/sessions/{id}', [LabAttemptController::class, 'showWorkspace'])->name('sessions.show');
     Route::post('/sessions/{id}/complete', [LabAttemptController::class, 'completeSession'])->name('sessions.complete');
 
-    // Group lab teams, assigned by the instructor
+    // Group lab teams, formed by the instructor or at random
     Route::get('/laboratories/{id}/teams', [LabTeamController::class, 'index'])->name('laboratories.teams.index');
     Route::post('/laboratories/{id}/teams', [LabTeamController::class, 'store'])->name('laboratories.teams.store');
     Route::put('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'update'])->name('laboratories.teams.update');
     Route::delete('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'destroy'])->name('laboratories.teams.destroy');
+    Route::post('/laboratories/{id}/teams/randomize', [LabTeamController::class, 'randomize'])->name('laboratories.teams.randomize');
+    Route::put('/laboratories/{id}/teams/{team}/leader', [LabTeamController::class, 'setLeader'])->name('laboratories.teams.leader');
+
+    // Group lab teams, formed by the students
+    Route::post('/laboratories/{id}/my-team', [LabTeamPickController::class, 'store'])->name('laboratories.my-team.store');
+    Route::delete('/laboratories/{id}/my-team', [LabTeamPickController::class, 'destroy'])->name('laboratories.my-team.destroy');
+    // The team's leader, on any group lab: the leader hands over, teammates vote
+    Route::post('/laboratories/{id}/my-team/leader', [LabTeamPickController::class, 'chooseLeader'])->name('laboratories.my-team.leader');
 
     // Live Lab Lifecycle Controls (Feature 9)
     Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');
@@ -189,6 +218,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/laboratories/{id}/monitoring/data', [InstructorMonitoringController::class, 'streamData'])->name('instructor.monitoring.data');
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
+    Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
+    Route::get('/instructor/sessions/{id}/files/download/{file?}', [InstructorMonitoringController::class, 'downloadSessionFiles'])->whereNumber('file')->name('instructor.sessions.files.download');
 
     // Student Profiles & Directory CRUD
     // The student directory became Admin > Users; keep the old address working
@@ -231,25 +262,7 @@ Route::middleware('auth')->group(function () {
         }
 
         $cacheKey = "user_notifs_{$user->id}";
-        $data = Cache::remember($cacheKey, 15, function () use ($user) {
-            $unreadCount = $user->unreadNotifications()->count();
-            $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
-                return [
-                    'id' => $notif->id,
-                    'unread' => $notif->unread(),
-                    'url' => InternalUrl::path($notif->data['url'] ?? null),
-                    'title' => $notif->data['title'] ?? 'Notification',
-                    'message' => $notif->data['message'] ?? '',
-                    'type' => $notif->data['type'] ?? 'info',
-                    'time' => $notif->created_at->diffForHumans(),
-                ];
-            });
-
-            return [
-                'unreadCount' => $unreadCount,
-                'notifications' => $notifications,
-            ];
-        });
+        $data = Cache::remember($cacheKey, 15, fn () => NotificationFeed::for($user));
 
         return response()->json($data)
             ->header('Cache-Control', 'private, max-age=15');
@@ -260,30 +273,34 @@ Route::middleware('auth')->group(function () {
         $user = auth()->user();
         if ($user) {
             $user->unreadNotifications->markAsRead();
-            Cache::forget("user_notifs_{$user->id}");
-            Cache::store('file')->forget("user_notifs_summary_{$user->id}");
+            NotificationFeed::forget($user);
 
-            $notifications = $user->notifications()->take(5)->get()->map(function ($notif) {
-                return [
-                    'id' => $notif->id,
-                    'unread' => false,
-                    'url' => InternalUrl::path($notif->data['url'] ?? null),
-                    'title' => $notif->data['title'] ?? 'Notification',
-                    'message' => $notif->data['message'] ?? '',
-                    'type' => $notif->data['type'] ?? 'info',
-                    'time' => $notif->created_at->diffForHumans(),
-                ];
-            });
-
-            return response()->json([
-                'status' => 'success',
-                'unreadCount' => 0,
-                'notifications' => $notifications,
-            ]);
+            return response()->json(['status' => 'success'] + NotificationFeed::for($user));
         }
 
-        return response()->json(['status' => 'success', 'unreadCount' => 0, 'notifications' => []]);
+        return response()->json(['status' => 'success', 'unreadCount' => 0, 'readCount' => 0, 'notifications' => []]);
     })->name('notifications.mark-as-read');
+
+    // Only read notifications can go: an unread id in the list is left alone, not an error,
+    // because it may have arrived in another tab after this one rendered
+    Route::post('/notifications/delete-read', function (Request $request) {
+        $validated = $request->validate([
+            'all' => ['sometimes', 'boolean'],
+            'ids' => ['sometimes', 'array', 'max:100'],
+            'ids.*' => ['uuid'],
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        $notifications = $user->readNotifications();
+        if (! ($validated['all'] ?? false)) {
+            $notifications->whereIn('id', $validated['ids'] ?? []);
+        }
+        $notifications->delete();
+        NotificationFeed::forget($user);
+
+        return response()->json(['status' => 'success'] + NotificationFeed::for($user));
+    })->name('notifications.delete-read');
 });
 
 // V1 lab routes. Called from the lab page in the browser (session cookie) and, on Vercel, by the
@@ -320,6 +337,10 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/broadcasting/auth', [LabSessionController::class, 'authorizeBroadcast']);
         Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
         Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+        Route::post('/sessions/{sessionId}/leader', [LabSessionController::class, 'chooseLeader']);
+        Route::get('/sessions/{sessionId}/team-doc', [LabSessionController::class, 'teamDoc']);
+        Route::get('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'teamDocUpdates']);
+        Route::post('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'storeTeamDocUpdate']);
     });
 });
 

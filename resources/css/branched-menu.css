@@ -1,0 +1,208 @@
+/* <x-branched-menu>: a port of React Bits' BranchedMenu styles. Rows and indent match the
+ * SVG geometry in resources/views/components/branched-menu.blade.php. */
+@layer components {
+    /* The page scrolls inside <main>, so that box animates the jump to a picked section. */
+    @media (prefers-reduced-motion: no-preference) {
+        main:has(.branched-menu) {
+            scroll-behavior: smooth;
+        }
+    }
+
+    .branched-menu {
+        --bm-ink: #ededed;
+        --bm-muted: #888888;
+        --bm-accent: #3ecf8e;
+        --bm-line: #3f3f46;
+        --bm-font: 14px;
+        --bm-row: 36px;
+        --bm-indent: 40px;
+        --bm-line-w: 1.5;
+        --bm-draw: 400ms;
+        --bm-fold: 300ms;
+        --bm-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: fit-content;
+        max-width: 100%;
+        padding-left: 14px;
+        color: var(--bm-ink);
+        font-size: var(--bm-font);
+        line-height: 1.2;
+    }
+
+    html:not(.dark) .branched-menu {
+        --bm-ink: #111827;
+        --bm-muted: #4b5563;
+        --bm-accent: #059669;
+        --bm-line: #d1d5db;
+    }
+
+    .branched-menu::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        bottom: 0;
+        left: 0;
+        width: 2px;
+        border-radius: 1px;
+        background: linear-gradient(to bottom, var(--bm-line) 0%, var(--bm-line) 55%, transparent 100%);
+    }
+
+    .branched-menu__marker {
+        position: absolute;
+        top: -1px;
+        left: 0;
+        z-index: 1;
+        width: 2px;
+        height: 16px;
+        border-radius: 1px;
+        background: var(--bm-accent);
+        opacity: 0;
+        transition:
+            top var(--motion-move) var(--ease-in-out),
+            opacity 150ms ease;
+    }
+
+    .branched-menu__marker[data-on] {
+        opacity: 1;
+    }
+
+    .branched-menu__section {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .branched-menu__head {
+        display: block;
+        margin: 0;
+        padding: 9px 0;
+        border: 0;
+        background: none;
+        color: var(--bm-muted);
+        font: inherit;
+        font-size: calc(var(--bm-font) + 1px);
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: color 200ms ease;
+    }
+
+    .branched-menu__section[data-open] .branched-menu__head {
+        color: var(--bm-ink);
+    }
+
+    .branched-menu__body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows var(--bm-fold) var(--bm-ease-out);
+    }
+
+    .branched-menu__section[data-open] .branched-menu__body {
+        grid-template-rows: 1fr;
+    }
+
+    .branched-menu__fold {
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .branched-menu__tree {
+        position: relative;
+        padding: 6px 0;
+        box-sizing: border-box;
+    }
+
+    .branched-menu__lines {
+        position: absolute;
+        top: 0;
+        left: 0;
+        overflow: visible;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 200ms ease;
+    }
+
+    .branched-menu__section[data-open] .branched-menu__lines {
+        opacity: 1;
+        transition: opacity 250ms ease 100ms;
+    }
+
+    .branched-menu__base,
+    .branched-menu__reach {
+        fill: none;
+        stroke-width: var(--bm-line-w);
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .branched-menu__base {
+        stroke: var(--bm-line);
+    }
+
+    .branched-menu__reach {
+        stroke: var(--bm-accent);
+        transition: stroke-dashoffset var(--bm-draw) var(--bm-ease-out);
+    }
+
+    .branched-menu__item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        height: var(--bm-row);
+        padding-left: var(--bm-indent);
+        color: var(--bm-muted);
+        text-align: left;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+        transition: color 200ms ease;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+        .branched-menu__head:hover,
+        .branched-menu__item:hover {
+            color: var(--bm-ink);
+        }
+    }
+
+    .branched-menu__head:focus-visible,
+    .branched-menu__item:focus-visible {
+        outline: 2px solid var(--bm-accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+    }
+
+    /* The fold clips its overflow, so a link's focus ring sits inside the row. */
+    .branched-menu__item:focus-visible {
+        outline-offset: -2px;
+    }
+
+    .branched-menu__item[data-active] {
+        color: var(--bm-accent);
+        font-weight: 500;
+    }
+
+    .branched-menu__icon {
+        flex: none;
+        width: 16px;
+        height: 16px;
+    }
+
+    .branched-menu__label {
+        white-space: nowrap;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .branched-menu__marker {
+            transition: opacity 150ms ease;
+        }
+
+        .branched-menu__body,
+        .branched-menu__reach {
+            transition: none;
+        }
+    }
+}

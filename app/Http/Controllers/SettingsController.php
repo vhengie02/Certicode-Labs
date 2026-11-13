@@ -4,11 +4,22 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Rules\UniqueEmail;
+use App\Support\AccountDeletion;
+use App\Support\AccountExport;
+use App\Support\DeviceLabel;
+use App\Support\DisplayTime;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class SettingsController extends Controller
 {
@@ -20,11 +31,68 @@ class SettingsController extends Controller
     /**
      * Show settings dashboard.
      */
-    public function show()
+    public function show(Request $request, AccountDeletion $deletion)
     {
         $user = auth()->user();
 
-        return view('settings.index', compact('user'));
+        return view('settings.index', [
+            'user' => $user,
+            'toggles' => $this->notificationToggles($user),
+            'activeSessions' => $this->activeSessions($request),
+            'deletionBlocker' => $deletion->blocker($user),
+            'deletionKeepsRecord' => $deletion->keepsRecord($user),
+        ]);
+    }
+
+    /**
+     * Email toggles for this user's role, as field => [label, hint]. Saving only touches these,
+     * so a toggle a role never sees keeps its value.
+     *
+     * @return array<string, array{string, string}>
+     */
+    private function notificationToggles(User $user): array
+    {
+        $toggles = [
+            'notify_class' => ['Class invitations', 'When an instructor invites you to a class, or a student joins yours.'],
+            'notify_module' => ['New lessons', 'When a module is added to one of your classes.'],
+            'notify_lab' => ['New labs', 'When a lab is added to one of your classes.'],
+        ];
+
+        if ($user->role === 'student') {
+            $toggles['notify_grade'] = ['Grades', 'When your work is graded, or an instructor reviews your grade.'];
+        }
+
+        $toggles['notify_certificate'] = ['Certificates', 'When you reach a class’s pass mark and your certificate is issued.'];
+
+        if ($user->role !== 'student') {
+            $toggles['notify_lab'] = ['Labs', 'When a lab is added to one of your classes, or students submit one of your labs. At most one email per quiet spell for submissions.'];
+            $toggles['notify_integrity'] = ['Camera flags', 'When the camera flags a student in one of your labs. At most one email per quiet spell.'];
+        }
+
+        return $toggles;
+    }
+
+    /**
+     * This user's signed-in browsers, newest first. Null when sessions aren't kept in the database,
+     * because there is then nothing to list.
+     */
+    private function activeSessions(Request $request): ?Collection
+    {
+        if (config('session.driver') !== 'database') {
+            return null;
+        }
+
+        return DB::table(config('session.table'))
+            ->where('user_id', $request->user()->id)
+            ->where('last_activity', '>=', now()->subMinutes((int) config('session.lifetime'))->timestamp)
+            ->orderByDesc('last_activity')
+            ->get()
+            ->map(fn ($session) => [
+                'device' => DeviceLabel::from($session->user_agent),
+                'ip_address' => $session->ip_address,
+                'last_active' => Carbon::createFromTimestamp($session->last_activity),
+                'is_current' => $session->id === $request->session()->getId(),
+            ]);
     }
 
     /**
@@ -33,24 +101,105 @@ class SettingsController extends Controller
     public function updateNotifications(Request $request)
     {
         $user = auth()->user();
+        $fields = array_keys($this->notificationToggles($user));
 
-        $request->validate([
-            'notify_class' => 'boolean',
-            'notify_module' => 'boolean',
-            'notify_lab' => 'boolean',
-            'notify_certificate' => 'boolean',
-        ]);
+        $request->validate(
+            collect($fields)->push('notify_email_channel')->mapWithKeys(fn ($field) => [$field => 'boolean'])->all()
+        );
 
         // Default toggles to false if not present in request (since checkboxes are omitted when unchecked)
-        $user->update([
-            'notify_class' => $request->has('notify_class'),
-            'notify_module' => $request->has('notify_module'),
-            'notify_lab' => $request->has('notify_lab'),
-            'notify_certificate' => $request->has('notify_certificate'),
-            'notify_email_channel' => true,
-        ]);
+        $user->update(
+            collect($fields)->push('notify_email_channel')->mapWithKeys(fn ($field) => [$field => $request->has($field)])->all()
+        );
 
         return redirect()->route('settings.show')->with('success', 'Notification preferences updated successfully!');
+    }
+
+    /**
+     * Update the time zone and date style.
+     */
+    public function updateDateTime(Request $request)
+    {
+        $validated = $request->validate([
+            'timezone' => ['nullable', 'timezone'],
+            'date_style' => ['nullable', Rule::in(array_keys(DisplayTime::DATE_STYLES))],
+        ]);
+
+        $request->user()->update($validated);
+
+        return redirect()->route('settings.show')->with('success', 'Date and time settings updated.');
+    }
+
+    /**
+     * Sign this account out of every other browser. The remember token changes too, or a
+     * "Keep me signed in" cookie would sign those browsers straight back in.
+     */
+    public function signOutOtherSessions(Request $request)
+    {
+        $user = $request->user();
+
+        DB::table(config('session.table'))
+            ->where('user_id', $user->id)
+            ->where('id', '!=', $request->session()->getId())
+            ->delete();
+
+        $keepMeSignedIn = $request->hasCookie(Auth::guard()->getRecallerName());
+        $user->setRememberToken(Str::random(60));
+        $user->save();
+
+        // This browser's own cookie just went stale with the old token
+        if ($keepMeSignedIn) {
+            Auth::login($user, true);
+        }
+
+        return redirect()->route('settings.show')->with('success', 'You were signed out everywhere else.');
+    }
+
+    /**
+     * Download everything we hold about this account.
+     */
+    public function exportData(Request $request)
+    {
+        $export = new AccountExport($request->user());
+
+        return response()->streamDownload(
+            fn () => $export->stream(),
+            'certicode-data-'.now()->format('Y-m-d').'.json',
+            ['Content-Type' => 'application/json']
+        );
+    }
+
+    /**
+     * Delete this account. The password proves it is the owner and not someone at an unlocked
+     * browser; typing the email confirms they mean it. Google sign-ups choose a password too.
+     */
+    public function destroyAccount(Request $request, AccountDeletion $deletion)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'password' => ['required', 'string', 'current_password'],
+            'confirm_email' => 'required|string',
+        ], [
+            'password.current_password' => 'Incorrect password. Please try again.',
+        ]);
+
+        if (strcasecmp(trim($request->confirm_email), $user->email) !== 0) {
+            return back()->withErrors(['confirm_email' => "That doesn't match your account email."]);
+        }
+
+        if ($blocker = $deletion->blocker($user)) {
+            return back()->withErrors(['confirm_email' => $blocker]);
+        }
+
+        // Logging out saves a fresh remember token on the user, which would re-insert a deleted row
+        Auth::logout();
+        $deletion->delete($user);
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login')->with('status', 'Your account was deleted.');
     }
 
     /**
@@ -97,17 +246,19 @@ class SettingsController extends Controller
 
         $mailError = null;
         try {
-            Mail::send('emails.generic', [
-                'title' => 'Gmail Connection Code',
-                'greeting' => 'Hello '.($user->name ?? 'developer').',',
+            // The wording never names Gmail or Google: a code email that mentions another company's
+            // brand reads as phishing to spam filters.
+            Mail::send(['html' => 'emails.generic', 'text' => 'emails.generic-text'], [
+                'title' => 'Confirm your email address',
+                'greeting' => $user->name ? "Hello {$user->name}," : 'Hello,',
                 'messageLines' => [
-                    'You requested to connect your Gmail account ('.$request->gmail.') to your Certicode Labs profile.',
-                    'Please use the verification code below to verify your email ownership. It expires in '.self::CODE_TTL_MINUTES.' minutes.',
+                    'You asked to add this email address to your Certicode Labs profile.',
+                    'Enter the code below to confirm it is yours. It expires in '.self::CODE_TTL_MINUTES.' minutes.',
                 ],
                 'code' => $code,
             ], function ($message) use ($request) {
                 $message->to($request->gmail)
-                    ->subject('Certicode Labs: Gmail Connection Code');
+                    ->subject('Confirm your email for Certicode Labs');
             });
         } catch (\Exception $e) {
             Log::error('Failed to send verification email: '.$e->getMessage());
@@ -146,7 +297,7 @@ class SettingsController extends Controller
                 $user->update(['gmail_verification_code' => null]);
             }
 
-            return redirect()->route('settings.show')->withErrors(['code' => 'This code has expired. Request a new one.']);
+            $this->rejectCode('This code has expired. Request a new one.');
         }
 
         // Count the attempt before checking it. The write only lands if nobody else changed the
@@ -157,7 +308,7 @@ class SettingsController extends Controller
             ->update(['gmail_verification_code' => $this->encodePendingCode($pending['expires_at'], $attempts, $pending['hash'])]);
 
         if ($claimed === 0) {
-            return redirect()->route('settings.show')->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+            $this->rejectCode('Incorrect verification code. Please try again.');
         }
 
         if (hash_equals($pending['hash'], $this->codeHash($request->code))) {
@@ -168,16 +319,33 @@ class SettingsController extends Controller
 
             session()->forget('gmail_code_debug');
 
+            // The settings page checks the code in the background and then reloads, so the
+            // message is flashed for that reload
+            if ($request->expectsJson()) {
+                session()->flash('success', 'Gmail account connected successfully!');
+
+                return response()->json(['connected' => true]);
+            }
+
             return redirect()->route('settings.show')->with('success', 'Gmail account connected successfully!');
         }
 
         if ($attempts >= self::CODE_MAX_ATTEMPTS) {
             $user->update(['gmail_verification_code' => null]);
 
-            return redirect()->route('settings.show')->withErrors(['code' => 'Too many incorrect codes. Request a new code to try again.']);
+            $this->rejectCode('Too many incorrect codes. Request a new code to try again.');
         }
 
-        return redirect()->route('settings.show')->withErrors(['code' => 'Incorrect verification code. Please try again.']);
+        $this->rejectCode('Incorrect verification code. Please try again.');
+    }
+
+    /**
+     * Refuse a Gmail code. A form post goes back to settings with the error, and a background
+     * check gets it as JSON with a 422.
+     */
+    private function rejectCode(string $message): never
+    {
+        throw ValidationException::withMessages(['code' => $message])->redirectTo(route('settings.show'));
     }
 
     /**
@@ -208,11 +376,22 @@ class SettingsController extends Controller
     }
 
     /**
-     * Disconnect Gmail account.
+     * Disconnect Gmail account. Removing a confirmed Gmail moves this account's alert emails, so
+     * it needs the password, like deleting the account. An address still waiting for its code was
+     * never in use, so dropping it needs none.
      */
-    public function disconnectGmail()
+    public function disconnectGmail(Request $request)
     {
-        $user = auth()->user();
+        $user = $request->user();
+
+        if (! empty($user->gmail) && ! empty($user->gmail_verified_at)) {
+            $request->validate([
+                'gmail_password' => ['required', 'string', 'current_password'],
+            ], [
+                'gmail_password.required' => 'Enter your password to remove this Gmail.',
+                'gmail_password.current_password' => 'Incorrect password. Please try again.',
+            ]);
+        }
 
         $user->update([
             'gmail' => null,

@@ -12,7 +12,17 @@ class Group extends Model
     protected $fillable = [
         'name',
         'lab_id',
+        'leader_id',
     ];
+
+    /**
+     * The member who submits the lab for the team. Null until a teammate opens the lab or
+     * someone is chosen.
+     */
+    public function leader()
+    {
+        return $this->belongsTo(User::class, 'leader_id');
+    }
 
     /**
      * Get the laboratory associated with this group.
@@ -28,7 +38,7 @@ class Group extends Model
     public function members()
     {
         return $this->belongsToMany(User::class, 'group_members')
-            ->withPivot('contribution_score')
+            ->withPivot('contribution_score', 'leader_vote')
             ->withTimestamps();
     }
 

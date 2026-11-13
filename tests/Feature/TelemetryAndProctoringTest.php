@@ -182,6 +182,93 @@ class TelemetryAndProctoringTest extends TestCase
         ]);
     }
 
+    /**
+     * What extension 1.6.0 reported when it opened a starter file on Windows: the first
+     * 100 characters of the CRLF text, and the CRLF length.
+     */
+    private function postStarterPaste(string $starter, ?int $pastedLength = null): void
+    {
+        $this->laboratory->update(['starter_files' => [['name' => 'Strings.java', 'content' => $starter, 'is_primary' => true]]]);
+        $crlf = str_replace("\n", "\r\n", $starter);
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'paste_anomaly',
+            'payload' => [
+                'pasted_length' => $pastedLength ?? strlen($crlf),
+                'snippet' => substr($crlf, 0, 100),
+                'file' => 'Untitled-1',
+                'wpm' => 0,
+            ],
+        ])->assertStatus(200);
+    }
+
+    private const STRINGS_STARTER = "public class Strings {\n    public static String reverse(String s) {\n        // TODO\n        return s;\n    }\n\n    public static boolean isPalindrome(String s) {\n        // TODO\n        return false;\n    }\n}\n";
+
+    public function test_starter_code_reported_as_a_paste_raises_no_flag()
+    {
+        $this->postStarterPaste(self::STRINGS_STARTER);
+
+        $this->assertEquals(0, $this->session1->refresh()->paste_anomaly_count);
+        $this->assertDatabaseMissing('anomalies', ['lab_session_id' => $this->session1->id, 'type' => 'paste_anomaly']);
+    }
+
+    public function test_a_longer_paste_that_starts_like_the_starter_is_still_flagged()
+    {
+        $this->postStarterPaste(self::STRINGS_STARTER, 900);
+
+        $this->assertEquals(1, $this->session1->refresh()->paste_anomaly_count);
+    }
+
+    private function postPaste(string $snippet, string $file): void
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'paste_anomaly',
+            'payload' => ['pasted_length' => strlen($snippet), 'snippet' => $snippet, 'file' => $file, 'wpm' => 0],
+        ])->assertStatus(200);
+    }
+
+    public function test_the_same_paste_flags_once_but_stays_on_the_timeline()
+    {
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+        $this->postPaste('public class Tree { void insert() { } }', 'Copy.java');
+
+        $this->assertEquals(1, $this->session1->refresh()->paste_anomaly_count);
+        $this->assertEquals(1, Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'paste_anomaly')->count());
+        $this->assertEquals(2, TelemetryLog::where('lab_session_id', $this->session1->id)->where('event_type', 'paste_anomaly')->count());
+    }
+
+    public function test_different_pastes_each_raise_a_flag()
+    {
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+        $this->postPaste('public class Tree { void remove() { } }', 'Tree.java');
+
+        $this->assertEquals(2, $this->session1->refresh()->paste_anomaly_count);
+    }
+
+    public function test_a_paste_repeated_after_its_flag_is_resolved_is_flagged_again()
+    {
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+        Anomaly::where('lab_session_id', $this->session1->id)->update(['resolved' => true]);
+        $this->postPaste('public class Tree { void insert() { } }', 'Tree.java');
+
+        $this->assertEquals(2, $this->session1->refresh()->paste_anomaly_count);
+    }
+
+    public function test_a_long_paste_is_kept_whole_for_the_instructor()
+    {
+        $snippet = str_repeat("int value = 1;\n", 400);
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'paste_anomaly',
+            'payload' => ['pasted_length' => strlen($snippet), 'snippet' => $snippet, 'file' => 'Tree.java', 'wpm' => 0],
+        ])->assertStatus(200);
+
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'paste_anomaly')->firstOrFail();
+        $this->assertSame($snippet, $anomaly->metadata['snippet']);
+        $log = TelemetryLog::where('lab_session_id', $this->session1->id)->where('event_type', 'paste_anomaly')->firstOrFail();
+        $this->assertSame($snippet, $log->payload['snippet']);
+    }
+
     public function test_live_leaderboard_ranks_by_tasks_descending()
     {
         $response = $this->asExtension($this->session1)->getJson("/api/v1/sessions/{$this->session1->id}/leaderboard");
@@ -243,8 +330,8 @@ class TelemetryAndProctoringTest extends TestCase
 
     public function test_conclude_class_awards_certificate_to_qualifying_students()
     {
-        // Set student2 as completed lab 1 (so 100% progress >= 75% threshold)
-        $this->session2->update(['status' => 'completed']);
+        // Student2 passed lab 1, so 100% of labs passed >= 75% threshold
+        $this->session2->update(['status' => 'completed', 'performance_score' => 90]);
 
         $this->actingAs($this->instructor);
         $response = $this->post("/classes/{$this->class->id}/end");
@@ -463,12 +550,50 @@ class TelemetryAndProctoringTest extends TestCase
         $this->assertTrue($anomaly->metadata['low_light']);
     }
 
+    public function test_movement_in_a_dark_room_raises_a_soft_flag_without_a_notification()
+    {
+        Notification::fake();
+
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => true, 'movement_seen' => true],
+        ])->assertStatus(200);
+
+        $this->assertNull($this->latestNoFaceAnomaly());
+        $anomaly = Anomaly::where('lab_session_id', $this->session1->id)->where('type', 'too_dark')->first();
+        $this->assertNotNull($anomaly);
+        $this->assertEquals('low', $anomaly->severity);
+        $this->assertStringContainsString('saw movement', $anomaly->description);
+        Notification::assertNothingSent();
+    }
+
+    public function test_a_dark_room_without_movement_keeps_the_no_face_flag()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => true, 'movement_seen' => false],
+        ])->assertStatus(200);
+
+        $this->assertEquals('medium', $this->latestNoFaceAnomaly()->severity);
+    }
+
+    public function test_movement_in_a_lit_room_does_not_soften_the_flag()
+    {
+        $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/telemetry", [
+            'event_type' => 'camera_absence',
+            'payload' => ['face_count' => 0, 'low_light' => false, 'movement_seen' => true],
+        ])->assertStatus(200);
+
+        $this->assertEquals('high', $this->latestNoFaceAnomaly()->severity);
+    }
+
     public function test_low_light_pre_lab_verification_is_recorded()
     {
         $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
             'low_light' => true,
+            'image_base64' => $this->snapshotDataUri(),
         ])->assertStatus(200);
 
         $log = TelemetryLog::where('lab_session_id', $this->session1->id)
@@ -693,7 +818,7 @@ class TelemetryAndProctoringTest extends TestCase
         $resV1 = $this->actingAs($this->student1)->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => 'data:image/jpeg;base64,ZmFrZWltYWdl',
+            'image_base64' => $this->snapshotDataUri(),
         ]);
         $resV1->assertStatus(200);
         $resV1->assertJsonPath('verified', true);
@@ -701,7 +826,7 @@ class TelemetryAndProctoringTest extends TestCase
         $resApiV1 = $this->actingAs($this->student1)->postJson("/api/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => 'data:image/jpeg;base64,ZmFrZWltYWdl',
+            'image_base64' => $this->snapshotDataUri(),
         ]);
         $resApiV1->assertStatus(200);
         $resApiV1->assertJsonPath('verified', true);

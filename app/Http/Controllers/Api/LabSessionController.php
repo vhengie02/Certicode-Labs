@@ -10,15 +10,21 @@ use App\Http\Controllers\Concerns\AuthorizesClassAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\LabAttemptController;
 use App\Models\Anomaly;
+use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
+use App\Models\TeamDoc;
+use App\Models\TeamDocUpdate;
 use App\Models\TelemetryLog;
+use App\Models\User;
 use App\Notifications\CameraFlagNotification;
 use App\Services\CodeSimilarityService;
+use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use App\Support\Realtime;
+use App\Support\TeamSync;
 use App\Support\WebcamSnapshot;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -70,6 +76,14 @@ class LabSessionController extends Controller
             }
         }
 
+        // The same pre-lab camera gate as the web start route
+        if ($user->role === 'student' && ! LabAttemptController::recentCameraCheck($lab->id)) {
+            return response()->json([
+                'error' => 'camera_not_verified',
+                'message' => 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.',
+            ], 403);
+        }
+
         // Resume the open attempt or start one (shared with the web start route)
         $session = $lab->findOrStartAttemptFor($user);
         if (! $session) {
@@ -114,7 +128,7 @@ class LabSessionController extends Controller
         $log = TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => $eventType,
-            'payload' => $this->boundedPayload($logPayload),
+            'payload' => $this->boundedPayload($logPayload, in_array($eventType, ['paste_anomaly', 'large_insert'], true) ? self::MAX_PASTE_PAYLOAD_BYTES : self::MAX_PAYLOAD_BYTES),
         ]);
 
         // Smart anomaly checks
@@ -136,7 +150,8 @@ class LabSessionController extends Controller
 
         if ($request->event_type === 'wpm_update') {
             $wpm = (int) ($request->payload['wpm'] ?? 0);
-            $keystrokes = (int) ($request->payload['keystroke_count'] ?? 0);
+            // The count only grows: older extension builds restart it at zero after a window reload
+            $keystrokes = max((int) ($request->payload['keystroke_count'] ?? 0), (int) $session->keystroke_count);
             if ($keystrokes > 0 && (! isset($request->payload['wpm']) || $request->payload['wpm'] === null)) {
                 $session->keystroke_count = $keystrokes;
                 $wpm = $session->calculateOverallWpm();
@@ -156,13 +171,15 @@ class LabSessionController extends Controller
             $session->recordIdleAnomaly($idleMinutes, $request->payload);
         }
 
-        if ($request->event_type === 'paste_anomaly') {
+        if ($request->event_type === 'paste_anomaly'
+            && ! $this->isStarterPaste($session, $request->payload ?? [])
+            && ! $this->isAlreadyFlaggedPaste($session, $request->payload ?? [])) {
             $session->increment('paste_anomaly_count');
             $pastedLen = (int) ($request->payload['pasted_length'] ?? 0);
-            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, 2000);
+            $snippet = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
             $metadata = $request->payload;
             $metadata['snippet'] = $snippet;
-            $metadata = $this->boundedPayload($metadata);
+            $metadata = $this->boundedPayload($metadata, self::MAX_PASTE_PAYLOAD_BYTES);
 
             $this->recordAndBroadcastAnomaly($session, [
                 'type' => 'paste_anomaly',
@@ -172,17 +189,67 @@ class LabSessionController extends Controller
             ]);
         }
 
-        if ($request->event_type === 'camera_absence') {
-            // In low-light mode the check is a brightness comparison, not face detection,
-            // so a miss is less certain and the instructor should see why.
-            $lowLight = (bool) ($request->payload['low_light'] ?? false);
-            $this->recordCameraAnomaly($session, $request->payload, [
-                'type' => 'no_face',
-                'severity' => $lowLight ? 'medium' : 'high',
-                'description' => $lowLight
-                    ? 'Camera presence check failed during active lab session (low-light mode).'
-                    : 'Camera presence check failed during active lab session.',
+        // Work after the attempt closed can't change the submission, so it isn't flagged
+        if ($eventType === 'starter_files_kept' && $session->status === 'in_progress') {
+            $lines = (int) ($request->payload['changed_lines'] ?? 0);
+            $names = collect((array) ($request->payload['files'] ?? []))->filter(fn ($name) => is_string($name))->implode(', ');
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'starter_files_kept',
+                'severity' => 'medium',
+                'description' => Str::limit("Started from files already in the folder instead of the starter code ({$lines} lines differ): {$names}", 250),
+                'metadata' => $this->boundedPayload($request->payload),
             ]);
+        }
+
+        if ($eventType === 'external_file_change' && $session->status === 'in_progress') {
+            $lines = (int) ($request->payload['changed_lines'] ?? 0);
+            $file = (string) ($request->payload['file'] ?? 'a lab file');
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'external_file_change',
+                'severity' => $lines >= self::LARGE_EXTERNAL_CHANGE_LINES ? 'high' : 'medium',
+                'description' => Str::limit("{$lines} lines of {$file} changed outside the editor", 250),
+                'metadata' => $this->boundedPayload($request->payload),
+            ]);
+        }
+
+        // Medium at most: a generated method or a large snippet looks the same as an AI tool's edit
+        if ($eventType === 'large_insert' && $session->status === 'in_progress') {
+            $length = (int) ($request->payload['inserted_length'] ?? 0);
+            $file = (string) ($request->payload['file'] ?? 'a lab file');
+            $metadata = $request->payload;
+            $metadata['snippet'] = mb_substr((string) ($request->payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
+
+            $this->recordAndBroadcastAnomaly($session, [
+                'type' => 'large_insert',
+                'severity' => 'medium',
+                'description' => Str::limit("{$length} characters appeared in {$file} without being typed or pasted, such as from an AI tool or generated code", 250),
+                'metadata' => $this->boundedPayload($metadata, self::MAX_PASTE_PAYLOAD_BYTES),
+            ]);
+        }
+
+        if ($request->event_type === 'camera_absence') {
+            // Face detection is less reliable in a dim room, so a miss is less certain and the
+            // instructor should see why.
+            $lowLight = (bool) ($request->payload['low_light'] ?? false);
+            // Movement in a dark frame suggests someone the detector can't see. It can't prove
+            // who, so the flag stays, softer and with the picture for the instructor to judge.
+            if ($lowLight && ! empty($request->payload['movement_seen'])) {
+                $this->recordCameraAnomaly($session, $request->payload, [
+                    'type' => 'too_dark',
+                    'severity' => 'low',
+                    'description' => 'Too dark to confirm a face, but the camera saw movement.',
+                ]);
+            } else {
+                $this->recordCameraAnomaly($session, $request->payload, [
+                    'type' => 'no_face',
+                    'severity' => $lowLight ? 'medium' : 'high',
+                    'description' => $lowLight
+                        ? 'Camera presence check failed during active lab session (low-light mode).'
+                        : 'Camera presence check failed during active lab session.',
+                ]);
+            }
         }
 
         if ($request->event_type === 'prelab_verification_failed') {
@@ -275,9 +342,9 @@ class LabSessionController extends Controller
     /**
      * Record a camera anomaly with its validated webcam snapshot. Repeats are dropped:
      * a flag without a picture (e.g. the camera was unplugged) is raised once per
-     * 5 minutes, and one with a picture at most every 20 seconds. The picture itself is
-     * stored at most once every SNAPSHOT_INTERVAL_SECONDS per type: a covered camera sends
-     * the same dark frame all lab long.
+     * 5 minutes, and one with a picture at most every 20 seconds. Each flag keeps its own
+     * picture, because the picture is the instructor's proof, up to MAX_SNAPSHOTS_PER_TYPE
+     * per attempt: a covered camera sends the same dark frame all lab long.
      */
     protected function recordCameraAnomaly(LabSession $session, ?array $payload, array $attributes, array $extraMetadata = []): ?Anomaly
     {
@@ -294,8 +361,7 @@ class LabSessionController extends Controller
             return null;
         }
 
-        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)
-            ->where('created_at', '>=', now()->subSeconds(self::SNAPSHOT_INTERVAL_SECONDS))->exists()) {
+        if ($hasSnapshot && (clone $recent)->where('image_path', Anomaly::DB_SNAPSHOT)->count() >= self::MAX_SNAPSHOTS_PER_TYPE) {
             unset($attributes['metadata']['image_base64']);
             $attributes['image_path'] = null;
         }
@@ -306,7 +372,11 @@ class LabSessionController extends Controller
         return $anomaly;
     }
 
-    private const SNAPSHOT_INTERVAL_SECONDS = 120;
+    /** About 40 minutes of flags at the lab page's pace, so one attempt can't fill the database. */
+    public const MAX_SNAPSHOTS_PER_TYPE = 60;
+
+    /** Lines changed outside the editor from which the flag is high severity. */
+    private const LARGE_EXTERNAL_CHANGE_LINES = 20;
 
     /** Camera flags in a lab within this many minutes of the last one don't notify again. */
     private const CAMERA_NOTIFY_QUIET_MINUTES = 15;
@@ -318,6 +388,11 @@ class LabSessionController extends Controller
      */
     private function notifyInstructorOfCameraFlag(LabSession $session, Anomaly $anomaly): void
     {
+        // Too soft a sign to interrupt anyone: it waits on the monitoring page
+        if ($anomaly->type === 'too_dark') {
+            return;
+        }
+
         try {
             $hadRecentFlag = Anomaly::whereIn('type', ['no_face', 'multiple_faces'])
                 ->whereKeyNot($anomaly->id)
@@ -350,12 +425,20 @@ class LabSessionController extends Controller
     private const MAX_PAYLOAD_BYTES = 8192;
 
     /**
+     * Pasted text kept for the instructor, and room for it in a payload: JSON can spend up to
+     * six bytes on a character. Going over the byte limit would cut the text to 500 characters.
+     */
+    private const MAX_PASTE_SNIPPET_CHARS = 10000;
+
+    private const MAX_PASTE_PAYLOAD_BYTES = 65536;
+
+    /**
      * A client-sent payload, cut down if it is too large to store. Small scalar fields are
      * kept so the event still says what happened.
      */
-    private function boundedPayload(?array $payload): ?array
+    private function boundedPayload(?array $payload, int $maxBytes = self::MAX_PAYLOAD_BYTES): ?array
     {
-        if ($payload === null || strlen((string) json_encode($payload)) <= self::MAX_PAYLOAD_BYTES) {
+        if ($payload === null || strlen((string) json_encode($payload)) <= $maxBytes) {
             return $payload;
         }
 
@@ -365,9 +448,61 @@ class LabSessionController extends Controller
             ->take(20)
             ->all();
 
-        return strlen((string) json_encode($kept)) <= self::MAX_PAYLOAD_BYTES
+        return strlen((string) json_encode($kept)) <= $maxBytes
             ? $kept + ['truncated' => true]
             : ['truncated' => true];
+    }
+
+    /**
+     * Whether a reported paste is only the lab's own starter code, which older extension builds
+     * report when they open a starter file. Line endings are ignored: starter files use LF, but
+     * Windows editors report CRLF. Those builds send just the first 100 characters, so a cut-off
+     * snippet also has to match the starter file's full length.
+     */
+    private function isStarterPaste(LabSession $session, array $payload): bool
+    {
+        $unifyEol = fn (string $text): string => str_replace(["\r\n", "\r"], "\n", $text);
+        $rawSnippet = (string) ($payload['snippet'] ?? '');
+        $snippet = trim($unifyEol($rawSnippet));
+        if ($snippet === '') {
+            return false;
+        }
+
+        $pastedLength = (int) ($payload['pasted_length'] ?? 0);
+        $isWholePaste = $pastedLength <= mb_strlen($rawSnippet);
+
+        foreach ($session->laboratory?->getStarterFilesList() ?? [] as $file) {
+            $content = $unifyEol((string) ($file['content'] ?? ''));
+            if (! str_contains($content, $snippet)) {
+                continue;
+            }
+
+            $lfLength = mb_strlen($content);
+            $crlfLength = $lfLength + substr_count($content, "\n");
+            if ($isWholePaste || $pastedLength === $lfLength || $pastedLength === $crlfLength) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether this attempt already has an open flag for the same pasted text. Pasting it again,
+     * even into another file, stays on the timeline but doesn't alert the instructor again.
+     * Once the instructor resolves the flag, the next paste raises a new one.
+     */
+    private function isAlreadyFlaggedPaste(LabSession $session, array $payload): bool
+    {
+        $pastedLength = (int) ($payload['pasted_length'] ?? 0);
+        $snippet = mb_substr((string) ($payload['snippet'] ?? ''), 0, self::MAX_PASTE_SNIPPET_CHARS);
+
+        return Anomaly::where('lab_session_id', $session->id)
+            ->where('type', 'paste_anomaly')
+            ->where('resolved', false)
+            ->get(['metadata'])
+            ->contains(fn (Anomaly $flag) => (int) ($flag->metadata['pasted_length'] ?? 0) === $pastedLength
+                && ($flag->metadata['snippet'] ?? '') === $snippet);
     }
 
     /**
@@ -406,9 +541,9 @@ class LabSessionController extends Controller
         }
 
         $request->validate([
-            'code' => 'required|string',
+            'code' => 'required|string|max:'.self::MAX_SUBMISSION_CHARS,
             'language' => 'required|string',
-        ]);
+        ], ['code.max' => self::SUBMISSION_TOO_LONG]);
 
         $result = $this->sandboxService->execute($request->code, $request->language);
 
@@ -576,8 +711,10 @@ class LabSessionController extends Controller
         } else {
             $timeLimitSeconds = ($lab->time_limit ?? 0) * 60;
             $endTime = $session->ended_at ?? now();
-            $elapsedSeconds = ($session->started_at && $endTime->gte($session->started_at))
-                ? (int) $session->started_at->diffInSeconds($endTime, true)
+            // A team's clock starts when its first teammate opens the lab
+            $clockStart = $session->clockStartedAt();
+            $elapsedSeconds = ($clockStart && $endTime->gte($clockStart))
+                ? (int) $clockStart->diffInSeconds($endTime, true)
                 : 0;
             $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
         }
@@ -591,6 +728,28 @@ class LabSessionController extends Controller
         $userName = $currentUser ? $currentUser->name : 'Student';
         $userColor = $colors[($userId ?? 0) % count($colors)];
 
+        // Who leads the team, and so who can submit. Reading an open attempt also gives a team
+        // that lost its leader a new one, so it is never stuck.
+        $team = $session->group;
+        $teamPayload = null;
+        $inLab = collect();
+        if ($team) {
+            $leader = $session->status === 'in_progress' && $session->user
+                ? app(LabTeams::class)->ensureLeader($team, $session->user)
+                : $team->leader;
+            $teamPayload = [
+                'id' => $team->id,
+                'name' => $team->name,
+                'leader_id' => $leader?->id,
+                'leader_name' => $leader?->name,
+                'is_leader' => $leader?->id === $session->user_id,
+                'can_submit' => $leader?->id === $session->user_id,
+                'votes' => $this->leaderVotesPayload($team),
+            ];
+            $inLab = LabSession::where('lab_id', $session->lab_id)->where('group_id', $team->id)
+                ->where('status', 'in_progress')->pluck('user_id');
+        }
+
         $teammates = [];
         if ($session->group && $session->group->members) {
             foreach ($session->group->members as $member) {
@@ -603,6 +762,8 @@ class LabSessionController extends Controller
                     'initials' => $initials ?: 'ST',
                     'avatar_color' => $mColor,
                     'contribution_score' => (float) ($member->pivot->contribution_score ?? 0.0),
+                    'is_leader' => $member->id === $teamPayload['leader_id'],
+                    'in_lab' => $inLab->contains($member->id),
                 ];
             }
         }
@@ -662,6 +823,7 @@ class LabSessionController extends Controller
             'live_duration_minutes' => $lab->live_duration_minutes ?? $lab->time_limit ?? 60,
             'performance_score' => $session->performance_score,
             'completed_tasks' => $session->completed_tasks ?? [],
+            'keystroke_count' => (int) $session->keystroke_count,
             'diff_stats' => $session->diff_stats ?? ['lines_added' => 0, 'lines_deleted' => 0, 'lines_modified' => 0],
             'code_contributions' => $session->group_id ? $session->teamContributions() : ($session->code_contributions ?? []),
             'realtime' => Realtime::clientConfig(),
@@ -672,9 +834,58 @@ class LabSessionController extends Controller
                 'avatar_color' => $userColor,
             ],
             'is_group_lab' => (bool) $lab->is_group_lab,
+            // Whether teammates type in the same files (the extension then asks for /team-doc)
+            'team_sync' => [
+                'enabled' => TeamDoc::allowedFor($session),
+                // Goes up when the team's channel and key are replaced: the extension then fetches the new ones
+                'rotation' => TeamDoc::existingFor($session)?->rotation ?? 0,
+            ],
+            'team' => $teamPayload,
             'teammates' => $teammates,
             'laboratory' => $lab->studentPayload(),
         ]);
+    }
+
+    /**
+     * Largest submission, in characters. Far above any lab's code, and small enough that the
+     * grader isn't pushed into a timeout, which would fall back to the weaker pattern checks.
+     */
+    private const MAX_SUBMISSION_CHARS = 100000;
+
+    private const MAX_SUBMISSION_FILES = 50;
+
+    private const SUBMISSION_TOO_LONG = 'This submission is too large to grade. Remove generated or unrelated code and try again.';
+
+    /** Diagnostics kept for the grading prompt, and how much of each field. */
+    private const MAX_DIAGNOSTICS = 50;
+
+    private const MAX_DIAGNOSTIC_FIELD_CHARS = 500;
+
+    private function validateSubmission(Request $request): void
+    {
+        $request->validate([
+            'code' => 'nullable|string|max:'.self::MAX_SUBMISSION_CHARS,
+            'files' => 'nullable|array|max:'.self::MAX_SUBMISSION_FILES,
+            'files.*.content' => 'nullable|string|max:'.self::MAX_SUBMISSION_CHARS,
+            'language' => 'required|string',
+            'diagnostics' => 'nullable|array',
+        ], [
+            'code.max' => self::SUBMISSION_TOO_LONG,
+            'files.max' => self::SUBMISSION_TOO_LONG,
+            'files.*.content.max' => self::SUBMISSION_TOO_LONG,
+        ]);
+    }
+
+    /**
+     * The submission's other code files, for the grader: everything sent except the main file
+     * ($code), blank files, and notes and data.
+     */
+    private function otherCodeFiles(Request $request, string $code): array
+    {
+        return collect(LabSession::normalizeSubmittedFiles($request->input('files')))
+            ->filter(fn ($file) => LabSession::isCodeFile($file['name']) && trim($file['content']) !== '' && $file['content'] !== $code)
+            ->values()
+            ->all();
     }
 
     /**
@@ -683,7 +894,9 @@ class LabSessionController extends Controller
     /**
      * Keep only IDE diagnostics that belong to the submitted files. The extension reports
      * diagnostics for every document VS Code knows about, and an error in an unrelated file
-     * (settings.json, another project) must not fail the submission's syntax gate.
+     * (settings.json, another project) must not fail the submission's syntax gate. They go into
+     * the grading prompt, so they are cut down here rather than refused: a badly broken file
+     * has many errors, and that must not stop the student submitting.
      */
     private function submittedFileDiagnostics(Request $request): array
     {
@@ -693,15 +906,21 @@ class LabSessionController extends Controller
             ->filter()
             ->map(fn ($name) => ltrim(str_replace('\\', '/', (string) $name), '/'));
 
-        if ($fileNames->isEmpty()) {
-            return array_values($diagnostics);
+        if ($fileNames->isNotEmpty()) {
+            $diagnostics = array_filter($diagnostics, function ($diag) use ($fileNames) {
+                $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
+
+                return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
+            });
         }
 
-        return array_values(array_filter($diagnostics, function ($diag) use ($fileNames) {
-            $file = ltrim(str_replace('\\', '/', (string) ($diag['file'] ?? '')), '/');
-
-            return $file !== '' && $fileNames->contains(fn ($name) => $file === $name || str_ends_with($file, '/'.$name));
-        }));
+        return array_map(
+            fn (array $diag) => array_map(
+                fn ($value) => is_scalar($value) ? mb_substr((string) $value, 0, self::MAX_DIAGNOSTIC_FIELD_CHARS) : '',
+                Arr::only($diag, ['file', 'line', 'message', 'source'])
+            ),
+            array_slice(array_values($diagnostics), 0, self::MAX_DIAGNOSTICS)
+        );
     }
 
     public function checkProgress(Request $request, int $sessionId)
@@ -711,13 +930,11 @@ class LabSessionController extends Controller
         if (! $session->acceptsWork()) {
             return $this->attemptClosedResponse($session);
         }
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
 
-        $request->validate([
-            'code' => 'nullable|string',
-            'files' => 'nullable|array',
-            'language' => 'required|string',
-            'diagnostics' => 'nullable|array',
-        ]);
+        $this->validateSubmission($request);
 
         return $this->whileGrading($session, fn () => $this->gradeProgress($request, $session));
     }
@@ -740,7 +957,7 @@ class LabSessionController extends Controller
 
         $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics, $this->otherCodeFiles($request, $code));
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -802,19 +1019,98 @@ class LabSessionController extends Controller
             return $this->attemptClosedResponse($session);
         }
 
-        $request->validate([
-            'code' => 'nullable|string',
-            'files' => 'nullable|array',
-            'language' => 'required|string',
-            'diagnostics' => 'nullable|array',
-        ]);
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
 
-        return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
+        // A team hands in one piece of work, and its leader is the one who hands it in
+        if ($session->group && $session->user) {
+            $leader = app(LabTeams::class)->ensureLeader($session->group, $session->user);
+            if ($leader?->id !== $session->user_id) {
+                $who = $leader ? "your team leader, {$leader->name}," : 'your team leader';
+
+                return response()->json([
+                    'error' => 'not_team_leader',
+                    'message' => "Only {$who} can submit this lab. Update the CertiCode Labs extension if you don't see who leads your team.",
+                    'leader_id' => $leader?->id,
+                ], 403);
+            }
+        }
+
+        $this->validateSubmission($request);
+
+        // The team's lock on top of the attempt's own: the submit closes every teammate's
+        // attempt, and the leader can change while one is being graded
+        $teamLock = $session->submitLock();
+        if ($teamLock && ! $teamLock->get()) {
+            return $this->gradingInProgressResponse();
+        }
+
+        try {
+            return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
+        } finally {
+            $teamLock?->release();
+        }
+    }
+
+    /**
+     * Teammates can read each other's attempts, but grading one is its own student's to ask
+     * for: otherwise a teammate could hand in the team's work through the leader's attempt.
+     */
+    private function refuseOtherStudent(Request $request, LabSession $session): ?JsonResponse
+    {
+        $caller = $request->user();
+        if (! $caller || $caller->role !== 'student' || $caller->id === $session->user_id) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => 'not_your_attempt',
+            'message' => 'This is a teammate\'s attempt. Only they can have it graded.',
+        ], 403);
+    }
+
+    private function gradingInProgressResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'grading_in_progress',
+            'message' => 'This lab is already being graded. Wait for that result before trying again.',
+        ], 409);
+    }
+
+    /**
+     * Give a teammate's attempt the result of the team's submit. Only an attempt that is
+     * still open, or was closed for inactivity or during this grading, takes it. One that
+     * had already ended keeps its own end time, so the time they spent isn't stretched.
+     */
+    private function closeWithTeamResult(LabSession $mate, LabSession $graded, CarbonInterface $gradingStartedAt): ?LabSession
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($mate, $graded, $gradingStartedAt) {
+            $current = LabSession::whereKey($mate->id)->lockForUpdate()->first();
+
+            $takesResult = $current && ($current->status === 'in_progress'
+                || $current->status === 'abandoned'
+                || ($current->ended_at && $current->ended_at->gte($gradingStartedAt)));
+            if (! $takesResult) {
+                return null;
+            }
+
+            $result = $graded->only(['status', 'completed_tasks', 'performance_score', 'ai_grade_summary', 'submitted_code', 'submitted_files']);
+            if ($current->status === 'in_progress' || ! $current->ended_at) {
+                $result['ended_at'] = $graded->ended_at;
+            }
+
+            $current->setRelation('laboratory', $graded->laboratory);
+            $current->update($result);
+
+            return $current;
+        });
     }
 
     private function gradeSubmission(Request $request, LabSession $session)
     {
-        // Whole seconds, to compare with the stored ended_at
+        // When the attempt ends: grading time isn't the student's. Whole seconds, to compare
+        // with the stored ended_at
         $gradingStartedAt = now()->startOfSecond();
         // Vercel stops the function at 60 s; the grade must be saved well before that
         $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
@@ -842,7 +1138,7 @@ class LabSessionController extends Controller
         // AI task-completion evaluation
         $diagnostics = $this->submittedFileDiagnostics($request);
         $evaluationService = app(LlmEvaluationService::class);
-        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics);
+        $evaluation = $evaluationService->evaluate($session, $code, $request->language, $diagnostics, $this->otherCodeFiles($request, $code));
 
         $completedTasks = [];
         if (isset($evaluation['tasks']) && is_array($evaluation['tasks'])) {
@@ -856,7 +1152,7 @@ class LabSessionController extends Controller
         $finalScore = (float) ($evaluation['correctness_score'] ?? 0.0);
         $completed = $this->updateIfInProgress($session, $gradingStartedAt, [
             'status' => 'completed',
-            'ended_at' => now(),
+            'ended_at' => $gradingStartedAt,
             'completed_tasks' => $completedTasks,
             'performance_score' => $finalScore,
             'ai_grade_summary' => $this->withStudentFeedback($evaluation, $session, $completedTasks),
@@ -871,6 +1167,17 @@ class LabSessionController extends Controller
 
         // Competency scores follow from the update above (LabSession's save hook)
 
+        // On a group lab the leader's submit is the team's: every teammate who took part gets
+        // the same result, saved before the code run like the leader's own.
+        $graded = collect([$session]);
+        if ($session->group_id) {
+            foreach ($session->teamAttemptSessions($gradingStartedAt)->where('id', '!=', $session->id) as $mate) {
+                if ($closed = $this->closeWithTeamResult($mate, $session, $gradingStartedAt)) {
+                    $graded->push($closed);
+                }
+            }
+        }
+
         // The run doesn't affect the grade; it only shows the student their output or compile
         // error. It gets whatever is left of the budget once the grade is saved, or is skipped.
         $secondsLeft = (int) now()->diffInSeconds($deadline, false);
@@ -878,30 +1185,47 @@ class LabSessionController extends Controller
             ? $this->sandboxService->execute($code, $request->language, min(25, $secondsLeft))
             : ['status' => 'skipped'];
 
-        TelemetryLog::create([
-            'lab_session_id' => $session->id,
-            'event_type' => 'session_completed',
-            'payload' => [
-                'language' => $request->language,
-                'final_score' => $finalScore,
-                'completed_tasks_count' => count($completedTasks),
-                'execution_status' => $executionResult['status'] ?? 'unknown',
-            ],
-        ]);
+        foreach ($graded as $gradedSession) {
+            TelemetryLog::create([
+                'lab_session_id' => $gradedSession->id,
+                'event_type' => 'session_completed',
+                'payload' => [
+                    'language' => $request->language,
+                    'final_score' => $finalScore,
+                    'completed_tasks_count' => count($completedTasks),
+                    'execution_status' => $executionResult['status'] ?? 'unknown',
+                    // Why the run failed, for the instructor's timeline
+                    'execution_error' => Str::limit($executionResult['errors'] ?? '', self::MAX_LOGGED_RUN_ERROR_CHARS) ?: null,
+                    // On a group lab: the leader who handed the team's work in
+                    ...($session->group_id ? ['submitted_by' => $session->user_id] : []),
+                ],
+            ]);
+        }
 
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
+
+        // The team's shared document is done with: the submitted files are the record now
+        if ($session->group_id && $session->team_started_at) {
+            TeamDoc::where('group_id', $session->group_id)->where('lab_id', $session->lab_id)
+                ->where('team_started_at', $session->team_started_at)->delete();
+        }
 
         // Compare the new submission with the cohort once, here, rather than on every view
         // of the monitoring page
         app(CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
 
         $labTitle = $session->laboratory->title ?? 'your lab';
-        $session->notifyStudents(
-            "Lab submitted: {$labTitle}",
-            "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (".count($completedTasks).' tasks passed).'
-                .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : '')
-        );
+        foreach ($graded as $gradedSession) {
+            $gradedSession->notifyStudents(
+                "Lab submitted: {$labTitle}",
+                ($session->group_id ? "Your team's submission" : 'Your submission')." for '{$labTitle}' was received and graded. Score: {$finalScore}% (".count($completedTasks).' tasks passed).'
+                    .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : ''),
+                type: 'grade',
+                wholeTeam: false,
+            );
+        }
+        $session->notifyInstructorOfSubmission();
 
         $studentEvaluation = Arr::except($evaluation, [
             'ai_grade_summary',
@@ -919,6 +1243,10 @@ class LabSessionController extends Controller
             'execution' => in_array($executionResult['status'] ?? null, ['unavailable', 'skipped'], true) ? null : $executionResult,
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
+            ...($session->group_id ? ['team' => [
+                'submitted_by' => $session->user_id,
+                'graded_user_ids' => $graded->pluck('user_id')->sort()->values()->all(),
+            ]] : []),
         ]);
     }
 
@@ -926,6 +1254,11 @@ class LabSessionController extends Controller
     private const SUBMIT_BUDGET_SECONDS = 50;
 
     private const MIN_EXECUTION_SECONDS = 5;
+
+    private const MAX_LOGGED_RUN_ERROR_CHARS = 500;
+
+    /** Files kept in a diff's per-file list. */
+    private const MAX_DIFF_FILES = 50;
 
     /**
      * The answer to grading or submitting an attempt that is no longer open.
@@ -950,10 +1283,7 @@ class LabSessionController extends Controller
         $lock = $session->gradingLock();
 
         if (! $lock->get()) {
-            return response()->json([
-                'error' => 'grading_in_progress',
-                'message' => 'This lab is already being graded. Wait for that result before trying again.',
-            ], 409);
+            return $this->gradingInProgressResponse();
         }
 
         try {
@@ -1072,11 +1402,15 @@ class LabSessionController extends Controller
     {
         $session = LabSession::with(['laboratory', 'user'])->findOrFail($sessionId);
 
-        $request->validate([
+        $validated = $request->validate([
             'lines_added' => 'required|integer|min:0',
             'lines_deleted' => 'required|integer|min:0',
             'lines_modified' => 'nullable|integer|min:0',
             'files' => 'nullable|array',
+            'files.*.name' => 'required|string|max:255',
+            'files.*.added' => 'nullable|integer|min:0',
+            'files.*.deleted' => 'nullable|integer|min:0',
+            'files.*.modified' => 'nullable|integer|min:0',
             'blame_blocks' => 'nullable|array',
         ]);
 
@@ -1093,7 +1427,8 @@ class LabSessionController extends Controller
             'lines_added' => (int) $request->lines_added,
             'lines_deleted' => (int) $request->lines_deleted,
             'lines_modified' => (int) ($request->lines_modified ?? 0),
-            'files' => $request->files ?? [],
+            // Capped, not rejected: the totals above still count, and this goes out in a broadcast
+            'files' => array_slice($validated['files'] ?? [], 0, self::MAX_DIFF_FILES),
             'updated_at' => now()->toIso8601String(),
         ];
 
@@ -1157,6 +1492,164 @@ class LabSessionController extends Controller
     }
 
     /**
+     * What a teammate's extension needs to type in the team's shared document: where the
+     * team's channel is and the key its edits are encrypted with.
+     */
+    public function teamDoc(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
+            return $refusal;
+        }
+
+        $doc = TeamDoc::forSession($session);
+        if (! $doc) {
+            return response()->json(['enabled' => false]);
+        }
+
+        return response()->json([
+            'enabled' => true,
+            'topic' => $doc->topic,
+            'key' => $doc->key,
+            ...TeamSync::clientConfig(),
+            'last_update_id' => $doc->lastUpdateId(),
+        ]);
+    }
+
+    /**
+     * The edits stored for the team's document, oldest first, for a teammate who joins late
+     * or has nobody online to catch up from.
+     */
+    public function teamDocUpdates(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
+            return $refusal;
+        }
+        if (! $doc = TeamDoc::forSession($session)) {
+            return $this->teamSyncOffResponse();
+        }
+
+        $updates = $doc->updates()->where('id', '>', (int) $request->query('after', 0))->orderBy('id')->get(['id', 'payload']);
+
+        return response()->json([
+            'updates' => $updates->map(fn (TeamDocUpdate $update) => ['id' => $update->id, 'payload' => $update->payload])->all(),
+            'last_update_id' => $updates->last()?->id ?? $doc->lastUpdateId(),
+        ]);
+    }
+
+    /**
+     * Keep a batch of edits to the team's document. The server stores it as it came and never
+     * reads it. "seed" is the starter files, kept only if nothing was stored yet, so two
+     * teammates opening the lab together don't both put them in. "replaces_through" is a
+     * teammate folding everything up to that update into this one.
+     */
+    public function storeTeamDocUpdate(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
+            return $refusal;
+        }
+        if (! $doc = TeamDoc::forSession($session)) {
+            return $this->teamSyncOffResponse();
+        }
+
+        $data = $request->validate([
+            'payload' => ['required', 'string', 'max:'.TeamDocUpdate::MAX_PAYLOAD_CHARS, 'regex:/^[A-Za-z0-9+\/]+={0,2}$/'],
+            'seed' => 'nullable|boolean',
+            'replaces_through' => 'nullable|integer|min:1',
+        ]);
+        $author = ($request->user() ?? $session->user)?->id;
+
+        // Only this team's document row is locked, so teams don't wait on each other
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($doc, $data, $author) {
+            $doc = TeamDoc::whereKey($doc->id)->lockForUpdate()->first();
+            if (! $doc) {
+                // The leader submitted a moment ago, and the document went with it
+                return $this->teamSyncOffResponse();
+            }
+            if (! empty($data['seed']) && $doc->updates()->exists()) {
+                return response()->json(['error' => 'already_seeded', 'last_update_id' => $doc->lastUpdateId()], 409);
+            }
+            if (empty($data['replaces_through']) && $doc->needsCompaction()) {
+                return response()->json(['error' => 'compaction_needed', 'last_update_id' => $doc->lastUpdateId()], 409);
+            }
+
+            $update = $doc->updates()->create(['user_id' => $author, 'payload' => $data['payload']]);
+            $chars = (int) $doc->payload_chars + strlen($data['payload']);
+            if (! empty($data['replaces_through'])) {
+                $replaced = $doc->updates()->where('id', '<=', $data['replaces_through'])->whereKeyNot($update->id);
+                $chars -= (int) (clone $replaced)->get(['payload'])->sum(fn (TeamDocUpdate $old) => strlen($old->payload));
+                $replaced->delete();
+            }
+            $doc->update(['payload_chars' => max(0, $chars)]);
+
+            return response()->json(['id' => $update->id], 201);
+        });
+    }
+
+    /**
+     * The team's channel, key and edits go to its members' extensions only: the session's own
+     * student, signed in or by the session's token. Not to teammates through someone else's
+     * session, and not to instructors or admins, who can read the submitted work instead.
+     */
+    private function refuseAllButTheTeammate(Request $request, LabSession $session): ?JsonResponse
+    {
+        $caller = $request->user();
+        if (! $caller || $caller->id === $session->user_id) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => 'not_your_attempt',
+            'message' => 'Only the student working in this attempt can use its shared files.',
+        ], 403);
+    }
+
+    private function teamSyncOffResponse(): JsonResponse
+    {
+        return response()->json(['error' => 'team_sync_off', 'message' => 'Shared typing is not on for this attempt.'], 409);
+    }
+
+    /**
+     * Choose the team's leader from the extension. The leader hands over; anyone else votes.
+     */
+    public function chooseLeader(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('group')->findOrFail($sessionId);
+        $team = $session->group;
+        if (! $team) {
+            return response()->json(['error' => 'no_team', 'message' => 'This attempt has no team.'], 403);
+        }
+
+        $actor = $request->user() ?? $session->user;
+        if (! $actor) {
+            return response()->json(['error' => 'no_student', 'message' => 'This session has no student to act as.'], 403);
+        }
+
+        $candidate = User::findOrFail((int) $request->validate(['candidate_id' => 'required|integer'])['candidate_id']);
+        $teams = app(LabTeams::class);
+        $changed = $teams->chooseLeader($team, $actor, $candidate);
+
+        return response()->json([
+            'status' => 'success',
+            'changed' => $changed,
+            'leader_id' => $team->fresh()->leader_id,
+            'votes' => $this->leaderVotesPayload($team),
+        ]);
+    }
+
+    /**
+     * @return array<int, array{voter_id: int, candidate_id: int}>
+     */
+    private function leaderVotesPayload(Group $team): array
+    {
+        $votes = app(LabTeams::class)->leaderVotes($team);
+
+        return array_map(fn ($voter, $candidate) => ['voter_id' => $voter, 'candidate_id' => $candidate], array_keys($votes), $votes);
+    }
+
+    /**
      * Chat is for teammates, so solo labs have none.
      */
     private function refuseChatForSoloLab(LabSession $session): ?JsonResponse
@@ -1183,22 +1676,7 @@ class LabSessionController extends Controller
             ->orderBy('id', 'asc')
             ->limit(100)
             ->get()
-            ->map(function ($chat) {
-                $nameParts = explode(' ', $chat->user_name);
-                $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
-
-                return [
-                    'id' => $chat->id,
-                    'user_id' => $chat->user_id,
-                    'user_name' => $chat->user_name,
-                    'initials' => $initials ?: 'ST',
-                    'avatar_color' => $chat->avatar_color,
-                    'message' => $chat->message,
-                    'code_snippet' => $chat->code_snippet,
-                    'time' => $chat->created_at ? $chat->created_at->format('H:i') : '',
-                    'created_at' => $chat->created_at,
-                ];
-            });
+            ->map(fn (LabSessionChat $chat) => $chat->toPayload());
 
         return response()->json([
             'status' => 'success',
@@ -1227,32 +1705,17 @@ class LabSessionController extends Controller
         }
         $userId = $currentUser->id;
         $userName = $currentUser->name;
-        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
-        $userColor = $colors[$userId % count($colors)];
 
         $chat = LabSessionChat::create([
             'lab_session_id' => $session->id,
             'user_id' => $userId,
             'user_name' => $userName,
-            'avatar_color' => $userColor,
+            'avatar_color' => LabSessionChat::AVATAR_COLORS[$userId % count(LabSessionChat::AVATAR_COLORS)],
             'message' => $request->message,
             'code_snippet' => $request->code_snippet,
         ]);
 
-        $nameParts = explode(' ', $chat->user_name);
-        $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
-
-        $chatPayload = [
-            'id' => $chat->id,
-            'user_id' => $chat->user_id,
-            'user_name' => $chat->user_name,
-            'initials' => $initials ?: 'ST',
-            'avatar_color' => $chat->avatar_color,
-            'message' => $chat->message,
-            'code_snippet' => $chat->code_snippet,
-            'time' => $chat->created_at ? $chat->created_at->format('H:i') : now()->format('H:i'),
-            'created_at' => $chat->created_at,
-        ];
+        $chatPayload = $chat->toPayload();
 
         // Broadcast real-time ephemeral chat to every teammate's session channel
         try {
@@ -1602,7 +2065,7 @@ class LabSessionController extends Controller
     }
 
     /** How long after a clean shutdown the extension may resume before VS Code counts as closed. */
-    private const VSCODE_RELOAD_GRACE_SECONDS = 30;
+    private const VSCODE_RELOAD_GRACE_SECONDS = 12;
 
     /**
      * Whether the extension connected to this session is older than the minimum supported build.
@@ -1640,6 +2103,10 @@ class LabSessionController extends Controller
                 'timestamp' => now()->toIso8601String(),
             ],
         ]);
+
+        if ($session->status === 'in_progress' && $session->group && $session->user) {
+            app(LabTeams::class)->notice($session->group, "{$session->user->name} left the lab.", $session->user);
+        }
 
         return response()->json(['status' => 'success', 'vscode_connected' => false]);
     }
@@ -1732,8 +2199,12 @@ class LabSessionController extends Controller
     {
         $session = LabSession::findOrFail($sessionId);
 
+        if ($refusal = $this->monitoringConsentRefusal($request->user() ?? $session->user)) {
+            return $refusal;
+        }
+
         $status = $request->input('status', 'granted'); // granted, denied, blocked
-        $faceCount = (int) $request->input('face_count', 1);
+        $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
         $imageBase64 = $request->input('image_base64');
 
         if ($status === 'denied' || $status === 'blocked') {
@@ -1786,6 +2257,15 @@ class LabSessionController extends Controller
             ], 422);
         }
 
+        if (! WebcamSnapshot::decode($imageBase64)) {
+            return $this->unreadableCameraFrameResponse();
+        }
+
+        $blockMinutes = LabAttemptController::cameraBlockMinutesLeft($request, $session->lab_id);
+        if ($blockMinutes > 0) {
+            return $this->cameraBlockedResponse($blockMinutes);
+        }
+
         // Successfully verified. The reference frame isn't kept: nothing reads it, and a
         // webcam picture of a student who passed has no place in storage.
         TelemetryLog::create([
@@ -1816,8 +2296,12 @@ class LabSessionController extends Controller
         $lab = Laboratory::findOrFail($labId);
         $this->authorizeLabViewer($lab);
 
+        if ($refusal = $this->monitoringConsentRefusal($request->user())) {
+            return $refusal;
+        }
+
         $status = $request->input('status', 'granted'); // granted, denied, blocked
-        $faceCount = (int) $request->input('face_count', 1);
+        $faceCount = (int) $request->input('face_count', 0); // A check that reports nothing found nothing
 
         if ($status === 'denied' || $status === 'blocked') {
             return response()->json([
@@ -1828,22 +2312,27 @@ class LabSessionController extends Controller
             ], 403);
         }
 
+        $blockMinutes = LabAttemptController::cameraBlockMinutesLeft($request, $labId);
+        if ($blockMinutes > 0) {
+            return $this->cameraBlockedResponse($blockMinutes);
+        }
+
         if ($faceCount === 0) {
-            return response()->json([
-                'status' => 'error',
-                'verified' => false,
-                'error' => 'no_face_detected',
-                'message' => 'No face detected in camera reference frame. Please face the webcam directly.',
-            ], 422);
+            return $this->failedCameraCheckResponse(
+                $request, $lab, 'no_face_detected',
+                'No face detected in camera reference frame. Please face the webcam directly.',
+            );
         }
 
         if ($faceCount > 1) {
-            return response()->json([
-                'status' => 'error',
-                'verified' => false,
-                'error' => 'multiple_faces',
-                'message' => 'Multiple faces detected in frame. Only one student is permitted.',
-            ], 422);
+            return $this->failedCameraCheckResponse(
+                $request, $lab, 'multiple_faces',
+                'Multiple faces detected in frame. Only one student is permitted.',
+            );
+        }
+
+        if (! WebcamSnapshot::decode($request->input('image_base64'))) {
+            return $this->unreadableCameraFrameResponse();
         }
 
         LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
@@ -1853,5 +2342,102 @@ class LabSessionController extends Controller
             'verified' => true,
             'message' => 'Camera permission and AI presence verified. Workspace unlocked.',
         ]);
+    }
+
+    /** Count a failed pre-lab check, locking the student out when it was their last attempt. */
+    /**
+     * The refusal for a camera check from someone who hasn't agreed to monitoring, or null when
+     * it can go ahead. Every way into a lab needs a camera check, so this covers them all.
+     */
+    private function monitoringConsentRefusal(?User $user): ?JsonResponse
+    {
+        if (! config('legal.enforce') || ! $user || $user->hasMonitoringConsent()) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'monitoring_consent_required',
+            'message' => 'Agree to camera and activity monitoring before the camera check. Reload this page to see the notice.',
+        ], 403);
+    }
+
+    private function failedCameraCheckResponse(Request $request, Laboratory $lab, string $error, string $message): JsonResponse
+    {
+        $failure = LabAttemptController::recordFailedCameraCheck($request, $lab->id);
+
+        if ($failure['blocked']) {
+            $this->reportCameraBlock($request, $lab, $error);
+
+            return $this->cameraBlockedResponse(LabAttemptController::CAMERA_BLOCK_MINUTES);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => $error,
+            'message' => $message,
+            'attempts_used' => $failure['attempts_used'],
+        ], 422);
+    }
+
+    private function cameraBlockedResponse(int $minutes): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'camera_check_blocked',
+            'message' => "Too many failed camera checks. Contact your instructor. You can try again in {$minutes} ".Str::plural('minute', $minutes).'.',
+            'attempts_used' => LabAttemptController::CAMERA_MAX_ATTEMPTS,
+        ], 423);
+    }
+
+    /**
+     * Tell the instructor a student was locked out. A flag needs an attempt to sit on, and a
+     * student who never got past the check has none, so they get a notification instead.
+     */
+    private function reportCameraBlock(Request $request, Laboratory $lab, string $error): void
+    {
+        $student = $request->user();
+        $attempts = LabAttemptController::CAMERA_MAX_ATTEMPTS;
+
+        $session = $student ? $lab->openAttemptOf($student) : null;
+        if ($session) {
+            $multipleFaces = $error === 'multiple_faces';
+            $this->recordCameraAnomaly($session, ['image_base64' => $request->input('image_base64')], [
+                'type' => $multipleFaces ? 'multiple_faces' : 'no_face',
+                'severity' => 'high',
+                'description' => "Pre-lab camera presence verification failed after {$attempts} attempts: "
+                    .($multipleFaces ? 'Multiple faces detected.' : 'No face detected.'),
+            ], ['pre_lab' => true]);
+
+            return;
+        }
+
+        try {
+            $lab->loadMissing('module.schoolClass.instructor');
+            $lab->module?->schoolClass?->instructor?->notify(new CameraFlagNotification(
+                "Camera check failed: {$lab->title}",
+                ($student->name ?? 'A student')." failed the camera check {$attempts} times in '{$lab->title}' and can't start the lab for ".LabAttemptController::CAMERA_BLOCK_MINUTES.' minutes.',
+                route('classes.telemetry', ['class_id' => $lab->module->class_id, 'lab' => $lab->id])
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Camera block notification failed: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Faces are counted in the browser, so the count is only a claim. A check must at least
+     * come with the real camera frame it was made on.
+     */
+    private function unreadableCameraFrameResponse(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'verified' => false,
+            'error' => 'unreadable_camera_frame',
+            'message' => 'Your camera image could not be read. Please try again.',
+        ], 422);
     }
 }

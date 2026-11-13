@@ -1,6 +1,7 @@
 {{-- Lab fields, shared by laboratories/create and laboratories/edit. $laboratory is null when creating. --}}
 @php
     $laboratory = $laboratory ?? null;
+    $dueDate = old('due_at', \App\Support\DisplayTime::in($laboratory?->due_at)?->format('Y-m-d\TH:i'));
 
     // Restore what was typed after a validation error, otherwise the saved lab, otherwise defaults
     $tasks = old('tasks') ?? (!empty($laboratory?->tasks_definition) ? $laboratory->tasks_definition : [['task' => '', 'command' => '']]);
@@ -122,6 +123,13 @@
                     <p class="ui-hint">The shared countdown. You can change it when you start the lab.</p>
                     @error('live_duration_minutes') <p class="ui-error">{{ $message }}</p> @enderror
                 </div>
+                <div x-show="availabilityMode === 'open'" x-cloak>
+                    <label for="due_at" class="ui-label">Due date <span class="ui-optional">(optional)</span></label>
+                    <input type="datetime-local" name="due_at" id="due_at" value="{{ $dueDate }}"
+                           class="ui-input" @error('due_at') aria-invalid="true" @enderror>
+                    <p class="ui-hint">Students see how long is left, then how late they are. Late work is still accepted.</p>
+                    @error('due_at') <p class="ui-error">{{ $message }}</p> @enderror
+                </div>
                 <div>
                     <label for="time_limit" class="ui-label">Time per student</label>
                     <div class="relative">
@@ -147,14 +155,47 @@
                 </div>
             </div>
 
-            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-[#2e2e2e] bg-[#141414] p-4 hover:border-[#383838] transition-colors">
-                <input id="is_group_lab" name="is_group_lab" type="checkbox" value="1" @checked(old('is_group_lab', $laboratory?->is_group_lab))
-                       class="mt-0.5 h-4 w-4 rounded border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
-                <span>
-                    <span class="block text-sm font-medium text-[#ededed]">Group lab</span>
-                    <span class="block mt-0.5 text-[13px] text-[#888888]">Students work in teams on one shared workspace, and you see each teammate's contribution.</span>
-                </span>
-            </label>
+            <div class="space-y-5" x-data="{ isGroupLab: {{ \Illuminate\Support\Js::from((bool) old('is_group_lab', $laboratory?->is_group_lab)) }}, teamFormation: {{ \Illuminate\Support\Js::from(old('team_formation', $laboratory?->team_formation ?? 'students')) }} }">
+                <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-[#2e2e2e] bg-[#141414] p-4 hover:border-[#383838] transition-colors">
+                    <input id="is_group_lab" name="is_group_lab" type="checkbox" value="1" x-model="isGroupLab" @checked(old('is_group_lab', $laboratory?->is_group_lab))
+                           class="mt-0.5 h-4 w-4 rounded border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
+                    <span>
+                        <span class="block text-sm font-medium text-[#ededed]">Group lab</span>
+                        <span class="block mt-0.5 text-[13px] text-[#888888]">Students work in teams on one shared workspace, and you see each teammate's contribution.</span>
+                    </span>
+                </label>
+
+                <div x-show="isGroupLab" x-cloak class="space-y-5">
+                    <div class="sm:max-w-[16rem]">
+                        <label for="team_size" class="ui-label">People per team</label>
+                        <input type="number" name="team_size" id="team_size" min="2" max="50" inputmode="numeric"
+                               value="{{ old('team_size', $laboratory?->team_size ?? 3) }}"
+                               class="ui-input" @error('team_size') aria-invalid="true" @enderror>
+                        @error('team_size') <p class="ui-error">{{ $message }}</p> @enderror
+                    </div>
+
+                    <fieldset>
+                        <legend class="ui-label">How teams are formed</legend>
+                        <div class="mt-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                            @foreach ([
+                                'students' => ['Students pick', 'Students choose their own teammates on the lab page, up to the team size.'],
+                                'random' => ['Randomize', 'Enrolled students are drawn into teams when you save. You can draw again on the Teams page.'],
+                                'instructor' => ['I assign them', 'You build each team yourself on the Teams page.'],
+                            ] as $value => [$label, $text])
+                                <label class="relative flex cursor-pointer flex-col rounded-xl border p-4 transition-colors"
+                                       :class="teamFormation === '{{ $value }}' ? 'border-[#3ecf8e] bg-[#3ecf8e]/[0.05]' : 'border-[#2e2e2e] bg-[#141414] hover:border-[#383838]'">
+                                    <span class="flex items-center gap-2.5">
+                                        <input type="radio" name="team_formation" value="{{ $value }}" x-model="teamFormation" class="h-4 w-4 border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
+                                        <span class="text-sm font-semibold text-[#ededed]">{{ $label }}</span>
+                                    </span>
+                                    <span class="mt-2 pl-[1.6rem] text-[13px] leading-relaxed text-[#888888]">{{ $text }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+                        @error('team_formation') <p class="ui-error">{{ $message }}</p> @enderror
+                    </fieldset>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -291,6 +332,22 @@
                 Checks are optional. A task without one is judged by the grader from its description.
             </p>
             @error('tasks.*.task') <p class="ui-error">Every task needs a description.</p> @enderror
+        </div>
+    </div>
+
+    {{-- Rubric --}}
+    <div class="ui-card">
+        <div class="ui-card-header">
+            <h2 class="ui-card-title">Rubric <span class="ui-optional">(optional)</span></h2>
+            <p class="ui-card-subtitle">How the AI grader should judge the work. Students never see this.</p>
+        </div>
+        <div class="ui-card-body">
+            <label for="rubric" class="sr-only">Rubric</label>
+            <textarea name="rubric" id="rubric" rows="5" maxlength="10000"
+                      placeholder="e.g. Correct exception handling counts for half the grade. Take marks off for unclear variable names."
+                      class="ui-input" @error('rubric') aria-invalid="true" @enderror>{{ old('rubric', $laboratory?->rubric) }}</textarea>
+            <p class="ui-hint">Leave this empty and the grader uses the instructions and tasks alone.</p>
+            @error('rubric') <p class="ui-error">{{ $message }}</p> @enderror
         </div>
     </div>
 

@@ -4,12 +4,16 @@ namespace App\Models;
 
 use App\Events\AnomalyDetected;
 use App\Notifications\ClassActivityNotification;
+use App\Services\TypingEffortCheck;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -21,6 +25,7 @@ class LabSession extends Model
         'lab_id',
         'user_id',
         'group_id',
+        'team_started_at',
         'github_repo_url',
         'started_at',
         'ended_at',
@@ -46,6 +51,7 @@ class LabSession extends Model
 
     protected $casts = [
         'started_at' => 'datetime',
+        'team_started_at' => 'datetime',
         'ended_at' => 'datetime',
         'closed_at' => 'datetime',
         'last_ping_at' => 'datetime',
@@ -101,6 +107,52 @@ class LabSession extends Model
     }
 
     /**
+     * The code saved for this attempt, one entry per file, main file first. The extension's
+     * files aren't validated one by one, so entries without text are skipped. A submission
+     * taken from the open editor has no files at all, only submitted_code.
+     *
+     * @return list<array{name: string, content: string, is_primary: bool}>
+     */
+    public function submittedFileList(): array
+    {
+        $files = self::normalizeSubmittedFiles($this->submitted_files);
+
+        if ($files === [] && filled($this->submitted_code)) {
+            return [['name' => 'Submitted code', 'content' => (string) $this->submitted_code, 'is_primary' => true]];
+        }
+
+        return $files;
+    }
+
+    /**
+     * A submission's files as the extension sent them, in a reliable shape, main file first.
+     *
+     * @return list<array{name: string, content: string, is_primary: bool}>
+     */
+    public static function normalizeSubmittedFiles(mixed $files): array
+    {
+        return collect(is_array($files) ? $files : [])
+            ->filter(fn ($file) => is_array($file) && is_string($file['content'] ?? null))
+            ->map(fn ($file) => [
+                'name' => is_string($file['name'] ?? null) && $file['name'] !== '' ? $file['name'] : 'Untitled file',
+                'content' => $file['content'],
+                'is_primary' => ! empty($file['is_primary']),
+            ])
+            ->sortByDesc('is_primary')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Whether a file is code, as opposed to notes and data. Same list as isNonCodeDoc in the
+     * extension.
+     */
+    public static function isCodeFile(string $name): bool
+    {
+        return preg_match('/\.(md|txt|json|env|log|lock|ya?ml)$/i', $name) !== 1;
+    }
+
+    /**
      * Whether a user may act on this session: its owner, a teammate in the same group,
      * an admin, or the instructor who owns the class the lab belongs to. A teammate is a
      * member of the group, or anyone with their own session in it.
@@ -148,6 +200,60 @@ class LabSession extends Model
     }
 
     /**
+     * The attempts the team's one submit is graded for: this one, and for each teammate their
+     * attempt in the same team attempt, whether still open or closed for inactivity (that
+     * teammate took part). Earlier team attempts are never included. A solo attempt is just
+     * itself.
+     *
+     * @return Collection<int, LabSession>
+     */
+    public function teamAttemptSessions(?CarbonInterface $closedSince = null): Collection
+    {
+        if (! $this->group_id) {
+            return new Collection([$this]);
+        }
+
+        // Sessions of one team attempt share team_started_at. Without it (attempts opened
+        // before the column existed) only attempts still open are known to belong together.
+        $mates = static::where('lab_id', $this->lab_id)
+            ->where('group_id', $this->group_id)
+            ->where('user_id', '!=', $this->user_id)
+            ->when(
+                $this->team_started_at,
+                fn ($q) => $q->where('team_started_at', $this->team_started_at),
+                fn ($q) => $q->whereNull('team_started_at'),
+            )
+            ->where(function ($q) use ($closedSince) {
+                $q->where('status', 'in_progress');
+                if ($this->team_started_at) {
+                    $q->orWhere('status', 'abandoned');
+                }
+                // Closed by something else (a live lab ending, say) while the submit was grading
+                if ($closedSince) {
+                    $q->orWhere(fn ($q) => $q->where('status', 'completed')->where('ended_at', '>=', $closedSince));
+                }
+            })
+            ->get();
+
+        // One attempt per teammate: the open one if they dropped out and came back
+        $rank = ['in_progress' => 0, 'completed' => 1, 'abandoned' => 2];
+        $onePerTeammate = $mates->groupBy('user_id')
+            ->map(fn ($theirs) => $theirs->sortBy(fn ($s) => [$rank[$s->status] ?? 3, -$s->id])->first());
+
+        return (new Collection([$this]))->merge($onePerTeammate->values())->sortBy('id')->values();
+    }
+
+    /**
+     * When this attempt's time limit started counting. A team shares one clock, which starts
+     * when its first teammate opens the lab, so nobody gains time by joining late. It is
+     * stored on each session, so it doesn't move when a teammate's session closes.
+     */
+    public function clockStartedAt(): ?CarbonInterface
+    {
+        return $this->group_id && $this->team_started_at ? $this->team_started_at : $this->started_at;
+    }
+
+    /**
      * Code contributions for the whole team, one entry per student with their share of the
      * team's lines. Each session keeps the entries it has seen; the newest entry per student wins.
      */
@@ -189,6 +295,12 @@ class LabSession extends Model
         static::created(function (LabSession $session) {
             if ($session->status === 'completed') {
                 StudentCompetency::refreshFor($session->user, $session->laboratory);
+            }
+        });
+        static::updated(function (LabSession $session) {
+            // After the commit, so a problem here can't undo the grade that was just saved
+            if ($session->status === 'completed' && $session->wasChanged('status')) {
+                DB::afterCommit(fn () => app(TypingEffortCheck::class)->flagQuietly($session));
             }
         });
         static::updated(function (LabSession $session) {
@@ -273,12 +385,14 @@ class LabSession extends Model
     /**
      * Send a lab notification to whoever owns this attempt: the student, plus every
      * member of the team on a group lab. It opens the attempt's results page unless
-     * another link is given. A failed send never breaks the caller.
+     * another link is given. A failed send never breaks the caller. With $wholeTeam off only
+     * this attempt's student is told: a team's grade is sent per graded attempt, so a
+     * teammate who never took part isn't told they were graded.
      */
-    public function notifyStudents(string $title, string $message, ?string $url = null): void
+    public function notifyStudents(string $title, string $message, ?string $url = null, string $type = 'lab', bool $wholeTeam = true): void
     {
         $recipients = collect([$this->user])
-            ->merge($this->group_id ? ($this->group?->members ?? collect()) : collect())
+            ->merge($wholeTeam && $this->group_id ? ($this->group?->members ?? collect()) : collect())
             ->filter()
             ->unique('id');
 
@@ -288,12 +402,47 @@ class LabSession extends Model
                     $title,
                     $message,
                     $url ?? route('sessions.show', $this->id),
-                    'lab'
+                    $type
                 ));
             } catch (\Throwable $e) {
                 Log::warning('Lab notification failed: '.$e->getMessage());
             }
         }
+    }
+
+    /** Submissions in a lab within this many minutes of the last one don't notify again. */
+    private const SUBMISSION_NOTIFY_QUIET_MINUTES = 15;
+
+    /**
+     * Tell the class instructor about the first submission in a lab after a quiet spell, so a
+     * class submitting together sends one notification. It opens this attempt's code. Later ones
+     * show on the dashboard and the monitoring page.
+     *
+     * Only earlier submissions count, with the session ID breaking a tie. Two students
+     * submitting at once can't each wait for the other, so the first always notifies. This reads
+     * the sessions rather than the cache, because production's cache lasts one request.
+     */
+    public function notifyInstructorOfSubmission(): void
+    {
+        $endedAt = $this->ended_at;
+        $hadEarlierSubmission = $endedAt && self::where('lab_id', $this->lab_id)
+            ->where('status', 'completed')
+            ->whereKeyNot($this->id)
+            ->where('ended_at', '>=', $endedAt->copy()->subMinutes(self::SUBMISSION_NOTIFY_QUIET_MINUTES))
+            ->where(fn ($q) => $q->where('ended_at', '<', $endedAt)
+                ->orWhere(fn ($tie) => $tie->where('ended_at', $endedAt)->where('id', '<', $this->id)))
+            ->exists();
+        if ($hadEarlierSubmission) {
+            return;
+        }
+
+        $lab = $this->laboratory;
+        $who = $this->group?->name ?? $this->user?->name ?? 'A student';
+        $lab?->notifyInstructor(
+            "New submission: {$lab->title}",
+            "{$who} submitted '{$lab->title}'. Open this to read their code. Submissions that follow are on your dashboard.",
+            route('sessions.show', $this->id).'#submitted-files',
+        );
     }
 
     /**
@@ -356,6 +505,19 @@ class LabSession extends Model
     public function gradingLock(): Lock
     {
         return Cache::store('database')->lock("lab_session_{$this->id}_grading", 90);
+    }
+
+    /**
+     * The lock held while a team's submit is graded, shared by the whole team: the submit
+     * closes every teammate's attempt, so two must never run at once (the leader can change
+     * mid-grade). A teammate's check-progress doesn't take it, so it can't hold a submit up.
+     * Null on a solo attempt, where gradingLock() already covers the submit.
+     */
+    public function submitLock(): ?Lock
+    {
+        return $this->group_id
+            ? Cache::store('database')->lock("lab_team_{$this->group_id}_{$this->lab_id}_submit", 90)
+            : null;
     }
 
     /**
@@ -448,6 +610,18 @@ class LabSession extends Model
     }
 
     /**
+     * Ids of the labs the user has a session open in, keyed by lab id.
+     */
+    public static function activeLabIdsFor(int $userId): array
+    {
+        return static::where('user_id', $userId)
+            ->where('status', 'in_progress')
+            ->distinct()
+            ->pluck('lab_id', 'lab_id')
+            ->toArray();
+    }
+
+    /**
      * Progress over a set of labs: how many of them are in $completedLabIds (keyed by lab id).
      */
     public static function progressOver(array $labIds, array $completedLabIds): array
@@ -515,8 +689,8 @@ class LabSession extends Model
             return true;
         }
 
-        if ($lab->time_limit > 0 && $this->started_at) {
-            return $this->started_at->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
+        if ($lab->time_limit > 0 && ($clockStart = $this->clockStartedAt())) {
+            return $clockStart->diffInSeconds(now(), true) < $lab->time_limit * 60 + self::LATE_GRACE_SECONDS;
         }
 
         return true;
@@ -620,7 +794,9 @@ class LabSession extends Model
         foreach ($sessions as $session) {
             $lab = $session->laboratory;
             $timeLimitMinutes = $lab ? ($lab->time_limit ?: 60) : 60;
-            $startedAt = $session->started_at ?: $session->created_at;
+            // A team's shared clock applies to timed self-paced labs only
+            $timed = $lab && $lab->time_limit > 0 && ! $lab->isLiveLab();
+            $startedAt = ($timed ? $session->clockStartedAt() : $session->started_at) ?: $session->created_at;
 
             // 1. Exceeded the lab's official time limit (in minutes)
             $exceededTimeLimit = $startedAt && $startedAt->diffInMinutes(now(), true) >= $timeLimitMinutes;
