@@ -1918,11 +1918,8 @@ class LabSessionController extends Controller
                 'message' => 'This student has another attempt open on this lab. End that one before reopening this one.',
             ], 409);
         }
-        $session->update([
-            'status' => 'in_progress',
-            'ended_at' => null,
-            'closed_at' => null,
-        ]);
+        // The time limit counts from now, or the attempt would time out again at once
+        $session->reopen();
 
         return response()->json([
             'status' => 'success',
@@ -1942,18 +1939,17 @@ class LabSessionController extends Controller
         }
 
         $lab = $session->laboratory;
-        $timeLimit = $lab ? ($lab->time_limit ?: 60) : 60;
-        $timeLimitSec = $timeLimit * 60;
-        $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
 
-        // Auto-expire if session exceeded laboratory time limit
-        if ($session->status === 'in_progress' && $timeLimitSec > 0 && $elapsed >= $timeLimitSec) {
-            $session->update([
-                'status' => 'abandoned',
-                'ended_at' => now(),
-                'last_ping_at' => now(),
-            ]);
+        // A live lab is timed by its shared countdown: once that runs out the lab closes,
+        // which submits the attempt
+        if ($session->status === 'in_progress' && $lab && $lab->isLiveLab() && $lab->checkAndAutoCloseLive()) {
+            $session->refresh();
+        }
 
+        // An open lab's attempt times out once its time limit (a team's shared clock) and the
+        // grace period have passed, unless a submit sent in time is still grading
+        if ($session->status === 'in_progress' && $session->isPastTimeLimit()
+            && $session->abandonUnlessGrading(['last_ping_at' => now()])) {
             return response()->json([
                 'status' => 'abandoned',
                 'is_active' => false,
@@ -1996,7 +1992,10 @@ class LabSessionController extends Controller
         }
         $session->update($updateData);
 
-        $remainingSeconds = max(0, $timeLimitSec - $elapsed);
+        $timeLimitSec = $session->timeLimitSeconds();
+        $clockStart = $session->clockStartedAt();
+        $elapsed = $clockStart ? (int) $clockStart->diffInSeconds(now(), true) : 0;
+        $remainingSeconds = $timeLimitSec !== null ? max(0, $timeLimitSec - $elapsed) : 0;
         if ($lab && $lab->isLiveLab()) {
             $remainingSeconds = $lab->getRemainingLiveSeconds();
         }

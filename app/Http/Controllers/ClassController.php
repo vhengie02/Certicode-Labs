@@ -1127,11 +1127,8 @@ class ClassController extends Controller
                 : back()->with('error', $message);
         }
 
-        $session->update([
-            'status' => 'in_progress',
-            'ended_at' => null,
-            'closed_at' => null,
-        ]);
+        // The time limit counts from now, or the attempt would time out again at once
+        $session->reopen();
 
         if ($request->wantsJson()) {
             return response()->json([

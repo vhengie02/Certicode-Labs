@@ -450,10 +450,11 @@ class Laboratory extends Model
 
     /**
      * The user's open attempt on this lab, or a new one if they may start one; null when they
-     * have used all their attempts. An open attempt past the lab's time limit is abandoned
-     * first. The database allows one open attempt per user and lab (a partial unique index),
-     * so two starts at once (a double click, the page and the extension together) both end
-     * up with the same attempt instead of two.
+     * have used all their attempts. An open attempt past its time limit and the grace period
+     * is abandoned first, unless a submit is still grading it (LabSession::isPastTimeLimit).
+     * The database allows one open attempt per user and lab (a partial unique index), so two
+     * starts at once (a double click, the page and the extension together) both end up with
+     * the same attempt instead of two.
      */
     public function findOrStartAttemptFor(User $user): ?LabSession
     {
@@ -462,14 +463,9 @@ class Laboratory extends Model
 
         // Only this student's own attempt is closed here. On a team its clock is the team's
         // (LabSession::clockStartedAt); teammates' attempts are left to the time-out sweep.
-        if ($session && $this->time_limit > 0) {
-            $clockStart = $session->clockStartedAt();
-            $elapsed = $clockStart ? (int) $clockStart->diffInSeconds(now(), true) : 0;
-            if ($elapsed >= ($this->time_limit * 60)) {
-                $session->update([
-                    'status' => 'abandoned',
-                    'ended_at' => now(),
-                ]);
+        if ($session) {
+            $session->setRelation('laboratory', $this);
+            if ($session->isPastTimeLimit() && $session->abandonUnlessGrading()) {
                 $session = null;
             }
         }
