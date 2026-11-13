@@ -329,7 +329,7 @@
             </div>
         @else
             {{-- Column headings (desktop) --}}
-            <div class="hidden lg:grid lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
+            <div class="hidden xl:grid xl:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-4 px-5 py-2.5 border-b border-[#2e2e2e] text-xs text-[#888888]" aria-hidden="true">
                 <span>Student</span>
                 <span>Status</span>
                 <span>Tasks</span>
@@ -367,9 +367,9 @@
                     @endphp
                     <div class="roster-row group/row px-4 sm:px-5 py-3.5 transition-colors hover:bg-white/[0.02] {{ $openFlags > 0 ? 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.7)]' : '' }}"
                          x-show="showRow({{ $session->id }})" :style="{ order: rowOrder({{ $session->id }}) }">
-                        <div class="grid grid-cols-3 lg:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-x-4 gap-y-3">
+                        <div class="grid grid-cols-3 xl:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-x-4 gap-y-3">
                             {{-- Student --}}
-                            <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 lg:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
+                            <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 xl:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
                                 <span class="w-9 h-9 rounded-lg bg-[#232323] border border-[#2e2e2e] flex items-center justify-center text-xs font-semibold text-[#a3a3a3] shrink-0 transition-colors group-hover/row:border-[#3e3e3e]" aria-hidden="true">{{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}</span>
                                 <div class="min-w-0">
                                     <p class="text-sm font-medium text-[#ededed] truncate group-hover/row:underline underline-offset-2 decoration-[#3e3e3e]">{{ $user->name ?? 'Unknown Student' }}</p>
@@ -383,7 +383,7 @@
                             </button>
 
                             {{-- Status --}}
-                            <div class="flex items-center justify-end lg:justify-start gap-2 text-sm {{ $stateStyles['text'] }}" title="{{ ['active' => 'Heartbeat in the last 75 seconds', 'idle' => 'No heartbeat for over a minute', 'offline' => 'No heartbeat for over 5 minutes', 'completed' => 'Finished and graded', 'abandoned' => 'Ran out of time without submitting'][$state] ?? '' }}">
+                            <div class="flex items-center justify-end xl:justify-start gap-2 text-sm {{ $stateStyles['text'] }}" title="{{ ['active' => 'Heartbeat in the last 75 seconds', 'idle' => 'No heartbeat for over a minute', 'offline' => 'No heartbeat for over 5 minutes', 'completed' => 'Finished and graded', 'abandoned' => 'Ran out of time without submitting'][$state] ?? '' }}">
                                 <span class="w-2 h-2 rounded-full shrink-0 {{ $stateStyles['dot'] }} {{ $state === 'active' ? 'animate-pulse motion-reduce:animate-none' : '' }}" aria-hidden="true"></span>
                                 {{ $stateLabels[$state] ?? ucfirst($state) }}
                                 @if(isset($outdatedExtensions[$session->id]))
@@ -393,9 +393,9 @@
                             </div>
 
                             {{-- Tasks --}}
-                            <div class="col-span-3 lg:col-span-1 min-w-0">
+                            <div class="col-span-3 xl:col-span-1 min-w-0">
                                 <div class="flex items-baseline justify-between gap-2 text-sm">
-                                    <span class="lg:hidden text-xs text-[#888888]">Tasks</span>
+                                    <span class="xl:hidden text-xs text-[#888888]">Tasks</span>
                                     <span class="tabular-nums text-[#ededed]">{{ $tasksCount }}<span class="text-[#666666]">/{{ $taskTotal }}</span></span>
                                     @if($linesAdded || $linesDeleted)
                                         <span class="font-mono text-[11px] text-[#666666]" title="Lines added and removed since the starter code"><span class="text-[#3ecf8e]/80">+{{ $linesAdded }}</span> <span class="text-red-400/70">&minus;{{ $linesDeleted }}</span></span>
@@ -407,16 +407,16 @@
                             </div>
 
                             {{-- Typing / focus / pastes --}}
-                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
-                                <span class="lg:hidden text-xs text-[#888888]">Typing</span>
+                            <div class="flex flex-col gap-0.5 xl:block text-sm xl:text-right tabular-nums">
+                                <span class="xl:hidden text-xs text-[#888888]">Typing</span>
                                 <span class="{{ $wpm > 0 ? 'text-[#ededed]' : 'text-[#666666]' }}">{{ $wpm }}<span class="text-xs text-[#666666] ml-0.5">wpm</span></span>
                             </div>
-                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
-                                <span class="lg:hidden text-xs text-[#888888]">Focus lost</span>
+                            <div class="flex flex-col gap-0.5 xl:block text-sm xl:text-right tabular-nums">
+                                <span class="xl:hidden text-xs text-[#888888]">Focus lost</span>
                                 <span class="{{ $focusLost > 2 ? 'text-amber-300 font-medium' : ($focusLost > 0 ? 'text-[#ededed]' : 'text-[#666666]') }}">{{ $focusLost }}</span>
                             </div>
-                            <div class="flex flex-col gap-0.5 lg:block text-sm lg:text-right tabular-nums">
-                                <span class="lg:hidden text-xs text-[#888888]">Pastes</span>
+                            <div class="flex flex-col gap-0.5 xl:block text-sm xl:text-right tabular-nums">
+                                <span class="xl:hidden text-xs text-[#888888]">Pastes</span>
                                 <span class="{{ $pastes > 0 ? 'text-red-300 font-medium' : 'text-[#666666]' }}">{{ $pastes }}</span>
                             </div>
 
@@ -473,7 +473,7 @@
 
                         {{-- Team contribution (group labs) --}}
                         @if($laboratory->is_group_lab && $session->code_contributions && count($session->code_contributions) > 0)
-                            <div class="mt-3 flex flex-wrap gap-2 text-xs lg:pl-12">
+                            <div class="mt-3 flex flex-wrap gap-2 text-xs xl:pl-12">
                                 @foreach($session->code_contributions as $contrib)
                                     <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0f0f0f] border border-[#2e2e2e]">
                                         <span class="w-2 h-2 rounded-full" style="background-color: {{ preg_match('/^#[0-9a-fA-F]{3,8}$/', $contrib['avatar_color'] ?? '') ? $contrib['avatar_color'] : '#3ecf8e' }}"></span>
