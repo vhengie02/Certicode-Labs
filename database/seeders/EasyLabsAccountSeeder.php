@@ -18,9 +18,9 @@ use Illuminate\Support\Str;
  *
  * Run: php artisan db:seed --class=EasyLabsAccountSeeder
  *
- * On SQLite the student's password is "password". Any other database needs
- * EASY_LABS_PASSWORD set (12+ characters): the local .env can point at the hosted database,
- * and a known password there is a known login.
+ * On SQLite, and in the test suite's throwaway database, the student's password is "password".
+ * Anywhere else it needs EASY_LABS_PASSWORD set (12+ characters): the local .env can point at
+ * the hosted database, and a known password there is a known login.
  */
 class EasyLabsAccountSeeder extends Seeder
 {
@@ -124,9 +124,10 @@ class EasyLabsAccountSeeder extends Seeder
         return $password;
     }
 
+    /** A database a known password can't leak from: SQLite, or the one PHPUnit runs against. */
     protected function usesLocalDatabase(): bool
     {
-        return DB::connection()->getDriverName() === 'sqlite';
+        return app()->runningUnitTests() || DB::connection()->getDriverName() === 'sqlite';
     }
 
     /**

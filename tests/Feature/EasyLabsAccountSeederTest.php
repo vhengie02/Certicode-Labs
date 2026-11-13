@@ -25,8 +25,9 @@ class EasyLabsAccountSeederTest extends TestCase
     {
         parent::setUp();
 
-        // .env points at production; a seeder test must never run anywhere but the test DB
-        $this->assertSame('sqlite', DB::connection()->getDriverName());
+        // .env points at the hosted Supabase database; a seeder test must only touch the
+        // test database (SQLite locally, a throwaway Postgres in CI)
+        $this->assertStringNotContainsString('supabase', (string) DB::connection()->getConfig('host'));
     }
 
     private function labs()
