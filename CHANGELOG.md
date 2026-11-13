@@ -2,6 +2,8 @@
 
 ## 2026-11-13
 
+- The logo in emails now shows in Gmail. It was sent as an attached picture, which Gmail showed as an empty box. The mark is now drawn in the email itself, so it needs no picture and emails carry no attachment.
+- Confirming a Gmail address in Settings has no Confirm button any more. The code is checked as soon as all six digits are in, and Enter still sends it when JavaScript is off.
 - The student list on the monitoring page is readable again on screens 1024 to 1279 pixels wide, such as small laptops and split windows. The table's other columns took almost all the width there, so the student's name and email disappeared and the "Student" heading ran into "Status". At those widths each student is now shown as a card, as on tablets. Wider screens keep the table.
 - Teammates on a group lab now type in the same files at the same time, each in their own VS Code. What one teammate types shows up in the others' editors as they type, files a teammate adds or deletes appear and go, and a teammate who joins later, or is alone, gets the team's latest files. The leader's submit takes the team's latest edits. A teammate's edit that lands in a file the student hasn't touched is saved for them a second later.
 - When a teammate joins with their own, different copy of a file, the team's version replaces it in their editor and their copy is kept in `.certicode/before-shared-typing/`. A session reopened after the team submitted goes on alone, without shared typing. VS Code's Undo can take back a teammate's edit too; the student is warned and can press Redo.

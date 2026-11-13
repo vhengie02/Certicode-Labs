@@ -196,13 +196,11 @@
                             </form>
                             <p class="ui-hint">We'll email a 6-digit code to confirm the address is yours.</p>
                         @elseif (empty($user->gmail_verified_at))
-                            <form action="{{ route('settings.gmail.verify') }}" method="POST" class="mt-4"
+                            {{-- No Confirm button: a full code posts itself, and Enter submits the no-JS field --}}
+                            <form action="{{ route('settings.gmail.verify') }}" method="POST" class="mt-4 text-center"
                                   x-data="codeSlots({ url: @js(route('settings.gmail.verify')) })" @submit.prevent="submit()">
                                 @csrf
-                                <div class="flex flex-wrap items-center gap-3">
-                                    <x-code-slots label="Verification code" />
-                                    <button type="submit" class="ui-btn ui-btn-primary shrink-0" :disabled="sending || status === 'success'">Confirm</button>
-                                </div>
+                                <x-code-slots label="Verification code" />
                                 <p class="ui-error" role="alert" x-show="message" x-text="message" x-cloak></p>
                             </form>
                             <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">

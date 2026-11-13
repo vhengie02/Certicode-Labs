@@ -14,10 +14,6 @@
 
     $heading = $title ?? 'Certicode Labs';
     $preheader = \Illuminate\Support\Str::limit(strip_tags($messageLines[0] ?? ''), 110);
-
-    // Mail clients strip inline SVG, so the mark is a PNG. Inside a real send it is attached to the
-    // message, which also works when the app URL is not reachable from the reader's mail client.
-    $logoSrc = isset($message) ? $message->embed(public_path('apple-touch-icon.png')) : asset('apple-touch-icon.png');
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -45,8 +41,19 @@
                             <a href="{{ url('/') }}" target="_blank" style="text-decoration: none;">
                                 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                                     <tr>
+                                        {{-- The mark is drawn with borders, not an image: mail clients strip inline SVG,
+                                             and Gmail hides images, attached ones included, on mail it distrusts. --}}
                                         <td style="vertical-align: middle; padding-right: 10px;">
-                                            <img src="{{ $logoSrc }}" width="28" height="28" alt="" style="display: block; width: 28px; height: 28px; border: 0; border-radius: 6px;">
+                                            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                                <tr>
+                                                    <td style="vertical-align: bottom; font-size: 0; line-height: 0;">
+                                                        <div style="width: 10px; height: 10px; border: 5px solid {{ $text }}; border-right-color: {{ $ink }}; border-radius: 50%; font-size: 0; line-height: 0;">&nbsp;</div>
+                                                    </td>
+                                                    <td style="vertical-align: bottom; font-size: 0; line-height: 0;">
+                                                        <div style="width: 8px; height: 5px; margin-left: -3px; background-color: {{ $brand }}; font-size: 0; line-height: 0;">&nbsp;</div>
+                                                    </td>
+                                                </tr>
+                                            </table>
                                         </td>
                                         <td style="vertical-align: middle; font-family: {{ $sans }}; font-size: 17px; font-weight: 600; letter-spacing: -0.02em; color: {{ $text }};">
                                             Certicode <span style="font-weight: 500; color: {{ $textDim }};">Labs</span>
