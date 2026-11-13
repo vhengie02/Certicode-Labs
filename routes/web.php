@@ -197,10 +197,13 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::put('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'update'])->name('laboratories.teams.update');
     Route::delete('/laboratories/{id}/teams/{team}', [LabTeamController::class, 'destroy'])->name('laboratories.teams.destroy');
     Route::post('/laboratories/{id}/teams/randomize', [LabTeamController::class, 'randomize'])->name('laboratories.teams.randomize');
+    Route::put('/laboratories/{id}/teams/{team}/leader', [LabTeamController::class, 'setLeader'])->name('laboratories.teams.leader');
 
     // Group lab teams, formed by the students
     Route::post('/laboratories/{id}/my-team', [LabTeamPickController::class, 'store'])->name('laboratories.my-team.store');
     Route::delete('/laboratories/{id}/my-team', [LabTeamPickController::class, 'destroy'])->name('laboratories.my-team.destroy');
+    // The team's leader, on any group lab: the leader hands over, teammates vote
+    Route::post('/laboratories/{id}/my-team/leader', [LabTeamPickController::class, 'chooseLeader'])->name('laboratories.my-team.leader');
 
     // Live Lab Lifecycle Controls (Feature 9)
     Route::post('/laboratories/{id}/open-live', [LaboratoryController::class, 'openLive'])->name('laboratories.open-live');
@@ -334,6 +337,10 @@ Route::prefix('v1')->withoutMiddleware([
         Route::post('/sessions/{sessionId}/broadcasting/auth', [LabSessionController::class, 'authorizeBroadcast']);
         Route::post('/sessions/{sessionId}/end', [LabSessionController::class, 'endSession']);
         Route::post('/sessions/{sessionId}/reopen', [LabSessionController::class, 'reopenSession']);
+        Route::post('/sessions/{sessionId}/leader', [LabSessionController::class, 'chooseLeader']);
+        Route::get('/sessions/{sessionId}/team-doc', [LabSessionController::class, 'teamDoc']);
+        Route::get('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'teamDocUpdates']);
+        Route::post('/sessions/{sessionId}/team-doc/updates', [LabSessionController::class, 'storeTeamDocUpdate']);
     });
 });
 

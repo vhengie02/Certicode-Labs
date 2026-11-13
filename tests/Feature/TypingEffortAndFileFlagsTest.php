@@ -165,6 +165,7 @@ class TypingEffortAndFileFlagsTest extends TestCase
     public function test_group_labs_are_not_checked(): void
     {
         $group = Group::create(['name' => 'Team', 'lab_id' => $this->lab->id]);
+        $group->members()->attach($this->session->user_id);
         $this->session->update(['group_id' => $group->id]);
 
         $this->submit();

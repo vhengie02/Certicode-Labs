@@ -10,16 +10,21 @@ use App\Http\Controllers\Concerns\AuthorizesClassAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\LabAttemptController;
 use App\Models\Anomaly;
+use App\Models\Group;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
+use App\Models\TeamDoc;
+use App\Models\TeamDocUpdate;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Notifications\CameraFlagNotification;
 use App\Services\CodeSimilarityService;
+use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use App\Support\Realtime;
+use App\Support\TeamSync;
 use App\Support\WebcamSnapshot;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -706,8 +711,10 @@ class LabSessionController extends Controller
         } else {
             $timeLimitSeconds = ($lab->time_limit ?? 0) * 60;
             $endTime = $session->ended_at ?? now();
-            $elapsedSeconds = ($session->started_at && $endTime->gte($session->started_at))
-                ? (int) $session->started_at->diffInSeconds($endTime, true)
+            // A team's clock starts when its first teammate opens the lab
+            $clockStart = $session->clockStartedAt();
+            $elapsedSeconds = ($clockStart && $endTime->gte($clockStart))
+                ? (int) $clockStart->diffInSeconds($endTime, true)
                 : 0;
             $timeRemainingSeconds = $timeLimitSeconds > 0 ? max(0, $timeLimitSeconds - $elapsedSeconds) : 0;
         }
@@ -721,6 +728,28 @@ class LabSessionController extends Controller
         $userName = $currentUser ? $currentUser->name : 'Student';
         $userColor = $colors[($userId ?? 0) % count($colors)];
 
+        // Who leads the team, and so who can submit. Reading an open attempt also gives a team
+        // that lost its leader a new one, so it is never stuck.
+        $team = $session->group;
+        $teamPayload = null;
+        $inLab = collect();
+        if ($team) {
+            $leader = $session->status === 'in_progress' && $session->user
+                ? app(LabTeams::class)->ensureLeader($team, $session->user)
+                : $team->leader;
+            $teamPayload = [
+                'id' => $team->id,
+                'name' => $team->name,
+                'leader_id' => $leader?->id,
+                'leader_name' => $leader?->name,
+                'is_leader' => $leader?->id === $session->user_id,
+                'can_submit' => $leader?->id === $session->user_id,
+                'votes' => $this->leaderVotesPayload($team),
+            ];
+            $inLab = LabSession::where('lab_id', $session->lab_id)->where('group_id', $team->id)
+                ->where('status', 'in_progress')->pluck('user_id');
+        }
+
         $teammates = [];
         if ($session->group && $session->group->members) {
             foreach ($session->group->members as $member) {
@@ -733,6 +762,8 @@ class LabSessionController extends Controller
                     'initials' => $initials ?: 'ST',
                     'avatar_color' => $mColor,
                     'contribution_score' => (float) ($member->pivot->contribution_score ?? 0.0),
+                    'is_leader' => $member->id === $teamPayload['leader_id'],
+                    'in_lab' => $inLab->contains($member->id),
                 ];
             }
         }
@@ -803,6 +834,13 @@ class LabSessionController extends Controller
                 'avatar_color' => $userColor,
             ],
             'is_group_lab' => (bool) $lab->is_group_lab,
+            // Whether teammates type in the same files (the extension then asks for /team-doc)
+            'team_sync' => [
+                'enabled' => TeamDoc::allowedFor($session),
+                // Goes up when the team's channel and key are replaced: the extension then fetches the new ones
+                'rotation' => TeamDoc::existingFor($session)?->rotation ?? 0,
+            ],
+            'team' => $teamPayload,
             'teammates' => $teammates,
             'laboratory' => $lab->studentPayload(),
         ]);
@@ -892,6 +930,9 @@ class LabSessionController extends Controller
         if (! $session->acceptsWork()) {
             return $this->attemptClosedResponse($session);
         }
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
 
         $this->validateSubmission($request);
 
@@ -978,9 +1019,92 @@ class LabSessionController extends Controller
             return $this->attemptClosedResponse($session);
         }
 
+        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+            return $refusal;
+        }
+
+        // A team hands in one piece of work, and its leader is the one who hands it in
+        if ($session->group && $session->user) {
+            $leader = app(LabTeams::class)->ensureLeader($session->group, $session->user);
+            if ($leader?->id !== $session->user_id) {
+                $who = $leader ? "your team leader, {$leader->name}," : 'your team leader';
+
+                return response()->json([
+                    'error' => 'not_team_leader',
+                    'message' => "Only {$who} can submit this lab. Update the CertiCode Labs extension if you don't see who leads your team.",
+                    'leader_id' => $leader?->id,
+                ], 403);
+            }
+        }
+
         $this->validateSubmission($request);
 
-        return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
+        // The team's lock on top of the attempt's own: the submit closes every teammate's
+        // attempt, and the leader can change while one is being graded
+        $teamLock = $session->submitLock();
+        if ($teamLock && ! $teamLock->get()) {
+            return $this->gradingInProgressResponse();
+        }
+
+        try {
+            return $this->whileGrading($session, fn () => $this->gradeSubmission($request, $session));
+        } finally {
+            $teamLock?->release();
+        }
+    }
+
+    /**
+     * Teammates can read each other's attempts, but grading one is its own student's to ask
+     * for: otherwise a teammate could hand in the team's work through the leader's attempt.
+     */
+    private function refuseOtherStudent(Request $request, LabSession $session): ?JsonResponse
+    {
+        $caller = $request->user();
+        if (! $caller || $caller->role !== 'student' || $caller->id === $session->user_id) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => 'not_your_attempt',
+            'message' => 'This is a teammate\'s attempt. Only they can have it graded.',
+        ], 403);
+    }
+
+    private function gradingInProgressResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'grading_in_progress',
+            'message' => 'This lab is already being graded. Wait for that result before trying again.',
+        ], 409);
+    }
+
+    /**
+     * Give a teammate's attempt the result of the team's submit. Only an attempt that is
+     * still open, or was closed for inactivity or during this grading, takes it. One that
+     * had already ended keeps its own end time, so the time they spent isn't stretched.
+     */
+    private function closeWithTeamResult(LabSession $mate, LabSession $graded, CarbonInterface $gradingStartedAt): ?LabSession
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($mate, $graded, $gradingStartedAt) {
+            $current = LabSession::whereKey($mate->id)->lockForUpdate()->first();
+
+            $takesResult = $current && ($current->status === 'in_progress'
+                || $current->status === 'abandoned'
+                || ($current->ended_at && $current->ended_at->gte($gradingStartedAt)));
+            if (! $takesResult) {
+                return null;
+            }
+
+            $result = $graded->only(['status', 'completed_tasks', 'performance_score', 'ai_grade_summary', 'submitted_code', 'submitted_files']);
+            if ($current->status === 'in_progress' || ! $current->ended_at) {
+                $result['ended_at'] = $graded->ended_at;
+            }
+
+            $current->setRelation('laboratory', $graded->laboratory);
+            $current->update($result);
+
+            return $current;
+        });
     }
 
     private function gradeSubmission(Request $request, LabSession $session)
@@ -1043,6 +1167,17 @@ class LabSessionController extends Controller
 
         // Competency scores follow from the update above (LabSession's save hook)
 
+        // On a group lab the leader's submit is the team's: every teammate who took part gets
+        // the same result, saved before the code run like the leader's own.
+        $graded = collect([$session]);
+        if ($session->group_id) {
+            foreach ($session->teamAttemptSessions($gradingStartedAt)->where('id', '!=', $session->id) as $mate) {
+                if ($closed = $this->closeWithTeamResult($mate, $session, $gradingStartedAt)) {
+                    $graded->push($closed);
+                }
+            }
+        }
+
         // The run doesn't affect the grade; it only shows the student their output or compile
         // error. It gets whatever is left of the budget once the grade is saved, or is skipped.
         $secondsLeft = (int) now()->diffInSeconds($deadline, false);
@@ -1050,33 +1185,46 @@ class LabSessionController extends Controller
             ? $this->sandboxService->execute($code, $request->language, min(25, $secondsLeft))
             : ['status' => 'skipped'];
 
-        TelemetryLog::create([
-            'lab_session_id' => $session->id,
-            'event_type' => 'session_completed',
-            'payload' => [
-                'language' => $request->language,
-                'final_score' => $finalScore,
-                'completed_tasks_count' => count($completedTasks),
-                'execution_status' => $executionResult['status'] ?? 'unknown',
-                // Why the run failed, for the instructor's timeline
-                'execution_error' => Str::limit($executionResult['errors'] ?? '', self::MAX_LOGGED_RUN_ERROR_CHARS) ?: null,
-            ],
-        ]);
+        foreach ($graded as $gradedSession) {
+            TelemetryLog::create([
+                'lab_session_id' => $gradedSession->id,
+                'event_type' => 'session_completed',
+                'payload' => [
+                    'language' => $request->language,
+                    'final_score' => $finalScore,
+                    'completed_tasks_count' => count($completedTasks),
+                    'execution_status' => $executionResult['status'] ?? 'unknown',
+                    // Why the run failed, for the instructor's timeline
+                    'execution_error' => Str::limit($executionResult['errors'] ?? '', self::MAX_LOGGED_RUN_ERROR_CHARS) ?: null,
+                    // On a group lab: the leader who handed the team's work in
+                    ...($session->group_id ? ['submitted_by' => $session->user_id] : []),
+                ],
+            ]);
+        }
 
         // Broadcast live leaderboard update
         $this->broadcastLeaderboardUpdate($session);
+
+        // The team's shared document is done with: the submitted files are the record now
+        if ($session->group_id && $session->team_started_at) {
+            TeamDoc::where('group_id', $session->group_id)->where('lab_id', $session->lab_id)
+                ->where('team_started_at', $session->team_started_at)->delete();
+        }
 
         // Compare the new submission with the cohort once, here, rather than on every view
         // of the monitoring page
         app(CodeSimilarityService::class)->refreshLabReportQuietly($session->lab_id);
 
         $labTitle = $session->laboratory->title ?? 'your lab';
-        $session->notifyStudents(
-            "Lab submitted: {$labTitle}",
-            "Your submission for '{$labTitle}' was received and graded. Score: {$finalScore}% (".count($completedTasks).' tasks passed).'
-                .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : ''),
-            type: 'grade',
-        );
+        foreach ($graded as $gradedSession) {
+            $gradedSession->notifyStudents(
+                "Lab submitted: {$labTitle}",
+                ($session->group_id ? "Your team's submission" : 'Your submission')." for '{$labTitle}' was received and graded. Score: {$finalScore}% (".count($completedTasks).' tasks passed).'
+                    .(! empty($evaluation['provisional']) ? ' This grade is provisional until your instructor reviews it.' : ''),
+                type: 'grade',
+                wholeTeam: false,
+            );
+        }
         $session->notifyInstructorOfSubmission();
 
         $studentEvaluation = Arr::except($evaluation, [
@@ -1095,6 +1243,10 @@ class LabSessionController extends Controller
             'execution' => in_array($executionResult['status'] ?? null, ['unavailable', 'skipped'], true) ? null : $executionResult,
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
+            ...($session->group_id ? ['team' => [
+                'submitted_by' => $session->user_id,
+                'graded_user_ids' => $graded->pluck('user_id')->sort()->values()->all(),
+            ]] : []),
         ]);
     }
 
@@ -1131,10 +1283,7 @@ class LabSessionController extends Controller
         $lock = $session->gradingLock();
 
         if (! $lock->get()) {
-            return response()->json([
-                'error' => 'grading_in_progress',
-                'message' => 'This lab is already being graded. Wait for that result before trying again.',
-            ], 409);
+            return $this->gradingInProgressResponse();
         }
 
         try {
@@ -1343,6 +1492,164 @@ class LabSessionController extends Controller
     }
 
     /**
+     * What a teammate's extension needs to type in the team's shared document: where the
+     * team's channel is and the key its edits are encrypted with.
+     */
+    public function teamDoc(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
+            return $refusal;
+        }
+
+        $doc = TeamDoc::forSession($session);
+        if (! $doc) {
+            return response()->json(['enabled' => false]);
+        }
+
+        return response()->json([
+            'enabled' => true,
+            'topic' => $doc->topic,
+            'key' => $doc->key,
+            ...TeamSync::clientConfig(),
+            'last_update_id' => $doc->lastUpdateId(),
+        ]);
+    }
+
+    /**
+     * The edits stored for the team's document, oldest first, for a teammate who joins late
+     * or has nobody online to catch up from.
+     */
+    public function teamDocUpdates(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
+            return $refusal;
+        }
+        if (! $doc = TeamDoc::forSession($session)) {
+            return $this->teamSyncOffResponse();
+        }
+
+        $updates = $doc->updates()->where('id', '>', (int) $request->query('after', 0))->orderBy('id')->get(['id', 'payload']);
+
+        return response()->json([
+            'updates' => $updates->map(fn (TeamDocUpdate $update) => ['id' => $update->id, 'payload' => $update->payload])->all(),
+            'last_update_id' => $updates->last()?->id ?? $doc->lastUpdateId(),
+        ]);
+    }
+
+    /**
+     * Keep a batch of edits to the team's document. The server stores it as it came and never
+     * reads it. "seed" is the starter files, kept only if nothing was stored yet, so two
+     * teammates opening the lab together don't both put them in. "replaces_through" is a
+     * teammate folding everything up to that update into this one.
+     */
+    public function storeTeamDocUpdate(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('laboratory')->findOrFail($sessionId);
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
+            return $refusal;
+        }
+        if (! $doc = TeamDoc::forSession($session)) {
+            return $this->teamSyncOffResponse();
+        }
+
+        $data = $request->validate([
+            'payload' => ['required', 'string', 'max:'.TeamDocUpdate::MAX_PAYLOAD_CHARS, 'regex:/^[A-Za-z0-9+\/]+={0,2}$/'],
+            'seed' => 'nullable|boolean',
+            'replaces_through' => 'nullable|integer|min:1',
+        ]);
+        $author = ($request->user() ?? $session->user)?->id;
+
+        // Only this team's document row is locked, so teams don't wait on each other
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($doc, $data, $author) {
+            $doc = TeamDoc::whereKey($doc->id)->lockForUpdate()->first();
+            if (! $doc) {
+                // The leader submitted a moment ago, and the document went with it
+                return $this->teamSyncOffResponse();
+            }
+            if (! empty($data['seed']) && $doc->updates()->exists()) {
+                return response()->json(['error' => 'already_seeded', 'last_update_id' => $doc->lastUpdateId()], 409);
+            }
+            if (empty($data['replaces_through']) && $doc->needsCompaction()) {
+                return response()->json(['error' => 'compaction_needed', 'last_update_id' => $doc->lastUpdateId()], 409);
+            }
+
+            $update = $doc->updates()->create(['user_id' => $author, 'payload' => $data['payload']]);
+            $chars = (int) $doc->payload_chars + strlen($data['payload']);
+            if (! empty($data['replaces_through'])) {
+                $replaced = $doc->updates()->where('id', '<=', $data['replaces_through'])->whereKeyNot($update->id);
+                $chars -= (int) (clone $replaced)->get(['payload'])->sum(fn (TeamDocUpdate $old) => strlen($old->payload));
+                $replaced->delete();
+            }
+            $doc->update(['payload_chars' => max(0, $chars)]);
+
+            return response()->json(['id' => $update->id], 201);
+        });
+    }
+
+    /**
+     * The team's channel, key and edits go to its members' extensions only: the session's own
+     * student, signed in or by the session's token. Not to teammates through someone else's
+     * session, and not to instructors or admins, who can read the submitted work instead.
+     */
+    private function refuseAllButTheTeammate(Request $request, LabSession $session): ?JsonResponse
+    {
+        $caller = $request->user();
+        if (! $caller || $caller->id === $session->user_id) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => 'not_your_attempt',
+            'message' => 'Only the student working in this attempt can use its shared files.',
+        ], 403);
+    }
+
+    private function teamSyncOffResponse(): JsonResponse
+    {
+        return response()->json(['error' => 'team_sync_off', 'message' => 'Shared typing is not on for this attempt.'], 409);
+    }
+
+    /**
+     * Choose the team's leader from the extension. The leader hands over; anyone else votes.
+     */
+    public function chooseLeader(Request $request, int $sessionId)
+    {
+        $session = LabSession::with('group')->findOrFail($sessionId);
+        $team = $session->group;
+        if (! $team) {
+            return response()->json(['error' => 'no_team', 'message' => 'This attempt has no team.'], 403);
+        }
+
+        $actor = $request->user() ?? $session->user;
+        if (! $actor) {
+            return response()->json(['error' => 'no_student', 'message' => 'This session has no student to act as.'], 403);
+        }
+
+        $candidate = User::findOrFail((int) $request->validate(['candidate_id' => 'required|integer'])['candidate_id']);
+        $teams = app(LabTeams::class);
+        $changed = $teams->chooseLeader($team, $actor, $candidate);
+
+        return response()->json([
+            'status' => 'success',
+            'changed' => $changed,
+            'leader_id' => $team->fresh()->leader_id,
+            'votes' => $this->leaderVotesPayload($team),
+        ]);
+    }
+
+    /**
+     * @return array<int, array{voter_id: int, candidate_id: int}>
+     */
+    private function leaderVotesPayload(Group $team): array
+    {
+        $votes = app(LabTeams::class)->leaderVotes($team);
+
+        return array_map(fn ($voter, $candidate) => ['voter_id' => $voter, 'candidate_id' => $candidate], array_keys($votes), $votes);
+    }
+
+    /**
      * Chat is for teammates, so solo labs have none.
      */
     private function refuseChatForSoloLab(LabSession $session): ?JsonResponse
@@ -1369,22 +1676,7 @@ class LabSessionController extends Controller
             ->orderBy('id', 'asc')
             ->limit(100)
             ->get()
-            ->map(function ($chat) {
-                $nameParts = explode(' ', $chat->user_name);
-                $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
-
-                return [
-                    'id' => $chat->id,
-                    'user_id' => $chat->user_id,
-                    'user_name' => $chat->user_name,
-                    'initials' => $initials ?: 'ST',
-                    'avatar_color' => $chat->avatar_color,
-                    'message' => $chat->message,
-                    'code_snippet' => $chat->code_snippet,
-                    'time' => $chat->created_at ? $chat->created_at->format('H:i') : '',
-                    'created_at' => $chat->created_at,
-                ];
-            });
+            ->map(fn (LabSessionChat $chat) => $chat->toPayload());
 
         return response()->json([
             'status' => 'success',
@@ -1413,32 +1705,17 @@ class LabSessionController extends Controller
         }
         $userId = $currentUser->id;
         $userName = $currentUser->name;
-        $colors = ['#3ecf8e', '#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#10b981', '#6366f1'];
-        $userColor = $colors[$userId % count($colors)];
 
         $chat = LabSessionChat::create([
             'lab_session_id' => $session->id,
             'user_id' => $userId,
             'user_name' => $userName,
-            'avatar_color' => $userColor,
+            'avatar_color' => LabSessionChat::AVATAR_COLORS[$userId % count(LabSessionChat::AVATAR_COLORS)],
             'message' => $request->message,
             'code_snippet' => $request->code_snippet,
         ]);
 
-        $nameParts = explode(' ', $chat->user_name);
-        $initials = strtoupper(substr($nameParts[0], 0, 1).(isset($nameParts[1]) ? substr($nameParts[1], 0, 1) : ''));
-
-        $chatPayload = [
-            'id' => $chat->id,
-            'user_id' => $chat->user_id,
-            'user_name' => $chat->user_name,
-            'initials' => $initials ?: 'ST',
-            'avatar_color' => $chat->avatar_color,
-            'message' => $chat->message,
-            'code_snippet' => $chat->code_snippet,
-            'time' => $chat->created_at ? $chat->created_at->format('H:i') : now()->format('H:i'),
-            'created_at' => $chat->created_at,
-        ];
+        $chatPayload = $chat->toPayload();
 
         // Broadcast real-time ephemeral chat to every teammate's session channel
         try {
@@ -1823,6 +2100,10 @@ class LabSessionController extends Controller
                 'timestamp' => now()->toIso8601String(),
             ],
         ]);
+
+        if ($session->status === 'in_progress' && $session->group && $session->user) {
+            app(LabTeams::class)->notice($session->group, "{$session->user->name} left the lab.", $session->user);
+        }
 
         return response()->json(['status' => 'success', 'vscode_connected' => false]);
     }

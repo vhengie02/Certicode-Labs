@@ -76,10 +76,21 @@ return [
     // the web app depends on.
     'vscode_extension' => [
         // Older builds get a warning to update
-        'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.8.9'),
+        'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.10.0'),
         // Older builds are refused with 426 (RequireSupportedExtension); keep at or below min_version
         'required_version' => env('VSCODE_EXTENSION_REQUIRED_VERSION', '1.5.0'),
         'download_path' => 'downloads/certicode-labs.vsix',
+    ],
+
+    // Shared typing on group labs: teammates' edits travel between their editors over
+    // Supabase Realtime. Both values are public by design (the publishable key, never a
+    // secret one). Leave either empty and teammates work in their own copies.
+    'team_sync' => [
+        'supabase_url' => env('TEAM_SYNC_SUPABASE_URL'),
+        'publishable_key' => env('TEAM_SYNC_SUPABASE_KEY'),
+        // Each send counts against the Realtime message quota once for the sender and once
+        // per teammate who receives it, so a longer wait stretches the quota
+        'min_send_interval_ms' => (int) env('TEAM_SYNC_MIN_SEND_INTERVAL_MS', 400),
     ],
 
 ];

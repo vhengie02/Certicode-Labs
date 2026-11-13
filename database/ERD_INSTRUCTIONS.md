@@ -149,6 +149,7 @@ Table groups {
   id bigint [pk, increment]
   name varchar
   lab_id bigint [ref: > laboratories.id]
+  leader_id bigint [ref: > users.id, null, note: "the only member who can submit; null on delete"]
   created_at timestamp
   updated_at timestamp
 }
@@ -157,6 +158,7 @@ Table group_members {
   group_id bigint [ref: > groups.id]
   user_id bigint [ref: > users.id]
   contribution_score float [null]
+  leader_vote bigint [ref: > users.id, null, note: "the teammate this member wants as leader; null on delete"]
   created_at timestamp
   updated_at timestamp
   
@@ -170,6 +172,7 @@ Table lab_sessions {
   lab_id bigint [ref: > laboratories.id]
   user_id bigint [ref: > users.id]
   group_id bigint [ref: > groups.id, null]
+  team_started_at timestamp [null, note: "When the team attempt began; shared by every teammate's session in it. The team's clock, and what tells one team attempt from an earlier one"]
   github_repo_url varchar [null]
   started_at timestamp [null]
   ended_at timestamp [null]
@@ -195,6 +198,25 @@ Table lab_sessions {
   updated_at timestamp
 }
 
+Table team_docs {
+  id bigint [pk, increment]
+  group_id bigint [ref: > groups.id, note: "cascade on delete"]
+  lab_id bigint [ref: > laboratories.id, note: "cascade on delete"]
+  team_started_at timestamp [note: "the team attempt this document belongs to; unique with group_id and lab_id"]
+  topic varchar(64) [unique, note: "random name of the team's realtime channel"]
+  key text [note: "256-bit key the team's edits are encrypted with; encrypted at rest"]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table team_doc_updates {
+  id bigint [pk, increment]
+  team_doc_id bigint [ref: > team_docs.id, note: "cascade on delete"]
+  user_id bigint [ref: > users.id, null, note: "null on delete"]
+  payload text [note: "a batch of edits as the extension sent it; the server never reads it"]
+  created_at timestamp
+}
+
 Table lab_session_chats {
   id bigint [pk, increment]
   lab_session_id bigint [ref: > lab_sessions.id, note: "cascade on delete"]
@@ -203,6 +225,7 @@ Table lab_session_chats {
   avatar_color varchar [default: "#3ecf8e"]
   message text
   code_snippet text [null]
+  is_system boolean [default: false, note: "a notice written by the app: joined, left, leader changed"]
   created_at timestamp
   updated_at timestamp
 }
@@ -350,12 +373,14 @@ erDiagram
         bigint id PK
         string name
         bigint lab_id FK
+        bigint leader_id FK
     }
 
     group_members {
         bigint group_id PK,FK
         bigint user_id PK,FK
         float contribution_score
+        bigint leader_vote FK
     }
 
     lab_sessions {
@@ -377,6 +402,23 @@ erDiagram
         bigint user_id FK
         text message
         text code_snippet
+        boolean is_system
+    }
+
+    team_docs {
+        bigint id PK
+        bigint group_id FK
+        bigint lab_id FK
+        timestamp team_started_at
+        string topic UK
+        text key
+    }
+
+    team_doc_updates {
+        bigint id PK
+        bigint team_doc_id FK
+        bigint user_id FK
+        text payload
     }
 
     telemetry_logs {
@@ -425,6 +467,8 @@ erDiagram
     users ||--o{ lab_sessions : "performs"
     laboratories ||--o{ lab_sessions : "configures"
     groups ||--o{ lab_sessions : "group_lab"
+    groups ||--o{ team_docs : "shared files"
+    team_docs ||--o{ team_doc_updates : "edits"
     
     lab_sessions ||--o{ telemetry_logs : "records"
     lab_sessions ||--o{ anomalies : "detects"

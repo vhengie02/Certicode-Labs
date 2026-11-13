@@ -5,3 +5,4 @@ errors.txt
 .vscode/
 .vscode-test/
 out/test/
+dist/

@@ -32,6 +32,9 @@ class CronController extends Controller
         Artisan::call('certicode:expire-old-snapshots');
         $snapshotOutput = trim(Artisan::output());
 
+        Artisan::call('certicode:prune-team-docs');
+        $teamDocsOutput = trim(Artisan::output());
+
         return response()->json([
             'status' => 'success',
             'timestamp' => now()->toIso8601String(),
@@ -40,6 +43,7 @@ class CronController extends Controller
                 'classes' => $classesOutput,
                 'anomaly_prune' => $pruneOutput,
                 'snapshots' => $snapshotOutput,
+                'team_docs' => $teamDocsOutput,
             ],
         ]);
     }

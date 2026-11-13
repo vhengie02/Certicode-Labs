@@ -61,12 +61,20 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * **Team Mode**: Shows each teammate's share of the team's changed lines, with avatar colors and contribution percentages. It counts lines per teammate; it doesn't attribute individual lines.
 * **Transport**: The extension sends diffs over REST. When Pusher is set up, the server broadcasts them (`DiffUpdated`) to the sidebar and the monitoring panel. Without it, both poll.
 
-### 3. Collaborative Team Chat & Ephemeral Storage
+### 3. Team Leader & Team Submit
+* Each team on a group lab has a leader, the only member who can submit. The AI grades that one submission, and every teammate who opened the lab gets the same score, tasks and feedback. A teammate who never opened it gets no grade and shows as "Did not take part" on the monitoring page.
+* **Who leads**: the student who starts the team, the teammate the instructor picks on the Teams page, or else the first teammate to open the lab. The leader can hand over. Teammates can vote: someone leads once more than half of the other teammates choose them. The instructor can change the leader at any time.
+* **One clock**: on timed labs the team's time starts when its first teammate opens the lab.
+* **Typing together**: teammates edit the same files at the same time, each in their own VS Code. Each code file is a Yjs document; edits travel over a Supabase Realtime Broadcast channel, sealed with AES-256-GCM using a per-attempt key the server gives only to the team's members (`GET /api/v1/sessions/{id}/team-doc`). The server keeps the sealed edits (`team_doc_updates`) for late joiners and never reads them. A teammate's edit is never counted as the student's typing or paste, and line counts credit each line to whoever wrote it.
+* Off unless `TEAM_SYNC_SUPABASE_URL` and `TEAM_SYNC_SUPABASE_KEY` (the publishable key, never a secret one) are set; then teammates work in their own copies. Each send costs Realtime quota once for the sender and once per teammate; `TEAM_SYNC_MIN_SEND_INTERVAL_MS` (default 400) sets the pace. Design: `docs/superpowers/specs/2026-11-12-group-lab-coediting-design.md`.
+
+### 4. Collaborative Team Chat & Ephemeral Storage
 * Embedded in the VS Code sidebar and web platform exclusively during team exercises.
+* Also carries notices from the app: a teammate joined or left, someone voted, the leader changed.
 * Partitioned strictly by `group_id` and `lab_session_id`.
 * **Ephemeral Lifecycle**: Auto-cleared and purged from the database immediately upon session completion.
 
-### 4. AI Proctoring & Anomaly Telemetry
+### 5. AI Proctoring & Anomaly Telemetry
 * **WPM Behavioral Baseline**: Tracks continuous typing speed over rolling time windows.
 * **Smart Paste Anomaly Detection**:
   * **Suppression Rule A**: Ignores paste if content matches the lab's starter files, or is the student's own code: already in the same file, in an open lab file, or cut from one of them earlier in the attempt.
@@ -75,22 +83,22 @@ Instructors configure lab accessibility independently of participation mode (Sol
   * **Large Insert Check**: Flags 100 or more characters of code that arrive without being typed or pasted, such as from an AI tool. Blocks that arrive within a few seconds count as one insert. Generated code and large snippets can also raise it, so the flag is medium severity.
 * **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches.
 
-### 5. Camera Presence Gate & Continuous Verification
+### 6. Camera Presence Gate & Continuous Verification
 * **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor. Every way of starting a lab needs a recent pass, but detection runs in the browser and the server trusts the face count it reports. A student who crafts that request can pass the gate, so the check deters and doesn't prove presence.
 * **Continuous Background Proctoring**: Performs non-interruptive periodic background presence checks. Mid-session face-loss alerts are quietly streamed to the instructor with snapshot attachments while the student continues working.
 
-### 6. In-Lab VS Code Sidebar & Live Leaderboard
+### 7. In-Lab VS Code Sidebar & Live Leaderboard
 * Live session timer countdown synced with backend.
 * Task checklists with completion statuses and instant AI compiler/runtime feedback.
 * **Task Failure Rule**: If code contains compiler/runtime errors, the task is marked failed automatically.
 * **Live Leaderboard**: Displays rank ordered by tasks completed (descending) with completion time as the tiebreaker.
 
-### 7. Instructor Live Monitoring Panel
+### 8. Instructor Live Monitoring Panel
 * Roster view sortable alphabetically by student last name or team group name.
 * Live metric stream displaying real-time WPM, completed task counters, and team contribution percentages.
 * Comprehensive chronological anomaly timeline with captured camera snapshot previews.
 
-### 8. Session Closure, Course Competency & E-Certification
+### 9. Session Closure, Course Competency & E-Certification
 * **Lab Closure**: Closes open attempts with their last graded score, updates competency scores, and purges chat. Closing doesn't call the AI grader.
 * **Course Completion**: Counts the labs where a student reached the class's lab pass score, and compares that share of all labs with an instructor-configured passing threshold (e.g. 75%). Grades awaiting instructor review do not count. Competency scores are tracked separately and do not affect certificates.
 * **E-Certification**: Issues certificates with QR codes to qualifying students when the class ends, or earlier when a student claims one. Each has a random verification code that a public page looks up in the database; certificates are not cryptographically signed.
@@ -233,7 +241,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.8.9**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.10.0**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force

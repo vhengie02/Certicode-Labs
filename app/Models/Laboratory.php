@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Notifications\ClassActivityNotification;
 use App\Services\CodeSimilarityService;
+use App\Services\LabTeams;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -457,9 +458,13 @@ class Laboratory extends Model
     public function findOrStartAttemptFor(User $user): ?LabSession
     {
         $session = $this->openAttemptOf($user);
+        $team = $this->teamOf($user);
 
+        // Only this student's own attempt is closed here. On a team its clock is the team's
+        // (LabSession::clockStartedAt); teammates' attempts are left to the time-out sweep.
         if ($session && $this->time_limit > 0) {
-            $elapsed = $session->started_at ? (int) $session->started_at->diffInSeconds(now(), true) : 0;
+            $clockStart = $session->clockStartedAt();
+            $elapsed = $clockStart ? (int) $clockStart->diffInSeconds(now(), true) : 0;
             if ($elapsed >= ($this->time_limit * 60)) {
                 $session->update([
                     'status' => 'abandoned',
@@ -469,6 +474,11 @@ class Laboratory extends Model
             }
         }
 
+        // Whoever opens the lab first leads a team that has no leader yet
+        if ($team) {
+            app(LabTeams::class)->ensureLeader($team, $user);
+        }
+
         if ($session) {
             return $session;
         }
@@ -476,20 +486,56 @@ class Laboratory extends Model
             return null;
         }
 
+        $create = fn () => LabSession::create([
+            'lab_id' => $this->id,
+            'user_id' => $user->id,
+            'group_id' => $team?->id,
+            // Join the team's attempt if one is under way, else begin a new one
+            'team_started_at' => $team ? ($this->openTeamAttemptStart($team) ?? now()->startOfSecond()) : null,
+            'status' => 'in_progress',
+            'started_at' => now(),
+            'performance_score' => 0.0,
+        ]);
+
         try {
-            // A savepoint when already inside a transaction, so a lost race doesn't abort it
-            return DB::transaction(fn () => LabSession::create([
-                'lab_id' => $this->id,
-                'user_id' => $user->id,
-                'group_id' => $this->teamOf($user)?->id,
-                'status' => 'in_progress',
-                'started_at' => now(),
-                'performance_score' => 0.0,
-            ]));
+            // A savepoint when already inside a transaction, so a lost race doesn't abort it.
+            // With the lab row locked on a team, two teammates opening the lab at once join
+            // one attempt instead of each beginning their own.
+            $session = $team ? app(LabTeams::class)->locked($this, $create) : DB::transaction($create);
         } catch (UniqueConstraintViolationException $e) {
             // Another request opened it a moment ago
             return $this->openAttemptOf($user);
         }
+
+        if ($team) {
+            app(LabTeams::class)->notice($team, "{$user->name} joined the lab.", $user);
+        }
+
+        return $session;
+    }
+
+    /**
+     * When the team attempt now under way on this lab began, or null if the team has none: a
+     * teammate opening the lab then begins a new one. An attempt whose time has run out is
+     * over, and so is not joined. A teammate's reopened earlier attempt doesn't count either:
+     * the latest start among the open sessions is the attempt the team is working on.
+     */
+    public function openTeamAttemptStart(Group $team): ?CarbonInterface
+    {
+        $start = $this->labSessions()
+            ->where('group_id', $team->id)
+            ->where('status', 'in_progress')
+            ->whereNotNull('team_started_at')
+            ->latest('team_started_at')
+            ->first()
+            ?->team_started_at;
+
+        $timed = $this->time_limit > 0 && ! $this->isLiveLab();
+        if (! $start || ($timed && $start->diffInSeconds(now(), true) >= $this->time_limit * 60)) {
+            return null;
+        }
+
+        return $start;
     }
 
     public function openAttemptOf(User $user): ?LabSession

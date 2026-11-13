@@ -1,9 +1,26 @@
 # Changelog
 
+## 2026-11-13
+
+- Teammates on a group lab now type in the same files at the same time, each in their own VS Code. What one teammate types shows up in the others' editors as they type, files a teammate adds or deletes appear and go, and a teammate who joins later, or is alone, gets the team's latest files. The leader's submit takes the team's latest edits. A teammate's edit that lands in a file the student hasn't touched is saved for them a second later.
+- When a teammate joins with their own, different copy of a file, the team's version replaces it in their editor and their copy is kept in `.certicode/before-shared-typing/`. A session reopened after the team submitted goes on alone, without shared typing. VS Code's Undo can take back a teammate's edit too; the student is warned and can press Redo.
+- Each student is still checked only on what they did themselves. A teammate's edit arriving in the editor is not counted as the student's typing, paste or large insert, and the team's line counts credit each line to the student who wrote it, so contribution shares stay per student.
+- Edits travel over Supabase Realtime, encrypted with a key only the team's members get, on a channel name nobody can guess. The server stores the edits for late joiners without reading them, and deletes them when the leader submits or the attempt ends.
+- Shared typing is off until two settings are added: `TEAM_SYNC_SUPABASE_URL` (the Supabase project URL) and `TEAM_SYNC_SUPABASE_KEY` (its publishable key). Until then, and whenever it can't connect, teammates work in their own copies as before and the sidebar says why. `TEAM_SYNC_MIN_SEND_INTERVAL_MS` (default 400) sets how often a student's edits are sent: every send counts against the Supabase Realtime message quota, once for the sender and once per teammate.
+- VS Code extension 1.10.0 adds shared typing. It now ships its libraries inside one bundled file. `npm run sync-check` in the extension folder checks shared typing in a real VS Code window.
+
 ## 2026-11-12
 
 - Emails no longer arrive from "${APP_NAME}". Vercel does not fill in `${APP_NAME}` the way a `.env` file does, so the sender name went out as that text. The app now uses the app name when `MAIL_FROM_NAME` is empty or still holds a placeholder.
 - Students on a phone or tablet can read a lab but can't start, continue or retake it, since labs run in VS Code. The lab page shows "Open on a computer" in place of the start button, and the module page shows only View lab. The server also refuses a start sent from a phone or tablet, with the error `handheld_device`. An iPad asking for the desktop site looks like a Mac to the server, so the lab page also checks for a touch screen in the browser. Instructors' pages are unchanged.
+- Group labs now have a team leader, and the team hands in one piece of work. Only the leader can submit. The AI grades once, and every teammate who opened the lab gets the same score, tasks and feedback. Before, each teammate was graded on their own copy, so a team could get different scores and a teammate who never submitted had no grade. A student with no team still works and submits alone.
+- Who leads: the student who starts the team, or the teammate the instructor picks on the Teams page, or else the first teammate to open the lab. The leader can hand the lead to a teammate. If the leader is away, teammates vote: someone leads once more than half of the other teammates choose them. The instructor can change the leader at any time, including during the lab. The lab page and the extension show the leader and the votes.
+- A teammate who never opens the lab gets no grade. The monitoring page lists them under their team as "Did not take part". A teammate whose attempt was closed for inactivity while the team was still working does get the team's grade.
+- Changing a grade on a team attempt now changes it for the whole team. Untick "Apply to the whole team" to change one student only. Each student is told about their own attempt.
+- A team shares one clock on timed labs. It starts when the first teammate opens the lab, so joining late gives no extra time, and it doesn't move when a teammate's attempt closes. Once it runs out, the next teammate to open the lab starts a new team attempt. Earlier team attempts keep their own results. Labs with no time limit and live labs are unchanged.
+- A teammate can no longer have another teammate's attempt graded, and a team attempt can't be finished from the website: only the leader's submit in VS Code ends it.
+- Team chat now says when a teammate joins or leaves the lab, when someone votes, and when the leader changes.
+- VS Code extension 1.9.0 turns Submit off for teammates who don't lead, shows the leader and who is in the lab, and adds Make leader and Vote as leader. Older builds still work: the server refuses their submit and tells the student who leads.
 
 ## 2026-11-11
 

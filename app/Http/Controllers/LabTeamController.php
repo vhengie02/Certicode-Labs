@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Group;
 use App\Models\Laboratory;
+use App\Models\User;
 use App\Services\LabTeams;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -26,7 +27,7 @@ class LabTeamController extends Controller
     {
         $laboratory = $this->managedLab($id);
 
-        $teams = $laboratory->groups()->with(['members' => fn ($q) => $q->orderBy('name')])->orderBy('name')->get();
+        $teams = $laboratory->groups()->with(['leader:id,name', 'members' => fn ($q) => $q->orderBy('name')])->orderBy('name')->get();
         $students = $this->labTeams->enrolledStudents($laboratory);
 
         return view('laboratories.teams', [
@@ -65,12 +66,34 @@ class LabTeamController extends Controller
             $before = $team->members()->pluck('users.id')->all();
             $team->update(['name' => $name]);
             $team->members()->sync($memberIds);
+            $this->labTeams->forgetMembers($team, array_values(array_diff($before, $memberIds)));
             $this->labTeams->moveOpenAttempts($laboratory, $team, array_diff($memberIds, $before), array_diff($before, $memberIds));
 
             return $name;
         });
 
         return redirect()->route('laboratories.teams.index', $laboratory->id)->with('success', "Team \"{$name}\" saved.");
+    }
+
+    /**
+     * Name the team's leader, the only member who can submit the lab. Allowed at any time, so
+     * a team whose leader is away during the lab isn't stuck.
+     */
+    public function setLeader(Request $request, int $id, int $teamId)
+    {
+        $laboratory = $this->managedLab($id);
+        $team = $laboratory->groups()->findOrFail($teamId);
+
+        $data = $request->validate([
+            'leader_id' => ['required', 'integer', Rule::exists('group_members', 'user_id')->where('group_id', $team->id)],
+        ], [
+            'leader_id.exists' => 'The leader must be a member of the team.',
+        ]);
+
+        $leader = User::findOrFail($data['leader_id']);
+        $this->labTeams->setLeader($team, $leader);
+
+        return redirect()->route('laboratories.teams.index', $laboratory->id)->with('success', "{$leader->name} now leads {$team->name}.");
     }
 
     public function destroy(int $id, int $teamId)

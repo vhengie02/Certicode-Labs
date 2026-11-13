@@ -293,6 +293,7 @@ JAVA;
             'name' => 'Team Alpha',
             'lab_id' => $this->lab->id,
         ]);
+        $group->members()->attach($this->student->id);
 
         // One open attempt per student and lab: this one replaces the setUp session
         $this->session->update(['status' => 'abandoned']);

@@ -51,7 +51,8 @@ class LabTeamPickController extends Controller
             }
 
             if (! $team) {
-                $team = $laboratory->groups()->create(['name' => $this->labTeams->nextTeamName($laboratory)]);
+                // Whoever starts the team leads it until the team chooses otherwise
+                $team = $laboratory->groups()->create(['name' => $this->labTeams->nextTeamName($laboratory), 'leader_id' => $student->id]);
                 $team->members()->attach($student->id);
             }
             $team->members()->attach($picked);
@@ -82,12 +83,33 @@ class LabTeamPickController extends Controller
             }
 
             $team->members()->detach($student->id);
+            $this->labTeams->forgetMembers($team, [$student->id]);
             if (count($roster) === 1) {
                 $team->delete();
             }
         });
 
         return redirect()->route('laboratories.show', $laboratory->id)->with('success', 'You left the team.');
+    }
+
+    /**
+     * Choose the team's leader from the lab page. The leader hands over; anyone else votes.
+     * Open on every group lab, however its teams were formed.
+     */
+    public function chooseLeader(Request $request, int $id)
+    {
+        $laboratory = Laboratory::with('module.schoolClass')->findOrFail($id);
+        $this->authorizeLabViewer($laboratory);
+        $student = $request->user();
+        $team = $laboratory->teamOf($student);
+        abort_unless($student->role === 'student' && $team, 403);
+
+        $candidate = User::findOrFail((int) $request->validate(['candidate_id' => 'required|integer'])['candidate_id']);
+        $changed = $this->labTeams->chooseLeader($team, $student, $candidate);
+
+        return redirect()->route('laboratories.show', $laboratory->id)->with('success', $changed
+            ? "{$candidate->name} now leads {$team->name}."
+            : "Your vote for {$candidate->name} is in. They lead once more than half of your other teammates agree.");
     }
 
     private function pickableLab(int $id): Laboratory

@@ -3,6 +3,12 @@ import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
 import * as crypto from 'crypto';
+import WebSocketPolyfill from 'ws';
+import { SupabaseTransport } from './teamSync/supabaseTransport';
+import { TeamDoc } from './teamSync/teamDoc';
+import { DocStore } from './teamSync/transport';
+import { VscodeSyncHost } from './teamSync/vscodeHost';
+import { isShareableName, WorkspaceSync } from './teamSync/workspaceSync';
 
 const API_PREFIX = '/api/v1';
 // Sent with every request so the server can tell students running an outdated build.
@@ -120,6 +126,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
     private _activeEditorListener?: vscode.Disposable;
     private _taskListener?: vscode.Disposable;
     private _terminalListener?: vscode.Disposable;
+    /** Shared typing on a group lab: the team's files, kept the same in every teammate's editor. */
+    private _teamSync?: WorkspaceSync;
+    private _teamSyncHost?: VscodeSyncHost;
+    /** Which session and team the running (or starting) shared typing is for. */
+    private _teamSyncKey?: string;
+    private _teamSyncState?: { state: 'on' | 'connecting' | 'off'; reason?: string };
+    /** Counts starts and stops of shared typing, so a start that was overtaken knows it. */
+    private _teamSyncGeneration = 0;
+    /** The files are open and bound: the line counts can come from shared typing. */
+    private _teamSyncReady = false;
+    /** What a stopped shared typing still had on its way to the editor, briefly. */
+    private _stoppedTeamSync?: { host: VscodeSyncHost; inFlight: Map<string, string>; until: number };
+    private _lastUndoWarning = 0;
 
     // WebSocket Real-time Unified Stream (Features 1, 2, 5)
     private _ws?: any;
@@ -203,6 +222,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         if (this._idleCheckInterval) { clearInterval(this._idleCheckInterval); this._idleCheckInterval = undefined; }
         this.disposeActivityListeners();
         this.disconnectWebSocket();
+        this.stopTeamSync();
     }
 
     /**
@@ -309,6 +329,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case 'webviewReady': {
+                    if (this._teamSyncState) {
+                        this._view?.webview.postMessage({ type: 'teamSync', ...this._teamSyncState });
+                    }
                     if (this._extensionRejected) {
                         this.postExtensionOutdated();
                     } else if (this._sessionId) {
@@ -334,6 +357,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 }
                 case 'exit': {
                     this.handleExit(data.skipConfirm ? false : true);
+                    break;
+                }
+                case 'chooseLeader': {
+                    this.handleChooseLeader(Number(data.candidateId));
                     break;
                 }
                 case 'sendChat': {
@@ -839,6 +866,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     isReconnecting: false
                 });
 
+                void this.updateTeamSync(data);
+
                 // Fetch chats if group lab
                 if (this.isGroupLab()) {
                     this.fetchChatMessages();
@@ -1278,12 +1307,45 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             vscode.workspace.onDidChangeTextDocument(event => this.handleDocumentChange(event)),
             vscode.workspace.onDidChangeTextDocument(event => { void this.guardReadonlyFile(event); }),
             vscode.workspace.onDidSaveTextDocument(doc => {
+                const sharedName = this._teamSyncHost?.nameOf(doc.uri);
+                if (sharedName) { this._teamSync?.noteSaved(sharedName); }
                 if (this._sessionId && this._lastSessionData && this.isStudentDocument(doc)) {
                     this.rememberSavedFile(doc);
                     this.computeAndSyncDiffs();
                 }
-            })
+            }),
+            ...this.fileListeners()
         );
+    }
+
+    /** Files the student creates or deletes in the lab folder reach the team when typing together. */
+    private fileListeners(): vscode.Disposable[] {
+        const workspace = vscode.workspace as any;
+        if (typeof workspace.onDidCreateFiles !== 'function' || typeof workspace.onDidDeleteFiles !== 'function') {
+            return [];
+        }
+        return [
+            vscode.workspace.onDidCreateFiles(async event => {
+                for (const uri of event.files) {
+                    const name = this._teamSyncHost?.nameOf(uri);
+                    if (!name || !this._teamSync) { continue; }
+                    try {
+                        this._teamSync.fileCreated(name, new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
+                    } catch {
+                        // A folder, or already gone
+                    }
+                }
+            }),
+            ...(typeof workspace.onDidRenameFiles === 'function'
+                ? [vscode.workspace.onDidRenameFiles(event => { void this.handleRenamedFiles(event.files); })]
+                : []),
+            vscode.workspace.onDidDeleteFiles(event => {
+                for (const uri of event.files) {
+                    const name = this._teamSyncHost?.nameOf(uri);
+                    if (name) { this._teamSync?.fileDeleted(name); }
+                }
+            }),
+        ];
     }
 
     /**
@@ -1366,6 +1428,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
     private handleDocumentChange(event: vscode.TextDocumentChangeEvent) {
         const textBefore = this.trackDocumentText(event);
+        // A teammate's edit arriving through shared typing: not typing, a paste or a change of the student's
+        if (this.isTeammateEdit(event)) {
+            return;
+        }
         if (this._restoringReadonly) {
             return;
         }
@@ -1705,7 +1771,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         let totalModified = 0;
         const filesSummary: Array<{ name: string; added: number; deleted: number; modified: number }> = [];
 
+        // Typing together, a file holds every teammate's lines: count only the ones this student
+        // wrote. Until the shared files are ready (or when they couldn't be reached), the files may
+        // hold teammates' lines with nothing to tell them apart, so nothing is posted.
+        if (this._lastSessionData?.team_sync?.enabled && this._lastSessionData?.status === 'in_progress' && !this._teamSyncReady) {
+            return;
+        }
+        const shared = this._teamSync ? new Map(this._teamSync.lineStats().map(stats => [stats.name, stats])) : undefined;
+        if (this._teamSync) {
+            totalDeleted += this._teamSync.linesDeletedElsewhere();
+            void this.rememberTeamSyncClients();
+        }
+        for (const [name, own] of shared ?? []) {
+            totalAdded += own.added;
+            totalDeleted += own.deleted;
+            totalModified += own.modified;
+            filesSummary.push({ name, added: own.added, deleted: own.deleted, modified: own.modified });
+        }
+
         for (const sfile of starterFiles) {
+            if (shared?.has(sfile.name)) { continue; }
             const initialContent = this._starterFileSnapshots.get(sfile.name) ?? (sfile.content || '');
             const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, sfile.name);
             if (!fileUri) { continue; }
@@ -2109,8 +2194,265 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         }
     }
 
+    /**
+     * Start shared typing when the server says it is on for this team attempt, and stop it when
+     * the attempt ends, the team changes or the server turns it off.
+     */
+    private async updateTeamSync(data: any): Promise<void> {
+        const sessionId = this._sessionId;
+        // The rotation goes up when the team's channel and key were replaced (someone left)
+        const wanted = sessionId && data?.team_sync?.enabled === true && data?.status === 'in_progress' && data?.team?.id
+            ? `${sessionId}:${data.team.id}:${Number(data.team_sync.rotation) || 0}`
+            : undefined;
+        if (wanted && wanted === this._teamSyncKey) {
+            return;
+        }
+
+        this.stopTeamSync();
+        if (!wanted) {
+            if (data?.is_group_lab && data?.status === 'in_progress') {
+                this.postTeamSyncState('off', data?.team ? 'your instructor has not set it up' : 'you are not in a team');
+            }
+            return;
+        }
+
+        // Each start is its own: one that is overtaken (stopped, or started again) while it
+        // waits never installs itself, so two can't end up running
+        const generation = ++this._teamSyncGeneration;
+        this._teamSyncKey = wanted;
+        this.postTeamSyncState('connecting');
+        const stillWanted = () => this._teamSyncGeneration === generation && this._teamSyncKey === wanted;
+        let built: { sync: WorkspaceSync; host: VscodeSyncHost } | undefined;
+
+        try {
+            const result = await this.makeRequest('GET', `${API_PREFIX}/sessions/${sessionId}/team-doc`);
+            const config = result.status === 200 ? JSON.parse(result.body) : null;
+            if (!stillWanted()) { return; }
+            if (!config?.enabled) {
+                this.stopTeamSync('off', 'the server turned it off for this attempt');
+                return;
+            }
+
+            const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+            if (!root) {
+                this.stopTeamSync('off', 'open the lab folder in VS Code');
+                return;
+            }
+
+            built = this.buildTeamSync(config, sessionId as number, root, stillWanted);
+            built.sync.onBackup(name => {
+                void vscode.window.showInformationMessage(`CertiCode: your team's ${name} replaced your own copy. Yours is saved in .certicode/before-shared-typing/${name}.`);
+            });
+            built.sync.onUndoOthers(name => this.warnUndoOthers(name));
+
+            // Installed before starting, so the edits that open the files are known as setup, not typing
+            this._teamSync = built.sync;
+            this._teamSyncHost = built.host;
+            const starter = (data.laboratory?.starter_files || [])
+                .filter((file: any) => !file.is_readonly && isShareableName(file.name))
+                .map((file: any) => ({ name: file.name, content: file.content || '' }));
+            await built.sync.start(starter);
+            if (!stillWanted()) {
+                if (this._teamSync === built.sync) { this.stopTeamSync(); } else { built.sync.stop(); }
+                return;
+            }
+            this._teamSyncReady = true;
+            await this.rememberTeamSyncClients();
+        } catch (err: any) {
+            if (stillWanted()) {
+                this.stopTeamSync('off', `couldn't reach your team (${err?.message || 'unknown error'})`);
+            } else if (built && this._teamSync !== built.sync) {
+                built.sync.stop();
+            }
+        }
+    }
+
+    /** The shared typing for one team attempt: its channel, its document and the lab folder. */
+    private buildTeamSync(config: any, sessionId: number, root: vscode.Uri, stillWanted: () => boolean): { sync: WorkspaceSync; host: VscodeSyncHost } {
+        const transport = new SupabaseTransport(config.supabase_url, config.publishable_key, config.topic, (globalThis as any).WebSocket ?? WebSocketPolyfill);
+        transport.onStatus(status => {
+            if (stillWanted()) { this.postTeamSyncState(status === 'open' ? 'on' : 'connecting'); }
+        });
+        const doc = new TeamDoc({
+            key: Buffer.from(String(config.key), 'base64'),
+            transport,
+            store: this.teamDocStore(sessionId),
+            minSendIntervalMs: Number(config.min_send_interval_ms) || 400,
+            ownClientIds: this._globalState.get<number[]>(this.teamSyncClientsKey(sessionId), []),
+        });
+        const host = new VscodeSyncHost(root);
+        return { sync: new WorkspaceSync(host, doc), host };
+    }
+
+    /** Stop shared typing. Teammates' edits stop arriving, so nothing is mistaken for the student's typing. */
+    private stopTeamSync(state?: 'off', reason?: string): void {
+        const sync = this._teamSync;
+        const host = this._teamSyncHost;
+        this._teamSyncGeneration++;
+        this._teamSync = undefined;
+        this._teamSyncHost = undefined;
+        this._teamSyncKey = undefined;
+        this._teamSyncReady = false;
+
+        // A teammate's edit already on its way to the editor still lands after this: when it
+        // does, it must not count as the student's typing
+        const inFlight = sync?.stop();
+        if (host && inFlight && inFlight.size > 0) {
+            this._stoppedTeamSync = { host, inFlight, until: Date.now() + 5000 };
+        }
+
+        if (state) {
+            this.postTeamSyncState(state, reason);
+        } else if (sync) {
+            this._teamSyncState = undefined;
+            this._view?.webview.postMessage({ type: 'teamSync', state: 'hidden' });
+        }
+    }
+
+    /** Whether a change event is a teammate's edit (or the setup of a shared file), routed through shared typing. */
+    private isTeammateEdit(event: vscode.TextDocumentChangeEvent): boolean {
+        if (event.contentChanges.length === 0) {
+            return false;
+        }
+
+        if (!this._teamSync) {
+            // Shared typing just stopped: the edit it had on its way lands now
+            const stopped = this._stoppedTeamSync;
+            const name = stopped && Date.now() < stopped.until ? stopped.host.nameOf(event.document.uri) : undefined;
+            if (stopped && name && stopped.inFlight.get(name) === event.document.getText()) {
+                stopped.inFlight.delete(name);
+                return true;
+            }
+            return false;
+        }
+
+        const name = this._teamSyncHost?.nameOf(event.document.uri);
+        if (!name) {
+            return false;
+        }
+        const undoRedo = event.reason === vscode.TextDocumentChangeReason.Undo || event.reason === vscode.TextDocumentChangeReason.Redo;
+        return this._teamSync.handleChange(name, event.contentChanges.map(change => ({
+            offset: change.rangeOffset,
+            length: change.rangeLength,
+            text: change.text,
+        })), undoRedo);
+    }
+
+    /** VS Code's Undo also takes back teammates' edits that landed in the editor: say so, and how to put it back. */
+    private warnUndoOthers(name: string): void {
+        if (Date.now() - this._lastUndoWarning < 30000) {
+            return;
+        }
+        this._lastUndoWarning = Date.now();
+        void vscode.window.showWarningMessage(`CertiCode: that undo also removed a teammate's edit in ${name}, for the whole team. Press Ctrl+Y (Cmd+Shift+Z on a Mac) to bring it back.`);
+    }
+
+    /** The student renamed files in the lab folder: the team gets them under the new names. */
+    private async handleRenamedFiles(files: readonly { oldUri: vscode.Uri; newUri: vscode.Uri }[]): Promise<void> {
+        for (const { oldUri, newUri } of files) {
+            const host = this._teamSyncHost;
+            const sync = this._teamSync;
+            const oldName = host?.nameOf(oldUri);
+            const newName = host?.nameOf(newUri);
+            if (!sync || !oldName || !newName) { continue; }
+            try {
+                sync.fileRenamed(oldName, newName, new TextDecoder().decode(await vscode.workspace.fs.readFile(newUri)));
+            } catch {
+                // A folder, or already gone
+            }
+        }
+    }
+
+    /** Where the team's edits are kept for teammates who join later: the server. */
+    private teamDocStore(sessionId: number): DocStore {
+        const path = `${API_PREFIX}/sessions/${sessionId}/team-doc/updates`;
+        return {
+            load: async after => {
+                const result = await this.makeRequest('GET', `${path}?after=${after}`);
+                if (result.status !== 200) { throw new Error(`the server answered ${result.status}`); }
+                const data = JSON.parse(result.body);
+                return { updates: data.updates || [], lastUpdateId: Number(data.last_update_id) || 0 };
+            },
+            append: async (payload, options = {}) => {
+                const result = await this.makeRequest('POST', path, {
+                    payload,
+                    ...(options.seed ? { seed: true } : {}),
+                    ...(options.replacesThrough ? { replaces_through: options.replacesThrough } : {}),
+                });
+                if (result.status === 201) { return { id: Number(JSON.parse(result.body).id) }; }
+                let error: any = 'failed';
+                let lastUpdateId: number | undefined;
+                try {
+                    const body = JSON.parse(result.body);
+                    if (['already_seeded', 'compaction_needed', 'team_sync_off'].includes(body.error)) { error = body.error; }
+                    lastUpdateId = body.last_update_id;
+                } catch {
+                    // Not JSON: treat as a failure to retry
+                }
+                return { error, lastUpdateId };
+            },
+        };
+    }
+
+    private teamSyncClientsKey(sessionId: number): string {
+        return `certicode.teamSyncClients.${sessionId}`;
+    }
+
+    /** Remember the editor ids this window typed with, so a reload still credits the student's lines. */
+    private async rememberTeamSyncClients(): Promise<void> {
+        const sessionId = this._sessionId;
+        const ids = this._teamSync?.clientIds();
+        if (!sessionId || !ids) { return; }
+        const key = this.teamSyncClientsKey(sessionId);
+        const known = this._globalState.get<number[]>(key, []);
+        const merged = [...new Set([...known, ...ids])];
+        if (merged.length !== known.length) {
+            await this._globalState.update(key, merged);
+        }
+    }
+
+    private postTeamSyncState(state: 'on' | 'connecting' | 'off', reason?: string): void {
+        // The session is read every few seconds; the sidebar only needs to hear about a change
+        if (this._teamSyncState?.state === state && this._teamSyncState?.reason === reason) {
+            return;
+        }
+        this._teamSyncState = { state, reason };
+        this._view?.webview.postMessage({ type: 'teamSync', state, reason });
+    }
+
     private async handleSubmit() {
+        // On a group lab the team hands in one piece of work, and only its leader hands it in.
+        // The server enforces this too; checking here saves collecting and sending the files.
+        const team = this._lastSessionData?.team;
+        if (team && !team.can_submit) {
+            vscode.window.showErrorMessage(`Only your team leader, ${team.leader_name || 'a teammate'}, can submit this lab.`);
+            return;
+        }
         return this.runGrading(() => this.submit());
+    }
+
+    /**
+     * Choose the team's leader: the leader hands over, anyone else casts a vote.
+     */
+    private async handleChooseLeader(candidateId: number) {
+        if (!this._sessionId || !this._lastSessionData?.team) {
+            return;
+        }
+
+        try {
+            const result = await this.makeRequest('POST', `${API_PREFIX}/sessions/${this._sessionId}/leader`, { candidate_id: candidateId });
+            if (result.status !== 200) {
+                vscode.window.showErrorMessage(`CertiCode: ${this.failureReason(result.body, "Couldn't change the team leader.")}`);
+                return;
+            }
+
+            const data = JSON.parse(result.body);
+            this._view?.webview.postMessage({ type: 'leaderResult', changed: data.changed, leader_id: data.leader_id, votes: data.votes });
+            // Brings in who can submit now, and the notice in the team chat
+            this.syncSessionState();
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`CertiCode: Couldn't change the team leader. ${err.message}`);
+        }
     }
 
     /**
@@ -2142,6 +2484,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         if (this._missingFiles && this._missingFiles.length > 0) {
             vscode.window.showErrorMessage(`Submission blocked: Missing required file(s): ${this._missingFiles.join(', ')}. Please restore or recreate the file to submit.`);
             return;
+        }
+
+        // Typing together: teammates' last edits must be in the files that are sent
+        if (this._teamSync) {
+            this._view?.webview.postMessage({ type: 'status', message: "Bringing in your team's latest edits..." });
+            await this._teamSync.flush();
         }
 
         const { primaryCode, primaryFileName, filesPayload, fileUris } = await this.collectSubmissionFiles();
@@ -2203,7 +2551,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 const reason = this.failureReason(result.body, 'Submission failed.');
                 vscode.window.showErrorMessage(`Submission Failed: ${reason}`);
                 this._view?.webview.postMessage({ type: 'error', message: reason });
-                if (result.status === 409) {
+                // 409: the attempt closed. 403: the team's leader changed, so someone else submits.
+                if (result.status === 409 || result.status === 403) {
                     this.syncSessionState();
                 }
             }
@@ -2657,6 +3006,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
         #tab-chat { gap: 8px; }
         .chat-feed { flex: 1; min-height: 200px; max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
         .chat-msg { display: flex; gap: 8px; }
+        .chat-notice { text-align: center; color: var(--muted); font-size: 0.9em; }
+        .team-tag { margin-left: 6px; font-size: 0.85em; color: var(--muted); }
+        .team-tag-leader { color: var(--ok); font-weight: 600; }
+        .team-choose { padding: 2px 8px; font-size: 0.9em; flex-shrink: 0; }
         .chat-body { flex: 1; min-width: 0; }
         .chat-header { display: flex; align-items: baseline; gap: 6px; font-size: 0.92em; }
         .chat-author { font-weight: 600; }
@@ -2870,7 +3223,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             </div>
 
             <div class="section" id="teammates-card" hidden>
-                <h2 class="section-title">Team contributions</h2>
+                <h2 class="section-title">Team</h2>
+                <p class="section-note">Only the team leader can submit the lab. Percentages are each teammate's share of the changed lines.</p>
+                <p class="section-note" id="team-sync-status" role="status" hidden></p>
                 <div class="list" id="teammates-breakdown"></div>
             </div>
         </section>
@@ -3052,8 +3407,64 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         function setActionsLocked(locked) {
             checkProgressBtn.disabled = locked;
-            submitBtn.disabled = locked || !isIntegrityValid;
+            submitBtn.disabled = locked || !isIntegrityValid || !canTeamSubmit;
         }
+
+        // On a group lab only the team's leader submits. Set at the top of each session update.
+        let canTeamSubmit = true;
+        let lastSession = null;
+
+        function applyTeam(session) {
+            const team = session.team || null;
+            submitBtn.title = canTeamSubmit
+                ? 'Submit your final work for grading'
+                : 'Only your team leader' + (team.leader_name ? ', ' + team.leader_name + ',' : '') + ' can submit';
+            renderTeam(session);
+        }
+
+        // The team card: who leads, who is in the lab, each share of the code, and the vote
+        function renderTeam(session) {
+            const team = session.team || null;
+            const mates = session.teammates || [];
+            if (!session.is_group_lab || mates.length === 0) {
+                show(teammatesCard, false);
+                return;
+            }
+
+            const myId = session.current_user ? session.current_user.id : null;
+            const votes = team ? (team.votes || []) : [];
+            const myVote = votes.find(v => v.voter_id === myId);
+            const closed = session.status !== 'in_progress';
+
+            teammatesBreakdown.innerHTML = '';
+            mates.forEach(tm => {
+                const votesFor = votes.filter(v => v.candidate_id === tm.id).length;
+                // The leader hands over to anyone else; others vote for anyone but the leader
+                const canChoose = team && !closed && !tm.is_leader && !(team.is_leader && tm.id === myId);
+                const voted = myVote && myVote.candidate_id === tm.id;
+                const row = document.createElement('div');
+                row.className = 'row';
+                row.innerHTML = \`
+                    <span class="avatar" style="background-color: \${safeColor(tm.avatar_color)};" aria-hidden="true">\${initial(tm.name)}</span>
+                    <span class="row-main">\${esc(tm.name)}\${tm.id === myId ? ' (you)' : ''}
+                        \${tm.is_leader ? '<span class="team-tag team-tag-leader">Leader</span>' : ''}
+                        \${team && !tm.in_lab ? '<span class="team-tag">Not in the lab</span>' : ''}
+                        \${votesFor && !tm.is_leader ? \`<span class="team-tag">\${esc(votesFor)} \${votesFor === 1 ? 'vote' : 'votes'}</span>\` : ''}
+                    </span>
+                    \${canChoose ? \`<button type="button" class="btn btn-ghost team-choose" data-candidate="\${esc(tm.id)}" \${voted ? 'disabled' : ''}>\${team.is_leader || !team.leader_id ? 'Make leader' : (voted ? 'Voted' : 'Vote as leader')}</button>\` : ''}
+                    <span class="num" title="Share of the team's changed lines">\${esc(tm.contribution_score || 0)}%</span>
+                \`;
+                teammatesBreakdown.appendChild(row);
+            });
+            show(teammatesCard);
+        }
+
+        teammatesBreakdown.addEventListener('click', event => {
+            const button = event.target.closest('.team-choose');
+            if (!button || button.disabled) return;
+            button.disabled = true;
+            vscode.postMessage({ type: 'chooseLeader', candidateId: Number(button.dataset.candidate) });
+        });
 
         function setStatus(state, text) {
             statusBanner.className = 'connection-status ' + (state === 'connected' ? 'status-connected' : 'status-reconnecting');
@@ -3175,6 +3586,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         function renderChatMessage(c) {
             const el = document.createElement('div');
+            // A notice from the app (a teammate joined or left, the leader changed)
+            if (c.is_system) {
+                el.className = 'chat-notice';
+                el.innerHTML = \`\${esc(c.message)} <span class="chat-time">\${esc(c.time)}</span>\`;
+                return el;
+            }
             el.className = 'chat-msg';
             el.innerHTML = \`
                 <span class="avatar" style="background-color: \${safeColor(c.avatar_color)};" aria-hidden="true">\${initial(c.user_name)}</span>
@@ -3240,7 +3657,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     resumeClockAfterFailedSubmit();
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
-                    submitBtn.disabled = !isIntegrityValid;
+                    submitBtn.disabled = !isIntegrityValid || !canTeamSubmit;
                     if (connectionScreen.style.display !== 'none') {
                         connectErrorText.textContent = message.message;
                         show(connectError);
@@ -3261,7 +3678,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     isIntegrityValid = message.valid;
                     if (message.valid) {
                         show(integrityAlert, false);
-                        submitBtn.disabled = false;
+                        submitBtn.disabled = !canTeamSubmit;
                     } else {
                         integrityText.innerHTML = \`<strong>Missing \${esc(message.missing.join(', '))}.</strong> You need this file to submit.\`;
                         show(integrityAlert);
@@ -3394,6 +3811,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     sessionScreen.style.display = 'none';
                     show(actionStatus, false);
                     checkProgressBtn.disabled = false;
+                    // The next lab may be a solo one
+                    canTeamSubmit = true;
+                    lastSession = null;
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit lab';
                     show(submissionBanner, false);
@@ -3403,12 +3823,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                     handleSessionUpdate(message.data);
                     break;
 
+                case 'teamSync': {
+                    // Plain text only: the reason comes from the extension, but is never put in as HTML
+                    const syncStatus = $('team-sync-status');
+                    if (message.state === 'hidden') {
+                        show(syncStatus, false);
+                        break;
+                    }
+                    syncStatus.textContent = message.state === 'on'
+                        ? 'Typing together: teammates see your edits as you type, and you see theirs.'
+                        : message.state === 'connecting'
+                            ? 'Connecting to your team...'
+                            : 'Shared typing is off' + (message.reason ? ': ' + message.reason + '.' : '.') + ' You work in your own copy.';
+                    show(syncStatus);
+                    break;
+                }
+
+                case 'leaderResult':
+                    // Show the new leader and votes at once; the session refresh that follows
+                    // brings in who can submit
+                    if (lastSession && lastSession.team) {
+                        lastSession.team.leader_id = message.leader_id;
+                        lastSession.team.votes = message.votes || [];
+                        (lastSession.teammates || []).forEach(tm => { tm.is_leader = tm.id === message.leader_id; });
+                        renderTeam(lastSession);
+                    }
+                    break;
+
                 case 'checkResult':
                 case 'submitResult': {
                     gradingInFlight = false;
                     show(actionStatus, false);
                     checkProgressBtn.disabled = message.type === 'submitResult';
-                    submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid;
+                    submitBtn.disabled = message.type === 'submitResult' || !isIntegrityValid || !canTeamSubmit;
 
                     if (message.type === 'submitResult') {
                         stoppedForSubmit = null;
@@ -3497,6 +3944,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
             }
             show(connectError, false);
             const attemptClosed = session.status !== 'in_progress';
+            canTeamSubmit = !session.team || session.team.can_submit === true;
             setActionsLocked(gradingInFlight || attemptClosed || extensionOutdated);
 
             // Chat is for teammates, so solo labs have none
@@ -3544,23 +3992,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Dispo
                 starterFilesList.appendChild(row);
             });
 
-            // Teammate breakdown for team labs
-            if (session.is_group_lab && session.teammates && session.teammates.length > 0) {
-                teammatesBreakdown.innerHTML = '';
-                session.teammates.forEach(tm => {
-                    const row = document.createElement('div');
-                    row.className = 'row';
-                    row.innerHTML = \`
-                        <span class="avatar" style="background-color: \${safeColor(tm.avatar_color)};" aria-hidden="true">\${initial(tm.name)}</span>
-                        <span class="row-main">\${esc(tm.name)}</span>
-                        <span class="num">\${esc(tm.contribution_score || 0)}%</span>
-                    \`;
-                    teammatesBreakdown.appendChild(row);
-                });
-                show(teammatesCard);
-            } else {
-                show(teammatesCard, false);
-            }
+            // The team: leader, who is in the lab, shares of the code
+            lastSession = session;
+            applyTeam(session);
 
             // Tasks
             tasksContainer.innerHTML = '';
