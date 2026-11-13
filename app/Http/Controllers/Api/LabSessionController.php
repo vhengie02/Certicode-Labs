@@ -835,7 +835,11 @@ class LabSessionController extends Controller
             ],
             'is_group_lab' => (bool) $lab->is_group_lab,
             // Whether teammates type in the same files (the extension then asks for /team-doc)
-            'team_sync' => ['enabled' => TeamSync::enabled() && $session->status === 'in_progress' && $session->group_id && $session->team_started_at],
+            'team_sync' => [
+                'enabled' => TeamDoc::allowedFor($session),
+                // Goes up when the team's channel and key are replaced: the extension then fetches the new ones
+                'rotation' => TeamDoc::existingFor($session)?->rotation ?? 0,
+            ],
             'team' => $teamPayload,
             'teammates' => $teammates,
             'laboratory' => $lab->studentPayload(),
@@ -1494,7 +1498,7 @@ class LabSessionController extends Controller
     public function teamDoc(Request $request, int $sessionId)
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
-        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
             return $refusal;
         }
 
@@ -1519,7 +1523,7 @@ class LabSessionController extends Controller
     public function teamDocUpdates(Request $request, int $sessionId)
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
-        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
             return $refusal;
         }
         if (! $doc = TeamDoc::forSession($session)) {
@@ -1543,7 +1547,7 @@ class LabSessionController extends Controller
     public function storeTeamDocUpdate(Request $request, int $sessionId)
     {
         $session = LabSession::with('laboratory')->findOrFail($sessionId);
-        if ($refusal = $this->refuseOtherStudent($request, $session)) {
+        if ($refusal = $this->refuseAllButTheTeammate($request, $session)) {
             return $refusal;
         }
         if (! $doc = TeamDoc::forSession($session)) {
@@ -1557,7 +1561,13 @@ class LabSessionController extends Controller
         ]);
         $author = ($request->user() ?? $session->user)?->id;
 
-        return app(LabTeams::class)->locked($session->laboratory, function () use ($doc, $data, $author) {
+        // Only this team's document row is locked, so teams don't wait on each other
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($doc, $data, $author) {
+            $doc = TeamDoc::whereKey($doc->id)->lockForUpdate()->first();
+            if (! $doc) {
+                // The leader submitted a moment ago, and the document went with it
+                return $this->teamSyncOffResponse();
+            }
             if (! empty($data['seed']) && $doc->updates()->exists()) {
                 return response()->json(['error' => 'already_seeded', 'last_update_id' => $doc->lastUpdateId()], 409);
             }
@@ -1566,12 +1576,34 @@ class LabSessionController extends Controller
             }
 
             $update = $doc->updates()->create(['user_id' => $author, 'payload' => $data['payload']]);
+            $chars = (int) $doc->payload_chars + strlen($data['payload']);
             if (! empty($data['replaces_through'])) {
-                $doc->updates()->where('id', '<=', $data['replaces_through'])->whereKeyNot($update->id)->delete();
+                $replaced = $doc->updates()->where('id', '<=', $data['replaces_through'])->whereKeyNot($update->id);
+                $chars -= (int) (clone $replaced)->get(['payload'])->sum(fn (TeamDocUpdate $old) => strlen($old->payload));
+                $replaced->delete();
             }
+            $doc->update(['payload_chars' => max(0, $chars)]);
 
             return response()->json(['id' => $update->id], 201);
         });
+    }
+
+    /**
+     * The team's channel, key and edits go to its members' extensions only: the session's own
+     * student, signed in or by the session's token. Not to teammates through someone else's
+     * session, and not to instructors or admins, who can read the submitted work instead.
+     */
+    private function refuseAllButTheTeammate(Request $request, LabSession $session): ?JsonResponse
+    {
+        $caller = $request->user();
+        if (! $caller || $caller->id === $session->user_id) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => 'not_your_attempt',
+            'message' => 'Only the student working in this attempt can use its shared files.',
+        ], 403);
     }
 
     private function teamSyncOffResponse(): JsonResponse

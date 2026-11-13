@@ -12,6 +12,9 @@ const assert = require('node:assert');
 class FakeDocument implements HostDocument {
     public isDirty = false;
     public saves = 0;
+    /** Edits asked for by the extension wait until released. */
+    public hold = false;
+    private held: (() => void)[] = [];
     public onChange?: (changes: LocalChange[]) => void;
 
     constructor(public text: string) {}
@@ -19,8 +22,16 @@ class FakeDocument implements HostDocument {
     getText() { return this.text; }
 
     async replace(offset: number, length: number, text: string): Promise<boolean> {
+        if (this.hold) {
+            await new Promise<void>(resolve => this.held.push(resolve));
+        }
         this.apply({ offset, length, text });
         return true;
+    }
+
+    release() {
+        this.hold = false;
+        for (const resolve of this.held.splice(0)) { resolve(); }
     }
 
     /** The student types. */
@@ -58,6 +69,14 @@ class FakeHost implements SyncHost {
         return document;
     }
 
+    async readText(name: string) {
+        return this.open.get(name)?.text ?? this.disk.get(name);
+    }
+
+    async writeBackup(name: string, content: string) {
+        this.disk.set(`.certicode/before-shared-typing/${name}`, content);
+    }
+
     async deleteFile(name: string) {
         this.disk.delete(name);
         this.open.delete(name);
@@ -74,12 +93,13 @@ function lab(options: { autosaveMs?: number } = {}) {
     const store = new FakeStore();
     const key = crypto.randomBytes(32);
 
-    const join = async (disk: Record<string, string> = { 'Main.java': STARTER[0].content }, ownClientIds: number[] = []) => {
+    const join = async (disk: Record<string, string> = { 'Main.java': STARTER[0].content }, ownClientIds: number[] = [], before?: (sync: WorkspaceSync) => void) => {
         const host = new FakeHost();
         for (const [name, content] of Object.entries(disk)) { host.disk.set(name, content); }
         const doc = new TeamDoc({ key, transport: hub.join(), store, minSendIntervalMs: 5, storeIntervalMs: 10, helloJitterMs: 5, ownClientIds });
         const sync = new WorkspaceSync(host, doc, { autosaveMs: options.autosaveMs ?? 30 });
         host.sync = sync;
+        before?.(sync);
         await sync.start(STARTER);
         return { host, doc, sync, file: (name: string) => host.open.get(name) };
     };
@@ -283,4 +303,87 @@ test('after stop nothing more is shared or applied', async () => {
     assert.ok(!bob.file('Main.java')!.text.startsWith('late'));
     assert.strictEqual(bob.sync.handleChange('Main.java', [{ offset: 0, length: 0, text: 'x' }]), false);
     alice.sync.stop();
+});
+
+test('a new team document is seeded from the student\'s own files, not the lab\'s starter code', async () => {
+    const t = lab();
+    const alice = await t.join({ 'Main.java': 'class Main { void work() {} }\n' });
+
+    assert.strictEqual(alice.doc.text('Main.java'), 'class Main { void work() {} }\n');
+    assert.strictEqual(alice.file('Main.java')!.text, 'class Main { void work() {} }\n');
+    alice.sync.stop();
+});
+
+test('a student\'s own copy that the team\'s text replaces is kept as a backup', async () => {
+    const t = lab();
+    const alice = await t.join({ 'Main.java': 'alice work\n' });
+    const backups: string[] = [];
+
+    const bob = await t.join({ 'Main.java': 'bob work\n' }, [], sync => sync.onBackup(name => backups.push(name)));
+
+    assert.strictEqual(bob.file('Main.java')!.text, 'alice work\n');
+    assert.strictEqual(bob.host.disk.get('.certicode/before-shared-typing/Main.java'), 'bob work\n');
+    assert.deepStrictEqual(backups, ['Main.java']);
+    alice.sync.stop();
+    bob.sync.stop();
+});
+
+test('a copy that is only the lab\'s starter code is replaced without a backup', async () => {
+    const t = lab();
+    const alice = await t.join({ 'Main.java': 'alice work\n' });
+
+    const bob = await t.join();
+
+    assert.strictEqual(bob.file('Main.java')!.text, 'alice work\n');
+    assert.ok(![...bob.host.disk.keys()].some(name => name.startsWith('.certicode/')));
+    alice.sync.stop();
+    bob.sync.stop();
+});
+
+test('a renamed file is shared under its new name', async () => {
+    const t = lab();
+    const alice = await t.join();
+    const bob = await t.join();
+
+    alice.sync.fileRenamed('Main.java', 'App.java', alice.file('Main.java')!.text);
+    await until(() => bob.sync.sharedNames().includes('App.java') && !bob.sync.sharedNames().includes('Main.java'));
+
+    assert.deepStrictEqual(bob.sync.sharedNames(), ['App.java']);
+    assert.strictEqual(bob.file('App.java')!.text, STARTER[0].content);
+    assert.ok(!bob.host.disk.has('Main.java'));
+    alice.sync.stop();
+    bob.sync.stop();
+});
+
+test('stopping says which teammates\' edits are still on their way to the editor', async () => {
+    const t = lab();
+    const alice = await t.join();
+    const bob = await t.join();
+    bob.file('Main.java')!.hold = true;
+
+    alice.file('Main.java')!.type(0, 0, '// late\n');
+    await sleep(60);
+    const inFlight = bob.sync.stop();
+
+    assert.deepStrictEqual([...inFlight], [['Main.java', '// late\n' + STARTER[0].content]]);
+    alice.sync.stop();
+});
+
+test('an undo that removes a teammate\'s edit is reported', async () => {
+    const t = lab();
+    const alice = await t.join();
+    const bob = await t.join();
+    const undone: string[] = [];
+    bob.sync.onUndoOthers(name => undone.push(name));
+    alice.file('Main.java')!.type(0, 0, '// alice\n');
+    await until(() => bob.file('Main.java')!.text.startsWith('// alice'));
+
+    // As VS Code reports an Undo: the teammate's insertion goes again
+    const document = bob.file('Main.java')!;
+    document.text = document.text.slice('// alice\n'.length);
+    bob.sync.handleChange('Main.java', [{ offset: 0, length: '// alice\n'.length, text: '' }], true);
+
+    assert.deepStrictEqual(undone, ['Main.java']);
+    alice.sync.stop();
+    bob.sync.stop();
 });

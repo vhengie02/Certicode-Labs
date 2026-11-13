@@ -48,6 +48,12 @@ export class TextBinding {
     public localChars = 0;
     /** Line breaks the user deleted: the lines they removed. */
     public localLinesDeleted = 0;
+    /**
+     * Whether the user's last change removed text this editor didn't write: a teammate's, or
+     * the starter code. Used to warn when Undo takes back a teammate's edit.
+     */
+    public lastChangeRemovedOthers = false;
+    private readonly echoTimeoutMs: number;
 
     private readonly ytext: Y.Text;
     private pending: Uint8Array[] = [];
@@ -57,8 +63,9 @@ export class TextBinding {
     private disposed = false;
     private waiters: (() => void)[] = [];
 
-    constructor(private readonly doc: Y.Doc, private readonly editor: EditorPort) {
+    constructor(private readonly doc: Y.Doc, private readonly editor: EditorPort, options: { echoTimeoutMs?: number } = {}) {
         this.ytext = doc.getText('text');
+        this.echoTimeoutMs = options.echoTimeoutMs ?? 2000;
     }
 
     /** A teammate's edits (or stored ones) for this file. They are shown as soon as the editor allows. */
@@ -89,6 +96,7 @@ export class TextBinding {
 
         // The user's own edit. `doc` shows what the editor showed before it, so the offsets fit.
         const before = this.ytext.toString();
+        this.lastChangeRemovedOthers = changes.some(change => change.length > 0 && this.othersWroteIn(change.offset, change.length));
         for (const change of changes) {
             this.localLinesDeleted += before.slice(change.offset, change.offset + change.length).split('\n').length - 1;
         }
@@ -103,6 +111,26 @@ export class TextBinding {
         }, LOCAL);
         this.matchEditor();
         this.wake();
+        return false;
+    }
+
+    /** The text the editor will show once the teammate's edit now on its way lands; undefined if none is. */
+    public inFlightTarget(): string | undefined {
+        return this.expected?.target;
+    }
+
+    /** Whether any character in [offset, offset + length) was written by another editor. */
+    private othersWroteIn(offset: number, length: number): boolean {
+        let position = 0;
+        const end = offset + length;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (let item = (this.ytext as any)._start; item && position < end; item = item.right) {
+            const text: unknown = item.deleted ? undefined : item.content?.str;
+            if (typeof text !== 'string') { continue; }
+            const itemEnd = position + text.length;
+            if (itemEnd > offset && item.id.client !== this.doc.clientID) { return true; }
+            position = itemEnd;
+        }
         return false;
     }
 
@@ -195,10 +223,19 @@ export class TextBinding {
                 }
 
                 // The change event normally arrives before the edit reports success
-                for (let waited = 0; this.expected && waited < 400; waited++) { await pause(5); }
+                const deadline = Date.now() + this.echoTimeoutMs;
+                while (this.expected && !this.disposed && Date.now() < deadline) { await pause(5); }
+                if (this.disposed) { return; }
                 if (this.expected) {
+                    const landed = this.expected;
                     this.expected = null;
-                    this.matchEditor();
+                    if (this.editor.getText() === landed.target) {
+                        // The editor took the edit but its change event never reached us
+                        Y.applyUpdate(this.doc, landed.update, REMOTE);
+                        this.pending.splice(0, landed.count);
+                    }
+                    // Otherwise the edit didn't land as asked: it stays waiting and is worked out
+                    // again against what the editor shows. Never written in as the student's.
                 }
             }
         } finally {

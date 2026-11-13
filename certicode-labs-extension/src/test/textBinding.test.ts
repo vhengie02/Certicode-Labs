@@ -25,6 +25,8 @@ class FakeEditor implements EditorPort {
     public text = '';
     public binding?: TextBinding;
     public hold = false;
+    /** The change event of an edit asked for by the extension never reaches it. */
+    public loseEvents = false;
     public rejections = 0;
     /** Every text the editor ever showed, to catch a character appearing in the wrong place. */
     public history: string[] = [];
@@ -45,7 +47,7 @@ class FakeEditor implements EditorPort {
                     return;
                 }
                 this.apply(offset, length, text);
-                this.binding?.handleEditorChange(this.asChanges(offset, length, text));
+                if (!this.loseEvents) { this.binding?.handleEditorChange(this.asChanges(offset, length, text)); }
                 resolve(true);
             };
             if (this.hold) {
@@ -89,12 +91,12 @@ class FakeEditor implements EditorPort {
 }
 
 /** A binding on its own document, plus a teammate's document wired to it with a delay. */
-function pair(seed = 1, options: { lagMs?: number; splitEchoes?: boolean } = {}) {
+function pair(seed = 1, options: { lagMs?: number; splitEchoes?: boolean; echoTimeoutMs?: number } = {}) {
     const rand = random(seed);
     const mine = new Y.Doc();
     const theirs = new Y.Doc();
     const editor = new FakeEditor(rand, options.splitEchoes ?? true);
-    const binding = new TextBinding(mine, editor);
+    const binding = new TextBinding(mine, editor, { echoTimeoutMs: options.echoTimeoutMs });
     editor.binding = binding;
     const lag = () => (options.lagMs ? sleep(Math.floor(rand() * options.lagMs)) : Promise.resolve());
 
@@ -294,4 +296,35 @@ test('dispose stops applying remote edits', async () => {
 
     assert.strictEqual(p.editor.text, '');
     assert.strictEqual(p.editor.type(0, 0, 'x'), false);
+});
+
+test("an edit whose change event never arrives is not doubled or credited to the student", async () => {
+    const p = pair(1, { echoTimeoutMs: 60 });
+    p.editor.type(0, 0, "abc");
+    await quiet(p);
+    p.editor.loseEvents = true;
+
+    p.theirText.insert(3, "XYZ");
+    await sleep(200);
+    p.editor.loseEvents = false;
+    await quiet(p);
+
+    assert.strictEqual(p.editor.text, "abcXYZ");
+    assert.strictEqual(p.myText.toString(), "abcXYZ");
+    assert.strictEqual(p.theirText.toString(), "abcXYZ");
+    assert.strictEqual(p.binding.localChars, 3);
+});
+
+test("an undo that removes a teammate's text is reported, the student's own is not", async () => {
+    const p = pair();
+    p.editor.type(0, 0, "mine ");
+    await quiet(p);
+    p.theirText.insert(5, "theirs");
+    await quiet(p);
+    assert.strictEqual(p.editor.text, "mine theirs");
+
+    p.editor.type(0, 5, "");                  // removes only the student's own text
+    assert.strictEqual(p.binding.lastChangeRemovedOthers, false);
+    p.editor.type(0, 6, "");                  // removes the teammate's
+    assert.strictEqual(p.binding.lastChangeRemovedOthers, true);
 });

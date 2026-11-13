@@ -37,6 +37,8 @@ export class Hub {
     /** Every message that crossed the channel, as sent. */
     public readonly traffic: string[] = [];
     public delayMs = 0;
+    /** The next this many messages are lost on the way, as a flaky network would lose them. */
+    public dropNext = 0;
 
     join(): HubTransport {
         const transport = new HubTransport(this);
@@ -65,6 +67,10 @@ export class HubTransport implements Transport {
         if (!this.online || this.closed) { return; }
         this.sent++;
         this.hub.traffic.push(message);
+        if (this.hub.dropNext > 0) {
+            this.hub.dropNext--;
+            return;
+        }
         for (const other of this.hub.transports) {
             if (other !== this) { setTimeout(() => other.deliver(message), this.hub.delayMs); }
         }
@@ -94,6 +100,8 @@ export class FakeStore implements DocStore {
     public maxRows = 400;
     public failing = false;
     public appends = 0;
+    /** How long an append takes to answer. */
+    public appendDelayMs = 1;
     private nextId = 1;
 
     async load(after: number) {
@@ -103,7 +111,7 @@ export class FakeStore implements DocStore {
     }
 
     async append(payload: string, options: { seed?: boolean; replacesThrough?: number } = {}): Promise<AppendResult> {
-        await sleep(1);
+        await sleep(this.appendDelayMs);
         if (this.failing) { return { error: 'failed' }; }
         const lastUpdateId = this.rows.length ? this.rows[this.rows.length - 1].id : 0;
         if (options.seed && this.rows.length > 0) { return { error: 'already_seeded', lastUpdateId }; }

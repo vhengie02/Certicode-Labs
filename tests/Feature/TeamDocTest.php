@@ -10,6 +10,7 @@ use App\Models\SchoolClass;
 use App\Models\TeamDoc;
 use App\Models\TeamDocUpdate;
 use App\Models\User;
+use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use Carbon\CarbonInterface;
@@ -364,5 +365,74 @@ class TeamDocTest extends TestCase
 
         $this->assertSame([base64_encode('live')], TeamDocUpdate::pluck('payload')->all());
         $this->assertSame(1, TeamDoc::count());
+    }
+
+    public function test_a_session_reopened_after_the_team_submitted_gets_no_team_document()
+    {
+        // The leader submitted: every teammate's attempt was closed with the team's grade.
+        // The instructor then reopened Bob's alone, as a solo attempt.
+        $this->open($this->alice, ['status' => 'completed', 'ended_at' => now()]);
+        $bob = $this->open($this->bob);
+
+        $this->secrets($this->bob, $bob)->assertOk()->assertExactJson(['enabled' => false]);
+        $this->actingAs($this->bob)->getJson("/api/v1/sessions/{$bob->id}")->assertOk()->assertJsonPath('team_sync.enabled', false);
+        $this->assertSame(0, TeamDoc::count());
+    }
+
+    public function test_an_instructor_cannot_get_the_key_or_write_into_the_teams_files()
+    {
+        $alice = $this->open($this->alice);
+        $instructor = User::where('role', 'instructor')->first();
+
+        $response = $this->actingAs($instructor)->getJson("/api/v1/sessions/{$alice->id}/team-doc")->assertStatus(403);
+        $this->assertArrayNotHasKey('key', $response->json());
+        $this->actingAs($instructor)->postJson("/api/v1/sessions/{$alice->id}/team-doc/updates", ['payload' => base64_encode('x')])->assertStatus(403);
+        $this->actingAs($instructor)->getJson("/api/v1/sessions/{$alice->id}/team-doc/updates")->assertStatus(403);
+        $this->assertSame(0, TeamDoc::count());
+        $this->assertSame(0, TeamDocUpdate::count());
+    }
+
+    public function test_removing_a_teammate_gives_the_team_a_new_channel_and_key()
+    {
+        $alice = $this->open($this->alice);
+        $this->open($this->carol);
+        $before = $this->secrets($this->alice, $alice)->json();
+        $rotationBefore = $this->actingAs($this->alice)->getJson("/api/v1/sessions/{$alice->id}")->json('team_sync.rotation');
+
+        // The instructor moves Carol out of the team while the lab is under way
+        app(LabTeams::class)->moveOpenAttempts($this->laboratory, $this->team, [], [$this->carol->id]);
+
+        $after = $this->secrets($this->alice, $alice)->json();
+        $this->assertNotSame($before['topic'], $after['topic']);
+        $this->assertNotSame($before['key'], $after['key']);
+        $this->assertNotSame($rotationBefore, $this->actingAs($this->alice)->getJson("/api/v1/sessions/{$alice->id}")->json('team_sync.rotation'));
+    }
+
+    public function test_adding_a_teammate_keeps_the_channel_and_key()
+    {
+        $alice = $this->open($this->alice);
+        $before = $this->secrets($this->alice, $alice)->json();
+
+        app(LabTeams::class)->moveOpenAttempts($this->laboratory, $this->team, [$this->dave->id], []);
+
+        $this->assertSame($before['key'], $this->secrets($this->alice, $alice)->json('key'));
+    }
+
+    public function test_the_size_check_reads_a_kept_total_not_every_stored_update()
+    {
+        $alice = $this->open($this->alice);
+        $doc = TeamDoc::forSession($alice);
+        $this->append($this->alice, $alice, ['payload' => base64_encode('one')])->assertCreated();
+        $this->append($this->alice, $alice, ['payload' => base64_encode('two')])->assertCreated();
+
+        $this->assertSame(strlen(base64_encode('one')) + strlen(base64_encode('two')), (int) $doc->fresh()->payload_chars);
+
+        $ids = TeamDocUpdate::orderBy('id')->pluck('id');
+        $this->append($this->alice, $alice, ['payload' => base64_encode('whole'), 'replaces_through' => $ids[1]])->assertCreated();
+        $this->assertSame(strlen(base64_encode('whole')), (int) $doc->fresh()->payload_chars);
+
+        // Past the size limit, a plain append asks for a compaction
+        $doc->update(['payload_chars' => TeamDoc::MAX_PAYLOAD_CHARS]);
+        $this->append($this->alice, $alice, ['payload' => base64_encode('more')])->assertStatus(409)->assertJson(['error' => 'compaction_needed']);
     }
 }

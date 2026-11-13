@@ -23,7 +23,7 @@ function fakeSync(options: { remote?: boolean; stats?: any[] } = {}) {
         linesDeletedElsewhere: () => 0,
         clientIds: () => [123],
         flush: async () => { calls.flushed++; },
-        stop: () => { calls.stopped++; },
+        stop: () => { calls.stopped++; return new Map<string, string>(); },
     };
 }
 
@@ -66,7 +66,8 @@ function change(p: any, doc: any, rangeOffset: number, rangeLength: number, text
 function typingTogether(p: any, sync: ReturnType<typeof fakeSync>) {
     p._teamSync = sync;
     p._teamSyncHost = { nameOf: () => 'Main.java' };
-    p._teamSyncKey = '7:1';
+    p._teamSyncKey = '7:1:0';
+    p._teamSyncReady = true;
 }
 
 test('a teammate\'s edit is not counted as typing, a paste or a change of the student\'s', async () => {
@@ -231,4 +232,127 @@ test('the sidebar script shows the shared typing state as plain text', () => {
     assert.ok(script.includes("case 'teamSync'"));
     assert.ok(/syncStatus\.textContent = /.test(script));
     assert.ok(!/syncStatus\.innerHTML/.test(script));
+});
+
+test('a start that is overtaken while it waits never runs alongside the newer one', async () => {
+    const { p, requests } = provider();
+    const built: any[] = [];
+    p.buildTeamSync = () => {
+        const sync: any = { ...fakeSync(), started: false, start: async () => { sync.started = true; }, onBackup: () => undefined, onUndoOthers: () => undefined };
+        sync.stop = () => { sync.stopped = true; return new Map(); };
+        built.push(sync);
+        return { sync, host: { nameOf: () => 'Main.java' } };
+    };
+    (globalThis as any).__workspace = undefined;
+    const answers: ((value: any) => void)[] = [];
+    p.makeRequest = (method: string, path: string) => new Promise(resolve => {
+        requests.push({ method, path });
+        answers.push(resolve);
+    });
+    const { vscodeStub } = require('./vscodeStub');
+    vscodeStub.workspace.workspaceFolders = [{ uri: vscodeStub.Uri.file('/workspace') }];
+    const wanted = { status: 'in_progress', is_group_lab: true, team_sync: { enabled: true, rotation: 0 }, team: { id: 1 }, laboratory: { starter_files: [] } };
+    const enabled = { status: 200, body: JSON.stringify({ enabled: true, key: Buffer.alloc(32).toString('base64'), topic: 't', supabase_url: 'https://x', publishable_key: 'k', min_send_interval_ms: 400 }) };
+
+    const first = p.updateTeamSync(wanted);                          // waits for the server
+    await p.updateTeamSync({ ...wanted, status: 'completed' });       // a read in between says stop
+    const second = p.updateTeamSync(wanted);                          // and the next says start again
+    answers[1](enabled);
+    await second;
+    answers[0](enabled);                                              // the first start's answer comes late
+    await first;
+
+    assert.strictEqual(built.length, 1);
+    assert.strictEqual(p._teamSync, built[0]);
+    assert.ok(!built[0].stopped);
+});
+
+test('line counts are not posted while shared typing is still starting', async () => {
+    const { p, requests } = provider();
+    p._lastSessionData = { ...p._lastSessionData, status: 'in_progress', team_sync: { enabled: true } };
+    p._teamSyncReady = false;
+    p.readWorkspaceText = async () => 'line\n'.repeat(40);
+
+    await p.computeAndSyncDiffs();
+
+    assert.ok(!requests.some(r => r.path.endsWith('/diff')));
+});
+
+test('a teammate\'s edit that lands just after shared typing stopped is not counted as typing', async () => {
+    const { p, sent } = provider();
+    const sync: any = fakeSync({ remote: false });
+    sync.stop = () => new Map([['Main.java', BIG_BLOCK]]);
+    typingTogether(p, sync);
+    p.computeAndSyncDiffs = async () => undefined;
+
+    p.stopTeamSync();
+    change(p, sharedDocument(), 0, 0, BIG_BLOCK);
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    assert.strictEqual(p._totalKeystrokes, 0);
+    assert.deepStrictEqual(sent.filter(s => s.type === 'paste_anomaly'), []);
+
+    // The student's own typing afterwards is theirs again
+    change(p, sharedDocument(BIG_BLOCK), 0, 0, 'a');
+    assert.strictEqual(p._totalKeystrokes, 1);
+    if (p._diffDebounceTimer) { clearTimeout(p._diffDebounceTimer); }
+});
+
+test('an undo in a shared file is reported to shared typing as an undo', () => {
+    const { p } = provider();
+    const calls: any[] = [];
+    const sync: any = fakeSync({ remote: false });
+    sync.handleChange = (...args: any[]) => { calls.push(args); return false; };
+    typingTogether(p, sync);
+    p.computeAndSyncDiffs = async () => undefined;
+
+    const doc = sharedDocument('abc');
+    doc.text = 'ab';
+    p.handleDocumentChange({ document: doc, contentChanges: [{ text: '', rangeOffset: 2, rangeLength: 1 }], reason: 1 });
+
+    assert.strictEqual(calls[0][2], true);
+    if (p._diffDebounceTimer) { clearTimeout(p._diffDebounceTimer); }
+});
+
+test('the student is warned, once in a while, when an undo removed a teammate\'s edit', () => {
+    const { p } = provider();
+    const { shown } = require('./vscodeStub');
+    shown.length = 0;
+
+    p.warnUndoOthers('Main.java');
+    p.warnUndoOthers('Main.java');
+
+    const warnings = shown.filter((s: any) => s.level === 'warning');
+    assert.strictEqual(warnings.length, 1);
+    assert.match(warnings[0].message, /teammate's edit in Main\.java/);
+});
+
+test('a renamed file reaches shared typing under its new name', async () => {
+    const { p } = provider();
+    const renames: any[] = [];
+    const sync: any = fakeSync();
+    sync.fileRenamed = (...args: any[]) => renames.push(args);
+    typingTogether(p, sync);
+    p._teamSyncHost = { nameOf: (uri: any) => uri.fsPath.replace('/workspace/', '') };
+    const { vscodeStub, files } = require('./vscodeStub');
+    files.set('/workspace/App.java', 'class App {}');
+    const readFile = vscodeStub.workspace.fs?.readFile;
+    vscodeStub.workspace.fs = { ...(vscodeStub.workspace.fs || {}), readFile: async (uri: any) => Buffer.from(files.get(uri.fsPath) ?? '') };
+
+    await p.handleRenamedFiles([{ oldUri: vscodeStub.Uri.file('/workspace/Main.java'), newUri: vscodeStub.Uri.file('/workspace/App.java') }]);
+
+    assert.deepStrictEqual(renames, [['Main.java', 'App.java', 'class App {}']]);
+    if (readFile) { vscodeStub.workspace.fs.readFile = readFile; }
+});
+
+test('a new channel and key for the team restarts shared typing', async () => {
+    const { p, requests } = provider();
+    const sync = fakeSync();
+    typingTogether(p, sync);
+    p._teamSyncKey = '7:1:0';
+
+    await p.updateTeamSync({ status: 'in_progress', is_group_lab: true, team_sync: { enabled: true, rotation: 1 }, team: { id: 1 } });
+
+    assert.strictEqual(sync.calls.stopped, 1);
+    assert.deepStrictEqual(requests.map(r => r.path), ['/api/v1/sessions/7/team-doc']);
 });

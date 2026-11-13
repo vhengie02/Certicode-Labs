@@ -94,6 +94,34 @@ class VscodeSyncHost {
         }
         return new VscodeDocument(document);
     }
+    async readText(name) {
+        const uri = this.uriFor(name);
+        if (!uri) {
+            return undefined;
+        }
+        const open = vscode.workspace.textDocuments.find(document => document.uri.toString() === uri.toString());
+        try {
+            const text = open ? open.getText() : new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+            return text.replace(/\r\n?/g, '\n');
+        }
+        catch {
+            return undefined;
+        }
+    }
+    /** Copies go under .certicode/before-shared-typing/, which is never shared (names starting with a dot aren't). */
+    async writeBackup(name, content) {
+        if (!this.uriFor(name)) {
+            return;
+        }
+        const folder = vscode.Uri.joinPath(this.root, '.certicode', 'before-shared-typing', ...name.split('/').slice(0, -1));
+        try {
+            await vscode.workspace.fs.createDirectory(folder);
+            await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(folder, name.split('/').pop()), Buffer.from(content, 'utf8'));
+        }
+        catch {
+            // Best effort: the copy is extra safety, not something the lab depends on
+        }
+    }
     async deleteFile(name) {
         const uri = this.uriFor(name);
         if (!uri) {

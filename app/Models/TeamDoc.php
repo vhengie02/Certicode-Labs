@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Services\LabTeams;
 use App\Support\TeamSync;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 
 /**
  * The document one team attempt types in together. It holds what lets the teammates reach
@@ -19,7 +18,7 @@ class TeamDoc extends Model
 
     public const MAX_PAYLOAD_CHARS = 8_000_000;
 
-    protected $fillable = ['group_id', 'lab_id', 'team_started_at', 'topic', 'key'];
+    protected $fillable = ['group_id', 'lab_id', 'team_started_at', 'topic', 'key', 'rotation', 'payload_chars'];
 
     protected $casts = [
         'team_started_at' => 'datetime',
@@ -40,7 +39,7 @@ class TeamDoc extends Model
      */
     public static function forSession(LabSession $session): ?self
     {
-        if (! TeamSync::enabled() || $session->status !== 'in_progress' || ! $session->group_id || ! $session->team_started_at) {
+        if (! static::allowedFor($session)) {
             return null;
         }
 
@@ -58,6 +57,46 @@ class TeamDoc extends Model
             ]));
     }
 
+    /**
+     * A new channel and key, for when someone leaves the team mid-lab: they keep the old ones,
+     * which no longer reach anyone. The stored edits stay.
+     */
+    public function rotate(): void
+    {
+        $this->update([
+            'topic' => 'td-'.bin2hex(random_bytes(24)),
+            'key' => base64_encode(random_bytes(32)),
+            'rotation' => $this->rotation + 1,
+        ]);
+    }
+
+    /**
+     * Whether this session types together with its team: shared typing is set up, the session
+     * is an open attempt of a team, and no teammate's attempt in it is graded yet. A graded one
+     * means the leader submitted and this session was reopened afterwards: it goes on alone,
+     * as a solo attempt would.
+     */
+    public static function allowedFor(LabSession $session): bool
+    {
+        if (! TeamSync::enabled() || $session->status !== 'in_progress' || ! $session->group_id || ! $session->team_started_at) {
+            return false;
+        }
+
+        return ! LabSession::where('group_id', $session->group_id)
+            ->where('lab_id', $session->lab_id)
+            ->where('team_started_at', $session->team_started_at)
+            ->where('status', 'completed')
+            ->exists();
+    }
+
+    /** The document of a team attempt, if one was made; never makes one. */
+    public static function existingFor(LabSession $session): ?self
+    {
+        return $session->group_id && $session->team_started_at
+            ? static::where(['group_id' => $session->group_id, 'lab_id' => $session->lab_id, 'team_started_at' => $session->team_started_at])->first()
+            : null;
+    }
+
     public function lastUpdateId(): int
     {
         return (int) $this->updates()->max('id');
@@ -66,8 +105,8 @@ class TeamDoc extends Model
     /** Whether the document has grown past what a teammate should have to load piece by piece. */
     public function needsCompaction(): bool
     {
-        return $this->updates()->count() >= self::MAX_UPDATES
-            || (int) $this->updates()->sum(DB::raw('length(payload)')) >= self::MAX_PAYLOAD_CHARS;
+        return $this->payload_chars >= self::MAX_PAYLOAD_CHARS
+            || $this->updates()->count() >= self::MAX_UPDATES;
     }
 
     /**

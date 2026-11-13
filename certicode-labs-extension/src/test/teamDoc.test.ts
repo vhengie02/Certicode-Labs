@@ -20,7 +20,7 @@ interface Teammate {
     text(name: string): string | undefined;
 }
 
-function team(options: { key?: Buffer; minSendIntervalMs?: number; storeIntervalMs?: number; compactAfter?: number } = {}) {
+function team(options: { key?: Buffer; minSendIntervalMs?: number; storeIntervalMs?: number; compactAfter?: number; repairIntervalMs?: number; maxMessageChars?: number } = {}) {
     const hub = new Hub();
     const store = new FakeStore();
     const key = options.key ?? crypto.randomBytes(32);
@@ -37,6 +37,8 @@ function team(options: { key?: Buffer; minSendIntervalMs?: number; storeInterval
             storeIntervalMs: options.storeIntervalMs ?? 20,
             compactAfter: options.compactAfter ?? 200,
             helloJitterMs: 20,
+            repairIntervalMs: options.repairIntervalMs ?? 60000,
+            maxMessageChars: options.maxMessageChars,
         });
         const editors = new Map<string, InstantEditor>();
         const bind = (name: string): void => {
@@ -327,5 +329,125 @@ test('stop sends and applies nothing more', async () => {
     assert.strictEqual(bob.transport.sent, sent);
     assert.strictEqual(bob.text('Main.java'), 'ignored' + STARTER_MAIN);
     assert.ok(!alice.text('Main.java')!.includes('ignored'));
+    t.stopAll();
+});
+
+test('edits typed while the store is being compacted are kept', async () => {
+    const t = team({ storeIntervalMs: 5, compactAfter: 2 });
+    const alice = await t.join();
+    t.store.appendDelayMs = 40;
+
+    alice.type('Main.java', 0, 0, 'a');
+    await alice.doc.flush();
+    alice.type('Main.java', 0, 0, 'b');
+    const compacting = alice.doc.flush();             // the second write starts a compaction
+    await sleep(60);                                  // ...which is now waiting on the store
+    alice.type('Main.java', 0, 0, 'LOST');
+    await compacting;
+    alice.type('Main.java', 0, 0, 'AFTER');
+    await alice.doc.flush();
+    await sleep(100);
+    alice.doc.stop();
+
+    const bob = await t.join();
+    assert.strictEqual(bob.text('Main.java'), alice.text('Main.java'));
+    assert.ok(bob.text('Main.java')!.includes('LOST') && bob.text('Main.java')!.includes('AFTER'));
+    t.stopAll();
+});
+
+test('a teammate joining an up-to-date team costs a few messages, not one per pair', async () => {
+    const t = team();
+    const members = [await t.join(), await t.join(), await t.join()];
+    // Something typed and deleted: answers then always carry the deletions, even when nothing is missing
+    members[0].type('Main.java', 0, 0, 'tmp');
+    members[0].type('Main.java', 0, 3, '');
+    await sleep(300);
+    const before = t.hub.traffic.length;
+
+    members.push(await t.join());
+    await sleep(400);
+
+    // One hello, at most one answer and one hello back from each of the three others
+    assert.ok(t.hub.traffic.length - before <= 7, `sent ${t.hub.traffic.length - before}`);
+    for (const member of members) { assert.strictEqual(member.text('Main.java'), STARTER_MAIN); }
+    t.stopAll();
+});
+
+test('an edit lost on the channel reaches the teammate anyway', async () => {
+    const t = team({ repairIntervalMs: 80 });
+    const alice = await t.join();
+    const bob = await t.join();
+    await sleep(200);
+
+    t.hub.dropNext = 1;
+    alice.type('Main.java', 0, 0, 'dropped once');
+    await until(() => bob.text('Main.java')!.startsWith('dropped once'));
+
+    assert.strictEqual(bob.text('Main.java'), 'dropped once' + STARTER_MAIN);
+    t.stopAll();
+});
+
+test('an edit too big for the channel reaches the teammate through the store', async () => {
+    const t = team({ repairIntervalMs: 80, storeIntervalMs: 10, maxMessageChars: 2000 });
+    const alice = await t.join();
+    const bob = await t.join();
+    await sleep(200);
+    const big = 'x'.repeat(5000);
+
+    alice.type('Main.java', 0, 0, big);
+    await until(() => bob.text('Main.java')!.startsWith(big));
+
+    assert.strictEqual(bob.text('Main.java'), big + STARTER_MAIN);
+    assert.ok(t.hub.traffic.every(message => message.length <= 2000));
+    t.stopAll();
+});
+
+test('a deletion made offline reaches the team on reconnect', async () => {
+    const t = team();
+    const alice = await t.join();
+    const bob = await t.join();
+    alice.type('Main.java', 0, 0, 'remove me\n');
+    await until(() => bob.text('Main.java')!.startsWith('remove me'));
+
+    bob.transport.goOffline();
+    bob.type('Main.java', 0, 'remove me\n'.length, '');
+    await sleep(40);
+    bob.transport.goOnline();
+    await until(() => alice.text('Main.java') === STARTER_MAIN);
+
+    assert.strictEqual(alice.text('Main.java'), STARTER_MAIN);
+    t.stopAll();
+});
+
+test('stopping sends what was typed but not sent yet', async () => {
+    const t = team({ minSendIntervalMs: 2000 });
+    const alice = await t.join();
+    const bob = await t.join();
+    await sleep(200);
+
+    alice.type('Main.java', 0, 0, 'first ');     // goes at once
+    alice.type('Main.java', 0, 0, 'second ');    // would wait out the interval
+    alice.doc.stop();
+    await until(() => bob.text('Main.java')!.startsWith('second first '));
+
+    assert.strictEqual(bob.text('Main.java'), 'second first ' + STARTER_MAIN);
+    t.stopAll();
+});
+
+test('a file name that points outside the lab is dropped', async () => {
+    const t = team();
+    const alice = await t.join();
+    const update = (() => {
+        const Y = require('yjs');
+        const doc = new Y.Doc();
+        doc.getText('text').insert(0, 'evil');
+        doc.getMap('meta').set('created', true);
+        return Y.encodeStateAsUpdate(doc);
+    })();
+
+    t.hub.inject(seal(t.key, encode(KIND_UPDATE, [{ name: '../outside.java', data: update }, { name: 'notes.md', data: update }])));
+    await sleep(40);
+
+    assert.deepStrictEqual(alice.doc.fileNames().sort(), ['Main.java', 'Util.java']);
     t.stopAll();
 });

@@ -21,6 +21,11 @@ return new class extends Migration
             $table->timestamp('team_started_at');
             $table->string('topic', 64)->unique();
             $table->text('key');
+            // Goes up each time the channel and key are replaced (a teammate was removed), so
+            // the teammates' extensions know to fetch the new ones
+            $table->unsignedInteger('rotation')->default(0);
+            // Total length of the stored edits, kept as they come so a size check reads one number
+            $table->unsignedBigInteger('payload_chars')->default(0);
             $table->timestamps();
 
             $table->unique(['group_id', 'lab_id', 'team_started_at']);

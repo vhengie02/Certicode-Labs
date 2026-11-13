@@ -1,4 +1,6 @@
+import { createHash } from 'crypto';
 import * as Y from 'yjs';
+import { isShareableName } from './names';
 import { open, seal } from './seal';
 import { EditorPort, LOCAL, REMOTE, TextBinding } from './textBinding';
 import { DocStore, Transport } from './transport';
@@ -22,6 +24,13 @@ export interface TeamDocOptions {
      * they wrote count as this student's in lineStats().
      */
     ownClientIds?: number[];
+    /**
+     * How often to check with the teammates and the store that nothing was missed: a message
+     * the channel lost, or one too big to go over it.
+     */
+    repairIntervalMs?: number;
+    /** Longest message sent over the channel; bigger edits go through the store only. */
+    maxMessageChars?: number;
 }
 
 /** Lines of one file credited to this student, by who typed the characters on them. */
@@ -58,9 +67,16 @@ export class TeamDoc {
     private readonly storeIntervalMs: number;
     private readonly compactAfter: number;
     private readonly helloJitterMs: number;
+    private readonly repairIntervalMs: number;
+    private readonly maxMessageChars: number;
 
     private sendTimer?: ReturnType<typeof setTimeout>;
     private storeTimer?: ReturnType<typeof setTimeout>;
+    private repairTimer?: ReturnType<typeof setInterval>;
+    /** Hellos answered lately, so the same one arriving from several teammates is answered once. */
+    private readonly answered = new Map<string, number>();
+    /** Goes up with every change to any file, from here or from a teammate. */
+    private version = 0;
     private lastSentAt = 0;
     private lastLoadedId = 0;
     private storedSinceCompaction = 0;
@@ -71,6 +87,9 @@ export class TeamDoc {
         this.storeIntervalMs = options.storeIntervalMs ?? 5000;
         this.compactAfter = options.compactAfter ?? 200;
         this.helloJitterMs = options.helloJitterMs ?? 300;
+        this.repairIntervalMs = options.repairIntervalMs ?? 60000;
+        // Supabase refuses messages over 256 KB on the Free plan; the sealed form is base64
+        this.maxMessageChars = options.maxMessageChars ?? 200_000;
     }
 
     /**
@@ -102,6 +121,14 @@ export class TeamDoc {
         this.applyStored(stored);
         if (!this.stopped) {
             this.options.transport.connect();
+            // Now and then: say what we have, so a teammate answers what a lost message left
+            // out, and pick up from the store what was too big for the channel
+            this.repairTimer = setInterval(() => {
+                this.sendHello(KIND_HELLO_BACK);
+                void this.pullStored();
+            }, this.repairIntervalMs);
+            // Never the reason a process stays up
+            (this.repairTimer as { unref?: () => void }).unref?.();
         }
     }
 
@@ -211,10 +238,16 @@ export class TeamDoc {
     }
 
     public stop(): void {
-        this.stopped = true;
+        if (this.stopped) { return; }
+        // What was typed but is still waiting out the send interval goes now
         if (this.sendTimer) { clearTimeout(this.sendTimer); }
+        this.sendTimer = undefined;
+        this.sendNow();
+
+        this.stopped = true;
         if (this.storeTimer) { clearTimeout(this.storeTimer); }
-        this.sendTimer = this.storeTimer = undefined;
+        if (this.repairTimer) { clearInterval(this.repairTimer); }
+        this.storeTimer = this.repairTimer = undefined;
         this.options.transport.close();
         for (const file of this.files.values()) {
             file.binding?.dispose();
@@ -230,6 +263,7 @@ export class TeamDoc {
         if (!file) {
             const created: SharedFile = { doc: new Y.Doc(), exists: false };
             created.doc.on('update', (update: Uint8Array, origin: unknown) => {
+                this.version++;
                 if (origin !== REMOTE && !this.stopped) {
                     this.queue(this.outbox, name, update);
                     this.queue(this.unsaved, name, update);
@@ -271,6 +305,8 @@ export class TeamDoc {
     /** Edits from a teammate or the store. Anything that isn't a well-formed edit is dropped. */
     private applyEntries(entries: Entry[]): void {
         for (const entry of entries) {
+            // A name that could point outside the lab, or isn't code, is never kept
+            if (!isShareableName(entry.name)) { continue; }
             try {
                 const probe = new Y.Doc();
                 Y.applyUpdate(probe, entry.data);
@@ -298,48 +334,119 @@ export class TeamDoc {
 
     private handleMessage(message: string): void {
         if (this.stopped) { return; }
-        const plain = open(this.options.key, message);
-        const decoded = plain && decode(plain);
-        if (!decoded) { return; }
+        // Anything can arrive on the channel; nothing in it may break the editor
+        try {
+            const plain = open(this.options.key, message);
+            const decoded = plain && decode(plain);
+            if (!decoded) { return; }
 
-        if (decoded.kind === KIND_UPDATE || decoded.kind === KIND_ANSWER) {
-            this.applyEntries(decoded.entries);
-            return;
-        }
-
-        // A teammate (re)connected and says what they have. Send what they lack, after a short
-        // random wait so every teammate's answer doesn't land at once. On a first hello, also
-        // say what we have, so they send back what we lack (edits they made while offline).
-        const wantsOurs = decoded.kind === KIND_HELLO;
-        setTimeout(() => {
-            if (this.stopped) { return; }
-            const theirs = new Map(decoded.entries.map(entry => [entry.name, entry.data]));
-            const missing: Entry[] = [];
-            for (const [name, file] of this.files) {
-                const full = this.fullState(file);
-                const known = theirs.get(name);
-                let data = full;
-                try {
-                    if (known) { data = Y.diffUpdate(full, known); }
-                } catch {
-                    data = full;
-                }
-                // An update with no content is two zero bytes
-                if (data.length > 2) { missing.push({ name, data }); }
+            if (decoded.kind === KIND_UPDATE || decoded.kind === KIND_ANSWER) {
+                this.applyEntries(decoded.entries);
+                return;
             }
-            if (missing.length > 0) { this.send(KIND_ANSWER, missing); }
-            if (wantsOurs) { this.sendHello(KIND_HELLO_BACK); }
-        }, Math.floor(Math.random() * this.helloJitterMs));
+
+            // A teammate says what they have: on connecting (HELLO), in reply to that, or now and
+            // then (HELLO_BACK). Answer only for files whose content differs, after a short random
+            // wait so teammates' answers don't all land at once. A first HELLO also gets ours, so
+            // they send what we lack (edits they made while offline). A HELLO_BACK gets no hello,
+            // so this never loops.
+            // The same hello is answered once, unless our own files changed since
+            const helloId = createHash('sha256').update(plain).digest('hex') + ':' + this.version;
+            const now = Date.now();
+            for (const [id, at] of this.answered) { if (now - at > 3000) { this.answered.delete(id); } }
+            if (this.answered.has(helloId)) { return; }
+            this.answered.set(helloId, now);
+
+            const wantsOurs = decoded.kind === KIND_HELLO;
+            setTimeout(() => {
+                if (this.stopped) { return; }
+                try {
+                    this.answer(decoded.entries);
+                } catch {
+                    // A file we can't diff; the next repair tries again
+                }
+                if (wantsOurs) { this.sendHello(KIND_HELLO_BACK); }
+            }, Math.floor(Math.random() * this.helloJitterMs));
+        } catch {
+            // Dropped
+        }
     }
 
+    /** Send a teammate what they lack, given what their hello says they have. */
+    private answer(entries: Entry[]): void {
+        const theirs = new Map<string, { hash: Buffer; vector: Uint8Array }>();
+        for (const entry of entries) {
+            if (entry.data.length >= 32) {
+                theirs.set(entry.name, { hash: Buffer.from(entry.data.subarray(0, 32)), vector: entry.data.subarray(32) });
+            }
+        }
+
+        const missing: Entry[] = [];
+        for (const [name, file] of this.files) {
+            const { full, hash } = this.stateOf(file);
+            const known = theirs.get(name);
+            if (known && known.hash.equals(hash)) { continue; }
+            let data = full;
+            try {
+                if (known) { data = Y.diffUpdate(full, known.vector); }
+            } catch {
+                data = full;
+            }
+            // Two bytes is an update with nothing in it: they have all we have, and will send
+            // us what we lack when they answer our hello
+            if (data.length > 2) { missing.push({ name, data }); }
+        }
+        if (missing.length > 0) { this.send(KIND_ANSWER, missing); }
+    }
+
+    /**
+     * A file's whole state, and a fingerprint of its content: what was inserted (the state
+     * vector), the text as it stands (so deletions count) and whether it exists. Two teammates
+     * with the same fingerprint have nothing to send each other for that file.
+     */
+    private stateOf(file: SharedFile): { full: Uint8Array; hash: Buffer } {
+        const full = this.fullState(file);
+        const doc = new Y.Doc();
+        Y.applyUpdate(doc, full);
+        const hash = createHash('sha256')
+            .update(Y.encodeStateVector(doc))
+            .update('\0')
+            .update(doc.getText('text').toString())
+            .update('\0')
+            .update(JSON.stringify(doc.getMap('meta').toJSON()))
+            .digest();
+        doc.destroy();
+        return { full, hash };
+    }
+
+    /** Per file: [fingerprint, 32 bytes][state vector]. */
     private sendHello(kind: number): void {
         if (this.stopped) { return; }
-        const have = [...this.files].map(([name, file]) => ({ name, data: Y.encodeStateVectorFromUpdate(this.fullState(file)) }));
+        const have = [...this.files].map(([name, file]) => {
+            const { full, hash } = this.stateOf(file);
+            return { name, data: new Uint8Array(Buffer.concat([hash, Buffer.from(Y.encodeStateVectorFromUpdate(full))])) };
+        });
         this.send(kind, have);
     }
 
     private send(kind: number, entries: Entry[]): void {
-        this.options.transport.send(seal(this.options.key, encode(kind, entries)));
+        const sealed = seal(this.options.key, encode(kind, entries));
+        if (sealed.length > this.maxMessageChars) {
+            // Too big for the channel: teammates get it from the store at the next repair
+            if (kind === KIND_UPDATE) { void this.storeNow(); }
+            return;
+        }
+        this.options.transport.send(sealed);
+    }
+
+    /** Edits teammates stored since we last looked. */
+    private async pullStored(): Promise<void> {
+        if (this.stopped) { return; }
+        try {
+            this.applyStored(await this.options.store.load(this.lastLoadedId));
+        } catch {
+            // The store is unreachable; the next repair tries again
+        }
     }
 
     private scheduleSend(): void {
@@ -407,13 +514,22 @@ export class TeamDoc {
             this.applyStored(await this.options.store.load(this.lastLoadedId));
             if (this.lastLoadedId === 0) { return; }
 
+            // The whole document, and the edits it holds that were waiting to be stored, taken at
+            // the same moment: edits typed while the store answers stay waiting, for the next write
             const whole = [...this.files].map(([name, file]) => ({ name, data: this.fullState(file) }));
-            const result = await this.options.store.append(base64(encode(KIND_UPDATE, whole)), { replacesThrough: this.lastLoadedId });
-            if ('id' in result) {
-                // The batch held the edits that were still waiting to be stored
-                this.unsaved.clear();
-                this.storedSinceCompaction = 0;
+            const folded = this.drain(this.unsaved);
+            let result;
+            try {
+                result = await this.options.store.append(base64(encode(KIND_UPDATE, whole)), { replacesThrough: this.lastLoadedId });
+            } catch {
+                result = { error: 'failed' as const };
             }
+            if ('id' in result) {
+                this.storedSinceCompaction = 0;
+            } else {
+                for (const entry of folded) { this.queue(this.unsaved, entry.name, entry.data); }
+            }
+            if (this.unsaved.size > 0) { this.scheduleStore(); }
         } catch {
             // The store is unreachable; the next write tries again
         }

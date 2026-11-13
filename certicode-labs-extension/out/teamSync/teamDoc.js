@@ -24,7 +24,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TeamDoc = void 0;
+const crypto_1 = require("crypto");
 const Y = __importStar(require("yjs"));
+const names_1 = require("./names");
 const seal_1 = require("./seal");
 const textBinding_1 = require("./textBinding");
 const wire_1 = require("./wire");
@@ -44,6 +46,10 @@ class TeamDoc {
         this.unsaved = new Map();
         this.addedListeners = [];
         this.removedListeners = [];
+        /** Hellos answered lately, so the same one arriving from several teammates is answered once. */
+        this.answered = new Map();
+        /** Goes up with every change to any file, from here or from a teammate. */
+        this.version = 0;
         this.lastSentAt = 0;
         this.lastLoadedId = 0;
         this.storedSinceCompaction = 0;
@@ -52,6 +58,9 @@ class TeamDoc {
         this.storeIntervalMs = options.storeIntervalMs ?? 5000;
         this.compactAfter = options.compactAfter ?? 200;
         this.helloJitterMs = options.helloJitterMs ?? 300;
+        this.repairIntervalMs = options.repairIntervalMs ?? 60000;
+        // Supabase refuses messages over 256 KB on the Free plan; the sealed form is base64
+        this.maxMessageChars = options.maxMessageChars ?? 200000;
     }
     /**
      * Load the stored document and join the teammates. `starter` goes in only if nothing is
@@ -80,6 +89,14 @@ class TeamDoc {
         this.applyStored(stored);
         if (!this.stopped) {
             this.options.transport.connect();
+            // Now and then: say what we have, so a teammate answers what a lost message left
+            // out, and pick up from the store what was too big for the channel
+            this.repairTimer = setInterval(() => {
+                this.sendHello(wire_1.KIND_HELLO_BACK);
+                void this.pullStored();
+            }, this.repairIntervalMs);
+            // Never the reason a process stays up
+            this.repairTimer.unref?.();
         }
     }
     /** Names of the files the team has, without the ones a teammate deleted. */
@@ -194,14 +211,23 @@ class TeamDoc {
         await this.storeNow();
     }
     stop() {
-        this.stopped = true;
+        if (this.stopped) {
+            return;
+        }
+        // What was typed but is still waiting out the send interval goes now
         if (this.sendTimer) {
             clearTimeout(this.sendTimer);
         }
+        this.sendTimer = undefined;
+        this.sendNow();
+        this.stopped = true;
         if (this.storeTimer) {
             clearTimeout(this.storeTimer);
         }
-        this.sendTimer = this.storeTimer = undefined;
+        if (this.repairTimer) {
+            clearInterval(this.repairTimer);
+        }
+        this.storeTimer = this.repairTimer = undefined;
         this.options.transport.close();
         for (const file of this.files.values()) {
             file.binding?.dispose();
@@ -216,6 +242,7 @@ class TeamDoc {
         if (!file) {
             const created = { doc: new Y.Doc(), exists: false };
             created.doc.on('update', (update, origin) => {
+                this.version++;
                 if (origin !== textBinding_1.REMOTE && !this.stopped) {
                     this.queue(this.outbox, name, update);
                     this.queue(this.unsaved, name, update);
@@ -261,6 +288,10 @@ class TeamDoc {
     /** Edits from a teammate or the store. Anything that isn't a well-formed edit is dropped. */
     applyEntries(entries) {
         for (const entry of entries) {
+            // A name that could point outside the lab, or isn't code, is never kept
+            if (!(0, names_1.isShareableName)(entry.name)) {
+                continue;
+            }
             try {
                 const probe = new Y.Doc();
                 Y.applyUpdate(probe, entry.data);
@@ -291,59 +322,140 @@ class TeamDoc {
         if (this.stopped) {
             return;
         }
-        const plain = (0, seal_1.open)(this.options.key, message);
-        const decoded = plain && (0, wire_1.decode)(plain);
-        if (!decoded) {
-            return;
-        }
-        if (decoded.kind === wire_1.KIND_UPDATE || decoded.kind === wire_1.KIND_ANSWER) {
-            this.applyEntries(decoded.entries);
-            return;
-        }
-        // A teammate (re)connected and says what they have. Send what they lack, after a short
-        // random wait so every teammate's answer doesn't land at once. On a first hello, also
-        // say what we have, so they send back what we lack (edits they made while offline).
-        const wantsOurs = decoded.kind === wire_1.KIND_HELLO;
-        setTimeout(() => {
-            if (this.stopped) {
+        // Anything can arrive on the channel; nothing in it may break the editor
+        try {
+            const plain = (0, seal_1.open)(this.options.key, message);
+            const decoded = plain && (0, wire_1.decode)(plain);
+            if (!decoded) {
                 return;
             }
-            const theirs = new Map(decoded.entries.map(entry => [entry.name, entry.data]));
-            const missing = [];
-            for (const [name, file] of this.files) {
-                const full = this.fullState(file);
-                const known = theirs.get(name);
-                let data = full;
+            if (decoded.kind === wire_1.KIND_UPDATE || decoded.kind === wire_1.KIND_ANSWER) {
+                this.applyEntries(decoded.entries);
+                return;
+            }
+            // A teammate says what they have: on connecting (HELLO), in reply to that, or now and
+            // then (HELLO_BACK). Answer only for files whose content differs, after a short random
+            // wait so teammates' answers don't all land at once. A first HELLO also gets ours, so
+            // they send what we lack (edits they made while offline). A HELLO_BACK gets no hello,
+            // so this never loops.
+            // The same hello is answered once, unless our own files changed since
+            const helloId = (0, crypto_1.createHash)('sha256').update(plain).digest('hex') + ':' + this.version;
+            const now = Date.now();
+            for (const [id, at] of this.answered) {
+                if (now - at > 3000) {
+                    this.answered.delete(id);
+                }
+            }
+            if (this.answered.has(helloId)) {
+                return;
+            }
+            this.answered.set(helloId, now);
+            const wantsOurs = decoded.kind === wire_1.KIND_HELLO;
+            setTimeout(() => {
+                if (this.stopped) {
+                    return;
+                }
                 try {
-                    if (known) {
-                        data = Y.diffUpdate(full, known);
-                    }
+                    this.answer(decoded.entries);
                 }
                 catch {
-                    data = full;
+                    // A file we can't diff; the next repair tries again
                 }
-                // An update with no content is two zero bytes
-                if (data.length > 2) {
-                    missing.push({ name, data });
+                if (wantsOurs) {
+                    this.sendHello(wire_1.KIND_HELLO_BACK);
                 }
-            }
-            if (missing.length > 0) {
-                this.send(wire_1.KIND_ANSWER, missing);
-            }
-            if (wantsOurs) {
-                this.sendHello(wire_1.KIND_HELLO_BACK);
-            }
-        }, Math.floor(Math.random() * this.helloJitterMs));
+            }, Math.floor(Math.random() * this.helloJitterMs));
+        }
+        catch {
+            // Dropped
+        }
     }
+    /** Send a teammate what they lack, given what their hello says they have. */
+    answer(entries) {
+        const theirs = new Map();
+        for (const entry of entries) {
+            if (entry.data.length >= 32) {
+                theirs.set(entry.name, { hash: Buffer.from(entry.data.subarray(0, 32)), vector: entry.data.subarray(32) });
+            }
+        }
+        const missing = [];
+        for (const [name, file] of this.files) {
+            const { full, hash } = this.stateOf(file);
+            const known = theirs.get(name);
+            if (known && known.hash.equals(hash)) {
+                continue;
+            }
+            let data = full;
+            try {
+                if (known) {
+                    data = Y.diffUpdate(full, known.vector);
+                }
+            }
+            catch {
+                data = full;
+            }
+            // Two bytes is an update with nothing in it: they have all we have, and will send
+            // us what we lack when they answer our hello
+            if (data.length > 2) {
+                missing.push({ name, data });
+            }
+        }
+        if (missing.length > 0) {
+            this.send(wire_1.KIND_ANSWER, missing);
+        }
+    }
+    /**
+     * A file's whole state, and a fingerprint of its content: what was inserted (the state
+     * vector), the text as it stands (so deletions count) and whether it exists. Two teammates
+     * with the same fingerprint have nothing to send each other for that file.
+     */
+    stateOf(file) {
+        const full = this.fullState(file);
+        const doc = new Y.Doc();
+        Y.applyUpdate(doc, full);
+        const hash = (0, crypto_1.createHash)('sha256')
+            .update(Y.encodeStateVector(doc))
+            .update('\0')
+            .update(doc.getText('text').toString())
+            .update('\0')
+            .update(JSON.stringify(doc.getMap('meta').toJSON()))
+            .digest();
+        doc.destroy();
+        return { full, hash };
+    }
+    /** Per file: [fingerprint, 32 bytes][state vector]. */
     sendHello(kind) {
         if (this.stopped) {
             return;
         }
-        const have = [...this.files].map(([name, file]) => ({ name, data: Y.encodeStateVectorFromUpdate(this.fullState(file)) }));
+        const have = [...this.files].map(([name, file]) => {
+            const { full, hash } = this.stateOf(file);
+            return { name, data: new Uint8Array(Buffer.concat([hash, Buffer.from(Y.encodeStateVectorFromUpdate(full))])) };
+        });
         this.send(kind, have);
     }
     send(kind, entries) {
-        this.options.transport.send((0, seal_1.seal)(this.options.key, (0, wire_1.encode)(kind, entries)));
+        const sealed = (0, seal_1.seal)(this.options.key, (0, wire_1.encode)(kind, entries));
+        if (sealed.length > this.maxMessageChars) {
+            // Too big for the channel: teammates get it from the store at the next repair
+            if (kind === wire_1.KIND_UPDATE) {
+                void this.storeNow();
+            }
+            return;
+        }
+        this.options.transport.send(sealed);
+    }
+    /** Edits teammates stored since we last looked. */
+    async pullStored() {
+        if (this.stopped) {
+            return;
+        }
+        try {
+            this.applyStored(await this.options.store.load(this.lastLoadedId));
+        }
+        catch {
+            // The store is unreachable; the next repair tries again
+        }
     }
     scheduleSend() {
         if (this.sendTimer || this.stopped) {
@@ -420,12 +532,27 @@ class TeamDoc {
             if (this.lastLoadedId === 0) {
                 return;
             }
+            // The whole document, and the edits it holds that were waiting to be stored, taken at
+            // the same moment: edits typed while the store answers stay waiting, for the next write
             const whole = [...this.files].map(([name, file]) => ({ name, data: this.fullState(file) }));
-            const result = await this.options.store.append(base64((0, wire_1.encode)(wire_1.KIND_UPDATE, whole)), { replacesThrough: this.lastLoadedId });
+            const folded = this.drain(this.unsaved);
+            let result;
+            try {
+                result = await this.options.store.append(base64((0, wire_1.encode)(wire_1.KIND_UPDATE, whole)), { replacesThrough: this.lastLoadedId });
+            }
+            catch {
+                result = { error: 'failed' };
+            }
             if ('id' in result) {
-                // The batch held the edits that were still waiting to be stored
-                this.unsaved.clear();
                 this.storedSinceCompaction = 0;
+            }
+            else {
+                for (const entry of folded) {
+                    this.queue(this.unsaved, entry.name, entry.data);
+                }
+            }
+            if (this.unsaved.size > 0) {
+                this.scheduleStore();
             }
         }
         catch {

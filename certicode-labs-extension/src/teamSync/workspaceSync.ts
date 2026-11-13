@@ -14,21 +14,17 @@ export interface SyncHost {
      * Its line endings are made LF. Undefined when the file can't be opened.
      */
     openDocument(name: string, contentIfMissing: string): Promise<HostDocument | undefined>;
+    /** A lab file's current text (the open document's, else the file on disk), with LF endings; undefined if it isn't there. */
+    readText(name: string): Promise<string | undefined>;
+    /** Keep a copy of the student's own version of a file, outside what is shared. */
+    writeBackup(name: string, content: string): Promise<void>;
     deleteFile(name: string): Promise<void>;
 }
 
-/** Files that are notes or data rather than code; the same list as LabSession::isCodeFile. */
-const NOT_CODE = /\.(md|txt|json|env|log|lock|ya?ml)$/i;
+const toLf = (text: string) => text.replace(/\r\n?/g, '\n');
 
-/**
- * Whether a teammate may share a file under this name: a code file, by a plain relative path
- * inside the lab folder. Names come from teammates, so nothing may point outside it.
- */
-export function isShareableName(name: string): boolean {
-    if (typeof name !== 'string' || name.length === 0 || name.length > 200 || NOT_CODE.test(name)) { return false; }
-    if (name.startsWith('/') || name.includes('\\') || name.includes(':') || name.includes('\0')) { return false; }
-    return name.split('/').every(part => part !== '' && part !== '.' && part !== '..' && !part.startsWith('.'));
-}
+export { isShareableName } from './names';
+import { isShareableName } from './names';
 
 export interface WorkspaceSyncOptions {
     /** A teammate's edit is saved to disk this long after it lands, unless the user has unsaved edits of their own. */
@@ -52,6 +48,12 @@ export class WorkspaceSync {
     private readonly saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
     /** Lines deleted by the student in files that were since closed or deleted. */
     private removedLinesDeleted = 0;
+    /** The lab's starter code, per file: a copy of just that is nothing of the student's own. */
+    private readonly starterText = new Map<string, string>();
+    /** What a file being opened is being set to, while that edit is on its way. */
+    private readonly preparingTargets = new Map<string, string>();
+    private readonly backupListeners: ((name: string) => void)[] = [];
+    private readonly undoListeners: ((name: string) => void)[] = [];
     private readonly autosaveMs: number;
     private readonly flushTimeoutMs: number;
     private stopped = false;
@@ -65,7 +67,16 @@ export class WorkspaceSync {
     public async start(starter: { name: string; content: string }[]): Promise<void> {
         this.doc.onFileAdded(name => { void this.attach(name); });
         this.doc.onFileRemoved(name => { void this.detach(name, true); });
-        await this.doc.start(starter.filter(file => isShareableName(file.name)));
+
+        // A team document that is new is seeded from this student's files as they are now, not
+        // from the lab's starter code: the attempt may be under way, and its work is in them
+        const shareable = starter.filter(file => isShareableName(file.name));
+        const seed: { name: string; content: string }[] = [];
+        for (const file of shareable) {
+            this.starterText.set(file.name, toLf(file.content));
+            seed.push({ name: file.name, content: (await this.host.readText(file.name)) ?? file.content });
+        }
+        await this.doc.start(seed);
         for (const name of this.doc.fileNames()) {
             await this.attach(name);
         }
@@ -83,7 +94,7 @@ export class WorkspaceSync {
      * Every change event of a lab document goes through here, before anything else looks at
      * it. True when the event was a teammate's edit (or setup): not the student's typing.
      */
-    public handleChange(name: string, changes: LocalChange[]): boolean {
+    public handleChange(name: string, changes: LocalChange[], undoRedo = false): boolean {
         if (this.stopped) { return false; }
         if (this.preparing.has(name)) { return true; }
 
@@ -95,8 +106,28 @@ export class WorkspaceSync {
             this.scheduleSave(name);
         } else {
             this.locallyDirty.add(name);
+            // VS Code's undo also takes back teammates' edits that landed in this editor
+            if (undoRedo && binding.lastChangeRemovedOthers) {
+                for (const listener of this.undoListeners) { listener(name); }
+            }
         }
         return remote;
+    }
+
+    /** A student's own copy of a file was replaced by the team's, and kept as a backup. */
+    public onBackup(listener: (name: string) => void): void { this.backupListeners.push(listener); }
+
+    /** The student's Undo or Redo removed text a teammate wrote. */
+    public onUndoOthers(listener: (name: string) => void): void { this.undoListeners.push(listener); }
+
+    /** The student renamed a file in the lab folder: the team gets it under the new name. */
+    public fileRenamed(oldName: string, newName: string, content: string): void {
+        if (this.stopped) { return; }
+        if (this.bindings.has(oldName)) {
+            void this.detach(oldName, false);
+            this.doc.deleteFile(oldName);
+        }
+        this.fileCreated(newName, content);
     }
 
     /** The student saved a file: a teammate's later edits may be saved for them again. */
@@ -140,14 +171,24 @@ export class WorkspaceSync {
         await this.doc.flush();
     }
 
-    public stop(): void {
-        if (this.stopped) { return; }
+    /**
+     * Stop sharing. Returns, per file, the text a teammate's edit that is still on its way to
+     * the editor will leave: when that edit lands, it is not the student's typing.
+     */
+    public stop(): Map<string, string> {
+        const inFlight = new Map(this.preparingTargets);
+        for (const [name, binding] of this.bindings) {
+            const target = binding.inFlightTarget();
+            if (target !== undefined) { inFlight.set(name, target); }
+        }
+        if (this.stopped) { return inFlight; }
         this.stopped = true;
         for (const timer of this.saveTimers.values()) { clearTimeout(timer); }
         this.saveTimers.clear();
         this.doc.stop();
         this.bindings.clear();
         this.documents.clear();
+        return inFlight;
     }
 
     private async attach(name: string): Promise<void> {
@@ -159,6 +200,7 @@ export class WorkspaceSync {
 
             // The team's text wins: the file shows it before it is bound. The check and the bind
             // happen together, so no teammate's edit can arrive in between.
+            let backedUp = false;
             for (let attempt = 0; attempt < 20; attempt++) {
                 const shared = this.doc.text(name) ?? '';
                 const shown = document.getText();
@@ -167,11 +209,19 @@ export class WorkspaceSync {
                     this.bindings.set(name, this.doc.bind(name, document));
                     return;
                 }
+                // The student's own version, if it is more than the starter code, is kept
+                if (!backedUp && shown.trim() !== '' && shown !== this.starterText.get(name)) {
+                    backedUp = true;
+                    await this.host.writeBackup(name, shown);
+                    for (const listener of this.backupListeners) { listener(name); }
+                }
+                this.preparingTargets.set(name, shared);
                 await document.replace(0, shown.length, shared);
                 if (this.stopped) { return; }
             }
         } finally {
             this.preparing.delete(name);
+            if (!this.stopped) { this.preparingTargets.delete(name); }
         }
     }
 
