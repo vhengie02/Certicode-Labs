@@ -43,6 +43,14 @@ export const files = new Map<string, string>();
 /** Created and modified times by path. A file not listed here is dated 0. */
 export const fileTimes = new Map<string, { ctime: number; mtime: number }>();
 
+/** Who listens for the VS Code window gaining or losing OS focus. */
+const windowStateListeners: ((state: { focused: boolean }) => void)[] = [];
+
+/** Tell every listener the VS Code window gained or lost OS focus, as VS Code would. */
+export function setWindowFocused(focused: boolean) {
+    [...windowStateListeners].forEach(listener => listener({ focused }));
+}
+
 class RelativePattern {
     constructor(public readonly base: unknown, public readonly pattern: string) {}
 }
@@ -62,6 +70,10 @@ export const vscodeStub: any = {
         showErrorMessage: record('error'),
         showTextDocument: async () => undefined,
         activeTextEditor: undefined,
+        onDidChangeWindowState: (listener: (state: { focused: boolean }) => void) => {
+            windowStateListeners.push(listener);
+            return { dispose: () => { windowStateListeners.splice(windowStateListeners.indexOf(listener), 1); } };
+        },
     },
     workspace: {
         workspaceFolders: [{ uri: Uri.file('/workspace') }],

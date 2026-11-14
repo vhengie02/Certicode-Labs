@@ -40,7 +40,7 @@
                     @if ($step['done'])
                         <p class="mt-3 text-sm font-medium text-[#3ecf8e]">Done</p>
                     @else
-                        <a href="{{ $step['href'] }}" @if (!empty($step['download'])) download @endif
+                        <a href="{{ $step['href'] }}" @if (is_string($step['download'] ?? null)) download="{{ $step['download'] }}" @elseif (!empty($step['download'])) download @endif
                            class="mt-3 inline-block text-sm font-semibold text-[#3ecf8e] hover:underline underline-offset-2">{{ $step['action'] }} &rarr;</a>
                     @endif
                 </div>

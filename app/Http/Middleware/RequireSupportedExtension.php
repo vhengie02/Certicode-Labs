@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\ExtensionDownload;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -35,7 +36,7 @@ class RequireSupportedExtension
                 'error' => 'extension_outdated',
                 'message' => 'This version of the Certicode extension is no longer supported. Install the latest version to continue.',
                 'min_version' => $minVersion,
-                'download_url' => asset(config('services.vscode_extension.download_path')),
+                'download_url' => ExtensionDownload::url(),
             ], 426);
         }
 

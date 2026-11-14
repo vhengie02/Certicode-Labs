@@ -7,6 +7,7 @@ use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\SchoolClass;
 use App\Models\User;
+use App\Support\ExtensionDownload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -74,7 +75,7 @@ class DashboardController extends Controller
             // Getting-started steps tick themselves off from real activity
             'setup' => [
                 ['title' => 'Join a class', 'body' => 'Ask your instructor for the class code and enter it on the Classes page, or accept an invitation.', 'done' => $classCount > 0, 'action' => 'Enter a class code', 'href' => route('classes.index').'#join_class_code'],
-                ['title' => 'Install the VS Code extension', 'body' => 'Labs run inside VS Code. Install the Certicode extension and sign in with this account.', 'done' => $user->labSessions()->exists(), 'action' => 'Download the extension', 'href' => asset('downloads/certicode-labs.vsix'), 'download' => true],
+                ['title' => 'Install the VS Code extension', 'body' => 'Labs run inside VS Code. Install the Certicode extension and sign in with this account.', 'done' => $user->labSessions()->exists(), 'action' => 'Download the extension', 'href' => ExtensionDownload::url(), 'download' => ExtensionDownload::filename()],
                 ['title' => 'Take your first lab', 'body' => 'Start a lab from your class. Your camera is checked while you work, and your code is graded when you submit.', 'done' => $hasCompletedLab, 'action' => 'Open my classes', 'href' => route('classes.index')],
             ],
             'invitations' => $user->invitedClasses()->count(),
