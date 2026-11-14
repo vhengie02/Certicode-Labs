@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-14
+
+- The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.10.1, and students on older builds are now told to update.
+
 ## 2026-11-13
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.

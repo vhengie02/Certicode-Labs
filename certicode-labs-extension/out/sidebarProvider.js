@@ -71,6 +71,8 @@ const INSERT_RUN_GAP_MS = 3000;
 const EXTERNAL_CHANGE_MIN_LINES = 5;
 // Long enough for the editor's own save event to arrive before the file on disk is compared.
 const DISK_CHECK_DELAY_MS = 1000;
+// A blur can reach the extension a moment after our modal dialog closes; it is still the dialog's
+const MODAL_FOCUS_GRACE_MS = 1000;
 // Code files sent besides the lab's starter files. Only source types: notes, data and config can hold secrets.
 const STUDENT_FILE_GLOB = '**/*.{c,cc,cpp,cxx,h,hpp,java,kt,py,js,jsx,ts,tsx,go,rs,cs,php,rb,swift,sh,html,css,sql}';
 const STUDENT_FILE_EXCLUDE = '**/{node_modules,vendor,.git,build,out,dist,target,bin,obj,__pycache__,venv,.venv,.certicode,.vscode,.idea}/**';
@@ -120,6 +122,10 @@ class SidebarProvider {
         this._keystrokeTimestamps = [];
         this._totalKeystrokes = 0;
         this._currentWpm = 0;
+        /** How many of our own modal dialogs are open; each one takes OS focus from the window. */
+        this._openModalDialogs = 0;
+        /** When our last modal dialog closed, in ms since epoch. */
+        this._lastModalClosedAt = 0;
         // Feature 11: Continuous Idle Detection & Overall Session WPM
         this._lastActivityTime = Date.now();
         this._lastIdleAlertMinutes = 0;
@@ -249,7 +255,7 @@ class SidebarProvider {
         const origin = url.origin;
         const trusted = this._globalState.get(TRUSTED_BACKENDS_KEY, []);
         if (!trusted.includes(origin)) {
-            const choice = await vscode.window.showWarningMessage(`Connect to the CertiCode lab server at ${origin}? It will be able to create files in your workspace and receive your code and activity.`, { modal: true }, 'Connect');
+            const choice = await this.showModalWarning(`Connect to the CertiCode lab server at ${origin}? It will be able to create files in your workspace and receive your code and activity.`, 'Connect');
             if (choice !== 'Connect') {
                 return undefined;
             }
@@ -1055,7 +1061,7 @@ class SidebarProvider {
         }
         if (fromElsewhere.length > 0) {
             const names = fromElsewhere.map(f => f.name).join(', ');
-            const choice = await vscode.window.showWarningMessage(`This folder already has ${names} from another lab or attempt. Replace ${fromElsewhere.length === 1 ? 'it' : 'them'} with this lab's starter files? The current ${fromElsewhere.length === 1 ? 'copy is' : 'copies are'} saved in .certicode/previous first.`, { modal: true }, 'Replace files', 'Keep my files');
+            const choice = await this.showModalWarning(`This folder already has ${names} from another lab or attempt. Replace ${fromElsewhere.length === 1 ? 'it' : 'them'} with this lab's starter files? The current ${fromElsewhere.length === 1 ? 'copy is' : 'copies are'} saved in .certicode/previous first.`, 'Replace files', 'Keep my files');
             if (choice === 'Replace files') {
                 const backupRoot = vscode.Uri.joinPath(rootUri, '.certicode', 'previous', String(Date.now()));
                 for (const file of fromElsewhere) {
@@ -1509,12 +1515,30 @@ class SidebarProvider {
                 return;
             }
             if (!state.focused) {
+                // Our own modal dialog took focus (a native window on Windows): the student never left
+                if (this._openModalDialogs > 0 || Date.now() - this._lastModalClosedAt < MODAL_FOCUS_GRACE_MS) {
+                    return;
+                }
                 // OS Focus lost (switched away from VS Code)
                 this.sendTelemetry('focus_lost', {
                     timestamp: new Date().toISOString()
                 });
             }
         });
+    }
+    /**
+     * A modal warning dialog that is not counted as a focus loss. On Windows VS Code shows a
+     * modal dialog as a native OS window, so the editor window loses OS focus while it is open.
+     */
+    async showModalWarning(message, ...items) {
+        this._openModalDialogs++;
+        try {
+            return await vscode.window.showWarningMessage(message, { modal: true }, ...items);
+        }
+        finally {
+            this._openModalDialogs--;
+            this._lastModalClosedAt = Date.now();
+        }
     }
     /**
      * Feature 4 & 11: Record typing keystrokes and calculate overall session average WPM.
@@ -2402,7 +2426,7 @@ class SidebarProvider {
             vscode.window.showErrorMessage('No runnable code files found in workspace. Please create or open your solution file before submitting.');
             return;
         }
-        const confirm = await vscode.window.showWarningMessage('Submit Lab Solution: Are you sure you want to finalize your submission? This compiles, runs test cases, evaluates competencies, and completes your session.', { modal: true }, 'Yes, Submit');
+        const confirm = await this.showModalWarning('Submit Lab Solution: Are you sure you want to finalize your submission? This compiles, runs test cases, evaluates competencies, and completes your session.', 'Yes, Submit');
         if (confirm !== 'Yes, Submit') {
             return;
         }
@@ -2451,7 +2475,7 @@ class SidebarProvider {
     }
     async handleExit(confirmExit = true) {
         if (confirmExit) {
-            const confirm = await vscode.window.showWarningMessage('Are you sure you want to exit this workspace? Your attempt stays open: come back from the lab page to continue and submit before time runs out.', { modal: true }, 'Confirm Exit');
+            const confirm = await this.showModalWarning('Are you sure you want to exit this workspace? Your attempt stays open: come back from the lab page to continue and submit before time runs out.', 'Confirm Exit');
             if (confirm !== 'Confirm Exit') {
                 return;
             }

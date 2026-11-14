@@ -81,7 +81,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
   * **Suppression Rule B**: Ignores paste if content matches recent snippets from the active team chat.
   * **Clipboard Check**: Flags a remaining paste to the instructor panel, without interrupting the student, only if the inserted text is on the clipboard. These rules are deterministic; no AI reviews a paste.
   * **Large Insert Check**: Flags 100 or more characters of code that arrive without being typed or pasted, such as from an AI tool. Blocks that arrive within a few seconds count as one insert. Generated code and large snippets can also raise it, so the flag is medium severity.
-* **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches.
+* **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches and the extension's own modal dialogs (native windows on Windows).
 
 ### 6. Camera Presence Gate & Continuous Verification
 * **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor. Every way of starting a lab needs a recent pass, but detection runs in the browser and the server trusts the face count it reports. A student who crafts that request can pass the gate, so the check deters and doesn't prove presence.
@@ -241,7 +241,7 @@ php artisan schedule:work
 The companion extension enables students to code in their native VS Code editor with starter files, live task checklists, diff pill counters, and proctoring telemetry.
 
 ### Installing Pre-built VSIX
-The pre-compiled extension package (**v1.10.0**) is maintained in `public/downloads/certicode-labs.vsix`:
+The pre-compiled extension package (**v1.10.1**) is maintained in `public/downloads/certicode-labs.vsix`:
 
 ```bash
 code --install-extension public/downloads/certicode-labs.vsix --force
