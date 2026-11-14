@@ -3,6 +3,7 @@
 ## 2026-11-14
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.10.1, and students on older builds are now told to update.
+- The downloaded extension now carries its version in the file name, such as `certicode-labs-1.10.1.vsix`, so students can tell which build they have. This holds for every download link on the site and for the extension's own "Download update" button. The file on the server keeps the name `certicode-labs.vsix`, so older builds and saved links still work.
 
 ## 2026-11-13
 

@@ -23,6 +23,7 @@ use App\Services\CodeSimilarityService;
 use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
+use App\Support\ExtensionDownload;
 use App\Support\Realtime;
 use App\Support\TeamSync;
 use App\Support\WebcamSnapshot;
@@ -2078,7 +2079,7 @@ class LabSessionController extends Controller
             'extension_version' => $version ?: null,
             'extension_min_version' => $minVersion,
             'extension_outdated' => $version === null ? null : ($version === '' || version_compare($version, $minVersion, '<')),
-            'extension_download_url' => asset(config('services.vscode_extension.download_path')),
+            'extension_download_url' => ExtensionDownload::url(),
         ];
     }
 

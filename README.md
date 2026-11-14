@@ -257,6 +257,16 @@ npx tsc -p ./
 npx @vscode/vsce package -o ../public/downloads/certicode-labs.vsix
 ```
 
+### Releasing a New Version
+The file keeps the stable name `certicode-labs.vsix`, so old builds and bookmarks still find it, but students save it as `certicode-labs-<version>.vsix`. When you bump the version, change it in all of these, then rebuild the `.vsix`:
+
+- `certicode-labs-extension/package.json` and `package-lock.json` (`npm version <x.y.z> --no-git-tag-version`)
+- `latest_version` in `config/services.php`
+- the `filename` in the `Content-Disposition` header for `/downloads/certicode-labs.vsix` in `vercel.json`
+- `min_version` in `config/services.php` too, if every student should be told to update
+
+`ExtensionDownloadNameTest` fails if any of these, or the built `.vsix`, disagree.
+
 ---
 
 ## Automated Testing
