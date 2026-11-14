@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-14
+
+- The link in the instructor's "New submission" notification opens a styled page again. The submission arrives from the VS Code extension through `/api/...`, and on Vercel Laravel took `/api` as the site's base path for those requests, so the notification linked to `/api/sessions/{id}`. That page then loaded its stylesheet from `/api/build/...`, which doesn't exist, and showed raw HTML with a huge arrow icon. Vercel requests now reach Laravel without the `/api` prefix, so links built during them start at the site root. Notifications already sent with an `/api/...` link now open the normal, styled page.
+
 ## 2026-11-13
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.
