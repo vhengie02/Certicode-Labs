@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-15
+
+- Signing in or out no longer ends on "419 Page Expired". Signing in or out replaces the form token, and a session ends after two hours, so a sign-in page left open on a shared laptop, a second tab, or a second click on a slow sign-in sent an old token. The form is still refused, but the browser now goes back to a fresh copy of it with "That page was open too long, so it wasn't sent. Please try again." and what was typed, except passwords, filled back in. Signing out after the session already ended lands signed out. Signing out from an old tab while still signed in asks to sign out again. Requests that ask for JSON still get 419.
+- Sign-in, sign-up and the other account pages send each form once, so a second click while the first is still loading can't send the token the first one just replaced.
+
 ## 2026-11-13
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.

@@ -99,6 +99,27 @@
 
     <x-toast-region />
 
+    <script>
+        // Signing in swaps the CSRF token. A second click while a slow sign-in is still running
+        // posts the old one and ends signed out, so each form posts once. Back re-enables it.
+        (() => {
+            document.addEventListener('submit', (event) => {
+                const form = event.target;
+                if (event.defaultPrevented || !(form instanceof HTMLFormElement) || form.method !== 'post') {
+                    return;
+                }
+                if (form.dataset.submitted) {
+                    event.preventDefault();
+                    return;
+                }
+                form.dataset.submitted = '1';
+            });
+            window.addEventListener('pageshow', () => {
+                document.querySelectorAll('form[data-submitted]').forEach((form) => delete form.dataset.submitted);
+            });
+        })();
+    </script>
+
     @stack('scripts')
 </body>
 </html>
