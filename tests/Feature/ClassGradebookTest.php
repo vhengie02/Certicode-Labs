@@ -334,7 +334,9 @@ class ClassGradebookTest extends TestCase
 
         [$sheets, $path] = $this->export();
 
-        $this->assertSame('=HYPERLINK("http://evil.example","x")', $sheets['Gradebook'][1][0]);
+        // Where the name sorts depends on the database's collation: Postgres ignores the "="
+        $aliceRow = collect($sheets['Gradebook'])->firstWhere(1, 'alice.able@example.com');
+        $this->assertSame('=HYPERLINK("http://evil.example","x")', $aliceRow[0]);
         $this->assertSame('=1+1', $sheets['Gradebook'][0][2]);
         $this->assertSame('=cmd|calc', $sheets['Regrades'][1][7]);
 
