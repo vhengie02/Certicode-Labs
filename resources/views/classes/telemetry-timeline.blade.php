@@ -230,8 +230,18 @@
                                 </p>
                             @elseif($log->event_type === 'webcam_prelab_verification')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
-                                    Passed pre-lab camera verification.
+                                    Passed pre-lab camera verification{{ !empty($log->payload['low_light']) ? ' in a dim room' : '' }}.
+                                    @if(!empty($log->payload['has_picture']))
+                                        <a href="{{ route('camera-checks.picture', $log->id) }}" target="_blank" rel="noopener" class="text-indigo-400 hover:text-indigo-300 underline">View the picture it passed on</a>
+                                    @elseif(!empty($log->payload['picture_expired']))
+                                        <span class="text-slate-500">Its picture was removed after {{ config('app.snapshot_retention_days') }} days.</span>
+                                    @endif
                                 </p>
+                                @if(in_array(\App\Support\CameraCheckFrame::NEARLY_BLANK, $log->payload['frame_notes'] ?? [], true))
+                                    <p class="text-xs text-amber-300 leading-relaxed font-sans mt-1">
+                                        The picture is almost blank. Check that it shows the student.
+                                    </p>
+                                @endif
                             @elseif($log->event_type === 'vscode_disconnected')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     VS Code closed or disconnected.

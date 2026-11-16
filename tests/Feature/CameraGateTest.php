@@ -23,8 +23,6 @@ class CameraGateTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const CAMERA_FRAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
     private User $student;
 
     private Laboratory $laboratory;
@@ -87,7 +85,7 @@ class CameraGateTest extends TestCase
     public function test_a_camera_check_recorded_by_the_server_opens_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame()])
             ->assertOk();
 
         $this->start()->assertOk()->assertJsonStructure(['session_id', 'vscode_url']);
@@ -100,7 +98,7 @@ class CameraGateTest extends TestCase
     public function test_a_check_in_a_dim_room_is_recorded_as_low_light_with_its_face(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'low_light' => true, 'image_base64' => self::CAMERA_FRAME])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'low_light' => true, 'image_base64' => $this->cameraFrame()])
             ->assertOk();
 
         $this->start()->assertOk();
@@ -123,7 +121,7 @@ class CameraGateTest extends TestCase
     public function test_a_low_light_check_that_found_no_face_does_not_open_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 0, 'low_light' => true, 'image_base64' => self::CAMERA_FRAME])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 0, 'low_light' => true, 'image_base64' => $this->cameraFrame()])
             ->assertStatus(422)
             ->assertJson(['error' => 'no_face_detected']);
 
@@ -143,7 +141,7 @@ class CameraGateTest extends TestCase
     public function test_an_old_camera_check_does_not_open_the_lab(): void
     {
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame()])
             ->assertOk();
 
         $this->travel(11)->minutes();
@@ -154,7 +152,7 @@ class CameraGateTest extends TestCase
     private function check(int $faceCount, array $extra = [])
     {
         return $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => $faceCount, 'image_base64' => self::CAMERA_FRAME] + $extra);
+            ->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", ['status' => 'granted', 'face_count' => $faceCount, 'image_base64' => $this->cameraFrame()] + $extra);
     }
 
     private function failThreeTimes(): void
@@ -186,7 +184,7 @@ class CameraGateTest extends TestCase
         $this->failThreeTimes();
 
         $this->actingAs($this->student)
-            ->postJson("/v1/sessions/{$session->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
+            ->postJson("/v1/sessions/{$session->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame()])
             ->assertStatus(423);
     }
 
@@ -226,7 +224,7 @@ class CameraGateTest extends TestCase
         $otherLab = Laboratory::create(['module_id' => $this->laboratory->module_id, 'title' => 'Arrays', 'description' => 'Sort.', 'time_limit' => 45, 'is_group_lab' => false, 'tasks_definition' => []]);
 
         $this->actingAs($this->student)
-            ->postJson("/v1/labs/{$otherLab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME])
+            ->postJson("/v1/labs/{$otherLab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame()])
             ->assertOk();
     }
 
