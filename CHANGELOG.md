@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-16
+
+- Each class has a gradebook, opened from the class page: one row per enrolled student, one column per lab in syllabus order. A lab's grade is the student's best completed attempt, with the instructor's regrade in place of the AI score, as on the results page. A regraded grade is marked, with the AI score, who regraded it and why. A grade still waiting for the instructor's review shows as provisional. Cells without a grade say "In progress" or "Timed out", or stay empty for a lab never opened. Each grade opens its attempt.
+- The gradebook also shows each student's average over all the class's labs (a lab without a grade counts as 0), how many labs they passed at the class's lab pass score, and whether that meets the certificate threshold. A provisional grade doesn't count as passed, as for the certificate.
+- On a group lab each student shows their own attempt, which carries the team's grade. A teammate who never opened the lab shows as not started.
+- "Export to Excel" downloads the gradebook as an .xlsx file. Grades are numbers, regraded grades are shaded blue and provisional ones yellow, each with a note, and a second sheet lists every regrade with the AI score and the reason. Names and titles starting with "=" stay text and never become formulas.
+- Only the class's instructor and admins can open or export a gradebook.
+
 ## 2026-11-15
 
 - Signing in or out no longer ends on "419 Page Expired". Signing in or out replaces the form token, and a session ends after two hours, so a sign-in page left open on a shared laptop, a second tab, or a second click on a slow sign-in sent an old token. The form is still refused, but the browser now goes back to a fresh copy of it with "That page was open too long, so it wasn't sent. Please try again." and what was typed, except passwords, filled back in. Signing out after the session already ended lands signed out. Signing out from an old tab while still signed in asks to sign out again. Requests that ask for JSON still get 419.
