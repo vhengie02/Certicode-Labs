@@ -1,6 +1,11 @@
 # Changelog
 
-## 2026-11-13
+## 2026-11-16
+
+- VS Code extension 1.11.0 gives each lab a folder of its own. It makes the folder first, then writes the lab's starter files inside it, where they used to go straight into the open folder. The folder is named after the lab and ends in the lab's id, for example `java-oop-basics-lab12`, using only lowercase letters, digits and dashes, so it works the same on Windows, macOS and Linux. Two labs with a `Main.java` no longer meet in one folder, so starting a new lab no longer asks to replace the last lab's files.
+- A resume finds the lab's folder again by the id, even after the instructor renames the lab, and keeps the student's work. A student who opens the lab's folder itself in VS Code gets the files there, not in a folder inside it. Starting a new attempt of the same lab still asks before replacing the files, and keeps the old copies in the lab folder's `.certicode/previous`.
+- Everything that looks at the lab's files now looks in the lab folder: the check for missing files that turns Submit off, the line counts, the paste check, what Check Progress and Submit send, read-only starter files, and shared typing on group labs. Another lab's file with the same name no longer counts as this lab's. Code files the student adds are sent only from the lab folder, named as they are inside it.
+- A lab already in progress from an older build, with its files straight in the open folder, stays there until it ends, so a resume after updating still finds the student's work. The next lab gets its own folder.
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.
 - Live labs run on their shared countdown alone. The heartbeat used to end an attempt on the lab's time per student even while the countdown still ran. When the countdown ends, the heartbeat and the inactivity sweep now close the lab, which submits the work, instead of marking it timed out.
