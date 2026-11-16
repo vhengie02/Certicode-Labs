@@ -2,6 +2,11 @@
 
 ## 2026-11-16
 
+- Each class has a gradebook, opened from the class page: one row per enrolled student, one column per lab in syllabus order. A lab's grade is the student's best completed attempt, with the instructor's regrade in place of the AI score, as on the results page. A regraded grade is marked, with the AI score, who regraded it and why. A grade still waiting for the instructor's review shows as provisional. Cells without a grade say "In progress" or "Timed out", or stay empty for a lab never opened. Each grade opens its attempt.
+- The gradebook also shows each student's average over all the class's labs (a lab without a grade counts as 0), how many labs they passed at the class's lab pass score, and whether that meets the certificate threshold. A provisional grade doesn't count as passed, as for the certificate.
+- On a group lab each student shows their own attempt, which carries the team's grade. A teammate who never opened the lab shows as not started.
+- "Export to Excel" downloads the gradebook as an .xlsx file. Grades are numbers, regraded grades are shaded blue and provisional ones yellow, each with a note, and a second sheet lists every regrade with the AI score and the reason. Names and titles starting with "=" stay text and never become formulas.
+- Only the class's instructor and admins can open or export a gradebook.
 - An instructor can run a student's handed-in code and see what it prints. "Run the submitted code" is on the attempt's results page, under Submitted files, and in the Grade tab of the monitoring page's student drawer. It shows the output, the error output, compile errors, the exit code, and how long the run took. "Add input" gives the program standard input to read.
 - The run uses the code saved with the submission, not what the student has open now. A Java submission with several files runs as one program, and other languages run their main file, as the student's own submit does. Only attempts that were handed in can be run.
 - Running the code changes nothing: not the grade, tasks, competencies or the attempt, and nothing is logged against it. Only the class's instructor and admins can run it, 20 runs a minute per instructor. The code runs on Judge0 only. Without `JUDGE0_URL` the button says execution isn't set up, even in local development.
