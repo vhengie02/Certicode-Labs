@@ -177,12 +177,22 @@ class SubmissionLimitsAndCameraFrameTest extends TestCase
 
     public function test_camera_check_with_a_real_frame_passes(): void
     {
-        $this->asExtension()->postJson($this->url('verify-camera'), ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::ONE_PIXEL_PNG])
+        $this->asExtension()->postJson($this->url('verify-camera'), ['status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame()])
             ->assertOk()
             ->assertJsonPath('verified', true);
 
-        $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->lab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::ONE_PIXEL_PNG])
+        // Each check needs its own picture: the first one is now on record
+        $this->actingAs($this->student)->postJson("/api/v1/labs/{$this->lab->id}/verify-camera", ['status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame('dark-camera-frame')])
             ->assertOk()
             ->assertJsonPath('verified', true);
+    }
+
+    public function test_camera_check_with_a_placeholder_image_does_not_pass(): void
+    {
+        $this->asExtension()->postJson($this->url('verify-camera'), ['status' => 'granted', 'face_count' => 1, 'image_base64' => self::ONE_PIXEL_PNG])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'invalid_camera_frame');
+
+        $this->assertFalse(TelemetryLog::where('event_type', 'webcam_prelab_verification')->exists());
     }
 }

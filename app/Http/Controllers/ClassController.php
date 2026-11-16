@@ -960,7 +960,8 @@ class ClassController extends Controller
 
         // Heartbeats and typing-speed samples arrive every few seconds and say nothing on
         // their own, so the timeline keeps only events an instructor acts on, oldest first.
-        $logs = TelemetryLog::where('lab_session_id', $session->id)
+        $logs = TelemetryLog::withoutCameraPicture()
+            ->where('lab_session_id', $session->id)
             ->whereNotIn('event_type', ['vscode_ping', 'wpm_update'])
             ->orderBy('created_at')
             ->orderBy('id')
