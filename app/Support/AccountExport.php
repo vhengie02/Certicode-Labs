@@ -48,7 +48,8 @@ class AccountExport
         $this->section('notifications', $this->user->notifications()->get(['data', 'read_at', 'created_at']));
 
         $this->rows('lab_sessions', LabSession::where('user_id', $this->user->id), fn ($session) => $session->only(self::SESSION_FIELDS));
-        $this->rows('telemetry', TelemetryLog::whereIn('lab_session_id', $sessionIds), fn ($log) => $log->only(['lab_session_id', 'event_type', 'payload', 'created_at']));
+        // Camera check pictures, like flag snapshots, are far too large for this file
+        $this->rows('telemetry', TelemetryLog::withoutCameraPicture()->whereIn('lab_session_id', $sessionIds), fn ($log) => $log->only(['lab_session_id', 'event_type', 'payload', 'created_at']));
         $this->rows('integrity_flags', Anomaly::whereIn('lab_session_id', $sessionIds), fn ($flag) => [
             'lab_session_id' => $flag->lab_session_id,
             'type' => $flag->type,

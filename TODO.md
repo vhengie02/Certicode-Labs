@@ -321,7 +321,7 @@ This document outlines the final feature specifications, implementation tasks, a
   - The lab roster shows an "Old ext" badge next to in-progress students whose last extension ping came from a build below `min_version`.
 - [ ] **Follow-ups**:
   - Tune face-detection thresholds (0.10–0.20) against real webcams, especially with a real face in a dim room.
-  - The server trusts the browser's `face_count`, so a hand-made request can still pass the camera check.
+  - The server still takes the browser's `face_count` on trust, so a hand-made request with a real photo of a face passes the camera check. It now refuses a picture the lab page can't have taken (not a JPEG, under 320x240, with Exif data, blank, or used for an earlier check; `CameraCheckFrame`), keeps every passing picture for the class instructor (timeline link, `GET /camera-checks/{id}/picture`, removed after `SNAPSHOT_RETENTION_DAYS`), and flags a nearly blank one (`camera_check_unusual`, low). Detecting the face on the server would need a Node function on Vercel: the PHP runtime has no GD or Imagick.
   - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:

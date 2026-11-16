@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\LabSessionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\CameraCheckPictureController;
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\ClassController;
 use App\Http\Controllers\CronController;
@@ -169,6 +170,7 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
+    Route::get('/camera-checks/{id}/picture', CameraCheckPictureController::class)->name('camera-checks.picture');
     Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
     Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
     Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');

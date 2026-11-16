@@ -14,8 +14,6 @@ class LegalConsentTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const CAMERA_FRAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
     private User $student;
 
     private Laboratory $laboratory;
@@ -39,7 +37,7 @@ class LegalConsentTest extends TestCase
         return $this->actingAs($this->student)->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => self::CAMERA_FRAME,
+            'image_base64' => $this->cameraFrame(),
         ]);
     }
 
@@ -132,7 +130,7 @@ class LegalConsentTest extends TestCase
         $session = LabSession::create(['lab_id' => $this->laboratory->id, 'user_id' => $this->student->id, 'status' => 'in_progress', 'started_at' => now()]);
 
         $this->actingAs($this->student)->postJson("/v1/sessions/{$session->id}/verify-camera", [
-            'status' => 'granted', 'face_count' => 1, 'image_base64' => self::CAMERA_FRAME,
+            'status' => 'granted', 'face_count' => 1, 'image_base64' => $this->cameraFrame(),
         ])->assertForbidden()->assertJsonPath('error', 'monitoring_consent_required');
     }
 

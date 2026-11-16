@@ -1052,6 +1052,18 @@ function preLabCameraGate(labId, initialSessionId) {
             }
         },
 
+        // The picture sent with the check, at most 640 px wide: the server keeps a passing one
+        // for the instructor, and a full-HD frame would be several times the size for no gain.
+        gatePicture(canvas) {
+            const maxWidth = 640;
+            if (canvas.width <= maxWidth) return canvas.toDataURL('image/jpeg', 0.7);
+            const scaled = document.createElement('canvas');
+            scaled.width = maxWidth;
+            scaled.height = Math.round(canvas.height * maxWidth / canvas.width);
+            scaled.getContext('2d').drawImage(canvas, 0, 0, scaled.width, scaled.height);
+            return scaled.toDataURL('image/jpeg', 0.7);
+        },
+
         async runAiPresenceValidation() {
             if (!this.stream || !this.$refs.videoEl) return;
             const video = this.$refs.videoEl;
@@ -1060,7 +1072,7 @@ function preLabCameraGate(labId, initialSessionId) {
             canvas.height = video.videoHeight || 480;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageBase64 = canvas.toDataURL('image/jpeg', 0.7);
+            const imageBase64 = this.gatePicture(canvas);
 
             this.status = 'analyzing';
 
@@ -1251,6 +1263,14 @@ function preLabCameraGate(labId, initialSessionId) {
                     }
                     if (res.status === 423) {
                         this.applyCheckResponse(await res.json());
+                        return;
+                    }
+                    // The server refused the picture itself; say why, and count the attempt it used
+                    if (res.status === 422) {
+                        const data = await res.json().catch(() => ({}));
+                        this.errorMessage = data.message || 'Your camera picture could not be used for the check. Please retry.';
+                        this.status = 'failed';
+                        this.applyCheckResponse(data);
                         return;
                     }
                 } catch (e) {
