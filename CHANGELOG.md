@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-16
+
+- Classes have no join code any more. A student can enter a class, its modules and its labs only if they are on the class roster. Students already in a class keep their place, and open invitations became enrollments, so nobody waits on an Accept button. The Classes page tells a student that their instructor adds them with their account email.
+- The instructor fills the roster on the class page: by email, one at a time, or by importing an Excel (.xlsx) list. The sheet's first row needs an Email column, and may have Name, or First name and Last name, in any order. Only the first sheet is read, up to 1,000 students.
+- After an import, the class page lists every row by its row number: added, added without an account yet, already on the roster, or not added and why (not an email address, no email, or an instructor or admin account). The same email twice in one file counts once.
+- An email with no Certicode account yet waits on the roster, marked "No account yet". The student joins the class the first time they sign up or sign in with that email, by password or Google. A Gmail counts only once Google has confirmed it. Students added to a class are told by notification.
+- The instructor can take a student off the roster. They lose access to the class and its labs; their past attempts stay. A student who holds the class's certificate stays on the roster.
+- Only the class's instructor and admins can add, import or remove students.
+- Deploy: run the three `2026_11_16_*` migrations. They add the `class_pending_students` table, turn invitations into enrollments, and let `school_classes.code` be empty. Old codes stay in the column but open nothing.
+
 ## 2026-11-13
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.

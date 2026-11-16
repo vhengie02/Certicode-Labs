@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * One address is one account whatever its letter case, and inviting a student never
- * changes an enrolment that already exists.
+ * One address is one account whatever its letter case, and adding a student to a roster
+ * never duplicates or changes an enrolment that already exists.
  */
-class EmailCaseAndInviteTest extends TestCase
+class EmailCaseAndRosterTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -83,31 +83,32 @@ class EmailCaseAndInviteTest extends TestCase
         $this->assertSame('twin@example.com', $dupeB->fresh()->email);
     }
 
-    public function test_inviting_an_enrolled_student_keeps_them_enrolled(): void
+    public function test_adding_an_enrolled_student_in_another_case_keeps_one_enrolment(): void
     {
         $instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
         $student = User::create(['name' => 'Ana', 'email' => 'ana@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $class = SchoolClass::create(['name' => 'CS 101', 'code' => 'CS101', 'instructor_id' => $instructor->id]);
         $class->students()->attach([$student->id => ['status' => 'enrolled']]);
 
-        $this->actingAs($instructor)->post(route('classes.invite', $class->id), ['email' => 'ANA@example.com'])
+        $this->actingAs($instructor)->post(route('classes.students.add', $class->id), ['email' => 'ANA@example.com'])
             ->assertRedirect(route('classes.show', $class->id));
 
         $this->assertSame('enrolled', $class->students()->where('users.id', $student->id)->first()->pivot->status);
+        $this->assertSame(1, DB::table('class_student')->where('class_id', $class->id)->count());
     }
 
-    public function test_invites_reach_new_students_only(): void
+    public function test_rosters_take_student_accounts_only(): void
     {
         $instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
         $otherInstructor = User::create(['name' => 'Other', 'email' => 'other@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
         $student = User::create(['name' => 'Ben', 'email' => 'ben@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $class = SchoolClass::create(['name' => 'CS 101', 'code' => 'CS101', 'instructor_id' => $instructor->id]);
 
-        $this->actingAs($instructor)->post(route('classes.invite', $class->id), ['email' => 'ben@example.com']);
-        $this->actingAs($instructor)->post(route('classes.invite', $class->id), ['email' => 'other@example.com'])
+        $this->actingAs($instructor)->post(route('classes.students.add', $class->id), ['email' => 'BEN@example.com']);
+        $this->actingAs($instructor)->post(route('classes.students.add', $class->id), ['email' => 'other@example.com'])
             ->assertSessionHas('error');
 
-        $this->assertSame('invited', $class->students()->where('users.id', $student->id)->first()->pivot->status);
+        $this->assertSame('enrolled', $class->students()->where('users.id', $student->id)->first()->pivot->status);
         $this->assertNull($class->students()->where('users.id', $otherInstructor->id)->first());
     }
 }

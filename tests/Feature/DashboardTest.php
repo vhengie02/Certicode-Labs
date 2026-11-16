@@ -85,7 +85,9 @@ class DashboardTest extends TestCase
         $this->sections($student)
             ->assertSee('Get ready for your first lab')
             ->assertSee('0 of 3 done')
-            ->assertSee('Enter a class code')
+            ->assertSee('Get on a class roster')
+            ->assertSee('kid@example.com')
+            ->assertDontSee('class code')
             ->assertDontSee('Earn your certificate');
 
         $instructor = $this->user('prof@example.com', 'instructor');

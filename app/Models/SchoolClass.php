@@ -113,6 +113,14 @@ class SchoolClass extends Model
     }
 
     /**
+     * Roster entries for people who have no account yet; see ClassRoster.
+     */
+    public function pendingStudents()
+    {
+        return $this->hasMany(ClassPendingStudent::class, 'class_id')->orderBy('email');
+    }
+
+    /**
      * Get the modules associated with this class.
      */
     public function modules()

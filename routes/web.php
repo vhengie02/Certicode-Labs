@@ -169,9 +169,11 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
-    Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
-    Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
-    Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
+    // Class roster: students enter a class only by being on it
+    Route::post('/classes/{id}/students', [ClassController::class, 'addStudent'])->name('classes.students.add');
+    Route::post('/classes/{id}/students/import', [ClassController::class, 'importStudents'])->name('classes.students.import');
+    Route::delete('/classes/{id}/students/{student_id}', [ClassController::class, 'removeStudent'])->name('classes.students.remove');
+    Route::delete('/classes/{id}/pending-students/{pending_id}', [ClassController::class, 'removePendingStudent'])->name('classes.pending-students.remove');
 
     // Modules routing
     Route::get('/classes/{class_id}/modules/create', [ClassController::class, 'createModule'])->name('modules.create');
