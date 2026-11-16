@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-16
+
+- An instructor can run a student's handed-in code and see what it prints. "Run the submitted code" is on the attempt's results page, under Submitted files, and in the Grade tab of the monitoring page's student drawer. It shows the output, the error output, compile errors, the exit code, and how long the run took. "Add input" gives the program standard input to read.
+- The run uses the code saved with the submission, not what the student has open now. A Java submission with several files runs as one program, and other languages run their main file, as the student's own submit does. Only attempts that were handed in can be run.
+- Running the code changes nothing: not the grade, tasks, competencies or the attempt, and nothing is logged against it. Only the class's instructor and admins can run it, 20 runs a minute per instructor. The code runs on Judge0 only. Without `JUDGE0_URL` the button says execution isn't set up, even in local development.
+
 ## 2026-11-13
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.

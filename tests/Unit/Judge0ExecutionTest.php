@@ -84,6 +84,58 @@ class Judge0ExecutionTest extends TestCase
             && $request['language_id'] === 71);
     }
 
+    public function test_stdin_is_sent_only_when_given()
+    {
+        $this->fakeJudge0(['status' => ['id' => 3, 'description' => 'Accepted'], 'stdout' => '']);
+
+        $this->service->execute('print(input())', 'python', null, "Ana\n");
+        $this->service->execute('print(1)', 'python');
+
+        $sent = Http::recorded()->map(fn ($pair) => $pair[0]);
+        $this->assertSame("Ana\n", base64_decode($sent[0]['stdin']));
+        $this->assertFalse(isset($sent[1]['stdin']));
+    }
+
+    public function test_exit_code_timing_memory_and_stderr_are_reported()
+    {
+        $this->fakeJudge0([
+            'status' => ['id' => 3, 'description' => 'Accepted'],
+            'stdout' => base64_encode("ok\n"),
+            'stderr' => base64_encode("note\n"),
+            'exit_code' => 0,
+            'time' => '0.25',
+            'memory' => 4096,
+        ]);
+
+        $result = $this->service->execute('print("ok")', 'python');
+
+        $this->assertSame('success', $result['status']);
+        $this->assertNull($result['errors']);
+        $this->assertSame("note\n", $result['stderr']);
+        $this->assertSame(0, $result['exit_code']);
+        $this->assertEquals(250, $result['cpu_time_ms']);
+        $this->assertSame(4096, $result['memory_kb']);
+        $this->assertFalse($result['compile_error']);
+    }
+
+    public function test_compile_errors_are_flagged()
+    {
+        $this->fakeJudge0(['status' => ['id' => 6, 'description' => 'Compilation Error'], 'compile_output' => base64_encode('error')]);
+
+        $this->assertTrue($this->service->execute('class Broken {', 'java')['compile_error']);
+    }
+
+    public function test_only_java_files_are_joined_into_one_source()
+    {
+        $files = [
+            ['name' => 'main.py', 'content' => 'import helper', 'is_primary' => true],
+            ['name' => 'helper.py', 'content' => 'x = 1', 'is_primary' => false],
+        ];
+
+        $this->assertSame(['source' => 'import helper', 'files' => ['main.py']], $this->service->combineSourceFiles($files, 'python'));
+        $this->assertSame(['source' => 'class A {}', 'files' => ['A.java']], $this->service->combineSourceFiles([['name' => 'A.java', 'content' => 'class A {}', 'is_primary' => true]], 'java'));
+    }
+
     public function test_unreachable_service_is_reported_as_unavailable()
     {
         Http::fake(['judge0.test/*' => Http::response('Bad Gateway', 502)]);

@@ -21,8 +21,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
-        // Pasted code is evidence for the instructor: keep its indentation and exact length
-        $middleware->trimStrings(except: ['payload.snippet']);
+        // Pasted code is evidence for the instructor: keep its indentation and exact length.
+        // A program's standard input is read as typed, line breaks and spaces included.
+        $middleware->trimStrings(except: ['payload.snippet', 'stdin']);
         // First, so its numbers include session start and auth lookups
         $middleware->prepend(ServerTiming::class);
         $middleware->appendToGroup('web', PreventAuthenticatedCaching::class);

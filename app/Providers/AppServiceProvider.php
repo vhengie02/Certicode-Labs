@@ -78,6 +78,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('lab-execute', function (Request $request) {
             return Limit::perMinute(20)->by('lab-execute:'.$request->route('sessionId'));
         });
+
+        // An instructor running a student's submitted code on Judge0, per instructor
+        RateLimiter::for('instructor-run', function (Request $request) {
+            return Limit::perMinute(20)->by('instructor-run:'.($request->user()?->id ?: $request->ip()));
+        });
     }
 
     /**

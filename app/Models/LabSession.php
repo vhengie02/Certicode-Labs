@@ -124,6 +124,47 @@ class LabSession extends Model
         return $files;
     }
 
+    /** Code file extensions and the language the code runner calls them (SandboxExecutionService). */
+    private const RUN_LANGUAGES = [
+        'java' => 'java',
+        'py' => 'python',
+        'js' => 'javascript',
+        'mjs' => 'javascript',
+        'cjs' => 'javascript',
+        'php' => 'php',
+        'c' => 'c',
+        'h' => 'c',
+        'cpp' => 'cpp',
+        'cc' => 'cpp',
+        'cxx' => 'cpp',
+        'hpp' => 'cpp',
+        'sh' => 'bash',
+        'bash' => 'bash',
+    ];
+
+    /**
+     * The language the submitted code is written in, for running it again: from the main file's
+     * extension, else the language the extension sent when this attempt's code was submitted
+     * or run. Null when neither says.
+     */
+    public function submissionLanguage(): ?string
+    {
+        $mainFile = $this->submittedFileList()[0]['name'] ?? '';
+        $extension = strtolower(pathinfo($mainFile, PATHINFO_EXTENSION));
+        if (isset(self::RUN_LANGUAGES[$extension])) {
+            return self::RUN_LANGUAGES[$extension];
+        }
+
+        $logged = TelemetryLog::where('lab_session_id', $this->id)
+            ->whereIn('event_type', ['session_completed', 'code_execution'])
+            ->latest('id')
+            ->get(['payload'])
+            ->map(fn ($log) => is_array($log->payload) ? ($log->payload['language'] ?? null) : null)
+            ->first(fn ($language) => is_string($language) && $language !== '');
+
+        return $logged ? strtolower($logged) : null;
+    }
+
     /**
      * A submission's files as the extension sent them, in a reliable shape, main file first.
      *
