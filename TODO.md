@@ -523,6 +523,28 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
 
 ---
 
+## 🆕 Backlog (requested November 2026)
+
+- [ ] **Instructor can run a passed submission**:
+  - From a student's passed attempt, the instructor runs the submitted code and sees the output.
+- [ ] **Class roster import from Excel; no more join code**:
+  - The instructor imports an Excel student list to add students to a class automatically, alongside adding students by hand.
+  - Remove the class join code: a student can enter a class only if they are on the roster the instructor imported or added.
+- [ ] **Highlight matching text in search results**:
+  - The part of a result that matches the query is highlighted, e.g. searching `java` shows "**Java** OOP" with "Java" marked.
+- [x] **"Page expired" on other laptops after logging in/out ([`StaleFormRedirect.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Support/StaleFormRedirect.php))**:
+  - Cause: signing in (`session()->regenerate()`) and out (`invalidate()`) replace the CSRF token, and a session ends after 120 minutes, so a form left open in another tab or on a shared laptop, or a second click on a slow sign-in, posted an old token and got Laravel's 419 page.
+  - A web form with an old token is still refused but goes back to a fresh copy with a message and the typed input (never passwords). Sign-out with no session left lands signed out; sign-out from an old tab while signed in asks again. JSON requests keep 419.
+  - `layouts/auth.blade.php` lets each form post once until the page is shown again.
+  - Tests: [`StaleCsrfTokenTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/StaleCsrfTokenTest.php).
+- [ ] **Extension creates a folder per lab**:
+  - The extension creates a folder for each lab first, then the lab's files inside it, instead of writing files straight into the workspace.
+- [ ] **Class gradebook with Excel export**:
+  - A class list where the instructor sees each student's grade on every lab in the class.
+  - Export the gradebook as an Excel file for grading.
+
+---
+
 ## 🛠 System Architecture & Protocol Split
 
 ```mermaid
