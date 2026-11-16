@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-16
+
+- Each class has a gradebook, opened from the class page: one row per enrolled student, one column per lab in syllabus order. A lab's grade is the student's best completed attempt, with the instructor's regrade in place of the AI score, as on the results page. A regraded grade is marked, with the AI score, who regraded it and why. A grade still waiting for the instructor's review shows as provisional. Cells without a grade say "In progress" or "Timed out", or stay empty for a lab never opened. Each grade opens its attempt.
+- The gradebook also shows each student's average over all the class's labs (a lab without a grade counts as 0), how many labs they passed at the class's lab pass score, and whether that meets the certificate threshold. A provisional grade doesn't count as passed, as for the certificate.
+- On a group lab each student shows their own attempt, which carries the team's grade. A teammate who never opened the lab shows as not started.
+- "Export to Excel" downloads the gradebook as an .xlsx file. Grades are numbers, regraded grades are shaded blue and provisional ones yellow, each with a note, and a second sheet lists every regrade with the AI score and the reason. Names and titles starting with "=" stay text and never become formulas.
+- Only the class's instructor and admins can open or export a gradebook.
+
 ## 2026-11-13
 
 - A reopened attempt no longer times out the moment it reopens. Reopening kept the attempt's first start, so on a timed lab the next heartbeat marked it "Timed out" and the student could never resubmit. The time limit now counts from the reopen, and so do time spent and the leaderboard. A team attempt reopened after the team's time ran out goes on alone on that new clock. Reopened while the team's time still runs, it keeps the team's clock and gets no extra time. A live lab's attempt keeps its start, since the shared countdown times it.
