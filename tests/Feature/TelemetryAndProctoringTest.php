@@ -454,13 +454,13 @@ class TelemetryAndProctoringTest extends TestCase
         return glob(storage_path('app/public/anomalies/*/*')) ?: [];
     }
 
-    public function test_prelab_camera_verification_succeeds_with_single_face_without_keeping_the_picture()
+    public function test_prelab_camera_verification_succeeds_with_single_face_keeping_the_picture_out_of_public_storage()
     {
         $before = $this->publicSnapshotFiles();
         $response = $this->asExtension($this->session1)->postJson("/api/v1/sessions/{$this->session1->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => $this->snapshotDataUri(),
+            'image_base64' => $this->cameraFrame(),
         ]);
 
         $response->assertStatus(200)
@@ -470,10 +470,10 @@ class TelemetryAndProctoringTest extends TestCase
             ]);
         $this->assertNull($response->json('reference_image'));
 
-        $this->assertDatabaseHas('telemetry_logs', [
-            'lab_session_id' => $this->session1->id,
-            'event_type' => 'webcam_prelab_verification',
-        ]);
+        // The picture is kept in the check's row for the instructor, never as a public file
+        $log = TelemetryLog::where('lab_session_id', $this->session1->id)
+            ->where('event_type', 'webcam_prelab_verification')->sole();
+        $this->assertSame($this->cameraFrame(), $log->payload['image_base64']);
         $this->assertSame($before, $this->publicSnapshotFiles());
     }
 
@@ -593,7 +593,7 @@ class TelemetryAndProctoringTest extends TestCase
             'status' => 'granted',
             'face_count' => 1,
             'low_light' => true,
-            'image_base64' => $this->snapshotDataUri(),
+            'image_base64' => $this->cameraFrame('dark-camera-frame'),
         ])->assertStatus(200);
 
         $log = TelemetryLog::where('lab_session_id', $this->session1->id)
@@ -818,7 +818,7 @@ class TelemetryAndProctoringTest extends TestCase
         $resV1 = $this->actingAs($this->student1)->postJson("/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => $this->snapshotDataUri(),
+            'image_base64' => $this->cameraFrame(),
         ]);
         $resV1->assertStatus(200);
         $resV1->assertJsonPath('verified', true);
@@ -826,7 +826,7 @@ class TelemetryAndProctoringTest extends TestCase
         $resApiV1 = $this->actingAs($this->student1)->postJson("/api/v1/labs/{$this->laboratory->id}/verify-camera", [
             'status' => 'granted',
             'face_count' => 1,
-            'image_base64' => $this->snapshotDataUri(),
+            'image_base64' => $this->cameraFrame(),
         ]);
         $resApiV1->assertStatus(200);
         $resApiV1->assertJsonPath('verified', true);

@@ -68,7 +68,7 @@ The extension is bundled with esbuild (`npm run bundle`, `dist/extension.js`) be
 See [TODO.md](../TODO.md) in the project root for full architectural details and progress tracking:
 1. **Diff Tracking**: Live line-level diff engine with team blame attribution, streaming via WebSocket.
 2. **Team Chat**: Private, ephemeral peer-to-peer team chat with syntax-highlighted code snippets.
-3. **Auto-Generated Starter Files**: Multi-file workspace provisioning with continuous `FileSystemWatcher` integrity validation.
+3. **Auto-Generated Starter Files**: Each lab gets its own folder in the workspace, named after the lab and ending in its id (`java-oop-basics-lab12`), with the lab's starter files inside and continuous `FileSystemWatcher` integrity validation. A resume finds the folder again by the id. A lab started with a build before 1.11.0, whose files are straight in the workspace, stays there until it ends.
 4. **Paste Anomaly Detection**: Keystroke/WPM baseline with starter-file, own-code and team-chat suppression rules and a clipboard check. A large block of code that was neither typed nor pasted, such as from an AI tool, is reported as a large insert.
 5. **In-Lab Sidebar**: All live UI (Live Leaderboard, Task Checklist, Timer, and OS-level window focus tracking) centralized in the VS Code sidebar.
 6. **Instructor Live Monitoring Panel**: Real-time web dashboard displaying live WPM, task counters, anomaly image timeline, and team contribution drill-downs.

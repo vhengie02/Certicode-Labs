@@ -10,10 +10,12 @@ use App\Http\Controllers\Api\LabSessionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\CameraCheckPictureController;
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\ClassController;
 use App\Http\Controllers\CronController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\GradebookController;
 use App\Http\Controllers\InstructorMonitoringController;
 use App\Http\Controllers\LabAttemptController;
 use App\Http\Controllers\LaboratoryController;
@@ -164,11 +166,14 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::resource('classes', ClassController::class);
     Route::get('/classes/{class_id}/card-image', [ClassController::class, 'cardImage'])->name('classes.card-image');
     Route::get('/classes/{class_id}/telemetry', [ClassController::class, 'telemetry'])->name('classes.telemetry');
+    Route::get('/classes/{class_id}/gradebook', [GradebookController::class, 'show'])->name('classes.gradebook');
+    Route::get('/classes/{class_id}/gradebook/export', [GradebookController::class, 'export'])->name('classes.gradebook.export')->middleware('throttle:10,1');
     Route::get('/sessions/{id}/telemetry-timeline', [ClassController::class, 'telemetryTimeline'])->name('sessions.telemetry-timeline');
     Route::get('/integrity-flags', [ClassController::class, 'integrityFlags'])->name('anomalies.index');
     Route::post('/anomalies/{id}/resolve', [ClassController::class, 'resolveAnomaly'])->name('anomalies.resolve');
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
+    Route::get('/camera-checks/{id}/picture', CameraCheckPictureController::class)->name('camera-checks.picture');
     // Class roster: students enter a class only by being on it
     Route::post('/classes/{id}/students', [ClassController::class, 'addStudent'])->name('classes.students.add');
     Route::post('/classes/{id}/students/import', [ClassController::class, 'importStudents'])->name('classes.students.import');

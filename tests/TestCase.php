@@ -23,6 +23,15 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * A camera picture as the lab page sends it: a JPEG data URI from tests/fixtures/camera.
+     * `camera-frame` passes the server's frame check; the others exercise its limits.
+     */
+    protected function cameraFrame(string $name = 'camera-frame'): string
+    {
+        return 'data:image/jpeg;base64,'.base64_encode(file_get_contents(base_path("tests/fixtures/camera/{$name}.jpg")));
+    }
+
+    /**
      * Act as a browser session that just passed the pre-lab camera check for this lab.
      */
     protected function withCameraCheck(int $labId, bool $lowLight = false): static
