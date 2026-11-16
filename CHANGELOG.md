@@ -7,6 +7,10 @@
 - On a group lab each student shows their own attempt, which carries the team's grade. A teammate who never opened the lab shows as not started.
 - "Export to Excel" downloads the gradebook as an .xlsx file. Grades are numbers, regraded grades are shaded blue and provisional ones yellow, each with a note, and a second sheet lists every regrade with the AI score and the reason. Names and titles starting with "=" stay text and never become formulas.
 - Only the class's instructor and admins can open or export a gradebook.
+- VS Code extension 1.11.0 gives each lab a folder of its own. It makes the folder first, then writes the lab's starter files inside it, where they used to go straight into the open folder. The folder is named after the lab and ends in the lab's id, for example `java-oop-basics-lab12`, using only lowercase letters, digits and dashes, so it works the same on Windows, macOS and Linux. Two labs with a `Main.java` no longer meet in one folder, so starting a new lab no longer asks to replace the last lab's files.
+- A resume finds the lab's folder again by the id, even after the instructor renames the lab, and keeps the student's work. A student who opens the lab's folder itself in VS Code gets the files there, not in a folder inside it. Starting a new attempt of the same lab still asks before replacing the files, and keeps the old copies in the lab folder's `.certicode/previous`.
+- Everything that looks at the lab's files now looks in the lab folder: the check for missing files that turns Submit off, the line counts, the paste check, what Check Progress and Submit send, read-only starter files, and shared typing on group labs. Another lab's file with the same name no longer counts as this lab's. Code files the student adds are sent only from the lab folder, named as they are inside it.
+- A lab already in progress from an older build, with its files straight in the open folder, stays there until it ends, so a resume after updating still finds the student's work. The next lab gets its own folder.
 
 ## 2026-11-15
 
