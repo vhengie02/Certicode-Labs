@@ -80,13 +80,16 @@ return [
         // Supabase Storage through its S3 API (Dashboard > Storage > Settings > S3 Connection).
         // Use a private bucket: files are only reached through the app's download route,
         // which checks access and then hands out a short-lived signed URL.
+        // Values are trimmed: a pasted tab in front of the endpoint broke every upload.
         'supabase' => [
             'driver' => 's3',
-            'key' => env('SUPABASE_STORAGE_KEY'),
-            'secret' => env('SUPABASE_STORAGE_SECRET'),
-            'region' => env('SUPABASE_STORAGE_REGION'),
-            'bucket' => env('SUPABASE_STORAGE_BUCKET', 'attachments'),
-            'endpoint' => env('SUPABASE_STORAGE_ENDPOINT'), // https://<project-ref>.storage.supabase.co/storage/v1/s3
+            'key' => trim((string) env('SUPABASE_STORAGE_KEY')) ?: null,
+            'secret' => trim((string) env('SUPABASE_STORAGE_SECRET')) ?: null,
+            'region' => trim((string) env('SUPABASE_STORAGE_REGION')) ?: null,
+            'bucket' => trim((string) env('SUPABASE_STORAGE_BUCKET', 'attachments')) ?: null,
+            // The Endpoint shown under S3 Connection, with the project's real ref in place of
+            // <project-ref>: https://<project-ref>.storage.supabase.co/storage/v1/s3
+            'endpoint' => trim((string) env('SUPABASE_STORAGE_ENDPOINT')) ?: null,
             'use_path_style_endpoint' => true,
             'throw' => true,
             'report' => false,

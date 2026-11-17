@@ -137,6 +137,51 @@ class ModuleAttachmentStorageTest extends TestCase
         Storage::disk('supabase')->assertExists(ModuleAttachment::firstOrFail()->file_path);
     }
 
+    /**
+     * Production's endpoint was the "<project-ref>" example from config/filesystems.php, with a
+     * tab in front. The AWS SDK refused it, so every upload failed with "Server Error".
+     */
+    public function test_an_endpoint_that_is_not_a_url_counts_as_storage_not_set_up(): void
+    {
+        $this->useSupabase();
+        config(['filesystems.disks.supabase.endpoint' => 'https://<project-ref>.storage.supabase.co/storage/v1/s3']);
+
+        $this->assertFalse(ModuleAttachment::storageIsDurable());
+        $this->assertFalse(ModuleAttachment::usesDirectUploads());
+        $this->createModuleWithFile()
+            ->assertSessionHasErrors(['attachments' => ModuleAttachment::NOT_DURABLE_MESSAGE]);
+        $this->assertSame(0, Module::count());
+
+        config(['filesystems.disks.supabase.endpoint' => 'https://abcdefghijklmnopqrst.storage.supabase.co/storage/v1/s3']);
+        $this->assertTrue(ModuleAttachment::storageIsDurable());
+    }
+
+    public function test_storage_settings_are_trimmed_and_blank_ones_count_as_missing(): void
+    {
+        $settings = [
+            'SUPABASE_STORAGE_ENDPOINT' => "\thttps://abcdefghijklmnopqrst.storage.supabase.co/storage/v1/s3\n",
+            'SUPABASE_STORAGE_REGION' => ' ap-northeast-2 ',
+            'SUPABASE_STORAGE_KEY' => "\t",
+        ];
+        foreach ($settings as $name => $value) {
+            putenv("{$name}={$value}");
+            $_ENV[$name] = $_SERVER[$name] = $value;
+        }
+
+        try {
+            $disk = (require config_path('filesystems.php'))['disks']['supabase'];
+        } finally {
+            foreach (array_keys($settings) as $name) {
+                putenv($name);
+                unset($_ENV[$name], $_SERVER[$name]);
+            }
+        }
+
+        $this->assertSame('https://abcdefghijklmnopqrst.storage.supabase.co/storage/v1/s3', $disk['endpoint']);
+        $this->assertSame('ap-northeast-2', $disk['region']);
+        $this->assertNull($disk['key']);
+    }
+
     public function test_a_cloud_disk_missing_its_settings_refuses_uploads_instead_of_crashing(): void
     {
         $this->useSupabase();

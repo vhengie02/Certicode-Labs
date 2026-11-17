@@ -13,6 +13,8 @@
 - The live site now writes its errors to Vercel's runtime logs. They used to go to a log file in the function's temporary folder, which nobody could read and which vanished with it, so a module file upload that failed with "Server Error" left no trace of why. `api/index.php` now sets `LOG_CHANNEL=stderr` over any value in the Vercel project settings.
 - Even on stderr, the next failed upload still logged nothing. `api/index.php` now also sets `LOG_LEVEL=debug` over the project settings, and a module upload that can't start writes its cause with PHP's own `error_log()` as well, so it reaches the runtime logs whatever Laravel's logging is set to.
 - When the server can't start a module file upload, the form now says "“name” could not be uploaded right now. Nothing was saved. Please try again." instead of "Server Error", and the cause is logged.
+- The logged cause: the live site's `SUPABASE_STORAGE_ENDPOINT` was the example from `config/filesystems.php`, `https://<project-ref>.storage.supabase.co/storage/v1/s3`, with a tab in front. The AWS SDK refused it as "not a valid URI", so no module file had ever reached Supabase Storage. The two files attached on 2026-11-05 are not in the bucket and can't be downloaded. The fix is in the Vercel project settings: the real endpoint, region and S3 access keys, then a redeploy.
+- The Supabase storage settings are now trimmed, so a pasted tab or space no longer breaks them. An endpoint that isn't a URL now counts as storage not set up: the module form says file uploads are not set up instead of failing on each file.
 
 ## 2026-11-16
 
