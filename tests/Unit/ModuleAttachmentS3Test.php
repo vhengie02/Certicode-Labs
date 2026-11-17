@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Models\ModuleAttachment;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -26,6 +28,26 @@ class ModuleAttachmentS3Test extends TestCase
             'filesystems.disks.supabase.endpoint' => 'https://abc123.storage.supabase.co/storage/v1/s3',
         ]);
         Storage::forgetDisk('supabase');
+
+        // The expiry is set from now(), so freezing it pins the instant every URL must die at
+        $this->freezeSecond();
+    }
+
+    /**
+     * The SDK counts X-Amz-Expires from its own time() at signing, not from the now() the
+     * expiry was set with, so the count shrinks by however long signing took (seconds on a
+     * cold first test). X-Amz-Date is that same signing time, so date plus count is the
+     * instant the URL dies, read off one clock.
+     */
+    private function assertDiesFiveMinutesFromNow(array $query): void
+    {
+        $signedAt = DateTimeImmutable::createFromFormat('!Ymd\THis\Z', $query['X-Amz-Date'], new DateTimeZone('UTC'));
+        $lifetime = (int) $query['X-Amz-Expires'];
+
+        $this->assertNotFalse($signedAt, "Unreadable X-Amz-Date {$query['X-Amz-Date']}");
+        $this->assertGreaterThan(0, $lifetime);
+        $this->assertLessThanOrEqual(300, $lifetime);
+        $this->assertSame(now()->addMinutes(5)->getTimestamp(), $signedAt->getTimestamp() + $lifetime);
     }
 
     private function signedUrlFor(string $fileName): array
@@ -47,8 +69,7 @@ class ModuleAttachmentS3Test extends TestCase
 
         $this->assertSame('abc123.storage.supabase.co', $url['host']);
         $this->assertSame('/storage/v1/s3/attachments/module_attachments/abc.pdf', $url['path']);
-        // The SDK works out the lifetime from its own clock, which can tick over after the expiry is set
-        $this->assertContains((int) $query['X-Amz-Expires'], [299, 300]);
+        $this->assertDiesFiveMinutesFromNow($query);
         $this->assertNotEmpty($query['X-Amz-Signature']);
         $this->assertStringStartsWith('attachment;', $query['response-content-disposition']);
         $this->assertStringContainsString('Week 1 slides.pdf', $query['response-content-disposition']);
@@ -73,7 +94,7 @@ class ModuleAttachmentS3Test extends TestCase
         $this->assertMatchesRegularExpression('#^module_attachments/[A-Za-z0-9]{40}\.pdf$#', $upload['key']);
         $this->assertSame('abc123.storage.supabase.co', $url['host']);
         $this->assertSame('/storage/v1/s3/attachments/'.$upload['key'], $url['path']);
-        $this->assertContains((int) $query['X-Amz-Expires'], [299, 300]);
+        $this->assertDiesFiveMinutesFromNow($query);
         $this->assertNotEmpty($query['X-Amz-Signature']);
         // Only Host is signed and the browser sets it itself; a signed checksum or content
         // header would make every browser PUT fail
