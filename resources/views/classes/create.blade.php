@@ -5,7 +5,7 @@
 @section('content')
 <div class="max-w-2xl mx-auto space-y-6">
     <x-page-header :back="route('classes.index')" back-label="Classes" title="New class"
-                   subtitle="You'll get a join code to share with students as soon as it's created." />
+                   subtitle="Then add your students on the class page, by email or from an Excel list." />
 
     <form action="{{ route('classes.store') }}" method="POST" enctype="multipart/form-data" class="space-y-5">
         @csrf

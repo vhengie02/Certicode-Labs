@@ -366,7 +366,7 @@
                 <h2 class="font-display text-4xl sm:text-6xl font-bold leading-[1.02] balance max-w-3xl mx-auto">
                     Grade the <span class="font-serif-accent font-normal text-[#3ecf8e]">process,</span> not just the output.
                 </h2>
-                <p class="mt-6 text-lg text-[var(--text-dim)] max-w-[46ch] mx-auto pretty">Once an admin approves your instructor access, set up a class, add a lab, and send students the join code.</p>
+                <p class="mt-6 text-lg text-[var(--text-dim)] max-w-[46ch] mx-auto pretty">Once an admin approves your instructor access, set up a class, import your student list, and add a lab.</p>
                 <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
                     @auth
                         <a href="{{ route('dashboard') }}" class="btn btn-brand">Open dashboard <span class="arrow" aria-hidden="true">&rarr;</span></a>

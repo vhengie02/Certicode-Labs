@@ -173,17 +173,6 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the classes the user is invited to (status = invited).
-     */
-    public function invitedClasses()
-    {
-        return $this->belongsToMany(SchoolClass::class, 'class_student', 'student_id', 'class_id')
-            ->wherePivot('status', 'invited')
-            ->withPivot('status')
-            ->withTimestamps();
-    }
-
-    /**
      * Get the classes instructed by this user.
      */
     public function instructedClasses()

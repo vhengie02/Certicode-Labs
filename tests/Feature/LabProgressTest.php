@@ -125,11 +125,11 @@ class LabProgressTest extends TestCase
         $this->assertEquals(50, $this->class->fresh()->getStudentProgress($this->student)['percent']);
     }
 
-    public function test_ending_a_class_only_certifies_enrolled_students()
+    public function test_ending_a_class_only_certifies_students_on_the_roster()
     {
         $this->complete($this->labA);
         $this->complete($this->labB);
-        $this->class->students()->updateExistingPivot($this->student->id, ['status' => 'invited']);
+        $this->class->students()->detach($this->student->id);
 
         $this->actingAs($this->instructor)->post("/classes/{$this->class->id}/end")->assertRedirect();
 

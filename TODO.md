@@ -527,9 +527,11 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
 
 - [ ] **Instructor can run a passed submission**:
   - From a student's passed attempt, the instructor runs the submitted code and sees the output.
-- [ ] **Class roster import from Excel; no more join code**:
-  - The instructor imports an Excel student list to add students to a class automatically, alongside adding students by hand.
-  - Remove the class join code: a student can enter a class only if they are on the roster the instructor imported or added.
+- [x] **Class roster import from Excel; no more join code ([`ClassRoster.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Services/ClassRoster.php))**:
+  - The instructor adds students on the class page by email, or imports an .xlsx list (first row: an Email column, optionally Name or First/Last name; first sheet, up to 1,000 rows). A per-row report lists added, added without an account, already on the roster, and not added with the reason.
+  - Join code removed: no join form, route, staff code display or code generation; `school_classes.code` is nullable and old codes open nothing. Invitations and their accept step are gone; open invitations became enrollments. A student enters a class, its modules and labs only from the roster.
+  - An email with no account waits in `class_pending_students` and is enrolled on the first sign-up or sign-in with it (`EnrollPendingRosterEntries` on `Login`; a Gmail counts once Google confirmed it). Instructors can remove students (not one holding the class's certificate) and pending emails.
+  - Class instructor and admins only. Tests: [`ClassRosterTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/ClassRosterTest.php).
 - [x] **Highlight matching text in search results ([`SearchHighlight.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Support/SearchHighlight.php))**:
   - The part of a result that matches the query is highlighted, e.g. searching `java` shows "**Java** OOP" with "Java" marked.
   - `GET /search` returns `label_html` next to `label`: the title split around every case-insensitive match, each piece escaped, matches in `<mark>`. The query matches literally, regex characters included, and each match keeps the title's casing. The search palette in `layouts/app.blade.php` shows it, marks its own page links the same way, and puts the marks back after the scramble animation.

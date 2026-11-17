@@ -53,7 +53,7 @@ class SettingsController extends Controller
     private function notificationToggles(User $user): array
     {
         $toggles = [
-            'notify_class' => ['Class invitations', 'When an instructor invites you to a class, or a student joins yours.'],
+            'notify_class' => ['Class rosters', 'When an instructor adds you to a class.'],
             'notify_module' => ['New lessons', 'When a module is added to one of your classes.'],
             'notify_lab' => ['New labs', 'When a lab is added to one of your classes.'],
         ];

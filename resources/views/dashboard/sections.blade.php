@@ -45,13 +45,6 @@
     @endif
 
     @if ($role === 'student')
-        @if ($invitations > 0)
-            <a href="{{ route('classes.index') }}" class="flex items-center justify-between gap-4 rounded-xl border border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.06] px-5 py-4 hover:border-[#3ecf8e]/50 transition-colors">
-                <span class="text-sm font-medium text-[#ededed]">You've been invited to {{ $invitations }} {{ \Illuminate\Support\Str::plural('class', $invitations) }}.</span>
-                <span class="text-sm font-semibold text-[#3ecf8e] shrink-0">Review &rarr;</span>
-            </a>
-        @endif
-
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <section class="lg:col-span-2 rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="continue-heading">
                 <div class="flex items-baseline justify-between gap-3 px-5 pt-5 pb-2">
