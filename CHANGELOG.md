@@ -5,6 +5,7 @@
 - The server can now count the faces in a pre-lab camera picture itself instead of taking the browser's word. A new Vercel function, `api/face-count.js`, runs the lab page's own face models, detection passes and counting rule on the picture (TensorFlow.js on WebAssembly, since Laravel's PHP runtime can't read images). When it finds no face or a second person where the browser found one student, the check still passes, but the attempt is flagged for the instructor with the picture: `camera_check_mismatch`, medium for no face and high for two or more. It flags rather than fails because the server sees one small JPEG, not the live video, so a student in a dim room can honestly get a different count. A failed check would use up one of their three tries.
 - When the function doesn't answer within `FACE_COUNT_TIMEOUT` seconds (default 10), or answers with an error, the check passes as it did before and is recorded as unverified. An outage of the second opinion must not stop every student from starting a lab.
 - It is off until the owner sets `FACE_COUNT_SECRET` (the same value for Laravel and the function; the function refuses every call without it), `FACE_COUNT_URL` and `FACE_COUNT_ENABLED=true`. A real photo of the student held up to the camera still passes, since it shows one face.
+- `php artisan certicode:remove-admin {email}` takes admin rights away from a user and keeps their account. An admin who owns a class becomes its instructor, so the class keeps someone to manage it; otherwise they become a student. `--role=student` or `--role=instructor` picks the role instead. The command refuses to remove the only admin, so there is always someone who can review instructor requests, and changes nothing for a user who isn't an admin.
 
 ## 2026-11-16
 
@@ -22,6 +23,10 @@
 
 - Signing in or out no longer ends on "419 Page Expired". Signing in or out replaces the form token, and a session ends after two hours, so a sign-in page left open on a shared laptop, a second tab, or a second click on a slow sign-in sent an old token. The form is still refused, but the browser now goes back to a fresh copy of it with "That page was open too long, so it wasn't sent. Please try again." and what was typed, except passwords, filled back in. Signing out after the session already ended lands signed out. Signing out from an old tab while still signed in asks to sign out again. Requests that ask for JSON still get 419.
 - Sign-in, sign-up and the other account pages send each form once, so a second click while the first is still loading can't send the token the first one just replaced.
+
+## 2026-11-14
+
+- The link in the instructor's "New submission" notification opens a styled page again. The submission arrives from the VS Code extension through `/api/...`, and on Vercel Laravel took `/api` as the site's base path for those requests, so the notification linked to `/api/sessions/{id}`. That page then loaded its stylesheet from `/api/build/...`, which doesn't exist, and showed raw HTML with a huge arrow icon. Vercel requests now reach Laravel without the `/api` prefix, so links built during them start at the site root. Notifications already sent with an `/api/...` link now open the normal, styled page.
 
 ## 2026-11-13
 
