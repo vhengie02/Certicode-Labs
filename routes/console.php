@@ -30,6 +30,52 @@ Artisan::command('certicode:make-admin {email}', function (string $email) {
     return 0;
 })->purpose('Make an existing user an admin');
 
+Artisan::command('certicode:remove-admin {email} {--role= : student or instructor (default: instructor if they own a class, else student)}', function (string $email) {
+    $user = User::where('email', $email)->first();
+    if (! $user) {
+        $this->error("No user with email {$email}.");
+
+        return 1;
+    }
+    if ($user->role !== 'admin') {
+        $this->error("{$user->name} ({$email}) is not an admin, so nothing changed.");
+
+        return 1;
+    }
+
+    $role = $this->option('role');
+    if ($role !== null && ! in_array($role, ['student', 'instructor'], true)) {
+        $this->error("--role must be student or instructor, not \"{$role}\".");
+
+        return 1;
+    }
+
+    // Lock the admin rows so two removals at once can't both pass the last-admin check
+    $result = DB::transaction(function () use ($user, $role) {
+        $admins = User::where('role', 'admin')->lockForUpdate()->pluck('id');
+        if ($admins->count() <= 1) {
+            return null;
+        }
+
+        // An admin who owns classes stays their instructor, so the classes keep a manager
+        $role ??= SchoolClass::where('instructor_id', $user->id)->exists() ? 'instructor' : 'student';
+        $user->forceFill(['role' => $role, 'instructor_requested_at' => null])->save();
+
+        return $role;
+    });
+
+    if ($result === null) {
+        $this->error("{$user->name} ({$email}) is the only admin. Make someone else an admin first with certicode:make-admin.");
+
+        return 1;
+    }
+
+    $article = $result === 'instructor' ? 'an' : 'a';
+    $this->info("{$user->name} ({$email}) is no longer an admin and is now {$article} {$result}.");
+
+    return 0;
+})->purpose('Remove admin rights from a user, keeping their account');
+
 Artisan::command('certicode:close-expired-live-labs', function () {
     $expiredCount = 0;
     $activeLiveLabs = Laboratory::where('availability_mode', 'live')
