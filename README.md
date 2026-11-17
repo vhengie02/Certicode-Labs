@@ -84,7 +84,7 @@ Instructors configure lab accessibility independently of participation mode (Sol
 * **Focus-Lost Tracking**: Hooks OS-level VS Code window focus (`onDidChangeWindowState`), ignoring sidebar tab switches and the extension's own modal dialogs (native windows on Windows).
 
 ### 6. Camera Presence Gate & Continuous Verification
-* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor. Every way of starting a lab needs a recent pass, but detection runs in the browser and the server trusts the face count it reports. A student who crafts that request can pass the gate, so the check deters and doesn't prove presence.
+* **Pre-Lab Gate**: Requires browser webcam permission and passes on-device face detection (face-api) before the lab workspace is unlocked. A dim room gets a stronger check on a brightened frame, but a face must still be detected. A pass in a dim room is recorded for the instructor. Three failed checks in a row lock the lab for 15 minutes and alert the instructor. Every way of starting a lab needs a recent pass. Detection runs in the browser, and the server refuses pictures the lab page can't have taken. With `FACE_COUNT_ENABLED` on, the `api/face-count.js` function counts the faces in the passing picture again on the server, and a different count flags the attempt for the instructor. Nothing can tell a real photo of the student held up to the camera from the student, so the check deters and doesn't prove presence.
 * **Continuous Background Proctoring**: Performs non-interruptive periodic background presence checks. Mid-session face-loss alerts are quietly streamed to the instructor with snapshot attachments while the student continues working.
 
 ### 7. In-Lab VS Code Sidebar & Live Leaderboard
@@ -291,6 +291,7 @@ php artisan test
 ### Vercel Serverless & Cron Execution
 The repository includes a production-ready `vercel.json` configuration:
 * **Serverless PHP Runtime**: Routes web requests through `api/index.php`.
+* **Server face count** (`api/face-count.js`, Node, off by default): counts the faces in a passing pre-lab camera picture with the same face-api models and passes as the lab page (TensorFlow.js on WebAssembly, about 21 MB bundled). The PHP runtime has no GD or Imagick, so it runs beside Laravel. To turn it on, set the same random `FACE_COUNT_SECRET` for the whole project, `FACE_COUNT_URL=https://<production domain>/api/face-count`, then `FACE_COUNT_ENABLED=true`, and redeploy. `FACE_COUNT_TIMEOUT` (seconds, default 10) bounds the wait; a check the function can't answer in time passes as before and is recorded as unverified. Node tests: `npm test`.
 * **Static Assets**: Automatically maps `/build/*` and `/downloads/*` (direct `.vsix` distribution).
 * **Automated Vercel Crons**: Configured to call `/api/cron/tick` once a day, at 16:00 UTC:
   ```json

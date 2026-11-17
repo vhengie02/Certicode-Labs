@@ -8,6 +8,10 @@
     "api/index.php": {
       "runtime": "vercel-php@0.7.3",
       "maxDuration": 60
+    },
+    "api/face-count.js": {
+      "maxDuration": 30,
+      "includeFiles": "{public/models/*,node_modules/@tensorflow/tfjs-backend-wasm/dist/*.wasm}"
     }
   },
   "crons": [
@@ -33,6 +37,10 @@
     {
       "src": "/(favicon.ico|robots.txt|site.webmanifest|media/.*|models/.*|fonts/.*|.*\\.(css|js|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot|vsix|ico|webmanifest))",
       "dest": "/public/$1"
+    },
+    {
+      "src": "/api/face-count",
+      "dest": "/api/face-count"
     },
     {
       "src": "/(.*)",

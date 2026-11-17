@@ -86,6 +86,19 @@ return [
         'download_path' => 'downloads/certicode-labs.vsix',
     ],
 
+    // Second opinion on the pre-lab camera check (App\Support\ServerFaceCount): the
+    // api/face-count.js Vercel function counts the faces in the picture, and a count that
+    // differs from the browser's flags the attempt. Off until FACE_COUNT_ENABLED=true.
+    // FACE_COUNT_URL is the deployed function (https://<production domain>/api/face-count);
+    // FACE_COUNT_SECRET must be set to the same random value on Laravel and on the function.
+    'face_count' => [
+        'enabled' => (bool) env('FACE_COUNT_ENABLED', false),
+        'url' => env('FACE_COUNT_URL'),
+        'secret' => env('FACE_COUNT_SECRET'),
+        // Seconds. A cold function takes a few seconds; a timeout leaves the check unverified.
+        'timeout' => (float) env('FACE_COUNT_TIMEOUT', 10),
+    ],
+
     // Shared typing on group labs: teammates' edits travel between their editors over
     // Supabase Realtime. Both values are public by design (the publishable key, never a
     // secret one). Leave either empty and teammates work in their own copies.

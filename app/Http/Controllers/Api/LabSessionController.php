@@ -26,6 +26,7 @@ use App\Services\SandboxExecutionService;
 use App\Support\CameraCheckFrame;
 use App\Support\ExtensionDownload;
 use App\Support\Realtime;
+use App\Support\ServerFaceCount;
 use App\Support\TeamSync;
 use App\Support\WebcamSnapshot;
 use Carbon\Carbon;
@@ -2278,8 +2279,10 @@ class LabSessionController extends Controller
         }
 
         // Successfully verified. The picture is kept for the class instructor: the face count
-        // is the browser's claim, and the picture is what they can check it against.
-        $framePayload = LabAttemptController::cameraFramePayload($frame);
+        // is the browser's claim, and the picture is what they can check it against. With the
+        // server count on, a different count flags the attempt (ServerFaceCount).
+        $serverCheck = ServerFaceCount::check($frame, $faceCount);
+        $framePayload = LabAttemptController::cameraFramePayload($frame, $serverCheck);
         TelemetryLog::create([
             'lab_session_id' => $session->id,
             'event_type' => TelemetryLog::CAMERA_CHECK_EVENT,
@@ -2292,7 +2295,7 @@ class LabSessionController extends Controller
         ]);
         LabAttemptController::flagUnusualCameraCheck($session, $framePayload);
 
-        LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'), $frame);
+        LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'), $frame, $serverCheck);
         if ($request->hasSession()) {
             // This attempt already has the picture; the login session needn't carry it too
             $request->session()->forget("camera_verified_lab_{$session->lab_id}.frame");
@@ -2357,7 +2360,9 @@ class LabSessionController extends Controller
             return $this->failedCameraCheckResponse($request, $lab, $refusal['error'], $refusal['message']);
         }
 
-        LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'), $frame);
+        // The attempt doesn't exist yet: the server count rides along with the picture and
+        // flags the attempt when the lab starts (LabAttemptController::recordCameraCheckOn)
+        LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'), $frame, ServerFaceCount::check($frame, $faceCount));
 
         return response()->json([
             'status' => 'success',

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\CodeSimilarityService;
 use App\Support\CameraCheckFrame;
 use App\Support\DeviceLabel;
+use App\Support\ServerFaceCount;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -117,14 +118,16 @@ class LabAttemptController extends Controller
     /**
      * Record a passed camera check in the student's session; the lab start reads it back and
      * moves the picture onto the attempt.
+     *
+     * @param  array{server_check: string, server_face_count: int|null}|null  $serverCheck  From ServerFaceCount::check()
      */
-    public static function rememberCameraCheck(Request $request, int $labId, bool $lowLight, CameraCheckFrame $frame): void
+    public static function rememberCameraCheck(Request $request, int $labId, bool $lowLight, CameraCheckFrame $frame, ?array $serverCheck = null): void
     {
         if ($request->hasSession()) {
             $request->session()->put("camera_verified_lab_{$labId}", [
                 'verified_at' => now()->toIso8601String(),
                 'low_light' => $lowLight,
-                'frame' => self::cameraFramePayload($frame),
+                'frame' => self::cameraFramePayload($frame, $serverCheck),
             ]);
             $request->session()->forget("camera_failures_lab_{$labId}");
         }
@@ -132,18 +135,20 @@ class LabAttemptController extends Controller
 
     /**
      * What a passed check keeps of its picture: the picture itself for the class instructor, a
-     * fingerprint to refuse it for a later check, and why it needs a look, if it does.
+     * fingerprint to refuse it for a later check, why it needs a look, if it does, and the
+     * server's own face count when that is on (`server_check`, `server_face_count`).
      *
+     * @param  array{server_check: string, server_face_count: int|null}|null  $serverCheck  From ServerFaceCount::check()
      * @return array<string, mixed>
      */
-    public static function cameraFramePayload(CameraCheckFrame $frame): array
+    public static function cameraFramePayload(CameraCheckFrame $frame, ?array $serverCheck = null): array
     {
         return array_filter([
             'has_picture' => true,
             'image_base64' => $frame->dataUri(),
             'frame_sha256' => $frame->sha256(),
             'frame_notes' => $frame->notes,
-        ]);
+        ]) + ($serverCheck ?? []);
     }
 
     /**
@@ -197,30 +202,54 @@ class LabAttemptController extends Controller
     }
 
     /**
-     * Flag an attempt whose camera check passed on a picture close to blank, with the picture,
-     * so the instructor can see whether it shows the student. Low severity: a dark room can
-     * produce one too.
+     * Flag an attempt whose camera check passed but needs the instructor's eye, with the
+     * picture: one close to blank (low severity, a dark room can produce one too), or one in
+     * which the server counted a different number of faces than the browser did (see
+     * ServerFaceCount for why that flags rather than fails).
      *
      * @param  array<string, mixed>  $frame  From cameraFramePayload()
      */
     public static function flagUnusualCameraCheck(LabSession $session, array $frame): void
     {
-        if (empty($frame['frame_notes']) || empty($frame['image_base64'])) {
+        if (empty($frame['image_base64'])) {
             return;
         }
 
-        Anomaly::create([
-            'lab_session_id' => $session->id,
-            'type' => 'camera_check_unusual',
-            'severity' => 'low',
-            'description' => 'The pre-lab camera check passed on a picture that is almost blank. Check that it shows the student.',
-            'image_path' => Anomaly::DB_SNAPSHOT,
-            'metadata' => [
-                'pre_lab' => true,
-                'frame_notes' => $frame['frame_notes'],
-                'image_base64' => $frame['image_base64'],
-            ],
-        ]);
+        if (! empty($frame['frame_notes'])) {
+            Anomaly::create([
+                'lab_session_id' => $session->id,
+                'type' => 'camera_check_unusual',
+                'severity' => 'low',
+                'description' => 'The pre-lab camera check passed on a picture that is almost blank. Check that it shows the student.',
+                'image_path' => Anomaly::DB_SNAPSHOT,
+                'metadata' => [
+                    'pre_lab' => true,
+                    'frame_notes' => $frame['frame_notes'],
+                    'image_base64' => $frame['image_base64'],
+                ],
+            ]);
+        }
+
+        if (($frame['server_check'] ?? null) === ServerFaceCount::DISAGREED) {
+            $serverCount = (int) $frame['server_face_count'];
+
+            Anomaly::create([
+                'lab_session_id' => $session->id,
+                'type' => 'camera_check_mismatch',
+                // Nobody in the picture could be a dim room; a second person is the bigger worry
+                'severity' => $serverCount > 1 ? 'high' : 'medium',
+                'description' => $serverCount > 1
+                    ? "The pre-lab camera check passed with one face, but the server found {$serverCount} in the picture. Check whether someone else is with the student."
+                    : 'The pre-lab camera check passed with one face, but the server found none in the picture. Check that it shows the student.',
+                'image_path' => Anomaly::DB_SNAPSHOT,
+                'metadata' => [
+                    'pre_lab' => true,
+                    'face_count' => 1,
+                    'server_face_count' => $serverCount,
+                    'image_base64' => $frame['image_base64'],
+                ],
+            ]);
+        }
     }
 
     /**
