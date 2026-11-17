@@ -472,10 +472,10 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
   - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.8.0 if every student should update (1.8.0 survives window reloads).
 - [ ] **Follow-ups (code)**:
   - Try a real upload to the Supabase bucket after deploying.
-  - `ModuleAttachmentS3Test::test_download_is_a_five_minute_presigned_url_for_one_object` failed once on timing in a full `php artisan test` run (5.7 s, the suite's first test) and passes alone. Make it independent of the clock.
   - Work through the audit's other medium and low findings. The full list is kept outside this public repo.
 - [x] **Audit follow-ups already fixed**:
   - Plagiarism results are stored per lab and refreshed at each submit (`LabSimilarityReport`), so loading monitoring no longer compares every pair.
+  - `ModuleAttachmentS3Test` no longer fails on timing. The AWS SDK counts `X-Amz-Expires` from its own `time()` at signing, not from the app's `now()`, so a cold first test (up to 8 s between the two) got less than 300. The download and upload tests now freeze `now()` and check that `X-Amz-Date` plus `X-Amz-Expires` is exactly five minutes after it.
   - Heartbeats and typing-speed samples (`TELEMETRY_RETENTION_DAYS`, default 7), resolved flags (`ANOMALY_RETENTION_DAYS`, 90) and camera snapshots on flags (`SNAPSHOT_RETENTION_DAYS`, 30) are pruned daily.
   - CI (`.github/workflows/ci.yml`) runs the suite on SQLite and on Postgres.
   - Monitoring's fallback polling pauses in a background tab.
