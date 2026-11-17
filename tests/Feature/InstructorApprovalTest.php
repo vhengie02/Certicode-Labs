@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -100,5 +101,62 @@ class InstructorApprovalTest extends TestCase
         $this->assertSame('admin', User::where('email', 'owner@example.com')->value('role'));
 
         $this->artisan('certicode:make-admin', ['email' => 'missing@example.com'])->assertFailed();
+    }
+
+    public function test_remove_admin_command_makes_an_admin_without_classes_a_student()
+    {
+        $this->admin();
+        User::create(['name' => 'Owner', 'email' => 'owner@example.com', 'password' => bcrypt('password'), 'role' => 'admin']);
+
+        $this->artisan('certicode:remove-admin', ['email' => 'owner@example.com'])
+            ->expectsOutputToContain('is no longer an admin and is now a student')
+            ->assertSuccessful();
+
+        $this->assertSame('student', User::where('email', 'owner@example.com')->value('role'));
+    }
+
+    public function test_remove_admin_command_keeps_an_admin_who_owns_classes_an_instructor()
+    {
+        $this->admin();
+        $owner = User::create(['name' => 'Owner', 'email' => 'owner@example.com', 'password' => bcrypt('password'), 'role' => 'admin']);
+        SchoolClass::create(['name' => 'Java 101', 'code' => 'JAVA-101', 'instructor_id' => $owner->id]);
+
+        $this->artisan('certicode:remove-admin', ['email' => 'owner@example.com'])
+            ->expectsOutputToContain('is now an instructor')
+            ->assertSuccessful();
+
+        $this->assertSame('instructor', $owner->fresh()->role);
+        $this->assertTrue($owner->fresh()->canManageClass(SchoolClass::where('code', 'JAVA-101')->first()), 'they still manage their own class');
+    }
+
+    public function test_remove_admin_command_role_option_picks_the_new_role()
+    {
+        $this->admin();
+        $owner = User::create(['name' => 'Owner', 'email' => 'owner@example.com', 'password' => bcrypt('password'), 'role' => 'admin']);
+        SchoolClass::create(['name' => 'Java 101', 'code' => 'JAVA-101', 'instructor_id' => $owner->id]);
+
+        $this->artisan('certicode:remove-admin', ['email' => 'owner@example.com', '--role' => 'student'])->assertSuccessful();
+        $this->assertSame('student', $owner->fresh()->role);
+
+        $owner->refresh()->forceFill(['role' => 'admin'])->save();
+        $this->artisan('certicode:remove-admin', ['email' => 'owner@example.com', '--role' => 'admin'])->assertFailed();
+        $this->assertSame('admin', $owner->fresh()->role, 'an unknown role changes nothing');
+    }
+
+    public function test_remove_admin_command_refuses_missing_users_non_admins_and_the_last_admin()
+    {
+        $this->artisan('certicode:remove-admin', ['email' => 'missing@example.com'])->assertFailed();
+
+        User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
+        $this->artisan('certicode:remove-admin', ['email' => 'prof@example.com'])
+            ->expectsOutputToContain('is not an admin')
+            ->assertFailed();
+        $this->assertSame('instructor', User::where('email', 'prof@example.com')->value('role'));
+
+        $this->admin();
+        $this->artisan('certicode:remove-admin', ['email' => 'admin@example.com'])
+            ->expectsOutputToContain('the only admin')
+            ->assertFailed();
+        $this->assertSame('admin', User::where('email', 'admin@example.com')->value('role'));
     }
 }

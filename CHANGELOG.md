@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-17
+
+- `php artisan certicode:remove-admin {email}` takes admin rights away from a user and keeps their account. An admin who owns a class becomes its instructor, so the class keeps someone to manage it; otherwise they become a student. `--role=student` or `--role=instructor` picks the role instead. The command refuses to remove the only admin, so there is always someone who can review instructor requests, and changes nothing for a user who isn't an admin.
+
 ## 2026-11-16
 
 - Each class has a gradebook, opened from the class page: one row per enrolled student, one column per lab in syllabus order. A lab's grade is the student's best completed attempt, with the instructor's regrade in place of the AI score, as on the results page. A regraded grade is marked, with the AI score, who regraded it and why. A grade still waiting for the instructor's review shows as provisional. Cells without a grade say "In progress" or "Timed out", or stay empty for a lab never opened. Each grade opens its attempt.
