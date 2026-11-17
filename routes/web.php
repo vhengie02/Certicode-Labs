@@ -224,6 +224,7 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
     Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
+    Route::post('/instructor/sessions/{id}/run', [InstructorMonitoringController::class, 'runSubmission'])->name('instructor.sessions.run')->middleware('throttle:instructor-run');
     Route::get('/instructor/sessions/{id}/files/download/{file?}', [InstructorMonitoringController::class, 'downloadSessionFiles'])->whereNumber('file')->name('instructor.sessions.files.download');
 
     // Student Profiles & Directory CRUD
