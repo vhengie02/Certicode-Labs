@@ -99,7 +99,12 @@ class VercelRequestTest extends TestCase
         $bridge = file_get_contents(dirname(__DIR__, 2).'/api/index.php');
         $boot = strpos($bridge, "require_once __DIR__.'/../bootstrap/app.php'");
 
-        foreach (["putenv('LOG_CHANNEL=stderr');", "\$_ENV['LOG_CHANNEL'] = 'stderr';", "\$_SERVER['LOG_CHANNEL'] = 'stderr';"] as $line) {
+        $lines = [];
+        foreach (['LOG_CHANNEL' => 'stderr', 'LOG_LEVEL' => 'debug'] as $name => $value) {
+            array_push($lines, "putenv('{$name}={$value}');", "\$_ENV['{$name}'] = '{$value}';", "\$_SERVER['{$name}'] = '{$value}';");
+        }
+
+        foreach ($lines as $line) {
             $at = strpos($bridge, $line);
             $this->assertNotFalse($at, "Missing: {$line}");
             $this->assertLessThan($boot, $at, "{$line} must run before Laravel boots");

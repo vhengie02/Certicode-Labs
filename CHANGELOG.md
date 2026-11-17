@@ -11,6 +11,7 @@
 - Search results now mark the part that matches what was typed. Searching `java` shows "Java OOP" with "Java" highlighted in green. Every match in a title is marked, whatever its case, and keeps the title's own casing. Characters such as `.`, `+` or `(` in the search match only themselves. Page links in the search palette, such as "All Classes", are marked the same way. A result found only by its description shows no mark.
 - Titles are still shown as text: a class named with HTML in it shows the HTML as written, with only the matches marked.
 - The live site now writes its errors to Vercel's runtime logs. They used to go to a log file in the function's temporary folder, which nobody could read and which vanished with it, so a module file upload that failed with "Server Error" left no trace of why. `api/index.php` now sets `LOG_CHANNEL=stderr` over any value in the Vercel project settings.
+- Even on stderr, the next failed upload still logged nothing. `api/index.php` now also sets `LOG_LEVEL=debug` over the project settings, and a module upload that can't start writes its cause with PHP's own `error_log()` as well, so it reaches the runtime logs whatever Laravel's logging is set to.
 - When the server can't start a module file upload, the form now says "“name” could not be uploaded right now. Nothing was saved. Please try again." instead of "Server Error", and the cause is logged.
 
 ## 2026-11-16

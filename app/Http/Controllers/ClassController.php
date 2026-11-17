@@ -554,8 +554,10 @@ class ClassController extends Controller
         try {
             return response()->json(ModuleAttachment::issueDirectUpload($class->id, $validated['file_name']));
         } catch (\Throwable $e) {
-            // The form shows this message; the cause goes to the log, not to the browser
+            // The form shows this message; the cause goes to the log, not to the browser.
+            // error_log() too: on Vercel, report() alone left no trace of this failure.
             report($e);
+            error_log(sprintf('Module attachment upload could not start: %s: %s at %s:%d', $e::class, $e->getMessage(), $e->getFile(), $e->getLine()));
 
             return response()->json(['message' => "“{$validated['file_name']}” could not be uploaded right now."], 503);
         }
