@@ -78,6 +78,11 @@ $_SERVER['EPHEMERAL_LOCAL_STORAGE'] = 'true';
 putenv('LOG_CHANNEL=stderr');
 $_ENV['LOG_CHANNEL'] = 'stderr';
 $_SERVER['LOG_CHANNEL'] = 'stderr';
+// Even on stderr, a failed module upload still logged nothing, so a LOG_LEVEL project variable
+// may be set above "error". Log every level, as config/logging.php does by default.
+putenv('LOG_LEVEL=debug');
+$_ENV['LOG_LEVEL'] = 'debug';
+$_SERVER['LOG_LEVEL'] = 'debug';
 if (! getenv('MAIL_MAILER')) {
     putenv('MAIL_MAILER=log');
     $_ENV['MAIL_MAILER'] = 'log';

@@ -116,12 +116,21 @@ class ModuleAttachmentDirectUploadTest extends TestCase
         $failing = \Mockery::mock(FilesystemAdapter::class);
         $failing->shouldReceive('temporaryUploadUrl')->andThrow(new \RuntimeException('signing failed'));
         Storage::set('supabase', $failing);
+        $errorLog = tempnam(sys_get_temp_dir(), 'error_log');
+        $previousErrorLog = ini_set('error_log', $errorLog);
 
-        $this->requestUploadUrl(name: 'REPENTOGONLauncher (1).zip', size: 20254720)
-            ->assertStatus(503)
-            ->assertExactJson(['message' => '“REPENTOGONLauncher (1).zip” could not be uploaded right now.']);
+        try {
+            $this->requestUploadUrl(name: 'REPENTOGONLauncher (1).zip', size: 20254720)
+                ->assertStatus(503)
+                ->assertExactJson(['message' => '“REPENTOGONLauncher (1).zip” could not be uploaded right now.']);
+        } finally {
+            ini_set('error_log', $previousErrorLog === false ? '' : $previousErrorLog);
+        }
 
         Exceptions::assertReported(fn (\RuntimeException $e) => $e->getMessage() === 'signing failed');
+        // Written with error_log() as well, since report() alone left no trace on Vercel
+        $this->assertStringContainsString('Module attachment upload could not start: RuntimeException: signing failed', file_get_contents($errorLog));
+        @unlink($errorLog);
         $this->createModule([['key' => 'module_attachments/'.str_repeat('a', 40).'.zip', 'name' => 'x.zip']])
             ->assertSessionHasErrors(['attachments' => ModuleAttachment::UPLOAD_MISSING_MESSAGE]);
     }
