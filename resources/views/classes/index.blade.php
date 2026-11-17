@@ -12,15 +12,10 @@
         </div>
 
         @if(auth()->user()->role === 'student')
-            <!-- Student: Join Class by Code -->
-            <form action="{{ route('classes.join') }}" method="POST" class="flex space-x-2 shrink-0">
-                @csrf
-                <input type="text" id="join_class_code" name="code" required placeholder="CLASS CODE (e.g. CLASS-XYZ)" 
-                       class="px-3.5 py-2 bg-[#141414] border border-[#2e2e2e] rounded-[6px] text-xs font-mono text-[#ededed] placeholder-[#666666] uppercase focus:outline-none focus:border-[#3ecf8e]">
-                <button type="submit" class="px-5 py-2 text-xs font-semibold rounded-full text-[#0f0f0f] bg-[#3ecf8e] hover:bg-[#00c573] transition-colors shadow-none">
-                    Join Class &rarr;
-                </button>
-            </form>
+            <!-- Student: classes come from the instructor's roster -->
+            <p id="class-roster-note" class="max-w-sm text-xs text-[#888888] md:text-right">
+                Your instructor adds you to their class roster with <span class="text-[#ededed] font-mono break-all">{{ auth()->user()->email }}</span>. Missing a class? Ask them to add that email.
+            </p>
         @else
             <!-- Instructor / Admin: Create Class -->
             <a href="{{ route('classes.create') }}" class="inline-flex items-center px-5 py-2 rounded-full text-xs font-semibold text-[#0f0f0f] bg-[#3ecf8e] hover:bg-[#00c573] transition-colors shadow-none">
@@ -29,32 +24,6 @@
             </a>
         @endif
     </div>
-
-    <!-- Invitations Section (Student Only) -->
-    @if(auth()->user()->role === 'student' && $invitedClasses->isNotEmpty())
-        <div class="p-6 bg-[#171717] border border-[#3ecf8e]/30 rounded-xl">
-            <h2 class="text-xs font-mono font-bold text-[#3ecf8e] uppercase tracking-wider mb-3 flex items-center">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-5.333a2 2 0 012.22 0l8 5.333A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-2.25-1.5a2 2 0 00-2.22 0l-2.25 1.5"></path></svg>
-                Class Invitations from Teachers
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                @foreach($invitedClasses as $class)
-                    <div class="p-4 bg-[#141414] border border-[#2e2e2e] rounded-[6px] flex items-center justify-between">
-                        <div>
-                            <h3 class="font-bold text-[#ededed] text-sm">{{ $class->name }}</h3>
-                            <p class="text-xs text-[#888888] mt-1 font-mono">Instructor: {{ $class->instructor->name }}</p>
-                        </div>
-                        <form action="{{ route('classes.invite-accept', $class->id) }}" method="POST">
-                            @csrf
-                            <button type="submit" class="px-4 py-1.5 bg-[#3ecf8e] hover:bg-[#00c573] text-xs font-semibold rounded-full text-[#0f0f0f] transition-colors">
-                                Accept invitation &rarr;
-                            </button>
-                        </form>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
 
     <!-- Classes Grid -->
     <div class="motion-rows grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -113,7 +82,7 @@
             <div class="col-span-full p-12 text-center rounded-xl bg-[#171717] border border-[#2e2e2e]">
                 <svg class="w-10 h-10 text-[#666666] mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
                 <h3 class="text-base font-bold text-[#ededed]">No Classes Found</h3>
-                <p class="text-xs text-[#888888] font-mono mt-1">You are not enrolled in any classes yet.</p>
+                <p class="text-xs text-[#888888] font-mono mt-1">{{ auth()->user()->role === 'student' ? 'You are not on any class roster yet. Your instructor adds you.' : 'You have no classes yet.' }}</p>
             </div>
         @endforelse
     </div>

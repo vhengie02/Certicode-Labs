@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Anomaly;
 use App\Models\Certificate;
+use App\Models\ClassPendingStudent;
 use App\Models\Competency;
 use App\Models\Group;
 use App\Models\Laboratory;
@@ -770,7 +771,7 @@ class ShowcaseAccountSeeder extends Seeder
         }
 
         // =============================================================
-        // CLASS 4: Full-Stack Web Architecture (WEB401) - INVITATION PENDING
+        // CLASS 4: Full-Stack Web Architecture (WEB401) - ROSTER JUST IMPORTED
         // =============================================================
         $class4 = SchoolClass::updateOrCreate(
             ['code' => 'WEB401'],
@@ -781,9 +782,10 @@ class ShowcaseAccountSeeder extends Seeder
             ]
         );
 
-        // Invite students (status: 'invited') so the invitation banner appears in the dashboard!
+        // The instructor imported a student list: students with accounts are enrolled and told,
+        // and two listed emails wait on the roster until those students sign up
         foreach ($students as $student) {
-            $class4->students()->syncWithoutDetaching([$student->id => ['status' => 'invited']]);
+            $class4->students()->syncWithoutDetaching([$student->id => ['status' => 'enrolled']]);
 
             DB::table('notifications')->insert([
                 'id' => Str::uuid()->toString(),
@@ -791,15 +793,21 @@ class ShowcaseAccountSeeder extends Seeder
                 'notifiable_type' => User::class,
                 'notifiable_id' => $student->id,
                 'data' => json_encode([
-                    'title' => "Class Invitation: {$class4->name}",
-                    'message' => "Dr. Jane Smith invited you to join '{$class4->name}' (Join Code: {$class4->code}). Check your invitations on the Classes page to accept.",
-                    'url' => route('classes.index'),
+                    'title' => "Added to class: {$class4->name}",
+                    'message' => "You're now enrolled in '{$class4->name}' with {$instructor->name}.",
+                    'url' => route('classes.show', $class4->id),
                     'type' => 'class',
                 ]),
                 'read_at' => null,
                 'created_at' => now()->subDay(),
                 'updated_at' => now()->subDay(),
             ]);
+        }
+        foreach (['Marco Villanueva' => 'marco.villanueva@example.com', 'Lea Tan' => 'lea.tan@example.com'] as $name => $email) {
+            ClassPendingStudent::updateOrCreate(
+                ['class_id' => $class4->id, 'email' => $email],
+                ['name' => $name, 'added_by' => $instructor->id]
+            );
         }
 
         // Add 1 module for Class 4

@@ -74,13 +74,13 @@ class StudentNotificationsTest extends TestCase
         return $user->fresh()->notifications->pluck('data.title')->all();
     }
 
-    public function test_joining_by_code_notifies_student_and_instructor_once()
+    public function test_being_added_to_a_roster_notifies_the_student_once()
     {
-        $this->actingAs($this->student)->post('/classes/join', ['code' => 'java101']);
-        $this->actingAs($this->student)->post('/classes/join', ['code' => 'JAVA101']);
+        $this->actingAs($this->instructor)->post(route('classes.students.add', $this->schoolClass->id), ['email' => 'student@example.com']);
+        $this->actingAs($this->instructor)->post(route('classes.students.add', $this->schoolClass->id), ['email' => 'STUDENT@example.com']);
 
-        $this->assertSame(['Joined class: Java Basics'], $this->titles($this->student));
-        $this->assertSame(['Student Joined Class: Java Basics'], $this->titles($this->instructor));
+        $this->assertSame(['Added to class: Java Basics'], $this->titles($this->student));
+        $this->assertSame([], $this->titles($this->instructor));
     }
 
     public function test_submitting_from_vscode_notifies_student()

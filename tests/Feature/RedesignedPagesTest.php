@@ -66,16 +66,17 @@ class RedesignedPagesTest extends TestCase
     public function test_class_page_shows_staff_tools_only_to_the_instructor()
     {
         $this->actingAs($this->instructor)->get("/classes/{$this->class->id}")
-            ->assertSee('JAVA-101')
-            ->assertSee('Invite a student')
-            ->assertSee('While loops');
+            ->assertSee('Add students')
+            ->assertSee('Import students')
+            ->assertSee('While loops')
+            ->assertDontSee('JAVA-101'); // the old join code
 
         $this->actingAs($this->student)->get("/classes/{$this->class->id}")
             ->assertOk()
             ->assertSee('Your progress')
             ->assertSee('FizzBuzz')
             ->assertDontSee('JAVA-101')
-            ->assertDontSee('Invite a student');
+            ->assertDontSee('Add students');
     }
 
     public function test_syllabus_shows_when_each_module_and_lab_was_created()

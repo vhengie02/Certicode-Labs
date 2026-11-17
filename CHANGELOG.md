@@ -18,6 +18,13 @@
 - A resume finds the lab's folder again by the id, even after the instructor renames the lab, and keeps the student's work. A student who opens the lab's folder itself in VS Code gets the files there, not in a folder inside it. Starting a new attempt of the same lab still asks before replacing the files, and keeps the old copies in the lab folder's `.certicode/previous`.
 - Everything that looks at the lab's files now looks in the lab folder: the check for missing files that turns Submit off, the line counts, the paste check, what Check Progress and Submit send, read-only starter files, and shared typing on group labs. Another lab's file with the same name no longer counts as this lab's. Code files the student adds are sent only from the lab folder, named as they are inside it.
 - A lab already in progress from an older build, with its files straight in the open folder, stays there until it ends, so a resume after updating still finds the student's work. The next lab gets its own folder.
+- Classes have no join code any more. A student can enter a class, its modules and its labs only if they are on the class roster. Students already in a class keep their place, and open invitations became enrollments, so nobody waits on an Accept button. The Classes page tells a student that their instructor adds them with their account email.
+- The instructor fills the roster on the class page: by email, one at a time, or by importing an Excel (.xlsx) list. The sheet's first row needs an Email column, and may have Name, or First name and Last name, in any order. Only the first sheet is read, up to 1,000 students.
+- After an import, the class page lists every row by its row number: added, added without an account yet, already on the roster, or not added and why (not an email address, no email, or an instructor or admin account). The same email twice in one file counts once.
+- An email with no Certicode account yet waits on the roster, marked "No account yet". The student joins the class the first time they sign up or sign in with that email, by password or Google. A Gmail counts only once Google has confirmed it. Students added to a class are told by notification.
+- The instructor can take a student off the roster. They lose access to the class and its labs; their past attempts stay. A student who holds the class's certificate stays on the roster.
+- Only the class's instructor and admins can add, import or remove students.
+- Deploy: run the three `2026_11_16_*` migrations. They add the `class_pending_students` table, turn invitations into enrollments, and let `school_classes.code` be empty. Old codes stay in the column but open nothing.
 
 ## 2026-11-15
 
