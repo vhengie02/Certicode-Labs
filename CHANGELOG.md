@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-16
+
+- Each class has a gradebook, opened from the class page: one row per enrolled student, one column per lab in syllabus order. A lab's grade is the student's best completed attempt, with the instructor's regrade in place of the AI score, as on the results page. A regraded grade is marked, with the AI score, who regraded it and why. A grade still waiting for the instructor's review shows as provisional. Cells without a grade say "In progress" or "Timed out", or stay empty for a lab never opened. Each grade opens its attempt.
+- The gradebook also shows each student's average over all the class's labs (a lab without a grade counts as 0), how many labs they passed at the class's lab pass score, and whether that meets the certificate threshold. A provisional grade doesn't count as passed, as for the certificate.
+- On a group lab each student shows their own attempt, which carries the team's grade. A teammate who never opened the lab shows as not started.
+- "Export to Excel" downloads the gradebook as an .xlsx file. Grades are numbers, regraded grades are shaded blue and provisional ones yellow, each with a note, and a second sheet lists every regrade with the AI score and the reason. Names and titles starting with "=" stay text and never become formulas.
+- Only the class's instructor and admins can open or export a gradebook.
+- VS Code extension 1.11.0 gives each lab a folder of its own. It makes the folder first, then writes the lab's starter files inside it, where they used to go straight into the open folder. The folder is named after the lab and ends in the lab's id, for example `java-oop-basics-lab12`, using only lowercase letters, digits and dashes, so it works the same on Windows, macOS and Linux. Two labs with a `Main.java` no longer meet in one folder, so starting a new lab no longer asks to replace the last lab's files.
+- A resume finds the lab's folder again by the id, even after the instructor renames the lab, and keeps the student's work. A student who opens the lab's folder itself in VS Code gets the files there, not in a folder inside it. Starting a new attempt of the same lab still asks before replacing the files, and keeps the old copies in the lab folder's `.certicode/previous`.
+- Everything that looks at the lab's files now looks in the lab folder: the check for missing files that turns Submit off, the line counts, the paste check, what Check Progress and Submit send, read-only starter files, and shared typing on group labs. Another lab's file with the same name no longer counts as this lab's. Code files the student adds are sent only from the lab folder, named as they are inside it.
+- A lab already in progress from an older build, with its files straight in the open folder, stays there until it ends, so a resume after updating still finds the student's work. The next lab gets its own folder.
+
+## 2026-11-15
+
+- Signing in or out no longer ends on "419 Page Expired". Signing in or out replaces the form token, and a session ends after two hours, so a sign-in page left open on a shared laptop, a second tab, or a second click on a slow sign-in sent an old token. The form is still refused, but the browser now goes back to a fresh copy of it with "That page was open too long, so it wasn't sent. Please try again." and what was typed, except passwords, filled back in. Signing out after the session already ended lands signed out. Signing out from an old tab while still signed in asks to sign out again. Requests that ask for JSON still get 419.
+- Sign-in, sign-up and the other account pages send each form once, so a second click while the first is still loading can't send the token the first one just replaced.
+
 ## 2026-11-14
 
 - The link in the instructor's "New submission" notification opens a styled page again. The submission arrives from the VS Code extension through `/api/...`, and on Vercel Laravel took `/api` as the site's base path for those requests, so the notification linked to `/api/sessions/{id}`. That page then loaded its stylesheet from `/api/build/...`, which doesn't exist, and showed raw HTML with a huge arrow icon. Vercel requests now reach Laravel without the `/api` prefix, so links built during them start at the site root. Notifications already sent with an `/api/...` link now open the normal, styled page.
