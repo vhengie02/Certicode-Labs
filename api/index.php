@@ -72,6 +72,12 @@ putenv('BCRYPT_ROUNDS=12');
 putenv('EPHEMERAL_LOCAL_STORAGE=true');
 $_ENV['EPHEMERAL_LOCAL_STORAGE'] = 'true';
 $_SERVER['EPHEMERAL_LOCAL_STORAGE'] = 'true';
+// A log file would sit in this instance's /tmp, where nobody can read it, and vanish with it.
+// stderr reaches Vercel's runtime logs. Set over any LOG_CHANNEL project variable, because
+// errors logged to a file there were lost without a trace.
+putenv('LOG_CHANNEL=stderr');
+$_ENV['LOG_CHANNEL'] = 'stderr';
+$_SERVER['LOG_CHANNEL'] = 'stderr';
 if (! getenv('MAIL_MAILER')) {
     putenv('MAIL_MAILER=log');
     $_ENV['MAIL_MAILER'] = 'log';

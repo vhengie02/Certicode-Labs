@@ -88,4 +88,21 @@ class VercelRequestTest extends TestCase
         $this->assertNotFalse($capture);
         $this->assertLessThan($capture, $strip);
     }
+
+    /**
+     * A failed module upload in production left no trace: errors went to a log file in the
+     * instance's /tmp. Laravel reads $_SERVER first, so the bridge sets all three over any
+     * LOG_CHANNEL project variable.
+     */
+    public function test_the_vercel_bridge_logs_to_stderr(): void
+    {
+        $bridge = file_get_contents(dirname(__DIR__, 2).'/api/index.php');
+        $boot = strpos($bridge, "require_once __DIR__.'/../bootstrap/app.php'");
+
+        foreach (["putenv('LOG_CHANNEL=stderr');", "\$_ENV['LOG_CHANNEL'] = 'stderr';", "\$_SERVER['LOG_CHANNEL'] = 'stderr';"] as $line) {
+            $at = strpos($bridge, $line);
+            $this->assertNotFalse($at, "Missing: {$line}");
+            $this->assertLessThan($boot, $at, "{$line} must run before Laravel boots");
+        }
+    }
 }

@@ -10,6 +10,8 @@
 - `php artisan certicode:remove-admin {email}` takes admin rights away from a user and keeps their account. An admin who owns a class becomes its instructor, so the class keeps someone to manage it; otherwise they become a student. `--role=student` or `--role=instructor` picks the role instead. The command refuses to remove the only admin, so there is always someone who can review instructor requests, and changes nothing for a user who isn't an admin.
 - Search results now mark the part that matches what was typed. Searching `java` shows "Java OOP" with "Java" highlighted in green. Every match in a title is marked, whatever its case, and keeps the title's own casing. Characters such as `.`, `+` or `(` in the search match only themselves. Page links in the search palette, such as "All Classes", are marked the same way. A result found only by its description shows no mark.
 - Titles are still shown as text: a class named with HTML in it shows the HTML as written, with only the matches marked.
+- The live site now writes its errors to Vercel's runtime logs. They used to go to a log file in the function's temporary folder, which nobody could read and which vanished with it, so a module file upload that failed with "Server Error" left no trace of why. `api/index.php` now sets `LOG_CHANNEL=stderr` over any value in the Vercel project settings.
+- When the server can't start a module file upload, the form now says "“name” could not be uploaded right now. Nothing was saved. Please try again." instead of "Server Error", and the cause is logged.
 
 ## 2026-11-16
 

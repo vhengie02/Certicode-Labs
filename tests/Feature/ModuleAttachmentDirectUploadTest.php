@@ -6,8 +6,10 @@ use App\Models\Module;
 use App\Models\ModuleAttachment;
 use App\Models\SchoolClass;
 use App\Models\User;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -102,6 +104,26 @@ class ModuleAttachmentDirectUploadTest extends TestCase
         $this->requestUploadUrl(size: 20 * 1024 * 1024 + 1)
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['file_size' => 'Files can be up to 20 MB each.']);
+    }
+
+    /**
+     * Production answered a 20 MB zip with a bare 500, so the form said "Server Error", and the
+     * cause was in no log. The form now gets a message it can show, and the error is reported.
+     */
+    public function test_a_failure_to_sign_the_upload_is_reported_and_explained(): void
+    {
+        Exceptions::fake();
+        $failing = \Mockery::mock(FilesystemAdapter::class);
+        $failing->shouldReceive('temporaryUploadUrl')->andThrow(new \RuntimeException('signing failed'));
+        Storage::set('supabase', $failing);
+
+        $this->requestUploadUrl(name: 'REPENTOGONLauncher (1).zip', size: 20254720)
+            ->assertStatus(503)
+            ->assertExactJson(['message' => '“REPENTOGONLauncher (1).zip” could not be uploaded right now.']);
+
+        Exceptions::assertReported(fn (\RuntimeException $e) => $e->getMessage() === 'signing failed');
+        $this->createModule([['key' => 'module_attachments/'.str_repeat('a', 40).'.zip', 'name' => 'x.zip']])
+            ->assertSessionHasErrors(['attachments' => ModuleAttachment::UPLOAD_MISSING_MESSAGE]);
     }
 
     public function test_local_disk_keeps_the_multipart_upload(): void
