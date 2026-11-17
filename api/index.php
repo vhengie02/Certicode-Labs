@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\VercelRequest;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
 
@@ -93,6 +94,9 @@ try {
 
     // Explicitly set storage directory to writable /tmp/storage
     $app->useStoragePath('/tmp/storage');
+
+    // Route /api/... paths without the prefix and keep it out of generated URLs (see VercelRequest)
+    $_SERVER = VercelRequest::stripFunctionPrefix($_SERVER);
 
     // Capture and handle the incoming HTTP request
     $request = Request::capture();
