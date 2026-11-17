@@ -74,11 +74,10 @@ class DashboardController extends Controller
             'classCount' => $classCount,
             // Getting-started steps tick themselves off from real activity
             'setup' => [
-                ['title' => 'Join a class', 'body' => 'Ask your instructor for the class code and enter it on the Classes page, or accept an invitation.', 'done' => $classCount > 0, 'action' => 'Enter a class code', 'href' => route('classes.index').'#join_class_code'],
+                ['title' => 'Get on a class roster', 'body' => "Your instructor adds you to their class with your account email, {$user->email}. Ask them if a class is missing.", 'done' => $classCount > 0, 'action' => 'Open my classes', 'href' => route('classes.index')],
                 ['title' => 'Install the VS Code extension', 'body' => 'Labs run inside VS Code. Install the Certicode extension and sign in with this account.', 'done' => $user->labSessions()->exists(), 'action' => 'Download the extension', 'href' => ExtensionDownload::url(), 'download' => ExtensionDownload::filename()],
                 ['title' => 'Take your first lab', 'body' => 'Start a lab from your class. Your camera is checked while you work, and your code is graded when you submit.', 'done' => $hasCompletedLab, 'action' => 'Open my classes', 'href' => route('classes.index')],
             ],
-            'invitations' => $user->invitedClasses()->count(),
             'inProgress' => $user->labSessions()
                 ->where('status', 'in_progress')
                 ->with('laboratory:id,title,module_id', 'laboratory.module:id,class_id', 'laboratory.module.schoolClass:id,name')
@@ -101,10 +100,10 @@ class DashboardController extends Controller
 
         return [
             'setup' => [
-                ['title' => 'Create a class', 'body' => 'Give it a name and a pass mark. Certicode generates the code students join with.', 'done' => $classIds->isNotEmpty(), 'action' => 'New class', 'href' => route('classes.create')],
+                ['title' => 'Create a class', 'body' => 'Give it a name and a pass mark.', 'done' => $classIds->isNotEmpty(), 'action' => 'New class', 'href' => route('classes.create')],
                 ['title' => 'Add a module', 'body' => 'Modules are the chapters of your class: readings, files and the labs that go with them.', 'done' => DB::table('modules')->whereIn('class_id', $classIds)->exists(), 'action' => 'Open your class', 'href' => $classHref],
                 ['title' => 'Create a lab', 'body' => "Write the task, add starter files and tests, and choose whether it runs live or on the student's own time.", 'done' => (clone $ownLabs)->exists(), 'action' => 'Open your class', 'href' => $classHref],
-                ['title' => 'Bring in your students', 'body' => 'Share the class code, or invite students by email from the class page.', 'done' => DB::table('class_student')->whereIn('class_id', $classIds)->where('status', 'enrolled')->exists(), 'action' => 'Open your class', 'href' => $classHref],
+                ['title' => 'Bring in your students', 'body' => 'Import an Excel student list or add students by email on the class page. Only students on the roster can enter.', 'done' => DB::table('class_student')->whereIn('class_id', $classIds)->where('status', 'enrolled')->exists(), 'action' => 'Open your class', 'href' => $classHref],
                 ['title' => 'Run a lab and review it', 'body' => 'Watch sessions on the monitoring page, check integrity flags and adjust grades where needed.', 'done' => LabSession::whereIn('lab_id', (clone $ownLabs)->select('id'))->exists(), 'action' => 'All classes', 'href' => route('classes.index')],
             ],
             // Shown in the panel headers, next to the lists they count

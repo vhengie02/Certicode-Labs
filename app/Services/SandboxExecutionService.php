@@ -12,11 +12,59 @@ class SandboxExecutionService
     /**
      * Execute student code: on Judge0 when configured, otherwise (local development and tests
      * only) in Docker or a local sub-process with a timeout. $timeoutSeconds caps the wait for
-     * Judge0, so a caller with a time budget can stay inside it.
+     * Judge0, so a caller with a time budget can stay inside it. $stdin, when given, is the
+     * program's standard input.
+     *
+     * The result always has output, errors, status (success, error or unavailable),
+     * execution_time_ms, exit_code (null when unknown) and compile_error. A Judge0 run also
+     * reports stderr, cpu_time_ms and memory_kb.
      */
-    public function execute(string $code, string $language, ?int $timeoutSeconds = null): array
+    public function execute(string $code, string $language, ?int $timeoutSeconds = null, ?string $stdin = null): array
     {
-        return $this->withCleanText($this->run($code, $language, $timeoutSeconds));
+        return $this->withCleanText($this->run($code, $language, $timeoutSeconds, $stdin) + [
+            'exit_code' => null,
+            'compile_error' => false,
+        ]);
+    }
+
+    /**
+     * Java code saved as several files, as one source Judge0 can compile: Judge0 takes a single
+     * file, Main.java. Package lines are dropped, imports gathered at the top, and `public`
+     * taken off the other files' top-level types (only one public type is allowed per file).
+     * Other languages can't be joined this way, so only the main file is used.
+     *
+     * @param  list<array{name: string, content: string, is_primary: bool}>  $files  main file first
+     * @return array{source: string, files: list<string>} the code and the names of the files in it
+     */
+    public function combineSourceFiles(array $files, string $language): array
+    {
+        $javaFiles = array_values(array_filter($files, fn ($file) => preg_match('/\.java$/i', $file['name']) === 1));
+
+        if (strtolower(trim($language)) !== 'java' || count($javaFiles) < 2 || $javaFiles[0] !== ($files[0] ?? null)) {
+            return ['source' => (string) ($files[0]['content'] ?? ''), 'files' => isset($files[0]) ? [$files[0]['name']] : []];
+        }
+
+        $imports = [];
+        $bodies = [];
+        foreach ($javaFiles as $index => $file) {
+            $source = preg_replace('/^\s*package\s+[\w.]+\s*;[ \t]*\R?/m', '', $file['content']);
+            $source = preg_replace_callback('/^\s*import\s+(?:static\s+)?[\w.]+(?:\.\*)?\s*;[ \t]*\R?/m', function ($match) use (&$imports) {
+                $imports[trim($match[0])] = true;
+
+                return '';
+            }, $source);
+
+            if ($index > 0) {
+                $source = preg_replace('/^public\s+((?:final\s+|abstract\s+|sealed\s+|non-sealed\s+)*(?:class|interface|enum|record)\s)/m', '$1', $source);
+            }
+
+            $bodies[] = trim($source);
+        }
+
+        return [
+            'source' => ltrim(implode("\n", array_keys($imports))."\n\n".implode("\n\n", $bodies)."\n"),
+            'files' => array_column($javaFiles, 'name'),
+        ];
     }
 
     /**
@@ -25,7 +73,7 @@ class SandboxExecutionService
      */
     private function withCleanText(array $result): array
     {
-        foreach (['output', 'errors'] as $key) {
+        foreach (['output', 'errors', 'stderr'] as $key) {
             if (is_string($result[$key] ?? null)) {
                 $result[$key] = str_replace("\0", '', mb_scrub($result[$key], 'UTF-8'));
             }
@@ -34,14 +82,14 @@ class SandboxExecutionService
         return $result;
     }
 
-    private function run(string $code, string $language, ?int $timeoutSeconds): array
+    private function run(string $code, string $language, ?int $timeoutSeconds, ?string $stdin): array
     {
         $language = strtolower(trim($language));
         $startTime = microtime(true);
 
         // Serverless hosts (Vercel) have no Docker or JDK: run code on a Judge0 server when one is configured.
         if ($this->isRemoteExecutionConfigured()) {
-            return $this->executeRemotely($code, $language, $startTime, $timeoutSeconds ?? 25);
+            return $this->executeRemotely($code, $language, $startTime, $timeoutSeconds ?? 25, $stdin);
         }
 
         // Fail closed: without Judge0 the code would run on this server with the app's secrets
@@ -50,14 +98,14 @@ class SandboxExecutionService
         }
 
         if ($language === 'java') {
-            return $this->executeJava($code, $startTime);
+            return $this->executeJava($code, $startTime, $stdin);
         }
 
         if ($this->isDockerAvailable()) {
-            return $this->executeInDocker($code, $language, $startTime);
+            return $this->executeInDocker($code, $language, $startTime, $stdin);
         }
 
-        return $this->executeLocally($code, $language, $startTime);
+        return $this->executeLocally($code, $language, $startTime, $stdin);
     }
 
     /**
@@ -102,7 +150,7 @@ class SandboxExecutionService
     /**
      * Run code on a Judge0 server (self-hosted, or hosted via RapidAPI when JUDGE0_KEY is set).
      */
-    protected function executeRemotely(string $code, string $language, float $startTime, int $timeoutSeconds = 25): array
+    protected function executeRemotely(string $code, string $language, float $startTime, int $timeoutSeconds = 25, ?string $stdin = null): array
     {
         $languageId = self::JUDGE0_LANGUAGES[$language] ?? null;
         if ($languageId === null) {
@@ -131,6 +179,7 @@ class SandboxExecutionService
                     'language_id' => $languageId,
                     'cpu_time_limit' => 5,
                     'wall_time_limit' => 10,
+                    ...($stdin !== null ? ['stdin' => base64_encode($stdin)] : []),
                 ]);
         } catch (\Throwable $e) {
             Log::warning('Judge0 request failed: '.$e->getMessage());
@@ -150,13 +199,22 @@ class SandboxExecutionService
         $stdout = $decode($data['stdout'] ?? null);
 
         // 3 = Accepted; 5 = Time Limit Exceeded; 6 = Compilation Error; 7-12 = runtime errors; 13+ = server-side errors
-        return match (true) {
+        $result = match (true) {
             $statusId === 3 => $this->executionResult($stdout, null, $startTime, 'success'),
             $statusId === 5 => $this->executionResult($stdout, 'Execution Timed Out (Maximum execution limit of 5.0 seconds reached).', $startTime, 'error'),
-            $statusId === 6 => $this->executionResult('', ($language === 'java' ? "Java Compilation Error:\n" : "Compilation Error:\n").$decode($data['compile_output'] ?? null), $startTime, 'error'),
+            $statusId === 6 => ['compile_error' => true] + $this->executionResult('', ($language === 'java' ? "Java Compilation Error:\n" : "Compilation Error:\n").$decode($data['compile_output'] ?? null), $startTime, 'error'),
             $statusId >= 7 && $statusId <= 12 => $this->executionResult($stdout, $decode($data['stderr'] ?? null) ?: ($data['status']['description'] ?? 'Runtime error'), $startTime, 'error'),
             default => $this->executionResult('', 'The code execution service could not run this submission ('.($data['status']['description'] ?? 'unknown status').').', $startTime, 'unavailable'),
         };
+
+        // What Judge0 measured: the program's standard error (kept even when it succeeded, where
+        // `errors` is empty), exit code, CPU seconds and peak memory in KB
+        return $result + [
+            'stderr' => $decode($data['stderr'] ?? null),
+            'exit_code' => is_numeric($data['exit_code'] ?? null) ? (int) $data['exit_code'] : null,
+            'cpu_time_ms' => is_numeric($data['time'] ?? null) ? round((float) $data['time'] * 1000, 2) : null,
+            'memory_kb' => is_numeric($data['memory'] ?? null) ? (int) $data['memory'] : null,
+        ];
     }
 
     /**
@@ -306,7 +364,7 @@ class SandboxExecutionService
     /**
      * Execute student code securely in a Docker container.
      */
-    private function executeInDocker(string $code, string $language, float $startTime): array
+    private function executeInDocker(string $code, string $language, float $startTime, ?string $stdin = null): array
     {
         $config = $this->getDockerConfig($language);
         if (! $config) {
@@ -330,6 +388,7 @@ class SandboxExecutionService
 
             $dockerCommand = [
                 'docker', 'run', '--rm',
+                ...($stdin !== null ? ['-i'] : []),
                 '--network', 'none',
                 '--memory', '128m',
                 '--cpus', '0.5',
@@ -342,6 +401,7 @@ class SandboxExecutionService
 
             $process = new Process($dockerCommand);
             $process->setTimeout(5.0); // 5 seconds execution limit
+            $process->setInput($stdin);
 
             $process->run();
 
@@ -353,6 +413,7 @@ class SandboxExecutionService
                     'errors' => null,
                     'execution_time_ms' => $executionTime,
                     'status' => 'success',
+                    'exit_code' => $process->getExitCode(),
                 ];
             } else {
                 $errorOutput = $process->getErrorOutput();
@@ -369,6 +430,7 @@ class SandboxExecutionService
                     'errors' => $errorOutput ?: 'Unknown error occurred.',
                     'execution_time_ms' => $executionTime,
                     'status' => 'error',
+                    'exit_code' => $process->getExitCode(),
                 ];
             }
         } catch (ProcessTimedOutException $e) {
@@ -395,7 +457,7 @@ class SandboxExecutionService
     /**
      * Fallback local sandbox execution with strict timeouts and path resolution.
      */
-    private function executeLocally(string $code, string $language, float $startTime): array
+    private function executeLocally(string $code, string $language, float $startTime, ?string $stdin = null): array
     {
         $config = $this->getLocalConfig($language);
         if (! $config) {
@@ -438,6 +500,7 @@ class SandboxExecutionService
         try {
             $process = new Process($command);
             $process->setTimeout(5.0); // 5 seconds limit
+            $process->setInput($stdin);
 
             $process->run();
 
@@ -449,6 +512,7 @@ class SandboxExecutionService
                     'errors' => null,
                     'execution_time_ms' => $executionTime,
                     'status' => 'success',
+                    'exit_code' => $process->getExitCode(),
                 ];
             } else {
                 $errorOutput = $process->getErrorOutput();
@@ -465,6 +529,7 @@ class SandboxExecutionService
                     'errors' => $errorOutput ?: 'Unknown local execution error.',
                     'execution_time_ms' => $executionTime,
                     'status' => 'error',
+                    'exit_code' => $process->getExitCode(),
                 ];
             }
         } catch (ProcessTimedOutException $e) {
@@ -540,7 +605,7 @@ class SandboxExecutionService
     /**
      * Compiles and executes Java code.
      */
-    protected function executeJava(string $code, float $startTime): array
+    protected function executeJava(string $code, float $startTime, ?string $stdin = null): array
     {
         $className = 'Main';
         if (preg_match('/public\s+class\s+(\w+)/', $code, $matches)) {
@@ -583,6 +648,7 @@ class SandboxExecutionService
                         'errors' => "Java Compilation Error:\n".$errors,
                         'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
                         'status' => 'error',
+                        'compile_error' => true,
                     ];
                 }
 
@@ -593,6 +659,7 @@ class SandboxExecutionService
                 // Run in docker
                 $runProcess = new Process([
                     'docker', 'run', '--rm',
+                    ...($stdin !== null ? ['-i'] : []),
                     '--network', 'none',
                     '--memory', '128m',
                     '--cpus', '0.5',
@@ -602,6 +669,7 @@ class SandboxExecutionService
                     'java', $className,
                 ]);
                 $runProcess->setTimeout(5.0);
+                $runProcess->setInput($stdin);
                 $runProcess->run();
 
                 $executionTime = (int) ((microtime(true) - $startTime) * 1000);
@@ -612,6 +680,7 @@ class SandboxExecutionService
                         'errors' => null,
                         'execution_time_ms' => $executionTime,
                         'status' => 'success',
+                        'exit_code' => $runProcess->getExitCode(),
                     ];
                 } else {
                     $errors = $runProcess->getErrorOutput() ?: $runProcess->getOutput();
@@ -624,6 +693,7 @@ class SandboxExecutionService
                         'errors' => $errors,
                         'execution_time_ms' => $executionTime,
                         'status' => 'error',
+                        'exit_code' => $runProcess->getExitCode(),
                     ];
                 }
             } else {
@@ -646,6 +716,7 @@ class SandboxExecutionService
                         'errors' => "Java Compilation Error:\n".$errors,
                         'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
                         'status' => 'error',
+                        'compile_error' => true,
                     ];
                 }
 
@@ -657,6 +728,7 @@ class SandboxExecutionService
 
                 $runProcess = new Process([$java, $className], $tempDir);
                 $runProcess->setTimeout(5.0);
+                $runProcess->setInput($stdin);
                 $runProcess->run();
 
                 $executionTime = (int) ((microtime(true) - $startTime) * 1000);
@@ -667,6 +739,7 @@ class SandboxExecutionService
                         'errors' => null,
                         'execution_time_ms' => $executionTime,
                         'status' => 'success',
+                        'exit_code' => $runProcess->getExitCode(),
                     ];
                 } else {
                     $errors = $runProcess->getErrorOutput() ?: $runProcess->getOutput();
@@ -679,6 +752,7 @@ class SandboxExecutionService
                         'errors' => $errors,
                         'execution_time_ms' => $executionTime,
                         'status' => 'error',
+                        'exit_code' => $runProcess->getExitCode(),
                     ];
                 }
             }

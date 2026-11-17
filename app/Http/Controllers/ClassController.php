@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Anomaly;
 use App\Models\Certificate;
+use App\Models\ClassPendingStudent;
 use App\Models\Laboratory;
 use App\Models\LabSession;
 use App\Models\LabSessionChat;
@@ -14,6 +15,7 @@ use App\Models\SchoolClass;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Notifications\ClassActivityNotification;
+use App\Services\ClassRoster;
 use App\Support\DisplayTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -47,26 +49,21 @@ class ClassController extends Controller
 
         $cacheKey = "user_classes_index_{$user->id}_{$user->role}";
 
-        [$classes, $invitedClasses] = Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
-            $invitedClasses = collect();
-
+        $classes = Cache::store('file')->remember($cacheKey, 30, function () use ($user) {
             if ($user->role === 'student') {
-                $classes = $user->classes()->with('instructor')->withCount('modules')->latest()->get();
-                $invitedClasses = $user->invitedClasses()->with('instructor')->withCount('modules')->latest()->get();
-            } else {
-                // Instructors see their own classes; admins see every class
-                $classes = SchoolClass::query()
-                    ->when($user->role !== 'admin', fn ($q) => $q->where('instructor_id', $user->id))
-                    ->with('instructor')
-                    ->withCount(['students', 'modules'])
-                    ->latest()
-                    ->get();
+                return $user->classes()->with('instructor')->withCount('modules')->latest()->get();
             }
 
-            return [$classes, $invitedClasses];
+            // Instructors see their own classes; admins see every class
+            return SchoolClass::query()
+                ->when($user->role !== 'admin', fn ($q) => $q->where('instructor_id', $user->id))
+                ->with('instructor')
+                ->withCount(['students', 'modules'])
+                ->latest()
+                ->get();
         });
 
-        return view('classes.index', compact('classes', 'invitedClasses'));
+        return view('classes.index', compact('classes'));
     }
 
     /**
@@ -109,16 +106,9 @@ class ClassController extends Controller
 
         $background = $this->cardBackgroundAttributes($request);
 
-        // Generate unique 8-character code: CLASS-XXXX
-        $code = 'CLASS-'.strtoupper(Str::random(6));
-        while (SchoolClass::where('code', $code)->exists()) {
-            $code = 'CLASS-'.strtoupper(Str::random(6));
-        }
-
         SchoolClass::create([
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
-            'code' => $code,
             'instructor_id' => (int) Auth::id(),
             'passing_threshold' => $validated['passing_threshold'] ?? 75,
             'lab_pass_score' => $validated['lab_pass_score'] ?? SchoolClass::DEFAULT_LAB_PASS_SCORE,
@@ -196,7 +186,7 @@ class ClassController extends Controller
         $user = Auth::user();
 
         if ($user->role === 'student') {
-            $canSee = $class->students()->where('users.id', $user->id)->whereIn('class_student.status', ['enrolled', 'invited'])->exists();
+            $canSee = $class->students()->where('users.id', $user->id)->where('class_student.status', 'enrolled')->exists();
             abort_unless($canSee, 403, 'You are not enrolled in this class.');
         } else {
             $this->authorizeClassManager($class);
@@ -236,21 +226,13 @@ class ClassController extends Controller
             ? fn ($q) => $q->withCount(['labSessions as completed_count' => fn ($sq) => $sq->where('status', 'completed')])
             : null);
 
-        // Authorize student access using the already loaded students collection
+        // Only the class roster lets a student in; the loaded students collection holds it
         if ($user->role === 'student') {
-            $studentPivot = $class->students->firstWhere('id', $user->id)?->pivot;
-            $isEnrolled = $studentPivot && $studentPivot->status === 'enrolled';
-            $isInvited = $studentPivot && $studentPivot->status === 'invited';
-
-            if (! $isEnrolled && ! $isInvited) {
-                abort(403, 'You are not enrolled in this class.');
-            }
-
-            if ($isInvited) {
-                return view('classes.invited', compact('class'));
-            }
+            $isEnrolled = $class->students->firstWhere('id', $user->id)?->pivot->status === 'enrolled';
+            abort_unless($isEnrolled, 403, 'You are not on this class roster. Ask your instructor to add you.');
         } else {
             $this->authorizeClassManager($class);
+            $class->load('pendingStudents');
         }
 
         $completedLabIds = [];
@@ -368,136 +350,100 @@ class ClassController extends Controller
     }
 
     /**
-     * Join class using join code.
+     * Put one student on the roster by email. Someone without an account yet waits on the
+     * roster and joins when they sign up or sign in with that email.
      */
-    public function joinByCode(Request $request)
+    public function addStudent(Request $request, ClassRoster $roster, int $id)
     {
-        $request->validate([
-            'code' => 'required|string|max:20',
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
+
+        $validated = $request->validate([
+            'email' => 'required|email|max:255',
+            'name' => 'nullable|string|max:255',
         ]);
 
-        $class = SchoolClass::where('code', strtoupper($request->code))->first();
+        $outcome = $roster->add($class, $validated['email'], $validated['name'] ?? null, Auth::user());
+        $who = $outcome['name'] ? "{$outcome['name']} ({$outcome['email']})" : $outcome['email'];
+        $back = redirect()->route('classes.show', $class->id);
 
-        if (! $class) {
-            return redirect()->back()->with('error', 'Invalid enrollment code. Please check with your instructor.');
-        }
-
-        $userId = Auth::id();
-        $wasEnrolled = $userId && $class->students()
-            ->where('users.id', $userId)
-            ->wherePivot('status', 'enrolled')
-            ->exists();
-
-        if ($userId) {
-            // Attach student
-            $class->students()->syncWithoutDetaching([
-                $userId => ['status' => 'enrolled'],
-            ]);
-
-            // If they had an invitation, make sure it is updated to enrolled
-            $class->students()->updateExistingPivot($userId, ['status' => 'enrolled']);
-            self::clearClassesCache($userId);
-        }
-
-        // Tell the student and the instructor, but only on the first join, not a repeat code entry
-        if ($userId && ! $wasEnrolled) {
-            try {
-                Auth::user()->notify(new ClassActivityNotification(
-                    "Joined class: {$class->name}",
-                    "You're now enrolled in '{$class->name}'".($class->instructor ? " with {$class->instructor->name}." : '.'),
-                    route('classes.show', $class->id),
-                    'class'
-                ));
-                $class->instructor?->notify(new ClassActivityNotification(
-                    "Student Joined Class: {$class->name}",
-                    Auth::user()->name." joined '{$class->name}' with the class code.",
-                    route('classes.show', $class->id),
-                    'class'
-                ));
-            } catch (\Throwable $e) {
-                Log::warning('Class join notification failed: '.$e->getMessage());
-            }
-        }
-
-        return redirect()->route('classes.show', $class->id)->with('success', 'Successfully enrolled in '.$class->name);
+        return match ($outcome['result']) {
+            'enrolled' => $back->with('success', "{$who} is now in the class."),
+            'pending' => $back->with('success', "{$who} has no Certicode account yet. They join the class as soon as they sign up or sign in with that email."),
+            'present' => $back->with('success', "{$who} is already on the roster."),
+            default => $back->withInput()->with('error', "{$who} can't be added: {$outcome['note']}."),
+        };
     }
 
     /**
-     * Invite student by Email (Gmail invite).
+     * Put every student in an Excel (.xlsx) list on the roster, and report row by row what
+     * happened.
      */
-    public function inviteStudent(Request $request, int $id)
+    public function importStudents(Request $request, ClassRoster $roster, int $id)
     {
         $this->authorizeInstructor();
         $class = SchoolClass::findOrFail($id);
         $this->authorizeClassManager($class);
 
         $request->validate([
-            'email' => 'required|email|max:255',
+            'roster_file' => 'required|file|extensions:xlsx|max:2048',
+        ], [
+            'roster_file.required' => 'Choose an Excel file (.xlsx) to import.',
+            'roster_file.extensions' => 'Use an Excel workbook (.xlsx). Save other formats as .xlsx first.',
+            'roster_file.max' => 'That file is over 2 MB. A student list should be far smaller.',
+            'roster_file.uploaded' => 'That file is over 2 MB. A student list should be far smaller.',
         ]);
 
-        $student = User::findByEmail($request->email);
+        $report = $roster->import($class, $request->file('roster_file')->getRealPath(), Auth::user());
+        $added = count($report['enrolled']) + count($report['pending']);
+        $rows = $added + count($report['present']) + count($report['invalid']);
 
-        if (! $student || $student->role !== 'student') {
-            return redirect()->back()->with('error', 'No student account uses that email. Ask them to register first.');
-        }
+        $summary = $rows === 0
+            ? 'No student rows were found under the heading row.'
+            : "Imported {$rows} ".Str::plural('row', $rows).": {$added} added, ".count($report['present']).' already on the roster, '.count($report['invalid']).' not added.';
 
-        // Only a new invitation is added. Writing 'invited' over an existing row would take an
-        // enrolled student out of the class until they accepted again.
-        $existing = $class->students()->where('users.id', $student->id)->first();
-        if ($existing && $existing->pivot->status === 'enrolled') {
-            return redirect()->route('classes.show', $class->id)->with('success', "{$student->name} is already enrolled in this class.");
-        }
-        if (! $existing) {
-            $class->students()->attach($student->id, ['status' => 'invited']);
-        }
-        self::clearClassesCache($student->id);
-
-        // Send invite notification
-        try {
-            $student->notify(new ClassActivityNotification(
-                "Invited to Class: {$class->name}",
-                "Instructor {$class->instructor->name} has invited you to join the class '{$class->name}'.",
-                route('classes.index'),
-                'class'
-            ));
-        } catch (\Throwable $e) {
-            Log::warning('Class invitation notification failed: '.$e->getMessage());
-        }
-
-        return redirect()->route('classes.show', $class->id)->with('success', 'Student invitation sent successfully to '.$student->email);
+        return redirect()->route('classes.show', $class->id)
+            ->with($rows === 0 ? 'error' : 'success', $summary)
+            ->with('roster_report', $report);
     }
 
     /**
-     * Accept Class invitation.
+     * Take a student off the roster. Their past attempts stay; they lose access to the class.
      */
-    public function acceptInvite(Request $request, int $class_id)
+    public function removeStudent(int $id, int $student_id)
     {
-        $class = SchoolClass::findOrFail($class_id);
-        $student = Auth::user();
-        if (! $student instanceof User) {
-            return redirect()->route('login');
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
+
+        $student = $class->students()->where('users.id', $student_id)->firstOrFail();
+
+        // A certificate stays tied to its class roster, as when an account is deleted
+        if (Certificate::where('class_id', $class->id)->where('user_id', $student->id)->exists()) {
+            return redirect()->route('classes.show', $class->id)
+                ->with('error', "{$student->name} holds a certificate for this class, so they stay on the roster.");
         }
 
-        $class->students()->updateExistingPivot($student->id, [
-            'status' => 'enrolled',
-        ]);
+        $class->students()->detach($student->id);
         self::clearClassesCache($student->id);
 
-        // Notify the instructor
-        if ($class->instructor) {
-            try {
-                $class->instructor->notify(new ClassActivityNotification(
-                    "Student Joined Class: {$class->name}",
-                    "{$student->name} has accepted your invitation and joined the class '{$class->name}'.",
-                    route('classes.show', $class->id),
-                    'class'
-                ));
-            } catch (\Throwable $e) {
-                Log::warning('Instructor join notification failed: '.$e->getMessage());
-            }
-        }
+        return redirect()->route('classes.show', $class->id)->with('success', "{$student->name} was removed from the class.");
+    }
 
-        return redirect()->route('classes.show', $class->id)->with('success', 'Invitation accepted. Welcome to '.$class->name.'!');
+    /**
+     * Take an email that has no account yet off the roster.
+     */
+    public function removePendingStudent(int $id, int $pending_id)
+    {
+        $this->authorizeInstructor();
+        $class = SchoolClass::findOrFail($id);
+        $this->authorizeClassManager($class);
+
+        $pending = ClassPendingStudent::where('class_id', $class->id)->findOrFail($pending_id);
+        $pending->delete();
+
+        return redirect()->route('classes.show', $class->id)->with('success', "{$pending->email} was removed from the roster.");
     }
 
     /**

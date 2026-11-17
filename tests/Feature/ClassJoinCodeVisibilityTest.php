@@ -8,8 +8,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * A join code appears only on the class page, for staff, masked until the button is held.
- * No other page, search result or export shows it.
+ * Classes made before the roster still carry a join code in the database. It no longer
+ * opens anything, and no page, search result or export shows it, not even to staff.
  */
 class ClassJoinCodeVisibilityTest extends TestCase
 {
@@ -30,25 +30,23 @@ class ClassJoinCodeVisibilityTest extends TestCase
         return SchoolClass::create(['name' => 'Intro Course', 'code' => 'JOINME42', 'instructor_id' => $instructor->id]);
     }
 
-    private function student(SchoolClass $class, string $status = 'enrolled'): User
+    private function student(SchoolClass $class): User
     {
         $student = User::create(['name' => 'Ana', 'email' => 'ana@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
-        $class->students()->attach([$student->id => ['status' => $status]]);
+        $class->students()->attach([$student->id => ['status' => 'enrolled']]);
 
         return $student;
     }
 
-    public function test_staff_get_the_code_masked_with_a_hold_button(): void
+    public function test_staff_no_longer_get_the_code_on_the_class_page(): void
     {
         $class = $this->classWithInstructor();
 
         $this->actingAs($class->instructor)->get(route('classes.show', $class->id))
             ->assertOk()
-            ->assertSee('aria-label="Press and hold to unhide join code"', false)
-            ->assertDontSee('Hold to unhide')
-            ->assertSee('••••••')
-            ->assertSee('<code class="hidden font-mono', false)
-            ->assertSee('data-copy="JOINME42"', false);
+            ->assertDontSee('JOINME42')
+            ->assertDontSee('Join code')
+            ->assertDontSee('Press and hold to unhide');
     }
 
     public function test_students_never_get_the_code_on_the_class_page(): void
@@ -71,16 +69,6 @@ class ClassJoinCodeVisibilityTest extends TestCase
             $this->actingAs($user)->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])->get(route('dashboard.sections'))
                 ->assertOk()->assertDontSee('JOINME42');
         }
-    }
-
-    public function test_the_invitation_page_does_not_show_the_code(): void
-    {
-        $class = $this->classWithInstructor();
-
-        $this->actingAs($this->student($class, 'invited'))->get(route('classes.show', $class->id))
-            ->assertOk()
-            ->assertSee('Class Invitation Received')
-            ->assertDontSee('JOINME42');
     }
 
     public function test_search_neither_shows_nor_matches_the_code(): void

@@ -174,9 +174,11 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::post('/classes/{class_id}/anomalies/resolve', [ClassController::class, 'resolveAnomalies'])->name('classes.anomalies.resolve');
     Route::get('/anomalies/{id}/snapshot', AnomalySnapshotController::class)->name('anomalies.snapshot');
     Route::get('/camera-checks/{id}/picture', CameraCheckPictureController::class)->name('camera-checks.picture');
-    Route::post('/classes/join', [ClassController::class, 'joinByCode'])->name('classes.join');
-    Route::post('/classes/{id}/invite', [ClassController::class, 'inviteStudent'])->name('classes.invite');
-    Route::post('/classes/{class_id}/invite-accept', [ClassController::class, 'acceptInvite'])->name('classes.invite-accept');
+    // Class roster: students enter a class only by being on it
+    Route::post('/classes/{id}/students', [ClassController::class, 'addStudent'])->name('classes.students.add');
+    Route::post('/classes/{id}/students/import', [ClassController::class, 'importStudents'])->name('classes.students.import');
+    Route::delete('/classes/{id}/students/{student_id}', [ClassController::class, 'removeStudent'])->name('classes.students.remove');
+    Route::delete('/classes/{id}/pending-students/{pending_id}', [ClassController::class, 'removePendingStudent'])->name('classes.pending-students.remove');
 
     // Modules routing
     Route::get('/classes/{class_id}/modules/create', [ClassController::class, 'createModule'])->name('modules.create');
@@ -224,6 +226,7 @@ Route::middleware(['auth', 'legal.accepted'])->group(function () {
     Route::get('/laboratories/{id}/monitoring/plagiarism', [InstructorMonitoringController::class, 'checkPlagiarism'])->name('instructor.monitoring.plagiarism');
     Route::post('/instructor/sessions/{id}/override-grade', [InstructorMonitoringController::class, 'overrideGrade'])->name('instructor.sessions.override-grade');
     Route::get('/instructor/sessions/{id}/files', [InstructorMonitoringController::class, 'sessionFiles'])->name('instructor.sessions.files');
+    Route::post('/instructor/sessions/{id}/run', [InstructorMonitoringController::class, 'runSubmission'])->name('instructor.sessions.run')->middleware('throttle:instructor-run');
     Route::get('/instructor/sessions/{id}/files/download/{file?}', [InstructorMonitoringController::class, 'downloadSessionFiles'])->whereNumber('file')->name('instructor.sessions.files.download');
 
     // Student Profiles & Directory CRUD

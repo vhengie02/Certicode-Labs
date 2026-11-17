@@ -6,8 +6,9 @@
     $user = auth()->user();
     $isStaff = $user->canManageClass($class);
     $topModules = $class->modules->where('parent_id', null)->sortBy('order_index');
-    $enrolled = $class->students->filter(fn ($s) => $s->pivot->status === 'enrolled');
-    $invited = $class->students->filter(fn ($s) => $s->pivot->status === 'invited');
+    $enrolled = $class->students->filter(fn ($s) => $s->pivot->status === 'enrolled')->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE);
+    $pending = $isStaff ? $class->pendingStudents : collect();
+    $rosterReport = session('roster_report');
     $threshold = $class->passing_threshold ?? 75;
     $labPassScore = $class->lab_pass_score ?? \App\Models\SchoolClass::DEFAULT_LAB_PASS_SCORE;
     $isEnded = $class->isEnded();
@@ -42,26 +43,6 @@
 
         {{-- Key facts --}}
         <div class="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
-            @if ($isStaff)
-                {{-- The code stays masked, even without JS, and shows only while the button is held down --}}
-                <div class="flex items-center gap-2" x-data="{ revealed: false }">
-                    <span class="text-[#888888]">Join code</span>
-                    <span aria-live="polite">
-                        <code class="hidden font-mono text-[#ededed] tracking-wider" :class="{ hidden: !revealed }">{{ $class->code }}</code>
-                        <code class="font-mono text-[#ededed] tracking-wider" :class="{ hidden: revealed }" aria-hidden="true">••••••</code>
-                    </span>
-                    <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2 select-none touch-none" aria-label="Press and hold to unhide join code"
-                            @pointerdown="revealed = true" @pointerup="revealed = false" @pointercancel="revealed = false" @pointerleave="revealed = false"
-                            @keydown.space.prevent="revealed = true" @keydown.enter.prevent="revealed = true" @keyup.space="revealed = false" @keyup.enter="revealed = false"
-                            @blur="revealed = false" @blur.window="revealed = false" @contextmenu.prevent>
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12C3.5 9.5 7 5 12 5s8.5 4.5 9.5 7c-1 2.5-4.5 7-9.5 7s-8.5-4.5-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                    <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2" data-copy="{{ $class->code }}" aria-label="Copy join code">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-                        <span data-copy-label>Copy</span>
-                    </button>
-                </div>
-            @endif
             <div><span class="text-[#888888]">Instructor</span> <span class="text-[#ededed]">{{ $class->instructor->name ?? 'Unassigned' }}</span></div>
             <div><span class="text-[#888888]">Pass mark</span> <span class="text-[#ededed]">{{ $threshold }}% of labs at {{ $labPassScore }}% or more</span></div>
             @if ($class->scheduled_end_date)
@@ -151,39 +132,119 @@
                     </div>
                 </section>
             @else
-                <section class="ui-card" aria-labelledby="invite-heading">
+                <section class="ui-card" aria-labelledby="add-students-heading">
                     <div class="ui-card-header">
-                        <h2 id="invite-heading" class="ui-card-title">Invite a student</h2>
-                        <p class="ui-card-subtitle">They need a Certicode account first. Or share the join code above.</p>
+                        <h2 id="add-students-heading" class="ui-card-title">Add students</h2>
+                        <p class="ui-card-subtitle">Only students on this roster can enter the class. Someone without an account yet joins when they sign up or sign in with the listed email.</p>
                     </div>
-                    <form action="{{ route('classes.invite', $class->id) }}" method="POST" class="ui-card-body flex gap-2">
-                        @csrf
-                        <label for="invite-email" class="sr-only">Student email</label>
-                        <input type="email" name="email" id="invite-email" required placeholder="student@school.edu" class="ui-input flex-1 min-w-0" autocomplete="off">
-                        <button type="submit" class="ui-btn ui-btn-primary shrink-0">Invite</button>
-                    </form>
+                    <div class="ui-card-body space-y-5">
+                        <form action="{{ route('classes.students.add', $class->id) }}" method="POST" class="space-y-2">
+                            @csrf
+                            <label for="roster-email" class="ui-label">Email</label>
+                            <input type="email" name="email" id="roster-email" required maxlength="255" placeholder="student@school.edu" value="{{ old('email') }}"
+                                   class="ui-input" autocomplete="off" @error('email') aria-invalid="true" aria-describedby="roster-email-error" @enderror>
+                            @error('email') <p id="roster-email-error" class="ui-error">{{ $message }}</p> @enderror
+                            <label for="roster-name" class="ui-label">Name <span class="ui-optional">(optional, for students without an account)</span></label>
+                            <div class="flex gap-2">
+                                <input type="text" name="name" id="roster-name" maxlength="255" value="{{ old('name') }}" class="ui-input flex-1 min-w-0" autocomplete="off">
+                                <button type="submit" class="ui-btn ui-btn-primary shrink-0">Add</button>
+                            </div>
+                        </form>
+
+                        <form action="{{ route('classes.students.import', $class->id) }}" method="POST" enctype="multipart/form-data" class="space-y-2 border-t border-[#232323] pt-5">
+                            @csrf
+                            <label for="roster-file" class="ui-label">Import an Excel list</label>
+                            <input type="file" name="roster_file" id="roster-file" required accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                   class="ui-input" aria-describedby="roster-file-hint{{ $errors->has('roster_file') ? ' roster-file-error' : '' }}" @error('roster_file') aria-invalid="true" @enderror>
+                            <p id="roster-file-hint" class="ui-hint">An .xlsx file whose first row has an <strong>Email</strong> column, and optionally <strong>Name</strong> (or First name and Last name). Only the first sheet is read, up to {{ \App\Services\ClassRoster::MAX_IMPORT_ROWS }} students.</p>
+                            @error('roster_file') <p id="roster-file-error" class="ui-error">{{ $message }}</p> @enderror
+                            <button type="submit" class="ui-btn ui-btn-secondary w-full">Import students</button>
+                        </form>
+                    </div>
                 </section>
+
+                @if (is_array($rosterReport))
+                    @php
+                        $reportGroups = [
+                            'enrolled' => 'Added',
+                            'pending' => 'Added, no account yet',
+                            'present' => 'Already on the roster',
+                            'invalid' => 'Not added',
+                        ];
+                    @endphp
+                    <section class="ui-card" aria-labelledby="import-report-heading" id="import-report">
+                        <div class="ui-card-header">
+                            <h2 id="import-report-heading" class="ui-card-title">Import report</h2>
+                            @if ($rosterReport['truncated'] ?? false)
+                                <p class="ui-card-subtitle"><span class="ui-badge ui-badge-warn">Cut short</span> Only the first {{ \App\Services\ClassRoster::MAX_IMPORT_ROWS }} student rows, and nothing below row 5000, were read.</p>
+                            @endif
+                        </div>
+                        <div class="ui-card-body space-y-4 max-h-96 overflow-y-auto">
+                            @foreach ($reportGroups as $group => $label)
+                                @php $items = $rosterReport[$group] ?? []; @endphp
+                                <div>
+                                    <h3 class="text-xs font-semibold {{ $group === 'invalid' && count($items) ? 'text-red-400' : 'text-[#ededed]' }}">{{ $label }} <span class="text-[#888888] tabular-nums">({{ count($items) }})</span></h3>
+                                    @if (count($items))
+                                        <ul class="mt-1 space-y-1 text-xs text-[#a3a3a3]" role="list">
+                                            @foreach ($items as $item)
+                                                <li class="flex gap-2">
+                                                    <span class="shrink-0 tabular-nums text-[#666666]">Row {{ $item['row'] }}</span>
+                                                    <span class="min-w-0 break-all">
+                                                        {{ $item['email'] !== '' ? $item['email'] : '(no email)' }}@if ($item['name']) · {{ $item['name'] }}@endif
+                                                        @if ($item['note']) <span class="text-[#888888]">— {{ $item['note'] }}</span>@endif
+                                                    </span>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </section>
+                @endif
 
                 <section class="ui-card" aria-labelledby="roster-heading">
                     <div class="flex items-baseline justify-between px-5 pt-5 pb-2">
-                        <h2 id="roster-heading" class="ui-card-title">Students</h2>
-                        <span class="text-xs text-[#888888]">{{ $enrolled->count() }} enrolled{{ $invited->isNotEmpty() ? ' · ' . $invited->count() . ' invited' : '' }}</span>
+                        <h2 id="roster-heading" class="ui-card-title">Roster</h2>
+                        <span class="text-xs text-[#888888]">{{ $enrolled->count() }} enrolled{{ $pending->isNotEmpty() ? ' · ' . $pending->count() . ' without an account' : '' }}</span>
                     </div>
                     <ul class="max-h-80 overflow-y-auto px-2 pb-3" role="list">
-                        @forelse ($enrolled->concat($invited) as $student)
+                        @foreach ($enrolled as $student)
                             <li class="flex items-center gap-3 rounded-lg px-3 py-2">
                                 <span class="h-8 w-8 shrink-0 rounded-full bg-[#3ecf8e]/10 border border-[#3ecf8e]/25 flex items-center justify-center text-[11px] font-semibold text-[#3ecf8e]" aria-hidden="true">{{ strtoupper(\Illuminate\Support\Str::substr($student->name, 0, 2)) }}</span>
                                 <span class="min-w-0 flex-1">
                                     <span class="block truncate text-sm text-[#ededed]">{{ $student->name }}</span>
                                     <span class="block truncate text-xs text-[#888888]">{{ $student->email }}</span>
                                 </span>
-                                @if ($student->pivot->status === 'invited')
-                                    <span class="ui-badge ui-badge-warn shrink-0 text-[11px]">Invited</span>
-                                @endif
+                                <form action="{{ route('classes.students.remove', [$class->id, $student->id]) }}" method="POST" class="shrink-0"
+                                      data-confirm-title="Remove {{ $student->name }}?" data-confirm="They lose access to this class. Their past lab attempts are kept." data-confirm-action="Remove">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2 text-[#888888] hover:text-red-400" aria-label="Remove {{ $student->name }} from the class">Remove</button>
+                                </form>
                             </li>
-                        @empty
-                            <li class="px-3 py-6 text-center text-sm text-[#888888]">No students yet. Share the join code to get started.</li>
-                        @endforelse
+                        @endforeach
+                        @foreach ($pending as $entry)
+                            <li class="flex items-center gap-3 rounded-lg px-3 py-2">
+                                <span class="h-8 w-8 shrink-0 rounded-full border border-dashed border-[#383838] flex items-center justify-center text-[11px] font-semibold text-[#888888]" aria-hidden="true">{{ strtoupper(\Illuminate\Support\Str::substr($entry->name ?: $entry->email, 0, 2)) }}</span>
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm text-[#a3a3a3]">{{ $entry->name ?: $entry->email }}</span>
+                                    @if ($entry->name)
+                                        <span class="block truncate text-xs text-[#888888]">{{ $entry->email }}</span>
+                                    @endif
+                                    <span class="ui-badge ui-badge-warn mt-1 text-[11px]">No account yet</span>
+                                </span>
+                                <form action="{{ route('classes.pending-students.remove', [$class->id, $entry->id]) }}" method="POST" class="shrink-0"
+                                      data-confirm-title="Remove {{ $entry->email }}?" data-confirm="They won't join this class when they sign up." data-confirm-action="Remove">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="ui-btn ui-btn-ghost ui-btn-sm !h-7 !px-2 text-[#888888] hover:text-red-400" aria-label="Remove {{ $entry->email }} from the roster">Remove</button>
+                                </form>
+                            </li>
+                        @endforeach
+                        @if ($enrolled->isEmpty() && $pending->isEmpty())
+                            <li class="px-3 py-6 text-center text-sm text-[#888888]">No students yet. Add them by email or import an Excel list.</li>
+                        @endif
                     </ul>
                 </section>
 
@@ -202,22 +263,4 @@
         </aside>
     </div>
 </div>
-@endsection
-
-@section('scripts')
-<script>
-    document.querySelectorAll('[data-copy]').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const label = button.querySelector('[data-copy-label]');
-            try {
-                await navigator.clipboard.writeText(button.dataset.copy);
-                label.textContent = 'Copied';
-                window.pulseSuccess?.(button);
-            } catch (e) {
-                label.textContent = 'Press Ctrl+C';
-            }
-            setTimeout(() => { label.textContent = 'Copy'; }, 1800);
-        });
-    });
-</script>
 @endsection

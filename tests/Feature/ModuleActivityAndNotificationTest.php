@@ -6,6 +6,7 @@ use App\Models\Laboratory;
 use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
+use App\Notifications\ClassActivityNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -49,10 +50,10 @@ class ModuleActivityAndNotificationTest extends TestCase
     /**
      * Test inviting student triggers notification.
      */
-    public function test_inviting_student_sends_notification(): void
+    public function test_adding_a_student_to_the_roster_sends_notification(): void
     {
         $response = $this->actingAs($this->instructor)
-            ->post("/classes/{$this->class->id}/invite", [
+            ->post(route('classes.students.add', $this->class->id), [
                 'email' => $this->student->email,
             ]);
 
@@ -155,43 +156,16 @@ class ModuleActivityAndNotificationTest extends TestCase
     }
 
     /**
-     * Test accepting invitation notifies instructor.
-     */
-    public function test_accepting_invite_notifies_instructor(): void
-    {
-        // First invite the student
-        $this->class->students()->attach($this->student->id, ['status' => 'invited']);
-
-        // Clear existing notifications
-        \DB::table('notifications')->truncate();
-
-        // Student accepts invite
-        $response = $this->actingAs($this->student)
-            ->post("/classes/{$this->class->id}/invite-accept");
-
-        $response->assertRedirect();
-
-        // Assert notification database record exists for the instructor
-        $this->assertDatabaseHas('notifications', [
-            'notifiable_id' => $this->instructor->id,
-            'type' => 'App\Notifications\ClassActivityNotification',
-        ]);
-
-        $notification = $this->instructor->notifications()->first();
-        $this->assertNotNull($notification);
-        $this->assertEquals("Student Joined Class: {$this->class->name}", $notification->data['title']);
-        $this->assertStringContainsString('has accepted your invitation and joined the class', $notification->data['message']);
-    }
-
-    /**
      * Test fetching user notifications via JSON endpoint.
      */
     public function test_can_fetch_notifications_via_json_route(): void
     {
-        $this->class->students()->attach($this->student->id, ['status' => 'invited']);
-
-        $this->actingAs($this->student)
-            ->post("/classes/{$this->class->id}/invite-accept");
+        $this->instructor->notify(new ClassActivityNotification(
+            "Student Joined Class: {$this->class->name}",
+            'A student joined from your roster.',
+            route('classes.show', $this->class->id),
+            'class'
+        ));
 
         $response = $this->actingAs($this->instructor)
             ->getJson(route('notifications.fetch'));
@@ -221,10 +195,12 @@ class ModuleActivityAndNotificationTest extends TestCase
      */
     public function test_can_mark_all_notifications_as_read_and_receive_refreshed_payload(): void
     {
-        $this->class->students()->attach($this->student->id, ['status' => 'invited']);
-
-        $this->actingAs($this->student)
-            ->post("/classes/{$this->class->id}/invite-accept");
+        $this->instructor->notify(new ClassActivityNotification(
+            "Student Joined Class: {$this->class->name}",
+            'A student joined from your roster.',
+            route('classes.show', $this->class->id),
+            'class'
+        ));
 
         $response = $this->actingAs($this->instructor)
             ->postJson(route('notifications.mark-as-read'));
