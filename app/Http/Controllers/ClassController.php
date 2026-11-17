@@ -551,7 +551,14 @@ class ClassController extends Controller
             'file_size.max' => 'Files can be up to 20 MB each.',
         ]);
 
-        return response()->json(ModuleAttachment::issueDirectUpload($class->id, $validated['file_name']));
+        try {
+            return response()->json(ModuleAttachment::issueDirectUpload($class->id, $validated['file_name']));
+        } catch (\Throwable $e) {
+            // The form shows this message; the cause goes to the log, not to the browser
+            report($e);
+
+            return response()->json(['message' => "“{$validated['file_name']}” could not be uploaded right now."], 503);
+        }
     }
 
     /**
