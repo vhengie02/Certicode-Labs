@@ -13,7 +13,7 @@ const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)'
 
 const randomChar = () => CHARS[Math.floor(Math.random() * CHARS.length)];
 
-function animate(el, text, vars) {
+function animate(el, text, vars, onDone = () => {}) {
     const chars = Array.from(text);
     const state = { revealed: 0 };
     let lastSwap = -1;
@@ -38,6 +38,7 @@ function animate(el, text, vars) {
         },
         onComplete: () => {
             el.textContent = text;
+            onDone();
         },
     });
 
@@ -54,14 +55,16 @@ function loop(el, text) {
     return animate(el, text, { duration: 0.6, repeat: -1, yoyo: true, repeatDelay: 0.1 });
 }
 
-// Decodes text once, from scrambled characters to the real letters
-function decode(el, text, delay = 0) {
+// Decodes text once, from scrambled characters to the real letters. onDone runs once the real
+// letters are in place, so a caller can swap in its own markup (search marks its matches then).
+function decode(el, text, delay = 0, onDone = () => {}) {
     if (reducedMotion()) {
         el.textContent = text;
+        onDone();
         return () => {};
     }
 
-    return animate(el, text, { duration: 0.5, delay });
+    return animate(el, text, { duration: 0.5, delay }, onDone);
 }
 
 window.scrambleText = { enabled: () => !reducedMotion(), loop, decode };

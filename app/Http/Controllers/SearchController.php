@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Laboratory;
 use App\Models\Module;
 use App\Models\SchoolClass;
+use App\Support\SearchHighlight;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -90,24 +91,28 @@ class SearchController extends Controller
                 ->limit(5)
                 ->get(['id', 'title', 'module_id']);
 
+            // label is plain text; label_html is the same text escaped, with the query's matches in <mark>
             return [
-                'classes' => $classes->map(function ($c) {
+                'classes' => $classes->map(function ($c) use ($q) {
                     return [
                         'label' => $c->name,
+                        'label_html' => SearchHighlight::html($c->name, $q),
                         'url' => route('classes.show', $c->id),
                         'type' => 'Class',
                     ];
                 }),
-                'modules' => $modules->map(function ($m) {
+                'modules' => $modules->map(function ($m) use ($q) {
                     return [
                         'label' => $m->title,
+                        'label_html' => SearchHighlight::html($m->title, $q),
                         'url' => route('modules.show', [$m->class_id, $m->id]),
                         'type' => 'Module',
                     ];
                 }),
-                'laboratories' => $laboratories->map(function ($l) {
+                'laboratories' => $laboratories->map(function ($l) use ($q) {
                     return [
                         'label' => $l->title,
+                        'label_html' => SearchHighlight::html($l->title, $q),
                         'url' => route('laboratories.show', $l->id),
                         'type' => 'Laboratory',
                     ];

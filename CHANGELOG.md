@@ -6,6 +6,8 @@
 - When the function doesn't answer within `FACE_COUNT_TIMEOUT` seconds (default 10), or answers with an error, the check passes as it did before and is recorded as unverified. An outage of the second opinion must not stop every student from starting a lab.
 - It is off until the owner sets `FACE_COUNT_SECRET` (the same value for Laravel and the function; the function refuses every call without it), `FACE_COUNT_URL` and `FACE_COUNT_ENABLED=true`. A real photo of the student held up to the camera still passes, since it shows one face.
 - `php artisan certicode:remove-admin {email}` takes admin rights away from a user and keeps their account. An admin who owns a class becomes its instructor, so the class keeps someone to manage it; otherwise they become a student. `--role=student` or `--role=instructor` picks the role instead. The command refuses to remove the only admin, so there is always someone who can review instructor requests, and changes nothing for a user who isn't an admin.
+- Search results now mark the part that matches what was typed. Searching `java` shows "Java OOP" with "Java" highlighted in green. Every match in a title is marked, whatever its case, and keeps the title's own casing. Characters such as `.`, `+` or `(` in the search match only themselves. Page links in the search palette, such as "All Classes", are marked the same way. A result found only by its description shows no mark.
+- Titles are still shown as text: a class named with HTML in it shows the HTML as written, with only the matches marked.
 
 ## 2026-11-16
 
