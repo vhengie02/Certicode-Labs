@@ -64,8 +64,10 @@ test('the "files from another lab" dialog at lab start is not a focus loss', asy
 
     const { provider, events } = trackedProvider(state);
     stubState.warningAnswer = 'Keep my files';
+    shown.length = 0;
     await provider.provisionStarterFiles([{ name: 'Main.java', content: 'class Main { /* lab 2 */ }', is_primary: true }]);
 
+    assert.ok(shown.some(s => s.level === 'warning' && s.message.includes('from another lab or attempt')), 'the dialog never opened');
     assert.ok(!events.includes('focus_lost'), `got ${events.join(', ')}`);
     provider._windowStateListener.dispose();
 });

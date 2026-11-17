@@ -33,6 +33,7 @@ const https = __importStar(require("https"));
 const url_1 = require("url");
 const crypto = __importStar(require("crypto"));
 const ws_1 = __importDefault(require("ws"));
+const labFolder_1 = require("./labFolder");
 const supabaseTransport_1 = require("./teamSync/supabaseTransport");
 const teamDoc_1 = require("./teamSync/teamDoc");
 const vscodeHost_1 = require("./teamSync/vscodeHost");
@@ -279,6 +280,81 @@ class SidebarProvider {
         return vscode.Uri.joinPath(rootUri, ...segments.filter(s => s !== '' && s !== '.'));
     }
     /**
+     * The folder this lab's files live in: a folder of its own inside the workspace, found
+     * again by the lab's id on a resume. A lab already in progress from an older build, which
+     * wrote its files straight into the workspace, stays there, so the student's work is found.
+     * Undefined when no folder is open.
+     */
+    async labFolder() {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!root) {
+            return undefined;
+        }
+        if (this._labFolderUri) {
+            return this._labFolderUri;
+        }
+        const lab = this._lastSessionData?.laboratory;
+        const id = (0, labFolder_1.labIdOf)(lab);
+        if (id === undefined) {
+            // No lab to name a folder after (not synced yet, or an older server): the workspace itself
+            return root;
+        }
+        this._labFolderUri = await this.findLabFolder(root, id, lab);
+        return this._labFolderUri;
+    }
+    async findLabFolder(root, id, lab) {
+        // The student opened the lab's own folder in VS Code
+        const rootName = root.fsPath.split(/[\\/]/).filter(Boolean).pop() ?? '';
+        if ((0, labFolder_1.isLabFolderFor)(rootName, id)) {
+            return root;
+        }
+        try {
+            const existing = (await vscode.workspace.fs.readDirectory(root))
+                .filter(([name, type]) => (type & vscode.FileType.Directory) !== 0 && (0, labFolder_1.isLabFolderFor)(name, id))
+                .map(([name]) => name)
+                .sort();
+            if (existing.length > 0) {
+                return vscode.Uri.joinPath(root, existing[0]);
+            }
+        }
+        catch {
+            // An unreadable workspace: the lab gets a new folder
+        }
+        if (await this.hasSessionFilesAtRoot(root, lab?.starter_files || [])) {
+            return root;
+        }
+        return vscode.Uri.joinPath(root, (0, labFolder_1.labFolderName)(lab?.title, id));
+    }
+    /**
+     * Whether an older build wrote this session's starter files straight into the workspace and
+     * they are still there.
+     */
+    async hasSessionFilesAtRoot(root, starterFiles) {
+        if (!this._sessionId) {
+            return false;
+        }
+        const owners = this.starterFileOwners(root);
+        for (const file of starterFiles) {
+            const fileUri = this.resolveWorkspaceFile(root, file.name);
+            if (!fileUri || owners[file.name] !== this._sessionId) {
+                continue;
+            }
+            try {
+                await vscode.workspace.fs.stat(fileUri);
+                return true;
+            }
+            catch {
+                // Gone: not where the work is
+            }
+        }
+        return false;
+    }
+    /** A path as the student sees it in the explorer: relative to the workspace, with "/". */
+    workspacePathOf(uri) {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        return (root && (0, labFolder_1.relativePathInside)(root.fsPath, uri.fsPath)) || uri.fsPath;
+    }
+    /**
      * Read a lab file as the student currently sees it: the open editor buffer (including
      * unsaved edits) when the file is open, otherwise the file on disk.
      */
@@ -384,10 +460,8 @@ class SidebarProvider {
                     break;
                 }
                 case 'openFile': {
-                    const workspaceFolders = vscode.workspace.workspaceFolders;
-                    const fileUri = workspaceFolders && workspaceFolders.length > 0
-                        ? this.resolveWorkspaceFile(workspaceFolders[0].uri, data.name)
-                        : undefined;
+                    const folder = await this.labFolder();
+                    const fileUri = folder ? this.resolveWorkspaceFile(folder, data.name) : undefined;
                     if (fileUri) {
                         try {
                             const doc = await vscode.workspace.openTextDocument(fileUri);
@@ -442,6 +516,7 @@ class SidebarProvider {
             this._lastSessionData = null;
             this._attemptStartLocalMs = 0;
             this._filesGenerated = false;
+            this._labFolderUri = undefined;
         }
         this._backendUrl = origin;
         this._sessionId = sessionId;
@@ -910,19 +985,22 @@ class SidebarProvider {
      * VS Code 1.79+) and remember their original content so guardReadonlyFile can restore
      * them if they change anyway (older VS Code, or edits that slip through).
      */
-    async applyReadonlyStarterFiles(rootUri, starterFiles) {
+    async applyReadonlyStarterFiles(rootUri, labFolderUri, starterFiles) {
         this._readonlyFiles.clear();
         const patterns = {};
+        // The setting's patterns are relative to the workspace, and the files are in the lab folder
+        const folderPrefix = (0, labFolder_1.relativePathInside)(rootUri.fsPath, labFolderUri.fsPath);
         for (const file of starterFiles) {
             if (!file.is_readonly) {
                 continue;
             }
-            const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
+            const fileUri = this.resolveWorkspaceFile(labFolderUri, file.name);
             if (!fileUri) {
                 continue;
             }
             this._readonlyFiles.set(fileUri.toString(), { name: file.name, content: file.content || '' });
-            patterns[String(file.name).replace(/\\/g, '/').replace(/^\.?\//, '')] = true;
+            const name = String(file.name).replace(/\\/g, '/').replace(/^\.?\//, '');
+            patterns[folderPrefix ? `${folderPrefix}/${name}` : name] = true;
         }
         if (Object.keys(patterns).length === 0) {
             return;
@@ -1016,19 +1094,28 @@ class SidebarProvider {
             });
             return;
         }
-        const rootUri = workspaceFolders[0].uri;
+        // The lab's folder first, then its files inside it
+        const rootUri = (await this.labFolder()) ?? workspaceFolders[0].uri;
+        if (rootUri.toString() !== workspaceFolders[0].uri.toString()) {
+            try {
+                await vscode.workspace.fs.createDirectory(rootUri);
+            }
+            catch (e) {
+                console.error('CertiCode: could not create the lab folder', e);
+            }
+        }
         let primaryUri = null;
         const enc = new TextEncoder();
         const sessionId = this._sessionId;
         // Which session wrote each starter file here, so a returning student keeps their work
-        // while a different lab (or a new attempt) in the same folder gets its own files
+        // while a new attempt of the lab in the same folder gets its own files
         const owners = this.starterFileOwners(rootUri);
         const fromElsewhere = [];
         for (const file of starterFiles) {
             const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
             if (!fileUri) {
                 if (file.name) {
-                    vscode.window.showWarningMessage(`CertiCode: Skipped starter file "${file.name}" because it points outside the workspace.`);
+                    vscode.window.showWarningMessage(`CertiCode: Skipped starter file "${file.name}" because it points outside the lab folder.`);
                 }
                 continue;
             }
@@ -1061,7 +1148,8 @@ class SidebarProvider {
         }
         if (fromElsewhere.length > 0) {
             const names = fromElsewhere.map(f => f.name).join(', ');
-            const choice = await this.showModalWarning(`This folder already has ${names} from another lab or attempt. Replace ${fromElsewhere.length === 1 ? 'it' : 'them'} with this lab's starter files? The current ${fromElsewhere.length === 1 ? 'copy is' : 'copies are'} saved in .certicode/previous first.`, 'Replace files', 'Keep my files');
+            const backupPath = this.workspacePathOf(vscode.Uri.joinPath(rootUri, '.certicode', 'previous'));
+            const choice = await this.showModalWarning(`This folder already has ${names} from another lab or attempt. Replace ${fromElsewhere.length === 1 ? 'it' : 'them'} with this lab's starter files? The current ${fromElsewhere.length === 1 ? 'copy is' : 'copies are'} saved in ${backupPath} first.`, 'Replace files', 'Keep my files');
             if (choice === 'Replace files') {
                 const backupRoot = vscode.Uri.joinPath(rootUri, '.certicode', 'previous', String(Date.now()));
                 for (const file of fromElsewhere) {
@@ -1086,7 +1174,7 @@ class SidebarProvider {
         }
         await this.saveStarterFileOwners(rootUri, owners);
         await this.rememberStarterFilesOnDisk(rootUri, starterFiles);
-        await this.applyReadonlyStarterFiles(rootUri, starterFiles);
+        await this.applyReadonlyStarterFiles(workspaceFolders[0].uri, rootUri, starterFiles);
         // Fallback to first file if none marked primary
         if (!primaryUri && starterFiles.length > 0) {
             primaryUri = this.resolveWorkspaceFile(rootUri, starterFiles[0].name) ?? null;
@@ -1161,13 +1249,13 @@ class SidebarProvider {
      * because a reload from disk is not a paste and a closed file raises no event at all.
      */
     async reportExternalFileChanges() {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!this._sessionId || !workspaceFolders || workspaceFolders.length === 0) {
+        const folder = this._sessionId ? await this.labFolder() : undefined;
+        if (!folder) {
             return;
         }
         let anyChanged = false;
         for (const [name, known] of this._starterDiskTexts) {
-            const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, name);
+            const fileUri = this.resolveWorkspaceFile(folder, name);
             if (!fileUri) {
                 continue;
             }
@@ -1200,11 +1288,10 @@ class SidebarProvider {
             return;
         }
         const starterFiles = this._lastSessionData.laboratory.starter_files;
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
+        const rootUri = await this.labFolder();
+        if (!rootUri) {
             return;
         }
-        const rootUri = workspaceFolders[0].uri;
         const missing = [];
         for (const file of starterFiles) {
             const fileUri = this.resolveWorkspaceFile(rootUri, file.name);
@@ -1291,13 +1378,22 @@ class SidebarProvider {
      */
     starterFileNameFor(fileName) {
         const path = fileName.replace(/\\/g, '/');
+        // Once the lab folder is known, only its files count: another lab's folder can hold a
+        // file of the same name
+        const inLabFolder = this._labFolderUri ? (0, labFolder_1.relativePathInside)(this._labFolderUri.fsPath, path) : undefined;
+        if (this._labFolderUri && inLabFolder === undefined) {
+            return undefined;
+        }
         const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
         for (const file of starterFiles) {
             if (typeof file.name !== 'string') {
                 continue;
             }
-            const name = file.name.replace(/\\/g, '/');
-            if (path === name || path.endsWith(`/${name}`)) {
+            const name = file.name.replace(/\\/g, '/').replace(/^\.\//, '');
+            const matches = inLabFolder !== undefined
+                ? (process.platform === 'win32' ? inLabFolder.toLowerCase() === name.toLowerCase() : inLabFolder === name)
+                : path === name || path.endsWith(`/${name}`);
+            if (matches) {
                 return file.name;
             }
         }
@@ -1717,8 +1813,8 @@ class SidebarProvider {
         if (!this._sessionId || !this._lastSessionData) {
             return;
         }
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
+        const folder = await this.labFolder();
+        if (!folder) {
             return;
         }
         const starterFiles = this._lastSessionData.laboratory?.starter_files || [];
@@ -1748,7 +1844,7 @@ class SidebarProvider {
                 continue;
             }
             const initialContent = this._starterFileSnapshots.get(sfile.name) ?? (sfile.content || '');
-            const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, sfile.name);
+            const fileUri = this.resolveWorkspaceFile(folder, sfile.name);
             if (!fileUri) {
                 continue;
             }
@@ -1895,14 +1991,15 @@ class SidebarProvider {
      */
     async collectSubmissionFiles() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
+        const labFolder = await this.labFolder();
         let primaryCode = '';
         let primaryFileName = '';
         const filesPayload = [];
         const fileUris = [];
-        if (workspaceFolders && workspaceFolders.length > 0) {
+        if (labFolder) {
             const starterFiles = this._lastSessionData?.laboratory?.starter_files || [];
             for (const sfile of starterFiles) {
-                const fileUri = this.resolveWorkspaceFile(workspaceFolders[0].uri, sfile.name);
+                const fileUri = this.resolveWorkspaceFile(labFolder, sfile.name);
                 if (!fileUri) {
                     continue;
                 }
@@ -1948,13 +2045,13 @@ class SidebarProvider {
             }
             catch { }
         }
-        if (workspaceFolders && workspaceFolders.length > 0) {
-            await this.addStudentFiles(workspaceFolders[0], filesPayload);
+        if (labFolder) {
+            await this.addStudentFiles(labFolder, filesPayload);
         }
         return { primaryCode, primaryFileName, filesPayload, fileUris };
     }
     /**
-     * Add code files created or changed since the attempt started, newest first. Older files are
+     * Add code files in the lab folder created or changed since the attempt started, newest first. Older files are
      * left out: the folder can hold another lab's work or the student's own projects. Creation
      * time counts too, because a file copied in keeps its old modified time. Files that would
      * take the submission past the server's limits are skipped, so they can't block a submit.
@@ -1966,8 +2063,9 @@ class SidebarProvider {
             const found = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, STUDENT_FILE_GLOB), STUDENT_FILE_EXCLUDE, MAX_STUDENT_FILES_SCANNED);
             const changed = [];
             for (const uri of found) {
-                const name = vscode.workspace.asRelativePath(uri, false);
-                if (alreadySent.has(name)) {
+                // Named like the starter files: relative to the lab folder
+                const name = (0, labFolder_1.relativePathInside)(folder.fsPath, uri.fsPath);
+                if (name === undefined || alreadySent.has(name)) {
                     continue;
                 }
                 try {
@@ -2158,14 +2256,19 @@ class SidebarProvider {
                 this.stopTeamSync('off', 'the server turned it off for this attempt');
                 return;
             }
-            const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+            // Teammates share the files inside their own lab folders, under the same names
+            const root = await this.labFolder();
+            if (!stillWanted()) {
+                return;
+            }
             if (!root) {
-                this.stopTeamSync('off', 'open the lab folder in VS Code');
+                this.stopTeamSync('off', 'open a folder in VS Code');
                 return;
             }
             built = this.buildTeamSync(config, sessionId, root, stillWanted);
+            const backupFolder = this.workspacePathOf(vscode.Uri.joinPath(root, '.certicode', 'before-shared-typing'));
             built.sync.onBackup(name => {
-                void vscode.window.showInformationMessage(`CertiCode: your team's ${name} replaced your own copy. Yours is saved in .certicode/before-shared-typing/${name}.`);
+                void vscode.window.showInformationMessage(`CertiCode: your team's ${name} replaced your own copy. Yours is saved in ${backupFolder}/${name}.`);
             });
             built.sync.onUndoOthers(name => this.warnUndoOthers(name));
             // Installed before starting, so the edits that open the files are known as setup, not typing
@@ -2499,6 +2602,7 @@ class SidebarProvider {
         this._sessionId = undefined;
         this._lastSessionData = null;
         this._filesGenerated = false;
+        this._labFolderUri = undefined;
         this._starterFileSnapshots.clear();
         this._starterDiskTexts.clear();
         this._removedBlocks = [];

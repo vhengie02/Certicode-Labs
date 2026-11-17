@@ -23,6 +23,7 @@ use App\Services\CodeSimilarityService;
 use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
+use App\Support\CameraCheckFrame;
 use App\Support\ExtensionDownload;
 use App\Support\Realtime;
 use App\Support\TeamSync;
@@ -78,7 +79,8 @@ class LabSessionController extends Controller
         }
 
         // The same pre-lab camera gate as the web start route
-        if ($user->role === 'student' && ! LabAttemptController::recentCameraCheck($lab->id)) {
+        $cameraCheck = LabAttemptController::recentCameraCheck($lab->id);
+        if ($user->role === 'student' && ! $cameraCheck) {
             return response()->json([
                 'error' => 'camera_not_verified',
                 'message' => 'Webcam presence verification is mandatory before launching the workspace. Please complete the camera check.',
@@ -92,6 +94,10 @@ class LabSessionController extends Controller
                 'error' => 'attempts_exhausted',
                 'message' => 'You have used all your attempts for this lab. Ask your instructor if you need another one.',
             ], 403);
+        }
+
+        if ($cameraCheck) {
+            LabAttemptController::recordCameraCheckOn($session, $cameraCheck);
         }
 
         return response()->json([
@@ -2257,7 +2263,8 @@ class LabSessionController extends Controller
             ], 422);
         }
 
-        if (! WebcamSnapshot::decode($imageBase64)) {
+        $frame = CameraCheckFrame::inspect($imageBase64);
+        if ($frame->isUnreadable()) {
             return $this->unreadableCameraFrameResponse();
         }
 
@@ -2266,20 +2273,30 @@ class LabSessionController extends Controller
             return $this->cameraBlockedResponse($blockMinutes);
         }
 
-        // Successfully verified. The reference frame isn't kept: nothing reads it, and a
-        // webcam picture of a student who passed has no place in storage.
+        if ($refusal = $this->cameraFrameRefusal($frame, $request->user() ?? $session->user)) {
+            return response()->json(['status' => 'error', 'verified' => false] + $refusal, 422);
+        }
+
+        // Successfully verified. The picture is kept for the class instructor: the face count
+        // is the browser's claim, and the picture is what they can check it against.
+        $framePayload = LabAttemptController::cameraFramePayload($frame);
         TelemetryLog::create([
             'lab_session_id' => $session->id,
-            'event_type' => 'webcam_prelab_verification',
+            'event_type' => TelemetryLog::CAMERA_CHECK_EVENT,
             'payload' => [
                 'verified' => true,
                 'face_count' => $faceCount,
                 'low_light' => $request->boolean('low_light'),
                 'verified_at' => now()->toISOString(),
-            ],
+            ] + $framePayload,
         ]);
+        LabAttemptController::flagUnusualCameraCheck($session, $framePayload);
 
-        LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'));
+        LabAttemptController::rememberCameraCheck($request, $session->lab_id, $request->boolean('low_light'), $frame);
+        if ($request->hasSession()) {
+            // This attempt already has the picture; the login session needn't carry it too
+            $request->session()->forget("camera_verified_lab_{$session->lab_id}.frame");
+        }
 
         return response()->json([
             'status' => 'success',
@@ -2331,11 +2348,16 @@ class LabSessionController extends Controller
             );
         }
 
-        if (! WebcamSnapshot::decode($request->input('image_base64'))) {
+        $frame = CameraCheckFrame::inspect($request->input('image_base64'));
+        if ($frame->isUnreadable()) {
             return $this->unreadableCameraFrameResponse();
         }
 
-        LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'));
+        if ($refusal = $this->cameraFrameRefusal($frame, $request->user())) {
+            return $this->failedCameraCheckResponse($request, $lab, $refusal['error'], $refusal['message']);
+        }
+
+        LabAttemptController::rememberCameraCheck($request, $labId, $request->boolean('low_light'), $frame);
 
         return response()->json([
             'status' => 'success',
@@ -2404,12 +2426,16 @@ class LabSessionController extends Controller
 
         $session = $student ? $lab->openAttemptOf($student) : null;
         if ($session) {
-            $multipleFaces = $error === 'multiple_faces';
+            [$type, $reason] = match ($error) {
+                'multiple_faces' => ['multiple_faces', 'Multiple faces detected.'],
+                'invalid_camera_frame' => ['camera_check_invalid', 'The picture sent was not one the lab page takes from a camera.'],
+                'reused_camera_frame' => ['camera_check_invalid', 'The picture sent was one already used for an earlier check.'],
+                default => ['no_face', 'No face detected.'],
+            };
             $this->recordCameraAnomaly($session, ['image_base64' => $request->input('image_base64')], [
-                'type' => $multipleFaces ? 'multiple_faces' : 'no_face',
+                'type' => $type,
                 'severity' => 'high',
-                'description' => "Pre-lab camera presence verification failed after {$attempts} attempts: "
-                    .($multipleFaces ? 'Multiple faces detected.' : 'No face detected.'),
+                'description' => "Pre-lab camera presence verification failed after {$attempts} attempts: {$reason}",
             ], ['pre_lab' => true]);
 
             return;
@@ -2425,6 +2451,32 @@ class LabSessionController extends Controller
         } catch (\Throwable $e) {
             Log::warning('Camera block notification failed: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Why a passing check's picture is refused, as `error` and `message`, or null to accept it:
+     * a picture the lab page can't have taken (see CameraCheckFrame), or one that already passed
+     * an earlier check of the student's.
+     *
+     * @return array{error: string, message: string}|null
+     */
+    private function cameraFrameRefusal(CameraCheckFrame $frame, ?User $student): ?array
+    {
+        if (! $frame->passes()) {
+            return [
+                'error' => 'invalid_camera_frame',
+                'message' => 'Your camera picture could not be used for the check. Make sure nothing covers the camera and your face is lit, then retry.',
+            ];
+        }
+
+        if (LabAttemptController::cameraFrameUsedBefore($student, $frame)) {
+            return [
+                'error' => 'reused_camera_frame',
+                'message' => 'This camera picture was already used for an earlier check. Retry to take a new one.',
+            ];
+        }
+
+        return null;
     }
 
     /**

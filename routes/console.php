@@ -102,8 +102,10 @@ Artisan::command('certicode:refresh-competencies {--dry-run : Report what would 
 
 Artisan::command('certicode:expire-old-snapshots', function () {
     $count = Anomaly::expireOldSnapshots();
-    $this->info("Removed the webcam snapshot from {$count} flag(s) older than ".config('app.snapshot_retention_days').' days.');
-})->purpose('Remove webcam snapshots from old integrity flags, keeping the flags');
+    $checks = TelemetryLog::expireOldCameraPictures();
+    $this->info("Removed the webcam snapshot from {$count} flag(s) and the picture from {$checks} camera check(s) older than "
+        .config('app.snapshot_retention_days').' days.');
+})->purpose('Remove webcam snapshots from old integrity flags and camera checks, keeping the records');
 
 Artisan::command('certicode:prune-team-docs', function () {
     $count = TeamDoc::pruneEnded();
