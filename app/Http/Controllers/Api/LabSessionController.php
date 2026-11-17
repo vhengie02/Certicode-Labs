@@ -24,6 +24,7 @@ use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
 use App\Services\SandboxExecutionService;
 use App\Support\CameraCheckFrame;
+use App\Support\ExtensionDownload;
 use App\Support\Realtime;
 use App\Support\ServerFaceCount;
 use App\Support\TeamSync;
@@ -2085,7 +2086,7 @@ class LabSessionController extends Controller
             'extension_version' => $version ?: null,
             'extension_min_version' => $minVersion,
             'extension_outdated' => $version === null ? null : ($version === '' || version_compare($version, $minVersion, '<')),
-            'extension_download_url' => asset(config('services.vscode_extension.download_path')),
+            'extension_download_url' => ExtensionDownload::url(),
         ];
     }
 

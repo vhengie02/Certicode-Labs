@@ -115,7 +115,7 @@
                             <span x-text="extensionVersion ? '(v' + extensionVersion + ').' : '(older build).'"></span>
                             Install version <span class="font-mono" x-text="extensionMinVersion"></span> or newer: download it, then in VS Code open Extensions, the … menu, <strong class="font-semibold">Install from VSIX</strong>, and reload VS Code.
                         </p>
-                        <a :href="extensionDownloadUrl" download class="ui-btn ui-btn-secondary text-xs shrink-0">Download update (.vsix)</a>
+                        <a :href="extensionDownloadUrl" download="{{ \App\Support\ExtensionDownload::filename() }}" class="ui-btn ui-btn-secondary text-xs shrink-0">Download update (.vsix)</a>
                     </div>
 
                     <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
@@ -635,7 +635,7 @@
                                     <li class="flex gap-2.5"><span class="font-mono text-[#666666]">5</span><span>Click <strong class="text-[#ededed] font-medium">Open lab again</strong>. This page checks for two minutes and continues on its own once the extension answers.</span></li>
                                 </ol>
                                 <div class="flex flex-col sm:flex-row gap-2">
-                                    <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="ui-btn ui-btn-secondary flex-1 text-xs">Download extension (.vsix)</a>
+                                    <a href="{{ \App\Support\ExtensionDownload::url() }}" download="{{ \App\Support\ExtensionDownload::filename() }}" class="ui-btn ui-btn-secondary flex-1 text-xs">Download extension (.vsix)</a>
                                     <button type="button" @click="reopenVsCode()" class="ui-btn ui-btn-primary flex-1 text-xs">Open lab again</button>
                                 </div>
                                 <p x-show="vscodePollGaveUp" x-cloak class="text-xs text-[#888888]">
@@ -668,7 +668,7 @@
                                 </div>
                                 <p x-show="vscodeSlowPing && !vscodeConnected" x-cloak class="pl-6 text-[11px] leading-relaxed text-amber-300/90">
                                     Still waiting? VS Code may have opened with an outdated Certicode extension, which cannot connect.
-                                    <a href="{{ asset(config('services.vscode_extension.download_path')) }}" download class="text-[#3ecf8e] hover:underline">Download the latest version (.vsix)</a>, install it, then open the lab again.
+                                    <a href="{{ \App\Support\ExtensionDownload::url() }}" download="{{ \App\Support\ExtensionDownload::filename() }}" class="text-[#3ecf8e] hover:underline">Download the latest version (.vsix)</a>, install it, then open the lab again.
                                 </p>
                             </div>
 
@@ -744,7 +744,7 @@
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">2</span><span>In VS Code open Extensions (<kbd class="rounded border border-[#2e2e2e] bg-[#141414] px-1 font-mono text-[11px] text-[#ededed]">Ctrl+Shift+X</kbd>), then the <strong class="text-[#ededed] font-medium">…</strong> menu, then <strong class="text-[#ededed] font-medium">Install from VSIX</strong>.</span></li>
                             <li class="flex gap-2.5"><span class="font-mono text-[#666666]">3</span><span>Open an empty folder first (File, Open Folder) so your code is saved to disk.</span></li>
                         </ol>
-                        <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="ui-btn ui-btn-secondary w-full">
+                        <a href="{{ \App\Support\ExtensionDownload::url() }}" download="{{ \App\Support\ExtensionDownload::filename() }}" class="ui-btn ui-btn-secondary w-full">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg>
                             Download extension (.vsix)
                         </a>
@@ -859,7 +859,7 @@ function preLabCameraGate(labId, initialSessionId) {
         extensionOutdated: false,
         extensionVersion: null,
         extensionMinVersion: '',
-        extensionDownloadUrl: @js(asset(config('services.vscode_extension.download_path'))),
+        extensionDownloadUrl: @js(\App\Support\ExtensionDownload::url()),
         leavingAfterVsCodeClosed: false,
         lowLightingDetected: false,
         // A covered camera gives a black or flat picture; a dark room still has some contrast

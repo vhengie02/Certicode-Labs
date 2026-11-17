@@ -243,7 +243,7 @@
                     <p class="mt-5 text-[var(--text-dim)] text-lg leading-relaxed max-w-[56ch] pretty">
                         The extension adds one sidebar with the tasks, the timer, live standings, their own changes and team chat.
                     </p>
-                    <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="mt-7 inline-flex text-sm font-medium text-[#3ecf8e] link-underline">Download the extension (.vsix)</a>
+                    <a href="{{ \App\Support\ExtensionDownload::url() }}" download="{{ \App\Support\ExtensionDownload::filename() }}" class="mt-7 inline-flex text-sm font-medium text-[#3ecf8e] link-underline">Download the extension (.vsix)</a>
                 </div>
 
                 <div class="mt-14 -mx-6 px-6 flex gap-5 overflow-x-auto snap-x snap-mandatory scroll-px-6 pb-4 md:mx-0 md:px-0 md:grid md:grid-cols-4 md:gap-6 md:overflow-visible md:pb-0 items-start">
@@ -387,7 +387,7 @@
             </div>
             <nav class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2" aria-label="Footer">
                 <a href="#how-it-works" class="link-underline hover:text-white transition-colors">How it works</a>
-                <a href="{{ asset('downloads/certicode-labs.vsix') }}" download class="link-underline hover:text-white transition-colors">VS Code extension</a>
+                <a href="{{ \App\Support\ExtensionDownload::url() }}" download="{{ \App\Support\ExtensionDownload::filename() }}" class="link-underline hover:text-white transition-colors">VS Code extension</a>
                 <a href="{{ route('login') }}" class="link-underline hover:text-white transition-colors">Sign in</a>
                 <a href="{{ route('legal.privacy') }}" class="link-underline hover:text-white transition-colors">Privacy</a>
                 <a href="{{ route('legal.terms') }}" class="link-underline hover:text-white transition-colors">Terms</a>
