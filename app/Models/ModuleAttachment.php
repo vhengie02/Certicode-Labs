@@ -82,6 +82,12 @@ class ModuleAttachment extends Model
                     return false;
                 }
             }
+
+            // An endpoint that isn't a URL, such as the "<project-ref>" example copied as is,
+            // made every upload throw inside the AWS SDK
+            if (! empty($config['endpoint']) && filter_var($config['endpoint'], FILTER_VALIDATE_URL) === false) {
+                return false;
+            }
         }
 
         return true;
