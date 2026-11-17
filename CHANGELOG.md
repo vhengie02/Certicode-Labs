@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-17
+
+- Search results now mark the part that matches what was typed. Searching `java` shows "Java OOP" with "Java" highlighted in green. Every match in a title is marked, whatever its case, and keeps the title's own casing. Characters such as `.`, `+` or `(` in the search match only themselves. Page links in the search palette, such as "All Classes", are marked the same way. A result found only by its description shows no mark.
+- Titles are still shown as text: a class named with HTML in it shows the HTML as written, with only the matches marked.
+
 ## 2026-11-16
 
 - Each class has a gradebook, opened from the class page: one row per enrolled student, one column per lab in syllabus order. A lab's grade is the student's best completed attempt, with the instructor's regrade in place of the AI score, as on the results page. A regraded grade is marked, with the AI score, who regraded it and why. A grade still waiting for the instructor's review shows as provisional. Cells without a grade say "In progress" or "Timed out", or stay empty for a lab never opened. Each grade opens its attempt.

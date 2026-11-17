@@ -530,8 +530,10 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
 - [ ] **Class roster import from Excel; no more join code**:
   - The instructor imports an Excel student list to add students to a class automatically, alongside adding students by hand.
   - Remove the class join code: a student can enter a class only if they are on the roster the instructor imported or added.
-- [ ] **Highlight matching text in search results**:
+- [x] **Highlight matching text in search results ([`SearchHighlight.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Support/SearchHighlight.php))**:
   - The part of a result that matches the query is highlighted, e.g. searching `java` shows "**Java** OOP" with "Java" marked.
+  - `GET /search` returns `label_html` next to `label`: the title split around every case-insensitive match, each piece escaped, matches in `<mark>`. The query matches literally, regex characters included, and each match keeps the title's casing. The search palette in `layouts/app.blade.php` shows it, marks its own page links the same way, and puts the marks back after the scramble animation.
+  - Tests: [`SearchTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/SearchTest.php), [`SearchHighlightTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Unit/SearchHighlightTest.php).
 - [x] **"Page expired" on other laptops after logging in/out ([`StaleFormRedirect.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Support/StaleFormRedirect.php))**:
   - Cause: signing in (`session()->regenerate()`) and out (`invalidate()`) replace the CSRF token, and a session ends after 120 minutes, so a form left open in another tab or on a shared laptop, or a second click on a slow sign-in, posted an old token and got Laravel's 419 page.
   - A web form with an old token is still refused but goes back to a fresh copy with a message and the typed input (never passwords). Sign-out with no session left lands signed out; sign-out from an old tab while signed in asks again. JSON requests keep 419.

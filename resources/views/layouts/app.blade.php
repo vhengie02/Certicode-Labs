@@ -538,6 +538,9 @@
             .notif-item, .notif-actions, .notif-check { transition: none; }
         }
         #search-modal a.is-active { background-color: #1c1c1c; color: #ededed; }
+        /* Search: the part of a result that matches the query */
+        #search-results mark { background-color: rgba(62, 207, 142, 0.16); color: #3ecf8e; border-radius: 3px; padding: 0 1px; }
+        html:not(.dark) #search-results mark { background-color: rgba(5, 150, 105, 0.12); color: #047857; }
 
         /* Search: press feedback on the bar, and an entrance when the palette is opened by click.
            Ctrl+K skips .is-animated on purpose: a keyboard shortcut should open instantly. */
@@ -1127,6 +1130,19 @@
             return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         }
 
+        // A result's text as HTML with each match of the query in <mark>, the same way the server
+        // builds label_html (App\Support\SearchHighlight): split around the matches, escape each piece.
+        // The query matches literally and without regard to case; each match keeps the result's casing.
+        function highlightHtml(text, query) {
+            const needle = String(query ?? '').trim();
+            if (!needle) return escapeHtml(text);
+            const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp('(' + literal + ')', 'iu');
+            return String(text ?? '').split(pattern)
+                .map((part, i) => (i % 2 === 1 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part)))
+                .join('');
+        }
+
         function safeUrl(url) {
             return /^(https?:\/\/|\/(?!\/)|#)/i.test(String(url ?? '')) ? url : '#';
         }
@@ -1366,6 +1382,8 @@
                                 hasAnyResults = true;
                                 section.classList.remove('hidden');
                                 items.forEach(item => {
+                                    // label_html comes escaped from the server; navigation links are built here
+                                    const labelHtml = typeof item.label_html === 'string' ? item.label_html : highlightHtml(item.label, query);
                                     const a = document.createElement('a');
                                     a.href = safeUrl(item.url);
                                     a.className = 'flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-[#a3a3a3] hover:text-[#ededed] hover:bg-[#1c1c1c] transition-colors';
@@ -1373,12 +1391,16 @@
                                         <svg class="h-4 w-4 text-[#666666] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             ${getIconSvg(item.type)}
                                         </svg>
-                                        <span class="truncate">${escapeHtml(item.label)}</span>
+                                        <span class="truncate">${labelHtml}</span>
                                     `;
                                     a.setAttribute('aria-label', item.label);
                                     container.appendChild(a);
                                     if (window.scrambleText) {
-                                        searchAnimationStops.push(window.scrambleText.decode(a.querySelector('span'), String(item.label ?? ''), row * 0.05));
+                                        const label = a.querySelector('span');
+                                        // The scramble writes plain letters; the marks go back once it settles
+                                        searchAnimationStops.push(window.scrambleText.decode(label, String(item.label ?? ''), row * 0.05, () => {
+                                            label.innerHTML = labelHtml;
+                                        }));
                                     }
                                     row++;
                                 });
