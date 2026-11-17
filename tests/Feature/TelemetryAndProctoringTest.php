@@ -890,6 +890,10 @@ class TelemetryAndProctoringTest extends TestCase
      */
     public function test_idle_timeout_telemetry_in_live_lab_includes_shared_countdown_context()
     {
+        // On a whole second: the start time is stored without fractions, and any time passing
+        // before the anomaly is written would floor 30 remaining minutes down to 29
+        $this->freezeSecond();
+
         $this->laboratory->update([
             'availability_mode' => 'live',
             'live_status' => 'active',
