@@ -9,6 +9,18 @@ function duration(ms) {
     return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`;
 }
 
+// What a program prints when it reads past the end of its input: Python's input() and Java's Scanner
+const OUT_OF_INPUT = /\bEOFError\b|java\.util\.NoSuchElementException/;
+
+/**
+ * Whether a run crashed because it wanted more input than it was given. The runner hands a
+ * program all its input up front, so one that reads past the end stops with an error.
+ */
+export function ranOutOfInput(result) {
+    if (!result || result.status !== 'error' || result.compile_error) return false;
+    return OUT_OF_INPUT.test(`${result.stderr || ''}\n${result.errors || ''}`);
+}
+
 /**
  * How a run ended, for the panel's heading line: a label, a tone (brand, warn or danger) and
  * the figures worth showing.
@@ -46,6 +58,7 @@ export function describeRun(result) {
         label,
         tone,
         facts,
+        ranOutOfInput: ranOutOfInput(result),
         errorLabel: result.compile_error ? 'Compiler output' : (result.status === 'unavailable' ? 'Why it did not run' : 'Error'),
         errorText,
         stderr,
@@ -53,18 +66,24 @@ export function describeRun(result) {
     };
 }
 
-export default function submissionRunner({ url }) {
+export default function submissionRunner({ url, readsInput = false }) {
     const target = () => (typeof url === 'function' ? url() : url);
+    const codeReadsInput = () => Boolean(typeof readsInput === 'function' ? readsInput() : readsInput);
 
     return {
         stdin: '',
-        showStdin: false,
         running: false,
         // Kept with the URL it came from, so another student's drawer starts empty
         result: null,
         error: '',
         resultFor: null,
+        // The attempt whose run stopped for want of input, though its code didn't look like it read any
+        inputNeededFor: null,
 
+        // The input box shows when the code reads input, or once a run has shown it does
+        get inputShown() {
+            return codeReadsInput() || this.inputNeededFor === target();
+        },
         get current() {
             return this.resultFor === target() ? this.result : null;
         },
@@ -78,6 +97,7 @@ export default function submissionRunner({ url }) {
         async run() {
             if (this.running) return;
             const runUrl = target();
+            const sentInput = this.inputShown ? this.stdin : '';
             this.running = true;
             this.error = '';
             this.resultFor = runUrl;
@@ -87,7 +107,7 @@ export default function submissionRunner({ url }) {
                 const response = await fetch(runUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': token },
-                    body: JSON.stringify({ stdin: this.showStdin ? this.stdin : '' }),
+                    body: JSON.stringify({ stdin: sentInput }),
                 });
                 const data = await response.json().catch(() => ({}));
 
@@ -98,7 +118,9 @@ export default function submissionRunner({ url }) {
                         : (data.message || "Couldn't run the code. Try again.");
                     return;
                 }
-                this.result = data;
+                // Whether this run had any input, for the out-of-input hint ("none" or "more")
+                this.result = { ...data, had_input: sentInput.trim() !== '' };
+                if (ranOutOfInput(data)) this.inputNeededFor = runUrl;
             } catch {
                 this.result = null;
                 this.error = "Couldn't reach the server. Check your connection and try again.";

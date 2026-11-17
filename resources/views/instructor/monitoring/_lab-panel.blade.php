@@ -253,6 +253,7 @@
                 'instructor_overridden_at' => $s->instructor_overridden_at?->diffForHumans(),
                 'overridden_by_name' => $s->overriddenByUser->name ?? null,
                 'ai_grade_summary' => $s->ai_grade_summary,
+                'reads_input' => $s->status === 'completed' && $s->submissionReadsInput(),
             ]];
         });
         $filters = ['all' => 'All', 'attention' => 'Needs attention', 'active' => 'Active', 'idle' => 'Idle', 'offline' => 'Offline', 'completed' => 'Submitted'];
@@ -918,7 +919,7 @@
                                     </template>
 
                                     <section class="rounded-xl border border-[#2e2e2e] p-4">
-                                        @include('sessions._run-submission', ['runUrl' => '() => `/instructor/sessions/${student.id}/run`'])
+                                        @include('sessions._run-submission', ['runUrl' => '() => `/instructor/sessions/${student.id}/run`', 'readsInput' => '() => student.reads_input'])
                                     </section>
                                 </div>
                             </template>

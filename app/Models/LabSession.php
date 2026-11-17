@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Events\AnomalyDetected;
 use App\Notifications\ClassActivityNotification;
 use App\Services\TypingEffortCheck;
+use App\Support\StdinUsage;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -141,6 +142,28 @@ class LabSession extends Model
         'sh' => 'bash',
         'bash' => 'bash',
     ];
+
+    /**
+     * Whether the submitted code reads standard input, so running it again needs some typed in
+     * first. Each code file is checked in the language its extension names; one with no known
+     * extension (an old single-file submission) is checked against every language. Reads no
+     * telemetry, so the monitoring page can ask it of every student.
+     */
+    public function submissionReadsInput(): bool
+    {
+        foreach ($this->submittedFileList() as $file) {
+            if (! self::isCodeFile($file['name'])) {
+                continue;
+            }
+
+            $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            if (StdinUsage::readsInput($file['content'], self::RUN_LANGUAGES[$extension] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /**
      * The language the submitted code is written in, for running it again: from the main file's

@@ -2,27 +2,30 @@
     "Run the submitted code" button and output panel, for staff reviewing an attempt.
     $runUrl: a JavaScript expression for the run URL, a string or a function returning one
     (the monitoring drawer passes a function, because one drawer shows every student).
+    $readsInput: a JavaScript expression, true/false or a function returning one: whether the code
+    reads standard input (LabSession::submissionReadsInput), so the input box shows only then.
 --}}
-<div x-data="submissionRunner({ url: {{ $runUrl }} })" data-submission-runner class="space-y-3">
+<div x-data="submissionRunner({ url: {{ $runUrl }}, readsInput: {{ $readsInput }} })" data-submission-runner class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
             <h3 class="text-sm font-medium text-[#ededed]">Run the submitted code</h3>
             <p class="text-xs text-[#888888]">Runs the code exactly as it was handed in, on the code runner. The grade doesn't change.</p>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
-            <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm" @click="showStdin = !showStdin" :aria-expanded="showStdin.toString()"
-                    x-text="showStdin ? 'Remove input' : 'Add input'">Add input</button>
-            <button type="button" class="ui-btn ui-btn-primary ui-btn-sm" @click="run()" :disabled="running" :aria-busy="running.toString()">
-                <span x-text="running ? 'Running…' : (current ? 'Run again' : 'Run code')">Run code</span>
-            </button>
-        </div>
+        <button type="button" class="ui-btn ui-btn-primary ui-btn-sm shrink-0" @click="run()" :disabled="running" :aria-busy="running.toString()">
+            <span x-text="running ? 'Running…' : (current ? 'Run again' : 'Run code')">Run code</span>
+        </button>
     </div>
 
-    <label x-show="showStdin" x-cloak class="block">
-        <span class="ui-label">Standard input <span class="ui-optional">(what the program reads, like typing it in)</span></span>
+    {{-- The runner takes all input up front (it can't stop and wait for typing), so it is asked
+         for here, and only when the code reads some or a run stopped for want of it --}}
+    <label x-show="inputShown" x-cloak class="block">
+        <span class="ui-label">Input <span class="ui-optional">(this program reads input: type what it would read, one value per line)</span></span>
         <textarea x-model="stdin" rows="3" maxlength="65536" spellcheck="false" placeholder="One value per line"
                   class="ui-input ui-input-mono mt-1 w-full min-h-[4.5rem] py-2 text-[13px]"></textarea>
     </label>
+
+    <p x-show="summary && summary.ranOutOfInput" x-cloak class="text-sm text-amber-300" role="status"
+       x-text="current && current.had_input ? 'The program stopped because it wanted more input than was given. Add the rest above and run again.' : 'The program stopped because it wanted input and none was given. Type its input above and run again.'"></p>
 
     <p x-show="currentError" x-cloak x-text="currentError" class="text-sm text-red-300" role="alert"></p>
 

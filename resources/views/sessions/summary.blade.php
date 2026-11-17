@@ -373,7 +373,7 @@
                 {{-- Only a handed-in attempt's code is run: anything else may not be its final version --}}
                 @if ($session->status === 'completed')
                     <div id="run-code" class="border-t border-[#232323] px-5 py-4 scroll-mt-6">
-                        @include('sessions._run-submission', ['runUrl' => \Illuminate\Support\Js::from(route('instructor.sessions.run', $session->id))])
+                        @include('sessions._run-submission', ['runUrl' => \Illuminate\Support\Js::from(route('instructor.sessions.run', $session->id)), 'readsInput' => \Illuminate\Support\Js::from($session->submissionReadsInput())])
                     </div>
                 @endif
             @endif

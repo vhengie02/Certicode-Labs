@@ -473,4 +473,53 @@ class InstructorRunSubmissionTest extends TestCase
             ->assertSee('data-submission-runner', false)
             ->assertSee('/instructor/sessions/${student.id}/run', false);
     }
+
+    public function test_input_box_shows_only_for_code_that_reads_input(): void
+    {
+        $reader = "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.println(sc.nextInt() * 2);\n    }\n}\n";
+        $readsInput = $this->submittedSession([
+            'submitted_code' => $reader,
+            'submitted_files' => [['name' => 'Main.java', 'content' => $reader, 'is_primary' => true]],
+        ]);
+        $printsOnly = $this->submittedSession();
+
+        $this->assertTrue($readsInput->submissionReadsInput());
+        $this->assertFalse($printsOnly->submissionReadsInput());
+
+        $this->actingAs($this->instructor)->get("/sessions/{$readsInput->id}")
+            ->assertOk()
+            ->assertSee('readsInput: true', false);
+        $this->actingAs($this->instructor)->get("/sessions/{$printsOnly->id}")
+            ->assertOk()
+            ->assertSee('readsInput: false', false)
+            ->assertDontSee('Add input');
+
+        // The drawer serves every student, so each one's flag comes with their details
+        $this->actingAs($this->instructor)->get("/classes/{$this->schoolClass->id}/telemetry?lab={$this->laboratory->id}")
+            ->assertOk()
+            ->assertSee('readsInput: () =&gt; student.reads_input', false)
+            ->assertSee('"id":'.$readsInput->id, false)
+            ->assertSee('"reads_input":true', false)
+            ->assertSee('"reads_input":false', false);
+    }
+
+    public function test_a_helper_file_that_reads_input_counts_but_notes_do_not(): void
+    {
+        $main = 'public class Main { public static void main(String[] a) { System.out.println(Reader.next()); } }';
+        $helper = "import java.util.Scanner;\nclass Reader { static String next() { return new Scanner(System.in).next(); } }";
+
+        $withHelper = $this->submittedSession(['submitted_files' => [
+            ['name' => 'Main.java', 'content' => $main, 'is_primary' => true],
+            ['name' => 'Reader.java', 'content' => $helper, 'is_primary' => false],
+        ]]);
+        $withNotes = $this->submittedSession(['submitted_files' => [
+            ['name' => 'Main.java', 'content' => $main, 'is_primary' => true],
+            ['name' => 'NOTES.md', 'content' => 'Use input() to read the name', 'is_primary' => false],
+        ]]);
+        $legacy = $this->submittedSession(['submitted_files' => null, 'submitted_code' => "n = int(input())\nprint(n)"]);
+
+        $this->assertTrue($withHelper->submissionReadsInput());
+        $this->assertFalse($withNotes->submissionReadsInput());
+        $this->assertTrue($legacy->submissionReadsInput());
+    }
 }

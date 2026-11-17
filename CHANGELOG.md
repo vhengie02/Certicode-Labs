@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-18
+
+- "Run the submitted code" asks for input only when the program needs it. The code runner (Judge0) runs a program in one go with all of its input given up front, so it can't stop and wait for typing like a VS Code terminal. The "Add input" button is gone. When the submitted code reads standard input (`input()` or `sys.stdin` in Python, `System.in` in Java, `readline` or `process.stdin` in JavaScript, `STDIN` or `readline()` in PHP, `scanf`, `getchar` or `stdin` in C, `cin` in C++, `read` in Bash), the input box is already open with a note saying so. Otherwise there is no box. Commented-out input code doesn't count, and a helper file that reads input counts as well as the main file.
+- If a run still stops for want of input (Python's `EOFError`, Java's `NoSuchElementException` from `Scanner`), the input box opens for that attempt, with a note saying the program wanted input and none, or not enough, was given. This covers code whose input reading the check missed.
+
 ## 2026-11-17
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.11.1, and students on older builds are now told to update.
