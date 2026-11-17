@@ -321,7 +321,7 @@ This document outlines the final feature specifications, implementation tasks, a
   - The lab roster shows an "Old ext" badge next to in-progress students whose last extension ping came from a build below `min_version`.
 - [ ] **Follow-ups**:
   - Tune face-detection thresholds (0.10–0.20) against real webcams, especially with a real face in a dim room.
-  - The server trusts the browser's `face_count`, so a hand-made request can still pass the camera check.
+  - The server still takes the browser's `face_count` on trust, so a hand-made request with a real photo of a face passes the camera check. It now refuses a picture the lab page can't have taken (not a JPEG, under 320x240, with Exif data, blank, or used for an earlier check; `CameraCheckFrame`), keeps every passing picture for the class instructor (timeline link, `GET /camera-checks/{id}/picture`, removed after `SNAPSHOT_RETENTION_DAYS`), and flags a nearly blank one (`camera_check_unusual`, low). Detecting the face on the server would need a Node function on Vercel: the PHP runtime has no GD or Imagick.
   - After deploying, check on the live site that the face models load and that a lab can't start without passing the camera check.
   - Delete legacy public snapshot files under `storage/app/public/anomalies/` once no longer needed.
 - [x] **Automated Test Coverage ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
@@ -520,6 +520,28 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
   - Visual idle clock badges, severity coloring, and Live Lab context in the instructor proctoring modal.
 - [x] **Automated Feature Verification ([`TelemetryAndProctoringTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/TelemetryAndProctoringTest.php))**:
   - 5 dedicated integration tests verifying Open Lab, Live Lab countdown context, recurring escalation, team isolation, and WPM divisor preservation.
+
+---
+
+## 🆕 Backlog (requested November 2026)
+
+- [ ] **Instructor can run a passed submission**:
+  - From a student's passed attempt, the instructor runs the submitted code and sees the output.
+- [ ] **Class roster import from Excel; no more join code**:
+  - The instructor imports an Excel student list to add students to a class automatically, alongside adding students by hand.
+  - Remove the class join code: a student can enter a class only if they are on the roster the instructor imported or added.
+- [ ] **Highlight matching text in search results**:
+  - The part of a result that matches the query is highlighted, e.g. searching `java` shows "**Java** OOP" with "Java" marked.
+- [x] **"Page expired" on other laptops after logging in/out ([`StaleFormRedirect.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/app/Support/StaleFormRedirect.php))**:
+  - Cause: signing in (`session()->regenerate()`) and out (`invalidate()`) replace the CSRF token, and a session ends after 120 minutes, so a form left open in another tab or on a shared laptop, or a second click on a slow sign-in, posted an old token and got Laravel's 419 page.
+  - A web form with an old token is still refused but goes back to a fresh copy with a message and the typed input (never passwords). Sign-out with no session left lands signed out; sign-out from an old tab while signed in asks again. JSON requests keep 419.
+  - `layouts/auth.blade.php` lets each form post once until the page is shown again.
+  - Tests: [`StaleCsrfTokenTest.php`](file:///C:/Users/vheng/PROJECTS/Certicode%20Labs/tests/Feature/StaleCsrfTokenTest.php).
+- [ ] **Extension creates a folder per lab**:
+  - The extension creates a folder for each lab first, then the lab's files inside it, instead of writing files straight into the workspace.
+- [ ] **Class gradebook with Excel export**:
+  - A class list where the instructor sees each student's grade on every lab in the class.
+  - Export the gradebook as an Excel file for grading.
 
 ---
 

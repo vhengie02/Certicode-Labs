@@ -8,9 +8,11 @@ use App\Models\LabSession;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Services\CodeSimilarityService;
+use App\Support\CameraCheckFrame;
 use App\Support\DeviceLabel;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
 /**
@@ -81,20 +83,9 @@ class LabAttemptController extends Controller
             return back()->with('error', $message);
         }
 
-        // Attach prelab verification telemetry if verified. low_light marks a check made in a
-        // dim room; it still found a face.
-        if ($isCameraVerified && $session) {
-            TelemetryLog::firstOrCreate([
-                'lab_session_id' => $session->id,
-                'event_type' => 'webcam_prelab_verification',
-            ], [
-                'payload' => [
-                    'status' => 'granted',
-                    'face_count' => 1,
-                    'low_light' => (bool) ($cameraCheck['low_light'] ?? false),
-                    'verified_at' => $cameraCheck['verified_at'] ?? now()->toIso8601String(),
-                ],
-            ]);
+        // Attach the pre-lab camera check, with its picture, to the attempt
+        if ($isCameraVerified) {
+            self::recordCameraCheckOn($session, $cameraCheck);
         }
 
         $backendUrl = request()->getSchemeAndHttpHost();
@@ -124,17 +115,112 @@ class LabAttemptController extends Controller
     public const CAMERA_BLOCK_MINUTES = 15;
 
     /**
-     * Record a passed camera check in the student's session; the lab start reads it back.
+     * Record a passed camera check in the student's session; the lab start reads it back and
+     * moves the picture onto the attempt.
      */
-    public static function rememberCameraCheck(Request $request, int $labId, bool $lowLight): void
+    public static function rememberCameraCheck(Request $request, int $labId, bool $lowLight, CameraCheckFrame $frame): void
     {
         if ($request->hasSession()) {
             $request->session()->put("camera_verified_lab_{$labId}", [
                 'verified_at' => now()->toIso8601String(),
                 'low_light' => $lowLight,
+                'frame' => self::cameraFramePayload($frame),
             ]);
             $request->session()->forget("camera_failures_lab_{$labId}");
         }
+    }
+
+    /**
+     * What a passed check keeps of its picture: the picture itself for the class instructor, a
+     * fingerprint to refuse it for a later check, and why it needs a look, if it does.
+     *
+     * @return array<string, mixed>
+     */
+    public static function cameraFramePayload(CameraCheckFrame $frame): array
+    {
+        return array_filter([
+            'has_picture' => true,
+            'image_base64' => $frame->dataUri(),
+            'frame_sha256' => $frame->sha256(),
+            'frame_notes' => $frame->notes,
+        ]);
+    }
+
+    /**
+     * Whether this exact picture already passed a camera check of the student's. A webcam never
+     * produces the same bytes twice, so a match is a saved picture sent again.
+     */
+    public static function cameraFrameUsedBefore(?User $user, CameraCheckFrame $frame): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        return TelemetryLog::where('event_type', TelemetryLog::CAMERA_CHECK_EVENT)
+            ->whereIn('lab_session_id', LabSession::where('user_id', $user->id)->select('id'))
+            ->where('payload->frame_sha256', $frame->sha256())
+            ->exists();
+    }
+
+    /**
+     * Record the camera check the student passed before starting (or resuming) this attempt,
+     * with its picture, and drop the picture from the login session. An attempt that already
+     * has a check keeps that one.
+     *
+     * @param  array{verified_at: string, low_light: bool, frame?: array<string, mixed>}  $cameraCheck
+     */
+    public static function recordCameraCheckOn(LabSession $session, array $cameraCheck): void
+    {
+        $frame = $cameraCheck['frame'] ?? [];
+
+        // low_light marks a check made in a dim room; it still found a face.
+        $log = TelemetryLog::firstOrCreate([
+            'lab_session_id' => $session->id,
+            'event_type' => TelemetryLog::CAMERA_CHECK_EVENT,
+        ], [
+            'payload' => [
+                'status' => 'granted',
+                'face_count' => 1,
+                'low_light' => (bool) ($cameraCheck['low_light'] ?? false),
+                'verified_at' => $cameraCheck['verified_at'] ?? now()->toIso8601String(),
+            ] + $frame,
+        ]);
+
+        if ($log->wasRecentlyCreated) {
+            self::flagUnusualCameraCheck($session, $frame);
+        }
+
+        $key = "camera_verified_lab_{$session->lab_id}";
+        if (is_array(session($key))) {
+            session()->put($key, Arr::except(session($key), 'frame'));
+        }
+    }
+
+    /**
+     * Flag an attempt whose camera check passed on a picture close to blank, with the picture,
+     * so the instructor can see whether it shows the student. Low severity: a dark room can
+     * produce one too.
+     *
+     * @param  array<string, mixed>  $frame  From cameraFramePayload()
+     */
+    public static function flagUnusualCameraCheck(LabSession $session, array $frame): void
+    {
+        if (empty($frame['frame_notes']) || empty($frame['image_base64'])) {
+            return;
+        }
+
+        Anomaly::create([
+            'lab_session_id' => $session->id,
+            'type' => 'camera_check_unusual',
+            'severity' => 'low',
+            'description' => 'The pre-lab camera check passed on a picture that is almost blank. Check that it shows the student.',
+            'image_path' => Anomaly::DB_SNAPSHOT,
+            'metadata' => [
+                'pre_lab' => true,
+                'frame_notes' => $frame['frame_notes'],
+                'image_base64' => $frame['image_base64'],
+            ],
+        ]);
     }
 
     /**

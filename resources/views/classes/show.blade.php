@@ -32,6 +32,10 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg>
                     Monitoring
                 </a>
+                <a href="{{ route('classes.gradebook', $class->id) }}" class="ui-btn ui-btn-secondary">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M3 10h18M9 4v16"/></svg>
+                    Gradebook
+                </a>
                 <a href="{{ route('classes.edit', $class->id) }}" class="ui-btn ui-btn-secondary">Settings</a>
             @endif
         </x-page-header>

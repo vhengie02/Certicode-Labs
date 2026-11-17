@@ -7,9 +7,12 @@ use App\Http\Middleware\PreventAuthenticatedCaching;
 use App\Http\Middleware\RequireSupportedExtension;
 use App\Http\Middleware\ServerTiming;
 use App\Http\Middleware\SkipSessionForExtensionToken;
+use App\Support\StaleFormRedirect;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 $app = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -37,6 +40,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Error details come from Laravel's own handler only when APP_DEBUG is true.
+        // A form posted with an old CSRF token goes back to a fresh copy, not to "Page Expired".
+        $exceptions->render(fn (HttpException $e, Request $request) => StaleFormRedirect::render($e, $request));
     })->create();
 
 // Auto-detect serverless environment (e.g. Vercel) where base storage is read-only
