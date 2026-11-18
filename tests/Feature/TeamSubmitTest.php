@@ -13,7 +13,6 @@ use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
-use App\Services\SandboxExecutionService;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -74,10 +73,6 @@ class TeamSubmitTest extends TestCase
         $this->team = Group::create(['lab_id' => $this->laboratory->id, 'name' => 'Team A', 'leader_id' => $this->alice->id]);
         $this->team->members()->attach([$this->alice->id, $this->bob->id, $this->carol->id]);
         $this->teamStart = now()->subMinutes(10)->startOfSecond();
-
-        $this->mock(SandboxExecutionService::class)
-            ->shouldReceive('execute')
-            ->andReturn(['status' => 'success', 'output' => '1', 'errors' => null, 'execution_time_ms' => 5]);
 
         $test = $this;
         $this->app->instance(LlmEvaluationService::class, new class($test) extends LlmEvaluationService

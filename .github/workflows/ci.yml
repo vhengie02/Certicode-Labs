@@ -11,11 +11,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Stubbed external services. phpunit.xml forces these too; they are repeated here so the
+# Stubbed external services. phpunit.xml forces this too; it is repeated here so the
 # intent is visible. This repository is public: never put a real key in this file.
 env:
   ANTHROPIC_API_KEY: mock
-  JUDGE0_URL: ""
 
 jobs:
   php-sqlite:

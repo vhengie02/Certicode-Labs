@@ -103,35 +103,6 @@ class LabSessionTest extends TestCase
     }
 
     /**
-     * Test code execution through the mock sandbox wrapper.
-     */
-    public function test_code_execution_mock_wrapper(): void
-    {
-        $session = LabSession::create([
-            'lab_id' => $this->laboratory->id,
-            'user_id' => $this->student->id,
-            'status' => 'in_progress',
-            'started_at' => now(),
-        ]);
-
-        $response = $this->actingAs($this->student)
-            ->postJson("/api/v1/sessions/{$session->id}/execute", [
-                'code' => 'echo "Hello, World!"',
-                'language' => 'bash',
-            ]);
-
-        $response->assertStatus(200);
-        $response->assertJsonFragment([
-            'status' => 'success',
-        ]);
-
-        $this->assertDatabaseHas('telemetry_logs', [
-            'lab_session_id' => $session->id,
-            'event_type' => 'code_execution',
-        ]);
-    }
-
-    /**
      * Test ping updates last_ping_at and returns active connectivity.
      */
     public function test_student_can_ping_session_and_update_last_ping_at(): void

@@ -9,7 +9,6 @@ use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
 use App\Services\LlmEvaluationService;
-use App\Services\SandboxExecutionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -52,10 +51,6 @@ class LabAttemptTimeLimitTest extends TestCase
             'is_group_lab' => false,
             'tasks_definition' => [['id' => 1, 'task' => 'Use a for loop']],
         ]);
-
-        $this->mock(SandboxExecutionService::class)
-            ->shouldReceive('execute')
-            ->andReturn(['status' => 'success', 'output' => '', 'execution_time_ms' => 1]);
     }
 
     private function labSession(string $status, \DateTimeInterface $startedAt, ?\DateTimeInterface $lastPingAt = null): LabSession

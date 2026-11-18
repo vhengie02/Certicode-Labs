@@ -22,7 +22,6 @@ use App\Notifications\CameraFlagNotification;
 use App\Services\CodeSimilarityService;
 use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
-use App\Services\SandboxExecutionService;
 use App\Support\CameraCheckFrame;
 use App\Support\ExtensionDownload;
 use App\Support\Realtime;
@@ -43,13 +42,6 @@ use Illuminate\Validation\Rule;
 class LabSessionController extends Controller
 {
     use AuthorizesClassAccess;
-
-    protected SandboxExecutionService $sandboxService;
-
-    public function __construct(SandboxExecutionService $sandboxService)
-    {
-        $this->sandboxService = $sandboxService;
-    }
 
     /**
      * Start a new laboratory session for a student.
@@ -535,45 +527,6 @@ class LabSessionController extends Controller
     }
 
     /**
-     * Run student code and return its output. Running code never changes the grade: tasks and
-     * scores come only from the AI grader in check-progress and submit. (Matching the code or its
-     * output against each task's check string used to award tasks here, and since a program can
-     * print any string, that let a student forge a 100% score.)
-     */
-    public function executeCode(Request $request, int $sessionId)
-    {
-        $session = LabSession::findOrFail($sessionId);
-
-        if ($session->status !== 'in_progress') {
-            return response()->json(['error' => 'This lab session is no longer in progress.'], 409);
-        }
-
-        $request->validate([
-            'code' => 'required|string|max:'.self::MAX_SUBMISSION_CHARS,
-            'language' => 'required|string',
-        ], ['code.max' => self::SUBMISSION_TOO_LONG]);
-
-        $result = $this->sandboxService->execute($request->code, $request->language);
-
-        // Record execution event in logs
-        TelemetryLog::create([
-            'lab_session_id' => $session->id,
-            'event_type' => 'code_execution',
-            'payload' => [
-                'language' => $request->language,
-                'status' => $result['status'],
-                'execution_time_ms' => $result['execution_time_ms'],
-            ],
-        ]);
-
-        // Current progress, unchanged by this run
-        $result['completed_tasks'] = $session->completed_tasks ?? [];
-        $result['performance_score'] = $session->performance_score;
-
-        return response()->json($result);
-    }
-
-    /**
      * Read the GitHub API to parse collaboration/contribution stats.
      * (Phase 1 Integration)
      */
@@ -1016,7 +969,7 @@ class LabSessionController extends Controller
     }
 
     /**
-     * Submit session, execute code, grade, map competencies, and mark completed.
+     * Submit session, grade, map competencies, and mark completed.
      */
     public function submitSession(Request $request, int $sessionId)
     {
@@ -1120,8 +1073,6 @@ class LabSessionController extends Controller
         // When the attempt ends: grading time isn't the student's. Whole seconds, to compare
         // with the stored ended_at
         $gradingStartedAt = now()->startOfSecond();
-        // Vercel stops the function at 60 s; the grade must be saved well before that
-        $deadline = now()->addSeconds(self::SUBMIT_BUDGET_SECONDS);
 
         $code = $request->code;
         if (empty($code) && ! empty($request->input('files')) && is_array($request->input('files'))) {
@@ -1186,13 +1137,6 @@ class LabSessionController extends Controller
             }
         }
 
-        // The run doesn't affect the grade; it only shows the student their output or compile
-        // error. It gets whatever is left of the budget once the grade is saved, or is skipped.
-        $secondsLeft = (int) now()->diffInSeconds($deadline, false);
-        $executionResult = $secondsLeft >= self::MIN_EXECUTION_SECONDS
-            ? $this->sandboxService->execute($code, $request->language, min(25, $secondsLeft))
-            : ['status' => 'skipped'];
-
         foreach ($graded as $gradedSession) {
             TelemetryLog::create([
                 'lab_session_id' => $gradedSession->id,
@@ -1201,9 +1145,6 @@ class LabSessionController extends Controller
                     'language' => $request->language,
                     'final_score' => $finalScore,
                     'completed_tasks_count' => count($completedTasks),
-                    'execution_status' => $executionResult['status'] ?? 'unknown',
-                    // Why the run failed, for the instructor's timeline
-                    'execution_error' => Str::limit($executionResult['errors'] ?? '', self::MAX_LOGGED_RUN_ERROR_CHARS) ?: null,
                     // On a group lab: the leader who handed the team's work in
                     ...($session->group_id ? ['submitted_by' => $session->user_id] : []),
                 ],
@@ -1246,9 +1187,6 @@ class LabSessionController extends Controller
             'status' => 'success',
             'completed_tasks' => $completedTasks,
             'performance_score' => $session->performance_score,
-            // The extension shows any execution errors as a compile error, so leave out the
-            // "code execution is not set up" result: the code was still graded
-            'execution' => in_array($executionResult['status'] ?? null, ['unavailable', 'skipped'], true) ? null : $executionResult,
             'evaluation' => $studentEvaluation,
             'summary' => $this->submissionSummary($session->fresh('laboratory')),
             ...($session->group_id ? ['team' => [
@@ -1257,13 +1195,6 @@ class LabSessionController extends Controller
             ]] : []),
         ]);
     }
-
-    /** Seconds a submit may use in all (Vercel stops the function at 60), and the least worth giving a code run. */
-    private const SUBMIT_BUDGET_SECONDS = 50;
-
-    private const MIN_EXECUTION_SECONDS = 5;
-
-    private const MAX_LOGGED_RUN_ERROR_CHARS = 500;
 
     /** Files kept in a diff's per-file list. */
     private const MAX_DIFF_FILES = 50;

@@ -20,9 +20,10 @@ class TelemetryLog extends Model
     public const SHORT_LIVED_EVENTS = ['vscode_ping', 'wpm_update'];
 
     /**
-     * Records only the server writes: grading, regrades, code runs and the camera check. The
-     * telemetry endpoint refuses them, so a client can't forge one (the student's results page
-     * shows the regrade history from these rows).
+     * Records only the server writes: grading, regrades and the camera check. The telemetry
+     * endpoint refuses them, so a client can't forge one (the student's results page shows the
+     * regrade history from these rows). code_execution is no longer written, since code isn't
+     * run any more, but stays refused so a client can't imitate old rows.
      */
     public const SERVER_EVENTS = [
         'instructor_grade_override',

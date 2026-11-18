@@ -54,23 +54,6 @@ return [
         'grader_effort' => env('ANTHROPIC_GRADER_EFFORT', 'medium'), // low | medium | high | xhigh | max
     ],
 
-    // Remote code execution (Judge0). Needed where Docker/JDK are unavailable, e.g. Vercel.
-    // Self-hosted: JUDGE0_URL (+ optional JUDGE0_KEY sent as X-Auth-Token).
-    // RapidAPI: JUDGE0_URL=https://judge0-ce.p.rapidapi.com, JUDGE0_KEY, JUDGE0_RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
-    'judge0' => [
-        'url' => env('JUDGE0_URL'),
-        'key' => env('JUDGE0_KEY'),
-        'rapidapi_host' => env('JUDGE0_RAPIDAPI_HOST'),
-    ],
-
-    // Without Judge0, student code would run on this server itself (Docker, or the host's
-    // php/python/node/javac) with the app's environment, database and API secrets included.
-    // Unset: allowed only in local and testing. SANDBOX_HOST_EXECUTION=false forbids it everywhere;
-    // =true allows it anywhere, which is only safe on a machine with nothing worth stealing.
-    'sandbox' => [
-        'host_execution' => env('SANDBOX_HOST_EXECUTION'),
-    ],
-
     // Certicode VS Code extension. Builds older than min_version (or old builds that send
     // no version) are flagged as outdated to the student. Bump it with every release that
     // the web app depends on.

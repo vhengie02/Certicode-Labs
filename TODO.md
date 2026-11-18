@@ -472,7 +472,7 @@ A multi-agent audit found 93 issues (5 critical, 17 high). All criticals and hig
 - [ ] **Follow-ups (owner)**:
   - Finish the post-audit production checklist (credentials, Supabase Auth settings, demo accounts). The details are kept outside this public repo.
   - Run the `2026_10_18_000000_stop_taking_role_from_supabase_signup_metadata` migration on Supabase.
-  - Set the Vercel env vars: `DB_URL` (or `DB_*`), `JUDGE0_URL`, `ATTACHMENTS_DISK=supabase` and `SUPABASE_STORAGE_*`; set the bucket file-size limit to at least 20 MB.
+  - Set the Vercel env vars: `DB_URL` (or `DB_*`), `ATTACHMENTS_DISK=supabase` and `SUPABASE_STORAGE_*`; set the bucket file-size limit to at least 20 MB.
   - Raise `VSCODE_EXTENSION_MIN_VERSION` to 1.8.0 if every student should update (1.8.0 survives window reloads).
 - [ ] **Follow-ups (code)**:
   - Try a real upload to the Supabase bucket after deploying.

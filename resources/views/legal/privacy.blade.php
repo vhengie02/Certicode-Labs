@@ -82,7 +82,6 @@
                 <tr><td>Pusher</td><td>Live updates on open pages</td><td>Depends on the configured cluster</td></tr>
                 <tr><td>Google</td><td>Email delivery, Google sign-in if you use it, and web fonts (your browser sends Google its IP address when it loads them)</td><td>United States and other countries</td></tr>
                 <tr><td>GitHub</td><td>GitHub sign-in if you use it, and contribution stats for a repository you link</td><td>United States</td></tr>
-                <tr><td>Judge0 code runner, when enabled</td><td>Compiling and running submitted code</td><td>Depends on the server used</td></tr>
             </tbody>
         </table>
     </div>

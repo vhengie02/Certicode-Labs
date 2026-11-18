@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-18
+
+- Student code is no longer run anywhere. Running it needs a Judge0 server, which costs money to host, so the feature is shelved. Grading never depended on it: Check Progress and Submit grade the code with Claude (or the rule-based grader) exactly as before.
+- Removed: the instructor's "Run the submitted code" panel on the results page and in the monitoring drawer, the `/sessions/{id}/execute` endpoints, the code run after each submit, and the `JUDGE0_*` and `SANDBOX_HOST_EXECUTION` settings. The production site never had Judge0 set up, so students already saw no run output.
+- A submit's response no longer has an `execution` field, and its timeline entry no longer says "Code run". The VS Code extension already hides its console output when the field is missing, so every installed build keeps working.
+- The privacy policy no longer lists Judge0 as a provider.
+- Old `code_execution` telemetry rows stay refused from clients, so none can be forged.
+
 ## 2026-11-17
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.11.1, and students on older builds are now told to update.
