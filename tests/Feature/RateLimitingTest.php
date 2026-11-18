@@ -8,7 +8,6 @@ use App\Models\Module;
 use App\Models\SchoolClass;
 use App\Models\User;
 use App\Providers\AppServiceProvider;
-use App\Services\SandboxExecutionService;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter as RateLimiterFacade;
@@ -122,7 +121,7 @@ class RateLimitingTest extends TestCase
         $this->post('/register', [])->assertStatus(429);
     }
 
-    public function test_grading_and_code_runs_are_throttled_per_lab_session(): void
+    public function test_grading_is_throttled_per_lab_session(): void
     {
         $student = User::create(['name' => 'Student', 'email' => 'student@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
@@ -145,10 +144,6 @@ class RateLimitingTest extends TestCase
             'performance_score' => 0.0,
         ]);
 
-        $this->mock(SandboxExecutionService::class)
-            ->shouldReceive('execute')
-            ->andReturn(['status' => 'success', 'output' => 'hello', 'execution_time_ms' => 1]);
-
         $payload = ['code' => 'class Main { }', 'language' => 'java'];
 
         for ($i = 0; $i < 6; $i++) {
@@ -158,12 +153,5 @@ class RateLimitingTest extends TestCase
         $this->startFreshInstance();
         $this->actingAs($student)->postJson("/api/v1/sessions/{$session->id}/check-progress", $payload)->assertStatus(429);
         $this->actingAs($student)->postJson("/api/v1/sessions/{$session->id}/submit", $payload)->assertStatus(429);
-
-        for ($i = 0; $i < 20; $i++) {
-            $this->startFreshInstance();
-            $this->actingAs($student)->postJson("/api/v1/sessions/{$session->id}/execute", $payload)->assertOk();
-        }
-        $this->startFreshInstance();
-        $this->actingAs($student)->postJson("/api/v1/sessions/{$session->id}/execute", $payload)->assertStatus(429);
     }
 }

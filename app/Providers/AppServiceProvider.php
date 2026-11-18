@@ -29,8 +29,8 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Throttles for endpoints that can be guessed against, send mail, or spend Claude and
-     * Judge0 quota. The counts live in the limiter store (cache.limiter, the database), so
+     * Throttles for endpoints that can be guessed against, send mail, or spend Claude
+     * quota. The counts live in the limiter store (cache.limiter, the database), so
      * they hold across serverless instances. Per-address limits are generous because a
      * whole class often signs in from one school network.
      */
@@ -70,18 +70,9 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perHour(60)->by('register:'.$request->ip());
         });
 
-        // Claude grading (check-progress, submit) and Judge0 runs, per lab session
+        // Claude grading (check-progress, submit), per lab session
         RateLimiter::for('lab-grade', function (Request $request) {
             return Limit::perMinute(6)->by('lab-grade:'.$request->route('sessionId'));
-        });
-
-        RateLimiter::for('lab-execute', function (Request $request) {
-            return Limit::perMinute(20)->by('lab-execute:'.$request->route('sessionId'));
-        });
-
-        // An instructor running a student's submitted code on Judge0, per instructor
-        RateLimiter::for('instructor-run', function (Request $request) {
-            return Limit::perMinute(20)->by('instructor-run:'.($request->user()?->id ?: $request->ip()));
         });
     }
 

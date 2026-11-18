@@ -126,9 +126,6 @@
                             $badgeColor = 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
                             $titleColor = 'text-emerald-400';
                             $dotColor = 'bg-emerald-500';
-                        } elseif ($log->event_type === 'code_execution') {
-                            $badgeColor = 'bg-blue-500/10 border-blue-500/20 text-blue-400';
-                            $titleColor = 'text-blue-400';
                         } elseif ($log->event_type === 'check_progress') {
                             $badgeColor = 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400';
                             $titleColor = 'text-cyan-400';
@@ -158,10 +155,6 @@
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Face count telemetry audit: <span class="font-bold text-white">{{ $log->payload['face_count'] ?? 0 }} face(s)</span> visible.
                                 </p>
-                            @elseif($log->event_type === 'code_execution')
-                                <p class="text-xs text-slate-350 leading-relaxed font-sans">
-                                    Executed student source code using <span class="font-mono text-indigo-400">{{ ucfirst($log->payload['language'] ?? 'bash') }}</span>. Output status: <span class="font-mono font-semibold">{{ $log->payload['status'] ?? 'unknown' }}</span> (Time: {{ $log->payload['execution_time_ms'] ?? 0 }}ms).
-                                </p>
                             @elseif($log->event_type === 'check_progress')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     AI Check Progress evaluated via <span class="font-mono text-cyan-400">{{ ucfirst($log->payload['language'] ?? 'code') }}</span>. Correctness: <span class="font-bold text-white">{{ $log->payload['correctness_score'] ?? 0 }}%</span> (<span class="font-mono text-cyan-300">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks satisfied).
@@ -178,14 +171,6 @@
                                 <p class="text-xs text-emerald-300 font-semibold leading-relaxed font-sans">
                                     Completed and submitted lab exercise via VS Code. Final score: <span class="font-bold text-white">{{ $log->payload['final_score'] ?? 0 }}%</span> (<span class="font-bold text-white">{{ $log->payload['completed_tasks_count'] ?? 0 }}</span> tasks passed).
                                 </p>
-                                @if(!empty($log->payload['execution_status']))
-                                    <p class="text-xs text-slate-350 leading-relaxed font-sans mt-1">
-                                        Code run: <span class="font-mono">{{ $log->payload['execution_status'] }}</span>. This doesn't affect the grade.
-                                    </p>
-                                @endif
-                                @if(!empty($log->payload['execution_error']))
-                                    <pre class="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-rose-300 overflow-auto mt-1 font-mono leading-normal max-h-40">{{ $log->payload['execution_error'] }}</pre>
-                                @endif
                             @elseif($log->event_type === 'paste_anomaly')
                                 <p class="text-xs text-slate-350 leading-relaxed font-sans">
                                     Pasted <span class="font-bold text-white">{{ $log->payload['pasted_length'] ?? 0 }} chars</span> of external code.

@@ -465,9 +465,9 @@ JAVA;
             'status',
             'completed_tasks',
             'performance_score',
-            'execution',
             'evaluation',
         ]);
+        $response->assertJsonMissingPath('execution');
 
         // Assert session status is completed
         $this->assertEquals('completed', $session->fresh()->status);
