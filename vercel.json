@@ -27,7 +27,7 @@
     },
     {
       "src": "/downloads/certicode-labs\\.vsix",
-      "headers": { "Content-Disposition": "attachment; filename=\"certicode-labs-1.11.1.vsix\"" },
+      "headers": { "Content-Disposition": "attachment; filename=\"certicode-labs-1.11.2.vsix\"" },
       "continue": true
     },
     {

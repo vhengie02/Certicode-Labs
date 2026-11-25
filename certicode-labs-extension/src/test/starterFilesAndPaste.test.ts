@@ -208,6 +208,85 @@ async function insertBlocks(blocks: string[], { clipboard = 'something else', di
     return sent.filter(s => s.type === 'large_insert');
 }
 
+/**
+ * Edit a saved document. VS Code can report the new text first and only then that the document
+ * became dirty, in an event of its own without text. A reload from disk has no such event.
+ */
+function editSaved(p: any, doc: any, text: string, { becomesDirty = true } = {}) {
+    doc.isDirty = false;
+    edit(p, doc, doc.text.length, 0, text);
+    if (becomesDirty) {
+        doc.isDirty = true;
+        p.handleDocumentChange({ document: doc, contentChanges: [], reason: undefined });
+    }
+}
+
+test('a paste into a saved file is flagged, once', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', '');
+    p.rememberDocumentText(doc);
+    stubState.clipboard = SOLUTION;
+
+    editSaved(p, doc, SOLUTION);
+    edit(p, doc, doc.text.length, 0, 'x');
+
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('a paste is flagged even when auto save cleans the file again at once', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', '');
+    p.rememberDocumentText(doc);
+    stubState.clipboard = SOLUTION;
+
+    editSaved(p, doc, SOLUTION);
+    doc.isDirty = false;
+    p.handleDocumentChange({ document: doc, contentChanges: [], reason: undefined });
+
+    assert.strictEqual((await flagged()).length, 1);
+});
+
+test('a large insert into a saved file is reported', async () => {
+    const { p, sent } = recording();
+    p.recordActivity = () => undefined;
+    stubState.clipboard = 'something else';
+    const doc = openDocument('/workspace/Main.java', '');
+    p.rememberDocumentText(doc);
+
+    editSaved(p, doc, SOLUTION);
+    await new Promise(r => setTimeout(r, 10));
+    await p.syncActivityBeforeSubmit();
+
+    assert.strictEqual(sent.filter(s => s.type === 'large_insert').length, 1);
+});
+
+test('typing after a reload from disk does not flag the reloaded text', async () => {
+    const { p, flagged } = pasteRecorder();
+    const doc = openDocument('/workspace/Main.java', '');
+    p.rememberDocumentText(doc);
+    stubState.clipboard = SOLUTION;
+
+    editSaved(p, doc, SOLUTION, { becomesDirty: false });
+    await new Promise(r => setTimeout(r, 400));
+    editSaved(p, doc, 'x');
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
+test('a change in one file does not release what waits in another', async () => {
+    const { p, flagged } = pasteRecorder();
+    const reloaded = openDocument('/workspace/Main.java', '');
+    const typedIn = openDocument('/workspace/Helper.java', '');
+    p.rememberDocumentText(reloaded);
+    p.rememberDocumentText(typedIn);
+    stubState.clipboard = SOLUTION;
+
+    editSaved(p, reloaded, SOLUTION, { becomesDirty: false });
+    editSaved(p, typedIn, 'x');
+
+    assert.strictEqual((await flagged()).length, 0);
+});
+
 test('a large insert that was neither typed nor pasted is reported with its text', async () => {
     const [flag, ...others] = await insertBlocks([SOLUTION]);
 
