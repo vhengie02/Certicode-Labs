@@ -248,7 +248,7 @@
                     <div class="flex flex-wrap items-center gap-3 border-b border-[#232323] px-3 py-2.5">
                         <label class="sr-only" :for="`starter-name-${index}`">File name</label>
                         <input type="text" :id="`starter-name-${index}`" :name="`starter_files[${index}][name]`" x-model="file.name" required placeholder="Main.java"
-                               class="ui-input ui-input-mono !min-h-0 !h-8 flex-1 min-w-[10rem] !bg-[#171717]">
+                               class="ui-input ui-input-mono !min-h-0 !h-8 flex-1 min-w-[10rem] dark:!bg-[#171717]">
                         <label class="inline-flex items-center gap-1.5 text-[13px] cursor-pointer select-none" :class="file.is_primary ? 'text-[#3ecf8e]' : 'text-[#888888]'">
                             <input type="radio" name="primary_file_selector" :checked="file.is_primary" @change="setPrimary(index)" class="h-3.5 w-3.5 border-[#3a3a3a] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]/40">
                             Opens first
@@ -290,7 +290,7 @@
                         <div class="min-w-0 flex-1 space-y-2.5">
                             <label class="sr-only" :for="`task-${index}`">Task</label>
                             <input type="text" :id="`task-${index}`" :name="`tasks[${index}][task]`" x-model="task.task" required maxlength="255"
-                                   placeholder="e.g. Print the numbers 1 to 10 with a for loop" class="ui-input !bg-[#171717]">
+                                   placeholder="e.g. Print the numbers 1 to 10 with a for loop" class="ui-input dark:!bg-[#171717]">
 
                             {{-- The saved check is one string: plain text, or a pattern prefixed with "regex:" --}}
                             <input type="hidden" :name="`tasks[${index}][command]`" :value="commandFor(task)">
@@ -304,7 +304,7 @@
                             <div x-show="task.checkOpen" x-cloak class="rounded-lg border border-[#232323] bg-[#101010] p-3">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <label class="text-[13px] text-[#a3a3a3]" :for="`check-type-${index}`">Student's code must</label>
-                                    <select :id="`check-type-${index}`" x-model="task.checkType" class="ui-input !min-h-0 !h-8 !w-auto !py-0 !bg-[#171717] text-[13px]">
+                                    <select :id="`check-type-${index}`" x-model="task.checkType" class="ui-input !min-h-0 !h-8 !w-auto !py-0 dark:!bg-[#171717] text-[13px]">
                                         <option value="text">contain this text</option>
                                         <option value="regex">match this pattern</option>
                                     </select>
@@ -313,7 +313,7 @@
                                 <label class="sr-only" :for="`check-${index}`" x-text="task.checkType === 'regex' ? 'Pattern' : 'Text'"></label>
                                 <input type="text" :id="`check-${index}`" x-model="task.checkValue" maxlength="249" spellcheck="false"
                                        :placeholder="task.checkType === 'regex' ? 'e.g. for\\s*\\(\\s*int' : 'e.g. for (int i = 1'"
-                                       class="ui-input ui-input-mono !bg-[#171717] mt-2" :aria-invalid="!patternValid(task)">
+                                       class="ui-input ui-input-mono dark:!bg-[#171717] mt-2" :aria-invalid="!patternValid(task)">
                                 <p class="ui-error" x-show="!patternValid(task)">This isn't a valid pattern.</p>
                                 <p class="ui-hint" x-show="patternValid(task)"
                                    x-text="task.checkType === 'regex'

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25
+
+- The lab form is readable in light mode again. The starter file names, the tasks and their automatic checks kept a black box under dark text, because their background was forced for both modes. It is now forced only in dark mode.
+
 ## 2026-11-17
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.11.1, and students on older builds are now told to update.
