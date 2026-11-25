@@ -68,6 +68,8 @@ const MAX_PASTE_SNIPPET_LENGTH = 10000;
 const LARGE_INSERT_MIN_CHARS = 100;
 // Blocks this close together are one insert, because an AI tool can write an answer in parts.
 const INSERT_RUN_GAP_MS = 3000;
+// How long a block waits for its document to become dirty before it counts as a reload from disk.
+const DIRTY_WAIT_MS = 250;
 // New or changed lines from which a lab file changed outside the editor is reported.
 const EXTERNAL_CHANGE_MIN_LINES = 5;
 // Long enough for the editor's own save event to arrive before the file on disk is compared.
@@ -100,6 +102,8 @@ class SidebarProvider {
         this._starterFileSnapshots = new Map();
         // Each lab file as this editor last left it on disk, to notice changes made elsewhere
         this._starterDiskTexts = new Map();
+        /** What to do once a document becomes dirty, by document (see whenDirty). */
+        this._awaitingDirty = new Map();
         // Read-only starter files (document URI -> original content) and a re-entrancy flag for restoring them
         this._readonlyFiles = new Map();
         this._restoringReadonly = false;
@@ -1454,6 +1458,9 @@ class SidebarProvider {
     }
     handleDocumentChange(event) {
         const textBefore = this.trackDocumentText(event);
+        if (event.document.isDirty) {
+            this.documentBecameDirty(event.document);
+        }
         // A teammate's edit arriving through shared typing: not typing, a paste or a change of the student's
         if (this.isTeammateEdit(event)) {
             return;
@@ -1500,22 +1507,24 @@ class SidebarProvider {
                 // quick fixes, completions and reloads from disk also insert big blocks, so only
                 // flag text that is really on the clipboard, in a document the student edited.
                 // Other blocks are only reported if they add up to a large insert.
-                if (!isSuppressedA && !isSuppressedB && event.document.isDirty) {
+                if (!isSuppressedA && !isSuppressedB) {
                     const document = event.document.uri.toString();
                     const file = vscode.workspace.asRelativePath(event.document.uri);
                     const wpm = this._currentWpm;
-                    void this.matchesClipboard(change.text).then(fromClipboard => {
-                        if (fromClipboard) {
-                            this.sendTelemetry('paste_anomaly', {
-                                pasted_length: change.text.length,
-                                snippet: change.text.slice(0, MAX_PASTE_SNIPPET_LENGTH),
-                                file,
-                                wpm
-                            });
-                        }
-                        else {
-                            this.addToInsertRun(document, file, change.text, wpm);
-                        }
+                    this.whenDirty(event.document, () => {
+                        void this.matchesClipboard(change.text).then(fromClipboard => {
+                            if (fromClipboard) {
+                                this.sendTelemetry('paste_anomaly', {
+                                    pasted_length: change.text.length,
+                                    snippet: change.text.slice(0, MAX_PASTE_SNIPPET_LENGTH),
+                                    file,
+                                    wpm
+                                });
+                            }
+                            else {
+                                this.addToInsertRun(document, file, change.text, wpm);
+                            }
+                        });
                     });
                 }
             }
@@ -1528,6 +1537,27 @@ class SidebarProvider {
                 this.computeAndSyncDiffs();
             }, 2000);
         }
+    }
+    /**
+     * Run a callback once a document has unsaved changes. The first edit of a saved document can
+     * arrive before VS Code marks it dirty, so `isDirty` can't be read from the edit itself. A
+     * reload from disk never makes the document dirty: its callback is dropped.
+     */
+    whenDirty(document, callback) {
+        if (document.isDirty) {
+            callback();
+            return;
+        }
+        const key = document.uri.toString();
+        const waiting = this._awaitingDirty.get(key) ?? new Set();
+        this._awaitingDirty.set(key, waiting.add(callback));
+        setTimeout(() => waiting.delete(callback), DIRTY_WAIT_MS);
+    }
+    documentBecameDirty(document) {
+        const key = document.uri.toString();
+        const waiting = this._awaitingDirty.get(key);
+        this._awaitingDirty.delete(key);
+        waiting?.forEach(callback => callback());
     }
     /**
      * Add a block that was neither typed nor pasted to the current insert. The insert ends after

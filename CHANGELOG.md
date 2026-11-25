@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25
+
+- A paste into a lab file with no unsaved changes is now flagged. VS Code can report the pasted text before it marks the file as changed, and the extension ignored every large insert into a file that wasn't marked yet. A paste was therefore missed whenever the file had just been saved, and text inserted by an AI tool was missed the same way. The extension now waits up to a quarter of a second for the file to be marked. A reload from disk never marks it, so a reload is still not reported as a paste. The fix is in VS Code extension 1.11.2, and students on older builds are told to update.
+
 ## 2026-11-17
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.11.1, and students on older builds are now told to update.
