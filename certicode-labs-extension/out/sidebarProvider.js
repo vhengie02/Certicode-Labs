@@ -3014,6 +3014,8 @@ class SidebarProvider {
         .composer { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
         .chat-input-row { display: flex; gap: 4px; align-items: center; }
         .chat-input-row input { flex: 1; min-width: 0; }
+        .snippet-row { display: flex; gap: 4px; align-items: flex-end; }
+        .snippet-row textarea { flex: 1; min-width: 0; }
 
         /* Status line and submission result */
         .loader-status { margin: 0 12px; padding: 6px 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.95em; }
@@ -3226,8 +3228,11 @@ class SidebarProvider {
             </div>
 
             <div class="composer">
-                <div id="snippet-container" hidden>
-                    <textarea id="chat-snippet-input" placeholder="Paste a code snippet" rows="3" spellcheck="false"></textarea>
+                <div id="snippet-container" class="snippet-row" hidden>
+                    <textarea id="chat-snippet-input" placeholder="Paste a code snippet (Shift+Enter for a new line)" rows="3" spellcheck="false" aria-label="Code snippet"></textarea>
+                    <button type="button" id="snippet-send-btn" class="icon-btn" title="Send (Enter)" aria-label="Send snippet">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                    </button>
                 </div>
                 <div class="chat-input-row">
                     <button type="button" id="snippet-toggle-btn" class="icon-btn" title="Attach a code snippet" aria-label="Attach a code snippet" aria-pressed="false">
@@ -3344,6 +3349,7 @@ class SidebarProvider {
         const chatInput = $('chat-input');
         const chatSnippetInput = $('chat-snippet-input');
         const chatSendBtn = $('chat-send-btn');
+        const snippetSendBtn = $('snippet-send-btn');
         const snippetToggleBtn = $('snippet-toggle-btn');
         const snippetContainer = $('snippet-container');
 
@@ -3549,12 +3555,17 @@ class SidebarProvider {
         });
 
         chatSendBtn.addEventListener('click', sendChatMessage);
-        chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+        snippetSendBtn.addEventListener('click', sendChatMessage);
+        // Enter sends from either box; Shift+Enter is a new line in the snippet box.
+        // Enter that confirms an IME composition is not a send.
+        function sendOnEnter(e) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                 e.preventDefault();
                 sendChatMessage();
             }
-        });
+        }
+        chatInput.addEventListener('keydown', sendOnEnter);
+        chatSnippetInput.addEventListener('keydown', sendOnEnter);
 
         function sendChatMessage() {
             const text = chatInput.value.trim();
