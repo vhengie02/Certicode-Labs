@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 class ThemeSettingsTest extends TestCase
@@ -55,5 +56,25 @@ class ThemeSettingsTest extends TestCase
         $response->assertSee('theme-toggle-moon');
         $response->assertSee('applyTheme');
         $response->assertSee('toggleQuickTheme');
+    }
+
+    /**
+     * Tailwind puts utilities in a CSS layer, where `!important` beats the layout's light-mode
+     * `!important` rules. A field with a dark `!bg-[...]` would keep it in light mode, under dark
+     * text, so such a background has to be limited to dark mode.
+     */
+    public function test_form_fields_force_a_background_only_in_dark_mode(): void
+    {
+        $offenders = [];
+        foreach (File::allFiles(resource_path('views')) as $view) {
+            preg_match_all('/class="[^"]*\bui-input\b[^"]*"/', $view->getContents(), $matches);
+            foreach ($matches[0] as $class) {
+                if (preg_match('/(?<!dark:)!bg-/', $class)) {
+                    $offenders[] = $view->getRelativePathname().': '.$class;
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders);
     }
 }
