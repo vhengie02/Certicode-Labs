@@ -281,13 +281,23 @@
                              if (data.diff_stats) this.diffStats = data.diff_stats;
                          } catch (e) {}
                      },
+                     // Enter sends from the snippet box; Shift+Enter is a new line there.
+                     // Enter that confirms an IME composition is not a send.
+                     sendOnEnter(e) {
+                         if (e.shiftKey || e.isComposing) return;
+                         e.preventDefault();
+                         this.sendMessage();
+                     },
                      async sendMessage() {
-                         if (!this.newMessage.trim()) return;
+                         const snippet = this.codeSnippet.trim();
+                         // The server needs a message, so a snippet sent on its own gets one
+                         const message = this.newMessage.trim() || (snippet ? 'Code snippet shared:' : '');
+                         if (!message) return;
                          try {
                              const res = await fetch(`/v1/sessions/${this.sessionId}/chat`, {
                                  method: 'POST',
                                  headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ message: this.newMessage, code_snippet: this.codeSnippet || null })
+                                 body: JSON.stringify({ message: message, code_snippet: snippet || null })
                              });
                              const data = await res.json();
                              if (data.chat) {
@@ -346,8 +356,15 @@
 
                     <form @submit.prevent="sendMessage()" class="mt-3 pt-3 border-t border-[#232323] space-y-2">
                         <template x-if="showSnippetInput">
-                            <textarea id="chat-code-snippet" name="code_snippet" x-model="codeSnippet" placeholder="// Paste code snippet here..." rows="3"
-                                class="w-full px-3 py-1.5 bg-[#0e0e0e] border border-[#2e2e2e] rounded text-xs font-mono text-[#ededed] focus:outline-none focus:border-[#3ecf8e]"></textarea>
+                            <div class="flex items-end space-x-2">
+                                <textarea id="chat-code-snippet" name="code_snippet" x-model="codeSnippet" x-init="$el.focus()" @keydown.enter="sendOnEnter($event)"
+                                    placeholder="// Paste code snippet here (Shift+Enter for a new line)" rows="3" aria-label="Code snippet"
+                                    class="flex-1 min-w-0 px-3 py-1.5 bg-[#0e0e0e] border border-[#2e2e2e] rounded text-xs font-mono text-[#ededed] focus:outline-none focus:border-[#3ecf8e]"></textarea>
+                                <button type="submit" id="chat-snippet-send" title="Send (Enter)" aria-label="Send snippet"
+                                    class="px-4 py-2 bg-[#3ecf8e] text-[#0f0f0f] text-xs font-bold rounded hover:bg-[#00c573] transition-colors">
+                                    Send
+                                </button>
+                            </div>
                         </template>
                         <div class="flex items-center space-x-2">
                             <button type="button" @click="showSnippetInput = !showSnippetInput" 
