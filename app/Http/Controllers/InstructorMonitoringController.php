@@ -7,7 +7,6 @@ use App\Models\LabSession;
 use App\Models\TelemetryLog;
 use App\Models\User;
 use App\Services\CodeSimilarityService;
-use App\Services\SandboxExecutionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -208,74 +207,6 @@ class InstructorMonitoringController extends Controller
         $this->authorizeSessionManager($session);
 
         return response()->json(['files' => $session->submittedFileList()]);
-    }
-
-    /** Largest standard input an instructor may give a run (64 KB). */
-    private const MAX_RUN_STDIN_CHARS = 65536;
-
-    /** Seconds to wait for Judge0, inside Vercel's 60 s limit. */
-    private const RUN_TIMEOUT_SECONDS = 25;
-
-    /**
-     * Run a finished attempt's saved code on Judge0 and return what it printed, for the
-     * instructor reviewing the grade. The run is read-only: nothing on the attempt changes
-     * (status, score, tasks, grade summary, competencies) and nothing is logged against it.
-     * Without Judge0 nothing runs at all, not even in local development, because this is
-     * student code started by someone else.
-     */
-    public function runSubmission(Request $request, int $id, SandboxExecutionService $sandbox)
-    {
-        $this->authorizeInstructor();
-
-        $session = LabSession::findOrFail($id);
-        $this->authorizeSessionManager($session);
-
-        $request->validate([
-            'stdin' => 'nullable|string|max:'.self::MAX_RUN_STDIN_CHARS,
-        ], ['stdin.max' => 'The input can be at most 64 KB.']);
-
-        // The code that was handed in, never what the student has open now
-        if ($session->status !== 'completed') {
-            return response()->json(['message' => 'Only a submitted attempt can be run. This one has not been handed in.'], 409);
-        }
-
-        $files = $session->submittedFileList();
-        $codeFiles = array_values(array_filter($files, fn ($file) => LabSession::isCodeFile($file['name']) && trim($file['content']) !== ''));
-        if ($codeFiles === []) {
-            return response()->json(['message' => 'No code was saved for this attempt, so there is nothing to run.'], 422);
-        }
-
-        $language = $session->submissionLanguage();
-        if ($language === null) {
-            return response()->json(['message' => "The submission's language is unknown, so it can't be run."], 422);
-        }
-
-        if (! $sandbox->isRemoteExecutionConfigured()) {
-            return response()->json(['message' => 'Code execution (Judge0) is not set up on this server, so the code was not run.'], 503);
-        }
-
-        // Java files are joined into one source for Judge0; other languages run the main file,
-        // as the student's own submit did
-        ['source' => $source, 'files' => $ranFiles] = $sandbox->combineSourceFiles($codeFiles, $language);
-
-        $stdin = $request->input('stdin');
-        $result = $sandbox->execute($source, $language, self::RUN_TIMEOUT_SECONDS, $stdin === '' ? null : $stdin);
-
-        return response()->json([
-            'status' => $result['status'],
-            'output' => $result['output'] ?? '',
-            'errors' => $result['errors'] ?? null,
-            'stderr' => $result['stderr'] ?? '',
-            'compile_error' => (bool) ($result['compile_error'] ?? false),
-            'exit_code' => $result['exit_code'] ?? null,
-            'execution_time_ms' => $result['execution_time_ms'] ?? null,
-            'cpu_time_ms' => $result['cpu_time_ms'] ?? null,
-            'memory_kb' => $result['memory_kb'] ?? null,
-            'language' => $language,
-            'files' => $ranFiles,
-            'skipped_files' => array_values(array_diff(array_column($codeFiles, 'name'), $ranFiles)),
-            'ran_at' => now()->toIso8601String(),
-        ]);
     }
 
     /**

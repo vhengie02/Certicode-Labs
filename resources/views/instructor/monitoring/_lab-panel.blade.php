@@ -958,10 +958,6 @@
                                             </ul>
                                         </section>
                                     </template>
-
-                                    <section class="rounded-xl border border-[#2e2e2e] p-4">
-                                        @include('sessions._run-submission', ['runUrl' => '() => `/instructor/sessions/${student.id}/run`'])
-                                    </section>
                                 </div>
                             </template>
 

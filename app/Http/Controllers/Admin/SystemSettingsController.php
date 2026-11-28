@@ -23,9 +23,6 @@ class SystemSettingsController extends Controller
             ['AI grading', filled(config('services.anthropic.key')), filled(config('services.anthropic.key'))
                 ? 'Claude, model '.config('services.anthropic.grader_model', 'default')
                 : 'No API key; the rule-based grader is used'],
-            ['Code execution', filled(config('services.judge0.url')), filled(config('services.judge0.url'))
-                ? 'Judge0 server configured'
-                : 'No Judge0 server; code is graded without running it'],
             ['Realtime updates', ! in_array(config('broadcasting.default'), [null, '', 'log', 'null'], true),
                 'Driver: '.(config('broadcasting.default') ?: 'none').(in_array(config('broadcasting.default'), ['log', 'null', null, ''], true) ? '; pages poll instead' : '')],
             ['Email', ! in_array(config('mail.default'), ['log', 'array', null, ''], true),

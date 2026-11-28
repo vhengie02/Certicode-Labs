@@ -13,7 +13,6 @@ import codeSlots from './code-slots';
 import lineSidebar from './line-sidebar';
 import staggeredMenu from './staggered-menu';
 import stepper from './stepper';
-import submissionRunner from './submission-runner';
 
 Alpine.plugin(collapse);
 Alpine.directive('tab-indicator', (element, _, utilities) => tabIndicator(element, utilities));
@@ -22,7 +21,6 @@ Alpine.data('codeSlots', codeSlots);
 Alpine.data('lineSidebar', lineSidebar);
 Alpine.data('staggeredMenu', staggeredMenu);
 Alpine.data('stepper', stepper);
-Alpine.data('submissionRunner', submissionRunner);
 
 window.Alpine = Alpine;
 Alpine.start();

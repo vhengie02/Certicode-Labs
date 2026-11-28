@@ -12,7 +12,6 @@ use App\Models\TeamDocUpdate;
 use App\Models\User;
 use App\Services\LabTeams;
 use App\Services\LlmEvaluationService;
-use App\Services\SandboxExecutionService;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -329,8 +328,6 @@ class TeamDocTest extends TestCase
 
     public function test_the_leaders_submit_deletes_the_teams_stored_document()
     {
-        $this->mock(SandboxExecutionService::class)->shouldReceive('execute')
-            ->andReturn(['status' => 'success', 'output' => '1', 'errors' => null, 'execution_time_ms' => 5]);
         $this->app->instance(LlmEvaluationService::class, new class extends LlmEvaluationService
         {
             public function __construct() {}

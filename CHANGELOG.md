@@ -7,6 +7,11 @@
 - The instructor dashboard's "Latest submissions" shows the attempt number too. A team row now also names whose attempt it is, since one team submit lists every teammate's attempt and their numbers can differ.
 - In the extension's team chat, Enter now sends from the code snippet box too, so pasted code can be sent from the keyboard. Shift+Enter adds a new line in the snippet. The snippet box also has its own send button beside it. Enter that confirms an IME composition still doesn't send.
 - The lab page's team chat works the same way: Enter sends from the snippet box, Shift+Enter adds a new line, and the box has its own Send button. A snippet sent without a typed message now goes out as "Code snippet shared:", as from the extension. Before, the page sent nothing when the message line was empty, because the server needs a message.
+- Student code is no longer run anywhere. Running it needs a Judge0 server, which costs money to host, so the feature is shelved. Grading never depended on it: Check Progress and Submit grade the code with Claude (or the rule-based grader) exactly as before.
+- Removed: the instructor's "Run the submitted code" panel on the results page and in the monitoring drawer, the `/sessions/{id}/execute` endpoints, the code run after each submit, and the `JUDGE0_*` and `SANDBOX_HOST_EXECUTION` settings. The production site never had Judge0 set up, so students already saw no run output.
+- A submit's response no longer has an `execution` field, and its timeline entry no longer says "Code run". The VS Code extension already hides its console output when the field is missing, so every installed build keeps working.
+- The privacy policy no longer lists Judge0 as a provider.
+- Old `code_execution` telemetry rows stay refused from clients, so none can be forged.
 
 ## 2026-11-17
 

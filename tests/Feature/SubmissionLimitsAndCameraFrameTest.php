@@ -80,7 +80,7 @@ class SubmissionLimitsAndCameraFrameTest extends TestCase
 
     public function test_oversized_code_is_refused_by_every_endpoint_that_takes_it(): void
     {
-        foreach (['check-progress', 'execute'] as $action) {
+        foreach (['check-progress', 'submit'] as $action) {
             $this->asExtension()->postJson($this->url($action), ['code' => str_repeat('x', self::TOO_LONG), 'language' => 'java'])
                 ->assertStatus(422);
         }
