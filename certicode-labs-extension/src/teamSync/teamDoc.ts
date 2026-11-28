@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import * as Y from 'yjs';
 import { isShareableName } from './names';
 import { open, seal } from './seal';
-import { EditorPort, LOCAL, REMOTE, TextBinding } from './textBinding';
+import { EditorPort, LOCAL, REMOTE, storeHasGap, TextBinding } from './textBinding';
 import { DocStore, Transport } from './transport';
 import { decode, encode, Entry, KIND_ANSWER, KIND_HELLO, KIND_HELLO_BACK, KIND_UPDATE } from './wire';
 
@@ -31,6 +31,13 @@ export interface TeamDocOptions {
     repairIntervalMs?: number;
     /** Longest message sent over the channel; bigger edits go through the store only. */
     maxMessageChars?: number;
+    /**
+     * A teammate's edit that builds on one that never arrived can't be shown, and neither can
+     * anything they type after it. This long after such a gap shows, ask the teammates and the
+     * store for what is missing; if that doesn't fill it, ask again after twice as long, and so
+     * on up to the repair interval.
+     */
+    gapRepairMs?: number;
 }
 
 /** Lines of one file credited to this student, by who typed the characters on them. */
@@ -69,10 +76,14 @@ export class TeamDoc {
     private readonly helloJitterMs: number;
     private readonly repairIntervalMs: number;
     private readonly maxMessageChars: number;
+    private readonly gapRepairMs: number;
 
     private sendTimer?: ReturnType<typeof setTimeout>;
     private storeTimer?: ReturnType<typeof setTimeout>;
     private repairTimer?: ReturnType<typeof setInterval>;
+    private gapTimer?: ReturnType<typeof setTimeout>;
+    /** How long to wait before the next ask about a gap. Doubles while the gap stays open. */
+    private gapWaitMs: number;
     /** Hellos answered lately, so the same one arriving from several teammates is answered once. */
     private readonly answered = new Map<string, number>();
     /** Goes up with every change to any file, from here or from a teammate. */
@@ -90,6 +101,8 @@ export class TeamDoc {
         this.repairIntervalMs = options.repairIntervalMs ?? 60000;
         // Supabase refuses messages over 256 KB on the Free plan; the sealed form is base64
         this.maxMessageChars = options.maxMessageChars ?? 200_000;
+        this.gapRepairMs = options.gapRepairMs ?? 500;
+        this.gapWaitMs = this.gapRepairMs;
     }
 
     /**
@@ -247,7 +260,8 @@ export class TeamDoc {
         this.stopped = true;
         if (this.storeTimer) { clearTimeout(this.storeTimer); }
         if (this.repairTimer) { clearInterval(this.repairTimer); }
-        this.storeTimer = this.repairTimer = undefined;
+        if (this.gapTimer) { clearTimeout(this.gapTimer); }
+        this.storeTimer = this.repairTimer = this.gapTimer = undefined;
         this.options.transport.close();
         for (const file of this.files.values()) {
             file.binding?.dispose();
@@ -342,6 +356,7 @@ export class TeamDoc {
 
             if (decoded.kind === KIND_UPDATE || decoded.kind === KIND_ANSWER) {
                 this.applyEntries(decoded.entries);
+                this.watchForGaps();
                 return;
             }
 
@@ -437,6 +452,40 @@ export class TeamDoc {
             return;
         }
         this.options.transport.send(sealed);
+    }
+
+    /** Whether any file holds a teammate's edits that wait on one that never arrived. */
+    private hasGap(): boolean {
+        for (const file of this.files.values()) {
+            if (file.binding ? file.binding.hasGap() : storeHasGap(file.doc)) { return true; }
+        }
+        return false;
+    }
+
+    /**
+     * Call after a teammate's edits arrive. A gap is given a moment to fill by itself (an
+     * answer to someone else's hello may be on its way), then asked about: our hello makes
+     * the teammates answer what we lack, and the store is read for what was too big to send.
+     */
+    private watchForGaps(): void {
+        if (this.stopped || this.gapTimer) { return; }
+        if (!this.hasGap()) {
+            this.gapWaitMs = this.gapRepairMs;
+            return;
+        }
+        this.gapTimer = setTimeout(() => {
+            this.gapTimer = undefined;
+            if (this.stopped) { return; }
+            if (!this.hasGap()) {
+                this.gapWaitMs = this.gapRepairMs;
+                return;
+            }
+            this.sendHello(KIND_HELLO_BACK);
+            void this.pullStored();
+            this.gapWaitMs = Math.min(this.gapWaitMs * 2, this.repairIntervalMs);
+            this.watchForGaps();
+        }, this.gapWaitMs);
+        (this.gapTimer as { unref?: () => void }).unref?.();
     }
 
     /** Edits teammates stored since we last looked. */

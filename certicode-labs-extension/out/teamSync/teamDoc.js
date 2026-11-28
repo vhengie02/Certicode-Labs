@@ -61,6 +61,8 @@ class TeamDoc {
         this.repairIntervalMs = options.repairIntervalMs ?? 60000;
         // Supabase refuses messages over 256 KB on the Free plan; the sealed form is base64
         this.maxMessageChars = options.maxMessageChars ?? 200000;
+        this.gapRepairMs = options.gapRepairMs ?? 500;
+        this.gapWaitMs = this.gapRepairMs;
     }
     /**
      * Load the stored document and join the teammates. `starter` goes in only if nothing is
@@ -227,7 +229,10 @@ class TeamDoc {
         if (this.repairTimer) {
             clearInterval(this.repairTimer);
         }
-        this.storeTimer = this.repairTimer = undefined;
+        if (this.gapTimer) {
+            clearTimeout(this.gapTimer);
+        }
+        this.storeTimer = this.repairTimer = this.gapTimer = undefined;
         this.options.transport.close();
         for (const file of this.files.values()) {
             file.binding?.dispose();
@@ -331,6 +336,7 @@ class TeamDoc {
             }
             if (decoded.kind === wire_1.KIND_UPDATE || decoded.kind === wire_1.KIND_ANSWER) {
                 this.applyEntries(decoded.entries);
+                this.watchForGaps();
                 return;
             }
             // A teammate says what they have: on connecting (HELLO), in reply to that, or now and
@@ -444,6 +450,44 @@ class TeamDoc {
             return;
         }
         this.options.transport.send(sealed);
+    }
+    /** Whether any file holds a teammate's edits that wait on one that never arrived. */
+    hasGap() {
+        for (const file of this.files.values()) {
+            if (file.binding ? file.binding.hasGap() : (0, textBinding_1.storeHasGap)(file.doc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * Call after a teammate's edits arrive. A gap is given a moment to fill by itself (an
+     * answer to someone else's hello may be on its way), then asked about: our hello makes
+     * the teammates answer what we lack, and the store is read for what was too big to send.
+     */
+    watchForGaps() {
+        if (this.stopped || this.gapTimer) {
+            return;
+        }
+        if (!this.hasGap()) {
+            this.gapWaitMs = this.gapRepairMs;
+            return;
+        }
+        this.gapTimer = setTimeout(() => {
+            this.gapTimer = undefined;
+            if (this.stopped) {
+                return;
+            }
+            if (!this.hasGap()) {
+                this.gapWaitMs = this.gapRepairMs;
+                return;
+            }
+            this.sendHello(wire_1.KIND_HELLO_BACK);
+            void this.pullStored();
+            this.gapWaitMs = Math.min(this.gapWaitMs * 2, this.repairIntervalMs);
+            this.watchForGaps();
+        }, this.gapWaitMs);
+        this.gapTimer.unref?.();
     }
     /** Edits teammates stored since we last looked. */
     async pullStored() {
