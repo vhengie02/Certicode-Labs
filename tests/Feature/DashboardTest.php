@@ -357,7 +357,7 @@ class DashboardTest extends TestCase
             ->assertDontSee('Student 7');
     }
 
-    public function test_a_team_submission_shows_the_team_name()
+    public function test_a_team_submission_shows_the_team_name_then_whose_attempt_it_is()
     {
         Cache::store('file')->flush();
         $instructor = $this->user('prof@example.com', 'instructor');
@@ -365,7 +365,30 @@ class DashboardTest extends TestCase
         $group = Group::create(['name' => 'The Pair', 'lab_id' => $lab->id]);
         $this->submission($lab, 'Team Lead', 5, ['group_id' => $group->id]);
 
-        $this->sections($instructor)->assertSee('The Pair')->assertDontSee('Team Lead');
+        // One team submit lists every teammate's attempt, so each row names whose it is
+        $this->sections($instructor)->assertSeeInOrder(['The Pair', 'Sorting Lab', 'Team Lead', 'Attempt 1']);
+    }
+
+    public function test_latest_submissions_show_which_attempt_each_one_is()
+    {
+        Cache::store('file')->flush();
+        $instructor = $this->user('prof@example.com', 'instructor');
+        $lab = $this->labIn($instructor, 'CLASS-A', 'Sorting Lab');
+        $first = $this->submission($lab, 'Repeat Student', 30, ['submitted_code' => null, 'status' => 'abandoned']);
+        $this->submission($lab, 'Other Student', 20);
+        LabSession::create([
+            'lab_id' => $lab->id,
+            'user_id' => $first->user_id,
+            'status' => 'completed',
+            'started_at' => now()->subHour(),
+            'ended_at' => now()->subMinutes(5),
+            'performance_score' => 90,
+            'submitted_code' => 'class Main {}',
+        ]);
+
+        // A timed-out attempt with no code still counts, as on the student's own pages
+        $this->sections($instructor)->assertOk()
+            ->assertSeeInOrder(['Repeat Student', 'Attempt 2 of 2', 'Other Student', 'Attempt 1']);
     }
 
     public function test_activity_graph_is_gone()

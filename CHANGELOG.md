@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-28
+
+- On a group lab's monitoring page, "By team" now keeps each team's rows together. The rows used to be reordered in the browser by the Sort menu ("Needs attention first" by default), which scattered teams. Each team now has a heading with its leader, its number of attempts and who did not take part, in team name order ("Team 2" before "Team 10"), with attempts that have no team last. The Sort menu orders the rows inside each team. The separate team list above the roster shows only under "By student". Every roster row now draws its own divider, so the lines no longer go missing between reordered rows, and the light theme now colours them.
+- The monitoring roster shows which of the student's attempts each row is, such as "Attempt 2 of 2", and so does the student drawer. Attempts are counted per student, oldest first, as the attempt limit and the student's own pages count them. Under "Name", a student's attempts sit together, oldest first.
+- The instructor dashboard's "Latest submissions" shows the attempt number too. A team row now also names whose attempt it is, since one team submit lists every teammate's attempt and their numbers can differ.
+
 ## 2026-11-17
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.11.1, and students on older builds are now told to update.
