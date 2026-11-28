@@ -34,6 +34,14 @@ function singleDiff(from: string, to: string): LocalChange {
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 /**
+ * Whether a document holds edits it can't apply yet: they build on an edit that never arrived.
+ * The merge library keeps them aside until it does, so nothing typed after the lost edit shows.
+ */
+export function storeHasGap(doc: Y.Doc): boolean {
+    return doc.store.pendingStructs !== null || doc.store.pendingDs !== null;
+}
+
+/**
  * Keeps one editor document and one shared file the same.
  *
  * `doc` always holds exactly what the editor shows. That is what makes positions safe: what
@@ -137,6 +145,21 @@ export class TextBinding {
     /** The whole file as teammates should get it: what is shown plus what is waiting to be. */
     public fullState(): Uint8Array {
         return Y.mergeUpdates([Y.encodeStateAsUpdate(this.doc), ...this.pending]);
+    }
+
+    /** Whether what was received, shown or still waiting, builds on an edit that never arrived. */
+    public hasGap(): boolean {
+        if (storeHasGap(this.doc)) { return true; }
+        if (this.pending.length === 0) { return false; }
+        const probe = new Y.Doc();
+        try {
+            Y.applyUpdate(probe, this.fullState());
+            return storeHasGap(probe);
+        } catch {
+            return false;
+        } finally {
+            probe.destroy();
+        }
     }
 
     /** Resolves when the editor shows everything received and nothing is on its way. */

@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TextBinding = exports.LOCAL = exports.REMOTE = void 0;
+exports.TextBinding = exports.storeHasGap = exports.LOCAL = exports.REMOTE = void 0;
 const Y = __importStar(require("yjs"));
 /** Origin of transactions that bring in a teammate's edits (or the stored document). */
 exports.REMOTE = 'remote';
@@ -45,6 +45,14 @@ function singleDiff(from, to) {
     return { offset: start, length: endFrom - start, text: to.slice(start, endTo) };
 }
 const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+/**
+ * Whether a document holds edits it can't apply yet: they build on an edit that never arrived.
+ * The merge library keeps them aside until it does, so nothing typed after the lost edit shows.
+ */
+function storeHasGap(doc) {
+    return doc.store.pendingStructs !== null || doc.store.pendingDs !== null;
+}
+exports.storeHasGap = storeHasGap;
 /**
  * Keeps one editor document and one shared file the same.
  *
@@ -150,6 +158,26 @@ class TextBinding {
     /** The whole file as teammates should get it: what is shown plus what is waiting to be. */
     fullState() {
         return Y.mergeUpdates([Y.encodeStateAsUpdate(this.doc), ...this.pending]);
+    }
+    /** Whether what was received, shown or still waiting, builds on an edit that never arrived. */
+    hasGap() {
+        if (storeHasGap(this.doc)) {
+            return true;
+        }
+        if (this.pending.length === 0) {
+            return false;
+        }
+        const probe = new Y.Doc();
+        try {
+            Y.applyUpdate(probe, this.fullState());
+            return storeHasGap(probe);
+        }
+        catch {
+            return false;
+        }
+        finally {
+            probe.destroy();
+        }
     }
     /** Resolves when the editor shows everything received and nothing is on its way. */
     settled() {

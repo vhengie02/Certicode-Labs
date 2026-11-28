@@ -5,6 +5,13 @@ const realtime_js_1 = require("@supabase/realtime-js");
 /** The event name messages travel under on the channel. */
 const EVENT = 'm';
 /**
+ * The library drops and reopens the connection when a heartbeat is still unanswered as the
+ * next one is due. Its default of 25 s left a dead connection (Wi-Fi drop, sleep) unnoticed for
+ * up to 50 s, and edits sent meanwhile were lost until it reopened. Heartbeats are not counted
+ * as Realtime messages.
+ */
+const HEARTBEAT_INTERVAL_MS = 5000;
+/**
  * A Supabase Realtime Broadcast channel. Everything sent is already sealed with the team's key,
  * so the channel only has to carry strings between whoever is on it.
  */
@@ -28,7 +35,7 @@ class SupabaseTransport {
         }
         this.emitStatus('connecting');
         const endpoint = this.supabaseUrl.replace(/^http/i, 'ws').replace(/\/+$/, '') + '/realtime/v1';
-        this.client = new realtime_js_1.RealtimeClient(endpoint, { params: { apikey: this.publishableKey }, transport: this.webSocket });
+        this.client = new realtime_js_1.RealtimeClient(endpoint, { params: { apikey: this.publishableKey }, transport: this.webSocket, heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS });
         this.channel = this.client.channel(this.topic, { config: { broadcast: { self: false, ack: false } } });
         this.channel.on('broadcast', { event: EVENT }, message => {
             const data = message?.payload?.d;

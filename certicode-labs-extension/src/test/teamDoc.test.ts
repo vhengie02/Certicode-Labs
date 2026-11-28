@@ -20,7 +20,7 @@ interface Teammate {
     text(name: string): string | undefined;
 }
 
-function team(options: { key?: Buffer; minSendIntervalMs?: number; storeIntervalMs?: number; compactAfter?: number; repairIntervalMs?: number; maxMessageChars?: number } = {}) {
+function team(options: { key?: Buffer; minSendIntervalMs?: number; storeIntervalMs?: number; compactAfter?: number; repairIntervalMs?: number; maxMessageChars?: number; gapRepairMs?: number } = {}) {
     const hub = new Hub();
     const store = new FakeStore();
     const key = options.key ?? crypto.randomBytes(32);
@@ -39,6 +39,7 @@ function team(options: { key?: Buffer; minSendIntervalMs?: number; storeInterval
             helloJitterMs: 20,
             repairIntervalMs: options.repairIntervalMs ?? 60000,
             maxMessageChars: options.maxMessageChars,
+            gapRepairMs: options.gapRepairMs,
         });
         const editors = new Map<string, InstantEditor>();
         const bind = (name: string): void => {
@@ -384,6 +385,66 @@ test('an edit lost on the channel reaches the teammate anyway', async () => {
     await until(() => bob.text('Main.java')!.startsWith('dropped once'));
 
     assert.strictEqual(bob.text('Main.java'), 'dropped once' + STARTER_MAIN);
+    t.stopAll();
+});
+
+test('an edit lost on the channel is asked for again as soon as a later edit shows it is missing', async () => {
+    // The once-a-minute check never comes in this test: only the gap can bring the lost edit
+    const t = team({ gapRepairMs: 50 });
+    const alice = await t.join();
+    const bob = await t.join();
+    await sleep(200);
+
+    t.hub.dropNext = 1;
+    alice.type('Main.java', 0, 0, 'lost ');
+    await sleep(50);
+    alice.type('Main.java', 5, 0, 'then more ');
+    const typedAt = Date.now();
+    await until(() => bob.text('Main.java')!.startsWith('lost then more '));
+
+    assert.strictEqual(bob.text('Main.java'), 'lost then more ' + STARTER_MAIN);
+    assert.ok(Date.now() - typedAt < 1000, `took ${Date.now() - typedAt} ms`);
+    t.stopAll();
+});
+
+test('a gap nobody can fill is asked about less and less often', async () => {
+    const t = team({ gapRepairMs: 50 });
+    const alice = await t.join();
+    const bob = await t.join();
+    await sleep(200);
+
+    // Alice's edits never reach the store, and the first one never reaches Bob
+    t.store.failing = true;
+    t.hub.dropNext = 1;
+    alice.type('Main.java', 0, 0, 'lost ');
+    await sleep(50);
+    alice.type('Main.java', 5, 0, 'then more ');
+    await sleep(30);
+    alice.transport.goOffline();
+    const before = bob.transport.sent;
+    await sleep(1600);
+
+    // Waits of 50, 100, 200, 400 and 800 ms: five asks, not one every 50 ms
+    const asked = bob.transport.sent - before;
+    assert.ok(asked >= 3 && asked <= 6, `asked ${asked} times`);
+    t.stopAll();
+});
+
+test('edits that arrive in order cost the receiver nothing', async () => {
+    const t = team();
+    const alice = await t.join();
+    const bob = await t.join();
+    await sleep(300);
+    const before = bob.transport.sent;
+
+    for (let i = 0; i < 5; i++) {
+        alice.type('Main.java', 0, 0, 'x');
+        await sleep(30);
+    }
+    await until(() => bob.text('Main.java')!.startsWith('xxxxx'));
+    await sleep(200);
+
+    assert.strictEqual(bob.transport.sent - before, 0);
     t.stopAll();
 });
 

@@ -78,7 +78,7 @@ return [
         // The build in download_path. Downloads are saved as certicode-labs-<this>.vsix.
         // Keep it equal to certicode-labs-extension/package.json and the "filename" in
         // vercel.json; ExtensionDownloadNameTest checks all of them and the .vsix itself.
-        'latest_version' => '1.11.1',
+        'latest_version' => '1.11.3',
         // Older builds get a warning to update
         'min_version' => env('VSCODE_EXTENSION_MIN_VERSION', '1.11.1'),
         // Older builds are refused with 426 (RequireSupportedExtension); keep at or below min_version
