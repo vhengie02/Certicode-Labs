@@ -78,9 +78,11 @@ class InstructorMonitoringController extends Controller
         $outdatedExtensions = $this->outdatedExtensions($sessions);
         $extensionMinVersion = (string) config('services.vscode_extension.min_version', '0.0.0');
         $teams = $this->teamsOverview($laboratory, $sessions);
+        $attemptNumbers = self::attemptNumbers($sessions);
 
         return compact(
             'teams',
+            'attemptNumbers',
             'laboratory',
             'schoolClass',
             'sessions',
@@ -94,6 +96,25 @@ class InstructorMonitoringController extends Controller
             'outdatedExtensions',
             'extensionMinVersion'
         );
+    }
+
+    /**
+     * Which of the student's attempts each session is, keyed by session ID. Attempts are
+     * counted per student, oldest first, as the attempt limit and the student's own pages
+     * count them. Expects every session of the lab, not a filtered subset.
+     *
+     * @return array<int, array{number: int, of: int}>
+     */
+    public static function attemptNumbers($sessions): array
+    {
+        $numbers = [];
+        foreach ($sessions->groupBy('user_id') as $own) {
+            foreach ($own->sortBy('id')->values() as $index => $session) {
+                $numbers[$session->id] = ['number' => $index + 1, 'of' => $own->count()];
+            }
+        }
+
+        return $numbers;
     }
 
     /**

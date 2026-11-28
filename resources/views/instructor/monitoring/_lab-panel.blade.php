@@ -202,7 +202,9 @@
     @php
         $taskTotal = count($laboratory->tasks_definition ?? []);
         $stateLabels = ['active' => 'Active', 'idle' => 'Idle', 'offline' => 'Offline', 'completed' => 'Submitted', 'abandoned' => 'Timed out'];
-        $rosterIndex = $sessions->map(function ($s) use ($taskTotal) {
+        $attemptNumbers ??= [];
+        $groupByTeam = $laboratory->is_group_lab && $sortBy === 'group';
+        $rosterIndex = $sessions->map(function ($s) use ($taskTotal, $attemptNumbers) {
             $state = $s->getConnectionState();
             $openFlags = $s->anomalies->where('resolved', false)->count();
             $done = is_array($s->completed_tasks) ? count($s->completed_tasks) : 0;
@@ -210,6 +212,8 @@
                 'id' => $s->id,
                 'name' => strtolower($s->user->name ?? ''),
                 'group' => strtolower($s->group->name ?? ''),
+                'team_id' => $s->group_id,
+                'attempt' => $attemptNumbers[$s->id]['number'] ?? 1,
                 'state' => $state,
                 // Higher means look sooner: open flags first, then students who dropped off, then warning counts
                 'attention' => $openFlags * 3 + (in_array($state, ['idle', 'offline'], true) ? 2 : 0)
@@ -219,7 +223,7 @@
             ];
         })->values();
         // Everything the student drawer shows, keyed by session id
-        $studentDetails = $sessions->mapWithKeys(function ($s) use ($taskTotal, $stateLabels) {
+        $studentDetails = $sessions->mapWithKeys(function ($s) use ($taskTotal, $stateLabels, $attemptNumbers) {
             $state = $s->getConnectionState();
             $diff = $s->diff_stats ?? [];
             return [$s->id => [
@@ -228,6 +232,8 @@
                 'email' => $s->user->email ?? '',
                 'initials' => strtoupper(substr($s->user->name ?? 'S', 0, 2)),
                 'team_name' => $s->group->name ?? null,
+                'attempt_number' => $attemptNumbers[$s->id]['number'] ?? null,
+                'attempt_of' => $attemptNumbers[$s->id]['of'] ?? null,
                 'state' => $state,
                 'state_label' => $stateLabels[$state] ?? ucfirst($state),
                 'status' => $s->status,
@@ -256,6 +262,17 @@
             ]];
         });
         $filters = ['all' => 'All', 'attention' => 'Needs attention', 'active' => 'Active', 'idle' => 'Idle', 'offline' => 'Offline', 'completed' => 'Submitted'];
+        // By team: one heading per team (teams in name order), then one for attempts with no team
+        $teamHeadings = [];
+        if ($groupByTeam) {
+            foreach ($teams as $team) {
+                $teamHeadings[] = $team + ['attempts' => $sessions->where('group_id', $team['id'])->count()];
+            }
+            $noTeam = $sessions->whereNull('group_id')->count();
+            if ($noTeam > 0) {
+                $teamHeadings[] = ['id' => null, 'name' => 'No team', 'leader_name' => null, 'absent' => [], 'attempts' => $noTeam];
+            }
+        }
     @endphp
     <section class="rounded-xl border border-[#2e2e2e] bg-[#171717]" aria-labelledby="roster-heading">
         <div class="p-4 sm:p-5 border-b border-[#2e2e2e] space-y-4">
@@ -307,8 +324,9 @@
             @endif
         </div>
 
-        {{-- Teams: who leads each, and members with no attempt (they never opened the lab) --}}
-        @if(! empty($teams))
+        {{-- Teams: who leads each, and members with no attempt (they never opened the lab).
+             By team, each team's heading in the roster says this instead. --}}
+        @if(! empty($teams) && ! ($groupByTeam && $sessions->isNotEmpty()))
             <ul class="px-5 py-3 border-b border-[#2e2e2e] space-y-1.5 text-xs text-[#a3a3a3]" aria-label="Teams">
                 @foreach($teams as $team)
                     <li class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -341,7 +359,24 @@
                 <span class="sr-only">Actions</span>
             </div>
 
-            <div class="flex flex-col divide-y divide-[#2e2e2e]">
+            {{-- Rows are reordered in the browser with CSS order, so each draws its own top
+                 border: divide-y follows the markup order and would put lines in odd places.
+                 Plain border-[#2e2e2e] and bg-[#141414] so the light theme's overrides apply. --}}
+            <div class="flex flex-col -mt-px">
+                @foreach($teamHeadings as $heading)
+                    @php $headingId = $heading['id'] === null ? 'null' : (int) $heading['id']; @endphp
+                    <div data-team-heading="{{ $heading['id'] ?? 'none' }}" x-show="teamVisible({{ $headingId }})" :style="{ order: teamOrder({{ $headingId }}) }"
+                         class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 sm:px-5 pt-4 pb-2.5 border-t border-[#2e2e2e] bg-[#141414] text-xs text-[#a3a3a3]">
+                        <span class="text-sm font-semibold {{ $heading['id'] === null ? 'text-[#a3a3a3]' : 'text-[#3ecf8e]' }}">{{ $heading['name'] }}</span>
+                        @if($heading['id'] !== null)
+                            <span>{{ $heading['leader_name'] ? 'Leader: ' . $heading['leader_name'] : 'No leader yet' }}</span>
+                        @endif
+                        <span class="text-[#666666] tabular-nums">{{ $heading['attempts'] }} {{ \Illuminate\Support\Str::plural('attempt', $heading['attempts']) }}</span>
+                        @if($heading['absent'])
+                            <span class="text-amber-300">Did not take part: {{ collect($heading['absent'])->pluck('name')->join(', ') }}</span>
+                        @endif
+                    </div>
+                @endforeach
                 @foreach($sessions as $session)
                     @php
                         $user = $session->user;
@@ -365,14 +400,20 @@
                             'abandoned' => ['dot' => 'bg-red-400/70', 'text' => 'text-[#a3a3a3]'],
                         ][$state] ?? ['dot' => 'bg-[#666666]', 'text' => 'text-[#a3a3a3]'];
                     @endphp
-                    <div class="roster-row group/row px-4 sm:px-5 py-3.5 transition-colors hover:bg-white/[0.02] {{ $openFlags > 0 ? 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.7)]' : '' }}"
+                    <div class="roster-row group/row px-4 sm:px-5 py-3.5 border-t border-[#2e2e2e] transition-colors hover:bg-white/[0.02] {{ $openFlags > 0 ? 'shadow-[inset_2px_0_0_0_rgba(251,191,36,0.7)]' : '' }}"
                          x-show="showRow({{ $session->id }})" :style="{ order: rowOrder({{ $session->id }}) }">
                         <div class="grid grid-cols-3 xl:grid-cols-[minmax(0,1.7fr)_6.5rem_minmax(7rem,1fr)_4.5rem_4.5rem_4rem_7rem_7.5rem_8rem] items-center gap-x-4 gap-y-3">
                             {{-- Student --}}
                             <button type="button" @click="openStudent({{ $session->id }})" class="col-span-2 xl:col-span-1 flex items-center gap-3 min-w-0 text-left rounded-lg -m-1 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3ecf8e]/50" title="Open {{ $user->name ?? 'student' }}">
                                 <span class="w-9 h-9 rounded-lg bg-[#232323] border border-[#2e2e2e] flex items-center justify-center text-xs font-semibold text-[#a3a3a3] shrink-0 transition-colors group-hover/row:border-[#3e3e3e]" aria-hidden="true">{{ strtoupper(substr($user->name ?? 'S', 0, 2)) }}</span>
                                 <div class="min-w-0">
-                                    <p class="text-sm font-medium text-[#ededed] truncate group-hover/row:underline underline-offset-2 decoration-[#3e3e3e]">{{ $user->name ?? 'Unknown Student' }}</p>
+                                    <p class="flex items-center gap-2 min-w-0">
+                                        <span class="text-sm font-medium text-[#ededed] truncate group-hover/row:underline underline-offset-2 decoration-[#3e3e3e]">{{ $user->name ?? 'Unknown Student' }}</span>
+                                        @if($attempt = $attemptNumbers[$session->id] ?? null)
+                                            <span class="shrink-0 inline-flex items-center h-5 px-1.5 rounded-md border border-[#2e2e2e] text-[11px] font-medium tabular-nums {{ $attempt['of'] > 1 ? 'text-[#ededed]' : 'text-[#888888]' }}"
+                                                  title="{{ $attempt['of'] > 1 ? "Attempt {$attempt['number']} of the {$attempt['of']} this student started" : 'The only attempt this student started' }}">Attempt {{ $attempt['number'] }}{{ $attempt['of'] > 1 ? ' of '.$attempt['of'] : '' }}</span>
+                                        @endif
+                                    </p>
                                     <p class="text-xs text-[#888888] truncate">
                                         @if($laboratory->is_group_lab && $group)
                                             <span class="text-[#3ecf8e]">{{ $group->name }}</span> <span aria-hidden="true">&middot;</span>
@@ -706,6 +747,7 @@
                                 <span class="w-2 h-2 rounded-full" :class="stateStyle(student.state).dot" aria-hidden="true"></span>
                                 <span x-text="student.state_label"></span>
                             </span>
+                            <span class="text-[#ededed] tabular-nums" x-show="student.attempt_number" x-text="'Attempt ' + student.attempt_number + (student.attempt_of > 1 ? ' of ' + student.attempt_of : '')"></span>
                             <span class="text-[#888888]" x-show="student.last_seen" x-text="'Last seen ' + student.last_seen"></span>
                             <span class="text-[#888888]" x-show="student.started_at" x-text="'Started ' + student.started_at"></span>
                         </div>
@@ -966,6 +1008,8 @@ function instructorMonitor() {
         searchQuery: '',
         statusFilter: 'all',
         sortKey: 'attention',
+        // Grouped: rows stay together under their team's heading, sorted by sortKey inside it
+        groupByTeam: {{ $groupByTeam ? 'true' : 'false' }},
         roster: @json($rosterIndex ?? []),
 
         matchesFilter(row, filter) {
@@ -985,17 +1029,38 @@ function instructorMonitor() {
             return this.roster.filter((row) => this.showRow(row.id)).length;
         },
         sortedIds() {
-            const byName = (a, b) => a.name.localeCompare(b.name);
+            // A student's attempts sit together, oldest first
+            const byName = (a, b) => a.name.localeCompare(b.name) || a.attempt - b.attempt;
             const sorters = {
                 attention: (a, b) => b.attention - a.attention || byName(a, b),
                 name: byName,
                 progress: (a, b) => b.progress - a.progress || byName(a, b),
                 wpm: (a, b) => b.wpm - a.wpm || byName(a, b),
             };
-            return [...this.roster].sort(sorters[this.sortKey] || byName).map((r) => r.id);
+            const sorter = sorters[this.sortKey] || byName;
+            // Teams in name order ("Team 2" before "Team 10"), attempts with no team last
+            const byTeam = (a, b) => (a.team_id === null) - (b.team_id === null)
+                || a.group.localeCompare(b.group, undefined, { numeric: true })
+                || (a.team_id ?? 0) - (b.team_id ?? 0);
+            const compare = this.groupByTeam ? (a, b) => byTeam(a, b) || sorter(a, b) : sorter;
+            return [...this.roster].sort(compare).map((r) => r.id);
         },
+        // Even slots are for team headings, so a heading lands right before its team's first row
         rowOrder(id) {
-            return this.sortedIds().indexOf(id);
+            const index = this.sortedIds().indexOf(id);
+            return this.groupByTeam ? index * 2 + 1 : index;
+        },
+        teamOrder(teamId) {
+            const ids = this.sortedIds();
+            const first = ids.findIndex((id) => this.roster.find((r) => r.id === id)?.team_id === teamId);
+            return first === -1 ? ids.length * 2 + 1 : first * 2;
+        },
+        // A heading shows while any of its team's rows does. A team nobody started an attempt
+        // for has no rows; its heading (with who did not take part) shows only when unfiltered.
+        teamVisible(teamId) {
+            const rows = this.roster.filter((r) => r.team_id === teamId);
+            if (rows.length === 0) return this.statusFilter === 'all' && !this.searchQuery.trim();
+            return rows.some((r) => this.showRow(r.id));
         },
         isRefreshing: false,
         hasLiveUpdate: false,
