@@ -741,6 +741,34 @@ JAVA;
     }
 
     /**
+     * A team that has changed no lines yet has no shares to split: everyone is at 0%, not an even split.
+     */
+    public function test_contributions_are_zero_when_the_team_has_changed_no_lines(): void
+    {
+        [$mySession, $teammate, $theirSession] = $this->teamOfTwo();
+
+        $this->actingAs($this->student)
+            ->postJson("/api/v1/sessions/{$mySession->id}/diff", ['lines_added' => 0, 'lines_deleted' => 0])
+            ->assertOk();
+        $response = $this->actingAs($teammate)
+            ->postJson("/api/v1/sessions/{$theirSession->id}/diff", ['lines_added' => 0, 'lines_deleted' => 0])
+            ->assertOk();
+
+        $shares = collect($response->json('code_contributions'))->pluck('contribution_percent', 'user_id');
+        $this->assertEquals(0.0, $shares[$this->student->id]);
+        $this->assertEquals(0.0, $shares[$teammate->id]);
+
+        $this->assertDatabaseHas('group_members', ['user_id' => $this->student->id, 'contribution_score' => 0.0]);
+        $this->assertDatabaseHas('group_members', ['user_id' => $teammate->id, 'contribution_score' => 0.0]);
+
+        $this->actingAs($this->student)
+            ->getJson("/api/v1/sessions/{$mySession->id}")
+            ->assertOk()
+            ->assertJsonPath('teammates.0.contribution_score', 0)
+            ->assertJsonPath('teammates.1.contribution_score', 0);
+    }
+
+    /**
      * @return array{0: LabSession, 1: User, 2: LabSession}
      */
     private function teamOfTwo(): array

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-28
+
+- A team that hasn't changed a line yet now shows 0% for every teammate, in the extension's team card and on the lab page. It used to split 100% evenly, so a team of two showed 50% each before anyone wrote code. Shares still count each teammate's added and modified lines out of the team's total once there are any. Teams that already show an even split correct themselves the next time the extension sends a teammate's line counts, such as when they open the lab or save a file.
+
 ## 2026-11-17
 
 - The extension's own confirmation dialogs no longer count as a focus loss. On Windows VS Code shows a modal dialog as a separate window, so the editor lost focus and a `focus_lost` event was sent the moment the dialog opened. This hit the "files from another lab or attempt" dialog when a lab starts, the submit confirmation, the exit confirmation and the "connect to this lab server" prompt. Focus changes while one of these dialogs is open, or within a second of it closing, are now ignored. Leaving VS Code at any other time still counts. The fix is in VS Code extension 1.11.1, and students on older builds are now told to update.
