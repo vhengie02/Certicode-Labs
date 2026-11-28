@@ -47,7 +47,7 @@ class DashboardController extends Controller
         /** @var User $user */
         $user = $request->user();
         $data = Cache::store('file')->remember(
-            "user_dashboard_sections_v4_{$user->id}_{$user->role}",
+            "user_dashboard_sections_v5_{$user->id}_{$user->role}",
             30,
             fn () => match ($user->role) {
                 'admin' => $this->adminData(),
@@ -98,6 +98,17 @@ class DashboardController extends Controller
         $ownLabs = Laboratory::whereHas('module', fn ($m) => $m->whereIn('class_id', $classIds));
         $classHref = $classIds->isNotEmpty() ? route('classes.show', $classIds->first()) : route('classes.create');
 
+        // Attempts with code to read; only the columns the panel shows, not the code itself
+        $latestSubmissions = LabSession::whereIn('lab_id', (clone $ownLabs)->select('id'))
+            ->where('status', 'completed')
+            ->whereNotNull('ended_at')
+            ->whereNotNull('submitted_code')
+            ->where('submitted_code', '<>', '')
+            ->with('user:id,name', 'group:id,name', 'laboratory:id,title,module_id', 'laboratory.module:id,class_id', 'laboratory.module.schoolClass:id,name')
+            ->latest('ended_at')
+            ->take(6)
+            ->get(['id', 'lab_id', 'user_id', 'group_id', 'status', 'ended_at', 'performance_score', 'instructor_grade_override']);
+
         return [
             'setup' => [
                 ['title' => 'Create a class', 'body' => 'Give it a name and a pass mark.', 'done' => $classIds->isNotEmpty(), 'action' => 'New class', 'href' => route('classes.create')],
@@ -109,16 +120,8 @@ class DashboardController extends Controller
             // Shown in the panel headers, next to the lists they count
             'activeClassCount' => SchoolClass::whereIn('id', $classIds)->whereNotIn('status', ['completed', 'closed'])->count(),
             'openFlagCount' => Anomaly::whereRaw('resolved = false')->whereHas('labSession', $ownSessions)->count(),
-            // Attempts with code to read; only the columns the panel shows, not the code itself
-            'latestSubmissions' => LabSession::whereIn('lab_id', (clone $ownLabs)->select('id'))
-                ->where('status', 'completed')
-                ->whereNotNull('ended_at')
-                ->whereNotNull('submitted_code')
-                ->where('submitted_code', '<>', '')
-                ->with('user:id,name', 'group:id,name', 'laboratory:id,title,module_id', 'laboratory.module:id,class_id', 'laboratory.module.schoolClass:id,name')
-                ->latest('ended_at')
-                ->take(6)
-                ->get(['id', 'lab_id', 'user_id', 'group_id', 'status', 'ended_at', 'performance_score', 'instructor_grade_override']),
+            'latestSubmissions' => $latestSubmissions,
+            'submissionAttempts' => $this->attemptNumbersFor($latestSubmissions),
             'recentAnomalies' => Anomaly::withoutSnapshotData()
                 ->whereHas('labSession', $ownSessions)
                 ->with('labSession:id,lab_id,user_id', 'labSession.user:id,name', 'labSession.laboratory:id,title')
@@ -131,6 +134,30 @@ class DashboardController extends Controller
                 ->take(5)
                 ->get(['id', 'name', 'status', 'scheduled_end_date', 'created_at']),
         ];
+    }
+
+    /**
+     * Which of the student's attempts at that lab each submission is, keyed by session ID,
+     * counted as the lab monitoring page counts them. One query for every student shown.
+     *
+     * @return array<int, array{number: int, of: int}>
+     */
+    private function attemptNumbersFor($submissions): array
+    {
+        if ($submissions->isEmpty()) {
+            return [];
+        }
+
+        $everyAttempt = LabSession::whereIn('lab_id', $submissions->pluck('lab_id')->unique())
+            ->whereIn('user_id', $submissions->pluck('user_id')->unique())
+            ->get(['id', 'lab_id', 'user_id']);
+
+        $numbers = [];
+        foreach ($everyAttempt->groupBy('lab_id') as $labAttempts) {
+            $numbers += InstructorMonitoringController::attemptNumbers($labAttempts);
+        }
+
+        return array_intersect_key($numbers, $submissions->keyBy('id')->all());
     }
 
     private function adminData(): array

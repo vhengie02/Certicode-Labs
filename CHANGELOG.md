@@ -2,6 +2,9 @@
 
 ## 2026-11-28
 
+- On a group lab's monitoring page, "By team" now keeps each team's rows together. The rows used to be reordered in the browser by the Sort menu ("Needs attention first" by default), which scattered teams. Each team now has a heading with its leader, its number of attempts and who did not take part, in team name order ("Team 2" before "Team 10"), with attempts that have no team last. The Sort menu orders the rows inside each team. The separate team list above the roster shows only under "By student". Every roster row now draws its own divider, so the lines no longer go missing between reordered rows, and the light theme now colours them.
+- The monitoring roster shows which of the student's attempts each row is, such as "Attempt 2 of 2", and so does the student drawer. Attempts are counted per student, oldest first, as the attempt limit and the student's own pages count them. Under "Name", a student's attempts sit together, oldest first.
+- The instructor dashboard's "Latest submissions" shows the attempt number too. A team row now also names whose attempt it is, since one team submit lists every teammate's attempt and their numbers can differ.
 - In the extension's team chat, Enter now sends from the code snippet box too, so pasted code can be sent from the keyboard. Shift+Enter adds a new line in the snippet. The snippet box also has its own send button beside it. Enter that confirms an IME composition still doesn't send.
 - The lab page's team chat works the same way: Enter sends from the snippet box, Shift+Enter adds a new line, and the box has its own Send button. A snippet sent without a typed message now goes out as "Code snippet shared:", as from the extension. Before, the page sent nothing when the message line was empty, because the server needs a message.
 
