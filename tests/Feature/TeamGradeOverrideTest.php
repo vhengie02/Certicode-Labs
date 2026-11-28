@@ -38,6 +38,11 @@ class TeamGradeOverrideTest extends TestCase
     {
         parent::setUp();
 
+        // A team's attempts written by the one submit share their ended_at, which is how the
+        // override finds teammates without a team_started_at. Hold the clock still so every
+        // graded() row gets the same moment, even when a second ticks over between them.
+        $this->freezeSecond();
+
         $this->instructor = User::create(['name' => 'Prof', 'email' => 'prof@example.com', 'password' => bcrypt('password'), 'role' => 'instructor']);
         $this->alice = User::create(['name' => 'Alice', 'email' => 'alice@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
         $this->bob = User::create(['name' => 'Bob', 'email' => 'bob@example.com', 'password' => bcrypt('password'), 'role' => 'student']);
