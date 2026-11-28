@@ -310,6 +310,7 @@ class LabSession extends Model
     /**
      * Code contributions for the whole team, one entry per student with their share of the
      * team's lines. Each session keeps the entries it has seen; the newest entry per student wins.
+     * Until the team has changed a line there is nothing to share, so everyone is at 0%.
      */
     public function teamContributions(): array
     {
@@ -325,7 +326,7 @@ class LabSession extends Model
         $totalLines = array_sum(array_map(fn ($c) => ($c['lines_added'] ?? 0) + ($c['lines_modified'] ?? 0), $entries));
         foreach ($entries as &$c) {
             $lines = ($c['lines_added'] ?? 0) + ($c['lines_modified'] ?? 0);
-            $c['contribution_percent'] = $totalLines > 0 ? round(($lines / $totalLines) * 100, 1) : round(100 / count($entries), 1);
+            $c['contribution_percent'] = $totalLines > 0 ? round(($lines / $totalLines) * 100, 1) : 0.0;
         }
 
         return $entries;

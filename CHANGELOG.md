@@ -7,6 +7,7 @@
 - The instructor dashboard's "Latest submissions" shows the attempt number too. A team row now also names whose attempt it is, since one team submit lists every teammate's attempt and their numbers can differ.
 - In the extension's team chat, Enter now sends from the code snippet box too, so pasted code can be sent from the keyboard. Shift+Enter adds a new line in the snippet. The snippet box also has its own send button beside it. Enter that confirms an IME composition still doesn't send.
 - The lab page's team chat works the same way: Enter sends from the snippet box, Shift+Enter adds a new line, and the box has its own Send button. A snippet sent without a typed message now goes out as "Code snippet shared:", as from the extension. Before, the page sent nothing when the message line was empty, because the server needs a message.
+- A team that hasn't changed a line yet now shows 0% for every teammate, in the extension's team card and on the lab page. It used to split 100% evenly, so a team of two showed 50% each before anyone wrote code. Shares still count each teammate's added and modified lines out of the team's total once there are any. Teams that already show an even split correct themselves the next time the extension sends a teammate's line counts, such as when they open the lab or save a file.
 
 ## 2026-11-17
 
