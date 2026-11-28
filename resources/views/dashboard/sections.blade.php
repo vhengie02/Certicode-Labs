@@ -105,6 +105,7 @@
                     @forelse ($latestSubmissions as $submission)
                         @php
                             $submitter = $submission->group?->name ?? $submission->user?->name ?? 'Unknown student';
+                            $attempt = $submissionAttempts[$submission->id] ?? null;
                         @endphp
                         <a href="{{ route('sessions.show', $submission->id) }}#submitted-files" class="group flex items-center gap-4 px-5 py-3.5 border-b border-[#232323] last:border-b-0 hover:bg-[#1c1c1c] transition-colors">
                             <span class="h-9 w-9 rounded-full bg-[#141414] border border-[#2e2e2e] flex items-center justify-center text-[11px] font-semibold text-[#a3a3a3] shrink-0" aria-hidden="true">
@@ -116,6 +117,13 @@
                                     <span class="font-normal text-[#888888]">&middot; {{ $submission->laboratory?->title ?? 'Lab' }}</span>
                                 </span>
                                 <span class="block text-xs text-[#888888] truncate mt-0.5">
+                                    {{-- A team submit lists every teammate's attempt, so a team row names whose it is --}}
+                                    @if($submission->group && $submission->user)
+                                        {{ $submission->user->name }} &middot;
+                                    @endif
+                                    @if($attempt)
+                                        <span class="text-[#a3a3a3] tabular-nums">Attempt {{ $attempt['number'] }}{{ $attempt['of'] > 1 ? ' of '.$attempt['of'] : '' }}</span> &middot;
+                                    @endif
                                     {{ $submission->laboratory?->module?->schoolClass?->name ?? 'Class' }} &middot; {{ $submission->ended_at->diffForHumans() }}
                                 </span>
                             </span>

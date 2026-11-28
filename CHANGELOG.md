@@ -2,6 +2,9 @@
 
 ## 2026-11-28
 
+- On a group lab's monitoring page, "By team" now keeps each team's rows together. The rows used to be reordered in the browser by the Sort menu ("Needs attention first" by default), which scattered teams. Each team now has a heading with its leader, its number of attempts and who did not take part, in team name order ("Team 2" before "Team 10"), with attempts that have no team last. The Sort menu orders the rows inside each team. The separate team list above the roster shows only under "By student". Every roster row now draws its own divider, so the lines no longer go missing between reordered rows, and the light theme now colours them.
+- The monitoring roster shows which of the student's attempts each row is, such as "Attempt 2 of 2", and so does the student drawer. Attempts are counted per student, oldest first, as the attempt limit and the student's own pages count them. Under "Name", a student's attempts sit together, oldest first.
+- The instructor dashboard's "Latest submissions" shows the attempt number too. A team row now also names whose attempt it is, since one team submit lists every teammate's attempt and their numbers can differ.
 - A team that hasn't changed a line yet now shows 0% for every teammate, in the extension's team card and on the lab page. It used to split 100% evenly, so a team of two showed 50% each before anyone wrote code. Shares still count each teammate's added and modified lines out of the team's total once there are any. Teams that already show an even split correct themselves the next time the extension sends a teammate's line counts, such as when they open the lab or save a file.
 
 ## 2026-11-17
